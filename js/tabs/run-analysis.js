@@ -784,7 +784,14 @@ export function renderAccumulatedDistanceChart(runs) {
                 tension: 0.1
             }]
         },
-        options: { scales: { y: { title: { display: true, text: 'Distance (km)' } } } }
+        options: {
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            },
+            scales: { y: { title: { display: true, text: 'Distance (km)' } } }
+        }
     });
 }
 
@@ -1586,13 +1593,6 @@ function renderTopRuns(runs) {
         return `${h}h ${m}m`;
     };
 
-    const formatPace = paceDecimal => {
-        if (!paceDecimal || paceDecimal <= 0) return '-';
-        const min = Math.floor(paceDecimal);
-        const sec = Math.round((paceDecimal - min) * 60);
-        return `${min}:${sec.toString().padStart(2, '0')} /km`;
-    };
-
     const activityLink = a => {
         if (!a?.id) return a?.name || '-';
         return `<a href="html/activity-router.html?id=${encodeURIComponent(a.id)}" target="_blank" rel="noopener noreferrer">${a.name}</a>`;
@@ -1625,7 +1625,7 @@ function renderTopRuns(runs) {
                 <table class="compact-table" id="run-top-pace-table">
                 <thead><tr style="background: #FC5200; color: #fff;"><th>#</th><th>Run</th><th data-sort="num">Pace</th></tr></thead>
                 <tbody>
-                    ${topFastest.map((a, i) => `<tr><td>${i + 1}</td><td>${activityLink(a)}</td><td data-value="${a.pace}">${formatPace(a.pace)}</td></tr>`).join("")}
+                    ${topFastest.map((a, i) => `<tr><td>${i + 1}</td><td>${activityLink(a)}</td><td data-value="${a.pace}">${utils.formatPace(a.pace, 1)}</td></tr>`).join("")}
                 </tbody>
                 </table>
             </div>
