@@ -1638,18 +1638,10 @@ function renderActivitiesTable(runs) {
     const el = document.getElementById("run-activities-table");
     if (!el) return;
 
-    const formatPace = speedMps => {
-        if (!speedMps || speedMps <= 0) return '-';
-        const paceSeconds = 1000 / speedMps;
-        const min = Math.floor(paceSeconds / 60);
-        const sec = Math.round(paceSeconds % 60);
-        return `${min}:${sec.toString().padStart(2, '0')} /km`;
-    };
-
     const rows = runs
         .sort((a, b) => new Date(b.start_date) - new Date(a.start_date))
         .map(a => {
-            const pace = formatPace(a.average_speed);
+            const pace = utils.formatPace(1000 / a.average_speed, 1);
             const paceVal = a.average_speed > 0 ? (1000 / a.average_speed) : 9999;
             const activityLink = a.id
                 ? `<a href="html/activity-router.html?id=${encodeURIComponent(a.id)}" target="_blank" rel="noopener noreferrer">${a.name}</a>`
