@@ -19,8 +19,7 @@ export function renderRunAnalysisTab(allActivities, dateFilterFrom, dateFilterTo
     renderMonthlyDistanceChart(runs);
     renderPaceVsDistanceChart(runs);
     renderDistanceHistogram(runs);
-    renderAccumulatedDistanceChart(runs);
-    renderRollingMeanDistanceChart(runs, rollingWindowWeeks);
+    renderDistanceSection(runs, rollingWindowWeeks);
     renderEddingtonSection(runs);
     renderDistanceVsElevationChart(runs);
     renderElevationHistogram(runs);
@@ -1197,6 +1196,11 @@ function _drawRunEddingtonCharts(runs, mode) {
         attachRunEddingtonInfo._multiplier = multiplier;
         attachRunEddingtonInfo(progId, eddington, isWeekly ? 'weekly' : 'progression');
     }
+}
+
+export function renderDistanceSection(runs, rollingWindowWeeks = 26) {
+    renderAccumulatedDistanceChart(runs);
+    renderRollingMeanDistanceChart(runs, rollingWindowWeeks);
 }
 
 export function renderEddingtonSection(runs) {

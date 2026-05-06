@@ -287,13 +287,12 @@
                             <h3>Pace Distribution</h3>
                             <canvas id="pace-histogram-chart"></canvas>
                         </div>
-                        <div class="chart-container">
-                            <h3>Accumulated Distance vs Time</h3>
-                            <canvas id="accumulated-distance-chart"></canvas>
-                        </div>
-                        <div class="chart-container">
-                            <h3>Weekly Distance + Rolling Mean</h3>
-                            <div class="rolling-selector">
+                    </div>
+
+                    <div class="distance-section">
+                        <div class="distance-controls">
+                            <span class="distance-section-title">Distance Progression</span>
+                            <div class="rolling-selector-small">
                                 <label for="rolling-window-run">Rolling mean:</label>
                                 <select id="rolling-window-run">
                                     <option value="4">1 month</option>
@@ -302,15 +301,16 @@
                                     <option value="52">1 year</option>
                                 </select>
                             </div>
-                            <canvas id="rolling-mean-distance-chart"></canvas>
                         </div>
-                        <div class="chart-container">
-                            <h3>Distance vs Elevation Gain</h3>
-                            <canvas id="distance-vs-elevation-chart"></canvas>
-                        </div>
-                        <div class="chart-container">
-                            <h3>Elevation Gain Histogram</h3>
-                            <canvas id="elevation-histogram"></canvas>
+                        <div class="chart-row distance-pair">
+                            <div class="chart-container">
+                                <h3>Accumulated Distance vs Time</h3>
+                                <canvas id="accumulated-distance-chart"></canvas>
+                            </div>
+                            <div class="chart-container">
+                                <h3>Weekly Distance + Rolling Mean</h3>
+                                <canvas id="rolling-mean-distance-chart"></canvas>
+                            </div>
                         </div>
                     </div>
 

@@ -246,6 +246,64 @@ main {
     font-weight: 600;
 }
 
+/* Distance section */
+.distance-section {
+    margin-bottom: 2rem;
+}
+
+.distance-controls {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+}
+
+.distance-section-title {
+    font-weight: 700;
+    font-size: 1.05rem;
+    color: #444;
+}
+
+.rolling-selector-small {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.rolling-selector-small label {
+    font-size: 0.85rem;
+    color: #555;
+    font-weight: 500;
+}
+
+.rolling-selector-small select {
+    padding: 0.3rem 0.5rem;
+    border: 1.5px solid #ddd;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    background: #fff;
+    cursor: pointer;
+    transition: border-color 0.2s;
+}
+
+.rolling-selector-small select:hover {
+    border-color: #fc4c02;
+}
+
+.distance-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+}
+
+@media (max-width: 768px) {
+    .distance-pair {
+        grid-template-columns: 1fr;
+    }
+}
+
 .full-width {
     grid-column: 1 / -1;
 }
