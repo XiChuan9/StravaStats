@@ -50,6 +50,7 @@ export async function logout() {
     localStorage.removeItem('strava_gears');
     localStorage.removeItem('strava_gears_timestamp');
     localStorage.removeItem('dashboard_filters');
+    localStorage.removeItem('dashboard_readiness_hrv');
     // Also clear demo data
     localStorage.removeItem('strava_demo_mode');
     localStorage.removeItem('strava_demo_activities');
@@ -141,6 +142,7 @@ export async function handleAuth(onAuthenticated) {
             localStorage.removeItem('strava_gears');
             localStorage.removeItem('strava_gears_timestamp');
             localStorage.removeItem('dashboard_filters');
+            localStorage.removeItem('dashboard_readiness_hrv');
         }
     }
 

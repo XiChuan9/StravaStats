@@ -3,6 +3,7 @@ import * as utils from './utils.js';
 let selectedRangeDays = 'last30'; // rango inicial
 let tssUnit = 'tss'; // unit for TSS chart: 'tss', 'activities', or 'hours'
 let acuteLoadBandMode = 'aggressive'; // always aggressive, no user selection
+const READINESS_HRV_STORAGE_KEY = 'dashboard_readiness_hrv';
 let dashboardRenderContext = {
     allActivities: [],
     dateFilterFrom: null,
@@ -23,6 +24,325 @@ const RANGE_OPTIONS = [
 
 function toLocalYMD(date) {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function normalizeTextToken(value = '') {
+    return value
+        .toString()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+        .toLowerCase();
+}
+
+function splitCsvLine(line, delimiter) {
+    const values = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (let index = 0; index < line.length; index++) {
+        const char = line[index];
+        const next = line[index + 1];
+
+        if (char === '"') {
+            if (inQuotes && next === '"') {
+                current += '"';
+                index++;
+            } else {
+                inQuotes = !inQuotes;
+            }
+            continue;
+        }
+
+        if (char === delimiter && !inQuotes) {
+            values.push(current.trim());
+            current = '';
+            continue;
+        }
+
+        current += char;
+    }
+
+    values.push(current.trim());
+    return values;
+}
+
+function detectCsvDelimiter(line = '') {
+    const candidates = [',', ';', '\t'];
+    let best = ',';
+    let bestCount = -1;
+
+    candidates.forEach(delimiter => {
+        const count = splitCsvLine(line, delimiter).length;
+        if (count > bestCount) {
+            best = delimiter;
+            bestCount = count;
+        }
+    });
+
+    return best;
+}
+
+function parseLooseNumber(value) {
+    if (value == null) return null;
+    const cleaned = String(value)
+        .trim()
+        .replace(/\s+/g, '')
+        .replace(/[^\d,.-]/g, '');
+    if (!cleaned) return null;
+
+    const normalized = cleaned.includes(',') && cleaned.includes('.')
+        ? cleaned.replace(/,/g, '')
+        : cleaned.replace(',', '.');
+
+    const parsed = Number.parseFloat(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseHrvRange(value) {
+    if (!value) return null;
+    const matches = String(value).match(/-?\d+(?:[.,]\d+)?/g);
+    if (!matches || matches.length < 2) return null;
+
+    const low = parseLooseNumber(matches[0]);
+    const high = parseLooseNumber(matches[1]);
+    if (!Number.isFinite(low) || !Number.isFinite(high)) return null;
+
+    return {
+        low: Math.min(low, high),
+        high: Math.max(low, high)
+    };
+}
+
+function getHrvMonthIndex(token) {
+    const normalized = normalizeTextToken(token).replace('.', '');
+    const monthMap = {
+        jan: 0, january: 0, enero: 0, ene: 0, janvier: 0, janv: 0, janeiro: 0, gennaio: 0,
+        feb: 1, february: 1, febrero: 1, fevrier: 1, fevr: 1, fevereiro: 1, febbraio: 1,
+        mar: 2, march: 2, marzo: 2, mars: 2,
+        apr: 3, april: 3, abril: 3, avr: 3, avril: 3,
+        may: 4, mayo: 4, mai: 4, maggio: 4,
+        jun: 5, june: 5, junio: 5, juin: 5, giugno: 5,
+        jul: 6, july: 6, julio: 6, juillet: 6, luglio: 6,
+        aug: 7, august: 7, agosto: 7, aout: 7, ago: 7,
+        sep: 8, sept: 8, september: 8, septiembre: 8, setembro: 8, septembre: 8, settembre: 8,
+        oct: 9, october: 9, octubre: 9, outubro: 9, octobre: 9, ottobre: 9,
+        nov: 10, november: 10, noviembre: 10, novembro: 10, novembre: 10,
+        dec: 11, december: 11, diciembre: 11, dezembro: 11, decembre: 11, dicembre: 11
+    };
+
+    return Number.isInteger(monthMap[normalized]) ? monthMap[normalized] : null;
+}
+
+function resolvePartialHrvDate(monthIndex, day, year = null) {
+    const now = new Date();
+    const resolvedYear = Number.isFinite(year) ? year : now.getFullYear();
+    let parsed = new Date(resolvedYear, monthIndex, day);
+
+    if (!Number.isFinite(year)) {
+        const futureGapDays = (parsed.getTime() - now.getTime()) / 86400000;
+        if (futureGapDays > 30) {
+            parsed = new Date(resolvedYear - 1, monthIndex, day);
+        }
+    }
+
+    parsed.setHours(0, 0, 0, 0);
+    return parsed;
+}
+
+function parseGarminHrvDate(value) {
+    if (!value) return null;
+
+    const normalized = String(value).replace(/\s+/g, ' ').trim();
+    const isoLike = normalized.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})$/);
+    if (isoLike) {
+        const parsed = new Date(Number(isoLike[1]), Number(isoLike[2]) - 1, Number(isoLike[3]));
+        parsed.setHours(0, 0, 0, 0);
+        return parsed;
+    }
+
+    const dayMonthYear = normalized.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
+    if (dayMonthYear) {
+        const first = Number(dayMonthYear[1]);
+        const second = Number(dayMonthYear[2]);
+        const rawYear = Number(dayMonthYear[3]);
+        const year = rawYear < 100 ? 2000 + rawYear : rawYear;
+        const isMonthFirst = first <= 12 && second > 12;
+        const day = isMonthFirst ? second : first;
+        const month = isMonthFirst ? first : second;
+        const parsed = new Date(year, month - 1, day);
+        parsed.setHours(0, 0, 0, 0);
+        return parsed;
+    }
+
+    const direct = parseDateInput(value);
+    if (direct) {
+        direct.setHours(0, 0, 0, 0);
+        return direct;
+    }
+
+    const compact = normalizeTextToken(normalized);
+
+    const monthFirst = compact.match(/^([a-z]+)\s+(\d{1,2})(?:,?\s*(\d{4}))?$/i);
+    if (monthFirst) {
+        const monthIndex = getHrvMonthIndex(monthFirst[1]);
+        const day = Number.parseInt(monthFirst[2], 10);
+        const year = monthFirst[3] ? Number.parseInt(monthFirst[3], 10) : null;
+        if (monthIndex != null && Number.isFinite(day)) {
+            return resolvePartialHrvDate(monthIndex, day, year);
+        }
+    }
+
+    const dayFirst = compact.match(/^(\d{1,2})\s+([a-z]+)(?:\s+(\d{4}))?$/i);
+    if (dayFirst) {
+        const day = Number.parseInt(dayFirst[1], 10);
+        const monthIndex = getHrvMonthIndex(dayFirst[2]);
+        const year = dayFirst[3] ? Number.parseInt(dayFirst[3], 10) : null;
+        if (monthIndex != null && Number.isFinite(day)) {
+            return resolvePartialHrvDate(monthIndex, day, year);
+        }
+    }
+
+    return null;
+}
+
+function fillMissingHrvDates(entries) {
+    if (!entries.length) return [];
+
+    const resolved = entries.map(entry => ({
+        ...entry,
+        parsedDate: entry.parsedDate instanceof Date ? new Date(entry.parsedDate) : null
+    }));
+
+    const firstKnownIndex = resolved.findIndex(entry => entry.parsedDate);
+    if (firstKnownIndex === -1) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        return resolved.map((entry, index) => ({
+            ...entry,
+            parsedDate: addDays(today, -index)
+        }));
+    }
+
+    for (let index = firstKnownIndex - 1; index >= 0; index--) {
+        resolved[index].parsedDate = addDays(resolved[index + 1].parsedDate, 1);
+    }
+
+    for (let index = firstKnownIndex + 1; index < resolved.length; index++) {
+        if (!resolved[index].parsedDate) {
+            resolved[index].parsedDate = addDays(resolved[index - 1].parsedDate, -1);
+        }
+    }
+
+    return resolved;
+}
+
+function parseGarminHrvCsv(csvText) {
+    const lines = String(csvText || '')
+        .replace(/^\uFEFF/, '')
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(Boolean);
+
+    if (lines.length < 2) {
+        throw new Error('CSV file is empty or missing data rows.');
+    }
+
+    const delimiter = detectCsvDelimiter(lines[0]);
+    const header = splitCsvLine(lines[0], delimiter).map(normalizeTextToken);
+    const dateIndex = header.findIndex(cell => /(^|\b)(fecha|date|datum|data|giorno|jour|dia|tag)(\b|$)/.test(cell));
+    const nightlyIndex = header.findIndex(cell =>
+        /(vfc|hrv)/.test(cell) && /(noche|night|overnight|nuit|notte|noite|nacht|soir|matin)?/.test(cell)
+    );
+    const referenceIndex = header.findIndex(cell => /(valor de referencia|reference|baseline|referencia|referenz|reference value|valeur de reference|valore di riferimento)/.test(cell));
+    const avg7Index = header.findIndex(cell => /(7).*(average|avg|media|moyenne|promedio|durchschnitt|media móvil|media movel|rolling)/.test(cell));
+
+    const indices = {
+        date: dateIndex >= 0 ? dateIndex : 0,
+        nightly: nightlyIndex >= 0 ? nightlyIndex : 1,
+        reference: referenceIndex >= 0 ? referenceIndex : 2,
+        avg7: avg7Index >= 0 ? avg7Index : 3
+    };
+
+    const rawEntries = [];
+    lines.slice(1).forEach(line => {
+        const cells = splitCsvLine(line, delimiter);
+        const parsedDate = parseGarminHrvDate(cells[indices.date]);
+        const nightly = parseLooseNumber(cells[indices.nightly]);
+        const reference = parseHrvRange(cells[indices.reference]);
+        const avg7 = parseLooseNumber(cells[indices.avg7]);
+
+        if (!Number.isFinite(nightly) || !reference) return;
+
+        rawEntries.push({
+            parsedDate,
+            nightly,
+            referenceLow: reference.low,
+            referenceHigh: reference.high,
+            avg7: Number.isFinite(avg7) ? avg7 : nightly
+        });
+    });
+
+    const entries = fillMissingHrvDates(rawEntries)
+        .filter(entry => entry.parsedDate)
+        .map(entry => ({
+            date: toLocalYMD(entry.parsedDate),
+            nightly: entry.nightly,
+            referenceLow: entry.referenceLow,
+            referenceHigh: entry.referenceHigh,
+            avg7: entry.avg7
+        }));
+
+    if (!entries.length) {
+        throw new Error('No Garmin HRV rows could be parsed from the CSV.');
+    }
+
+    const uniqueEntries = Array.from(new Map(entries.map(entry => [entry.date, entry])).values())
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+    return {
+        importedAt: Date.now(),
+        rangeStart: uniqueEntries[0].date,
+        rangeEnd: uniqueEntries[uniqueEntries.length - 1].date,
+        entries: uniqueEntries
+    };
+}
+
+function loadStoredHrvData() {
+    try {
+        const raw = localStorage.getItem(READINESS_HRV_STORAGE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || !Array.isArray(parsed.entries) || !parsed.entries.length) return null;
+        return parsed;
+    } catch {
+        return null;
+    }
+}
+
+function saveStoredHrvData(hrvData) {
+    if (!hrvData || !Array.isArray(hrvData.entries) || !hrvData.entries.length) {
+        localStorage.removeItem(READINESS_HRV_STORAGE_KEY);
+        return;
+    }
+    localStorage.setItem(READINESS_HRV_STORAGE_KEY, JSON.stringify(hrvData));
+}
+
+function getHrvLookup() {
+    const stored = loadStoredHrvData();
+    if (!stored) return null;
+
+    const byDate = new Map();
+    stored.entries.forEach(entry => {
+        if (entry?.date) {
+            byDate.set(entry.date, entry);
+        }
+    });
+
+    return {
+        meta: stored,
+        byDate
+    };
 }
 
 
@@ -1218,6 +1538,11 @@ function getReadinessAtlFatigueScore(atlValue, ctlValue) {
     return 1.0;
 }
 
+function getReadinessInjuryScore(injuryRisk) {
+    if (!Number.isFinite(injuryRisk)) return 0.5;
+    return normalize01(1 - injuryRisk);
+}
+
 /**
  * ACWR-like load stability score from rolling 7d load vs 28d baseline.
  */
@@ -1255,6 +1580,28 @@ function getReadinessBandScore(load7d, band) {
  */
 function getReadinessInjuryPenalty(injuryRisk) {
     return 0;
+}
+
+function getReadinessHrvScore(hrvEntry) {
+    if (!hrvEntry) return null;
+
+    const width = Math.max(6, (hrvEntry.referenceHigh || 0) - (hrvEntry.referenceLow || 0));
+    const nightly = hrvEntry.nightly;
+    const avg7 = Number.isFinite(hrvEntry.avg7) ? hrvEntry.avg7 : nightly;
+
+    const distanceToBand = value => {
+        if (value < hrvEntry.referenceLow) return hrvEntry.referenceLow - value;
+        if (value > hrvEntry.referenceHigh) return value - hrvEntry.referenceHigh;
+        return 0;
+    };
+
+    const nightlyDistance = distanceToBand(nightly);
+    const avgDistance = distanceToBand(avg7);
+    const nightlyScore = nightlyDistance === 0 ? 1 : Math.max(0.1, 1 - nightlyDistance / (width * 0.75 + 6));
+    const avgScore = avgDistance === 0 ? 1 : Math.max(0.1, 1 - avgDistance / (width * 0.9 + 8));
+    const stabilityScore = Math.max(0.35, 1 - Math.abs(nightly - avg7) / (width + 10));
+
+    return normalize01(avgScore * 0.5 + nightlyScore * 0.35 + stabilityScore * 0.15);
 }
 
 /**
@@ -1305,14 +1652,17 @@ function buildTrainingReadinessSeries(activities, rangeStart, rangeEnd) {
     const ctlValues = series.ctlDaily.filter(Number.isFinite);
     const readinessRaw = [];
     const breakdown = [];
+    const hrvLookup = getHrvLookup();
 
     for (let i = 0; i < series.labels.length; i++) {
+        const label = series.labels[i];
         const ctl = series.ctlDaily[i] || 0;
         const atl = series.atlDaily[i] || 0;
         const tsb = series.tsbDaily[i] || 0;
         const injury = series.riskDaily[i] || 0;
         const load7d = series.load7d[i] || 0;
         const band = getAcuteLoadBand(profile, ctl, acuteLoadBandMode);
+        const hrvEntry = hrvLookup?.byDate.get(label) || null;
 
         const tsbScore = getReadinessTsbScore(tsb, profile);
         const ctlScore = getReadinessCtlScore(ctl, ctlValues);
@@ -1320,22 +1670,29 @@ function buildTrainingReadinessSeries(activities, rangeStart, rangeEnd) {
         const acwrScore = getReadinessLoadStabilityScore(series.load7d, i);
         const bandScore = getReadinessBandScore(load7d, band);
         const loadStabilityScore = normalize01(acwrScore * 0.65 + bandScore * 0.35);
+        const injuryScore = getReadinessInjuryScore(injury);
+        const hrvScore = getReadinessHrvScore(hrvEntry);
+        const weights = hrvScore == null
+            ? { tsb: 0.35, ctl: 0.25, atl: 0.20, load: 0.20, hrv: 0 }
+            : { tsb: 0.30, ctl: 0.22, atl: 0.18, load: 0.15, hrv: 0.15 };
 
-        // Readiness is based on: TSB (35%), CTL (25%), ATL inverted (20%), Load Stability (20%)
-        // NO injury penalty - injury risk is reference only
+        // Default readiness uses TSB, CTL, ATL inverted, and load stability.
+        // HRV is blended in only when the user imports Garmin nightly HRV data.
         const base01 =
-            0.35 * tsbScore +
-            0.25 * ctlScore +
-            0.20 * (1 - atlFatigueScore) +
-            0.20 * loadStabilityScore;
+            weights.tsb * tsbScore +
+            weights.ctl * ctlScore +
+            weights.atl * (1 - atlFatigueScore) +
+            weights.load * loadStabilityScore +
+            weights.hrv * (hrvScore ?? 0);
 
         const final01 = normalize01(base01);
 
-        const tsbPts = 35 * tsbScore;
-        const ctlPts = 25 * ctlScore;
-        const atlPts = 20 * (1 - atlFatigueScore);
-        const loadPts = 20 * loadStabilityScore;
-        const basePts = tsbPts + ctlPts + atlPts + loadPts;
+        const tsbPts = weights.tsb * 100 * tsbScore;
+        const ctlPts = weights.ctl * 100 * ctlScore;
+        const atlPts = weights.atl * 100 * (1 - atlFatigueScore);
+        const loadPts = weights.load * 100 * loadStabilityScore;
+        const hrvPts = weights.hrv * 100 * (hrvScore ?? 0);
+        const basePts = tsbPts + ctlPts + atlPts + loadPts + hrvPts;
         const injuryPenaltyPts = 0;
 
         readinessRaw.push(final01 * 100);
@@ -1344,8 +1701,10 @@ function buildTrainingReadinessSeries(activities, rangeStart, rangeEnd) {
             ctl: { value: ctl, score: ctlScore, points: ctlPts },
             atl: { value: atl, delta: atl - ctl, fatigueScore: atlFatigueScore, points: atlPts },
             load: { value: load7d, acwrScore, bandScore, score: loadStabilityScore, points: loadPts },
-            injury: { value: injury, penalty: 0, penaltyPoints: injuryPenaltyPts },
+            injury: { value: injury, score: injuryScore, penalty: 0, penaltyPoints: injuryPenaltyPts },
+            hrv: hrvEntry ? { ...hrvEntry, score: hrvScore, points: hrvPts } : null,
             basePoints: basePts,
+            weights,
             readiness: final01 * 100
         });
     }
@@ -1366,6 +1725,7 @@ function buildTrainingReadinessSeries(activities, rangeStart, rangeEnd) {
         atlDaily: series.atlDaily,
         tsbDaily: series.tsbDaily,
         riskDaily: series.riskDaily,
+        hrvMeta: hrvLookup?.meta || null,
         fullStart: series.fullStart,
         today: series.today,
         visibleStart: series.visibleStart,
@@ -1395,6 +1755,93 @@ function getReadinessLabel(score) {
     return 'Poor';
 }
 
+function getReadinessMetricTone(score01) {
+    const score100 = normalize01(score01 ?? 0.5) * 100;
+    return {
+        color: getReadinessColor(score100),
+        score100
+    };
+}
+
+function renderReadinessMetricItem(title, value, metaLine, score01) {
+    const tone = getReadinessMetricTone(score01);
+    return `
+        <div class="readiness-metric-item" style="border:1px solid ${tone.color}33;background:${tone.color}10;">
+            <div class="readiness-metric-label" style="color:${tone.color};">${title}</div>
+            <div class="readiness-metric-value">${value}</div>
+            <small style="color:${tone.color};">${metaLine}</small>
+        </div>
+    `;
+}
+
+function renderReadinessHrvControlCard(readinessData) {
+    const hasImportedHrv = Boolean(readinessData.hrvMeta?.entries?.length);
+    return `
+        <div class="readiness-metric-item" style="border:1px solid #4f46e533;background:#4f46e510;display:flex;flex-direction:column;gap:0.45rem;">
+            <div class="readiness-metric-label" style="color:#4f46e5;">Optional HRV Input</div>
+            <small id="readiness-hrv-feedback" style="color:#4f46e5;line-height:1.35;">${formatHrvImportSummary(readinessData.hrvMeta)}</small>
+            <div style="display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center;">
+                <label style="display:inline-flex;align-items:center;justify-content:center;padding:0.45rem 0.65rem;border:1px solid #4f46e533;border-radius:999px;cursor:pointer;background:#fff;color:#2f3b52;font-size:0.74rem;font-weight:600;">
+                    <span>Import CSV</span>
+                    <input id="readiness-hrv-file" type="file" accept=".csv,text/csv" style="display:none;">
+                </label>
+                <button id="readiness-hrv-clear" type="button" style="padding:0.45rem 0.65rem;border:1px solid #d0d7e2;border-radius:999px;background:#fff;cursor:pointer;font-size:0.74rem;font-weight:600;${hasImportedHrv ? '' : 'display:none;'}">Clear</button>
+            </div>
+        </div>
+    `;
+}
+
+function formatHrvImportSummary(hrvMeta) {
+    if (!hrvMeta?.entries?.length) {
+        return 'Optional: import Garmin nightly HRV CSV to blend HRV into readiness.';
+    }
+
+    return `HRV imported: ${hrvMeta.entries.length} nights · ${hrvMeta.rangeStart} to ${hrvMeta.rangeEnd}`;
+}
+
+function rerenderTrainingReadinessFromDashboardContext() {
+    if (!dashboardRenderContext?.allActivities?.length) return;
+    const { startDate, endDate } = getEffectiveDashboardWindow(
+        dashboardRenderContext.dateFilterFrom,
+        dashboardRenderContext.dateFilterTo
+    );
+    renderTrainingReadiness(dashboardRenderContext.allActivities, startDate, endDate);
+}
+
+function setupReadinessHrvControls() {
+    const fileInput = document.getElementById('readiness-hrv-file');
+    const clearButton = document.getElementById('readiness-hrv-clear');
+    const feedback = document.getElementById('readiness-hrv-feedback');
+    if (!fileInput || fileInput.dataset.listenerReady) return;
+
+    fileInput.dataset.listenerReady = '1';
+    fileInput.addEventListener('change', async event => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        try {
+            const text = await file.text();
+            const parsed = parseGarminHrvCsv(text);
+            saveStoredHrvData(parsed);
+            rerenderTrainingReadinessFromDashboardContext();
+        } catch (error) {
+            if (feedback) {
+                feedback.textContent = error?.message || 'Could not parse Garmin HRV CSV.';
+                feedback.style.color = '#e74c3c';
+            }
+        } finally {
+            fileInput.value = '';
+        }
+    });
+
+    if (clearButton) {
+        clearButton.addEventListener('click', () => {
+            saveStoredHrvData(null);
+            rerenderTrainingReadinessFromDashboardContext();
+        });
+    }
+}
+
 /**
  * Render readiness card next to gauge.
  */
@@ -1414,6 +1861,14 @@ function renderReadinessGauge(score, readinessData) {
     const ctlStatus = getCtlStatus(ctl, readinessData.sortedActivities, readinessData.profile);
     const atlStatus = getAtlStatus(atl, ctl);
     const tsbStatus = getTsbStatus(tsb, readinessData.profile);
+    const hrv = parts.hrv;
+    const hrvLabel = hrv ? `${hrv.nightly.toFixed(0)} ms` : 'Not imported';
+    const hrvMetaLine = hrv
+        ? `${hrv.referenceLow.toFixed(0)}-${hrv.referenceHigh.toFixed(0)} ref · +${hrv.points.toFixed(1)} pts`
+        : 'Optional Garmin CSV import';
+    const injuryToneLabel = Number.isFinite(risk)
+        ? `${risk <= 0.25 ? 'Low' : risk <= 0.5 ? 'Elevated' : 'High'} risk · ref only`
+        : 'Reference only';
 
     let insight = '';
     if (score >= 75) {
@@ -1442,28 +1897,16 @@ function renderReadinessGauge(score, readinessData) {
     </div>
 
     <div class="readiness-metrics">
-        <div class="readiness-metric-item">
-            <div class="readiness-metric-label">TSB (Freshness)</div>
-            <div class="readiness-metric-value">${tsb.toFixed(1)}</div>
-            <small style="color: #666;">${tsbStatus.label} · +${parts.tsb.points.toFixed(1)} pts</small>
-        </div>
-        <div class="readiness-metric-item">
-            <div class="readiness-metric-label">CTL (Fitness)</div>
-            <div class="readiness-metric-value">${ctl.toFixed(1)}</div>
-            <small style="color: #666;">${ctlStatus.label} · +${parts.ctl.points.toFixed(1)} pts</small>
-        </div>
-        <div class="readiness-metric-item">
-            <div class="readiness-metric-label">ATL (Fatigue)</div>
-            <div class="readiness-metric-value">${atl.toFixed(1)}</div>
-            <small style="color: #666;">${atlStatus.label} · +${parts.atl.points.toFixed(1)} pts</small>
-        </div>
-        <div class="readiness-metric-item">
-            <div class="readiness-metric-label">Injury Risk</div>
-            <div class="readiness-metric-value">${risk.toFixed(3)}</div>
-            <small style="color: #666;">Reference only · not used in score</small>
-        </div>
+        ${renderReadinessHrvControlCard(readinessData)}
+        ${renderReadinessMetricItem('TSB (Freshness)', tsb.toFixed(1), `${tsbStatus.label} · +${parts.tsb.points.toFixed(1)} pts`, parts.tsb.score)}
+        ${renderReadinessMetricItem('CTL (Fitness)', ctl.toFixed(1), `${ctlStatus.label} · +${parts.ctl.points.toFixed(1)} pts`, parts.ctl.score)}
+        ${renderReadinessMetricItem('ATL (Fatigue)', atl.toFixed(1), `${atlStatus.label} · +${parts.atl.points.toFixed(1)} pts`, 1 - parts.atl.fatigueScore)}
+        ${renderReadinessMetricItem('Injury Risk', Number.isFinite(risk) ? risk.toFixed(3) : '–', injuryToneLabel, parts.injury.score)}
+        ${renderReadinessMetricItem('HRV', hrvLabel, hrvMetaLine, hrv?.score ?? 0.5)}
     </div>
 `;
+
+    setupReadinessHrvControls();
 }
 
 /**
@@ -1605,6 +2048,7 @@ function renderReadinessTimelineChart(data) {
                                 `CTL contribution: +${parts.ctl.points.toFixed(1)} pts`,
                                 `ATL contribution: +${parts.atl.points.toFixed(1)} pts`,
                                 `Load contribution: +${parts.load.points.toFixed(1)} pts`,
+                                ...(parts.hrv ? [`HRV contribution: +${parts.hrv.points.toFixed(1)} pts`] : []),
                                 `Injury risk: ref only (${parts.injury.value.toFixed(3)})`
                             ];
                         }
