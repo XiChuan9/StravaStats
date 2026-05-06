@@ -66,12 +66,14 @@ function csvEscape(value) {
     return text;
 }
 
-function buildActivitiesCsv(activities, columns) {
+function buildActivitiesCsv(activities, columns, cellValueGetter) {
     const headers = columns.map(c => c.label);
     const rows = activities.map(a => columns.map(col => {
-        const raw = col.csv
-            ? col.csv(a[col.key], a)
-            : String(col.format(a[col.key], a)).replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+        const raw = cellValueGetter
+            ? cellValueGetter(a, col)
+            : (col.csv
+                ? col.csv(a[col.key], a)
+                : String(col.format(a[col.key], a)).replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim());
         return raw === '–' ? '' : raw;
     }));
     return [headers, ...rows].map(row => row.map(csvEscape).join(',')).join('\n');
@@ -87,6 +89,263 @@ function downloadTextFile(content, filename, mimeType = 'text/plain') {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+}
+
+const GROUP_BY_OPTIONS = ['none', 'day', 'week', 'month', 'year'];
+const METRIC_MODE_OPTIONS = ['auto', 'sum', 'avg'];
+const TEXT_MODE_OPTIONS = ['frequent', 'mixed'];
+const AGG_SUM_KEYS = new Set(['distance', 'moving_time', 'total_elevation_gain', 'tss', 'kilojoules', 'calories']);
+const AGG_AVG_KEYS = new Set(['average_heartrate', 'max_heartrate', 'average_cadence', 'average_watts', 'start_hour']);
+
+function parseLocalDate(dateLike) {
+    const datePart = String(dateLike || '').slice(0, 10);
+    const [y, m, d] = datePart.split('-').map(Number);
+    if (!y || !m || !d) return null;
+    const date = new Date(y, m - 1, d);
+    return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function toLocalDateKey(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function toLocalMonthKey(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function weekStartMonday(date) {
+    const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    d.setHours(0, 0, 0, 0);
+    return d;
+}
+
+function metricModeForKey(key, mode) {
+    if (mode !== 'auto') return mode;
+    if (AGG_SUM_KEYS.has(key)) return 'sum';
+    if (AGG_AVG_KEYS.has(key)) return 'avg';
+    return 'avg';
+}
+
+function addNumericStat(target, key, value) {
+    if (!Number.isFinite(value)) return;
+    if (!target[key]) {
+        target[key] = { sum: 0, count: 0, min: value, max: value };
+    }
+    const stat = target[key];
+    stat.sum += value;
+    stat.count += 1;
+    if (value < stat.min) stat.min = value;
+    if (value > stat.max) stat.max = value;
+}
+
+function aggregateStat(stat, mode) {
+    if (!stat || !stat.count) return null;
+    if (mode === 'sum') return stat.sum;
+    return stat.sum / stat.count;
+}
+
+function activityGroupMeta(activity, groupBy) {
+    const date = parseLocalDate(activity.start_date_local || activity.start_date);
+    if (!date) return null;
+
+    if (groupBy === 'day') {
+        const key = toLocalDateKey(date);
+        return { key, label: key, sortValue: date.getTime(), dateKey: key };
+    }
+
+    if (groupBy === 'week') {
+        const monday = weekStartMonday(date);
+        const key = toLocalDateKey(monday);
+        const weekNumber = utils.getISOWeek(monday);
+        const label = `${monday.getFullYear()}-W${String(weekNumber).padStart(2, '0')}`;
+        return { key, label, sortValue: monday.getTime(), dateKey: key };
+    }
+
+    if (groupBy === 'month') {
+        const key = toLocalMonthKey(date);
+        const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
+        return { key, label: key, sortValue: monthStart.getTime(), dateKey: `${key}-01` };
+    }
+
+    const key = String(date.getFullYear());
+    const yearStart = new Date(date.getFullYear(), 0, 1);
+    return { key, label: key, sortValue: yearStart.getTime(), dateKey: `${key}-01-01` };
+}
+
+function aggregateByPeriod(activities, groupBy) {
+    if (groupBy === 'none') return activities;
+
+    const groups = new Map();
+
+    activities.forEach(activity => {
+        const meta = activityGroupMeta(activity, groupBy);
+        if (!meta) return;
+
+        let g = groups.get(meta.key);
+        if (!g) {
+            g = {
+                key: meta.key,
+                label: meta.label,
+                sortValue: meta.sortValue,
+                dateKey: meta.dateKey,
+                count: 0,
+                typeCounts: {},
+                numericStats: {},
+                textStats: {},
+                sumDistance: 0,
+                sumMovingTime: 0,
+                firstId: activity.id
+            };
+            groups.set(meta.key, g);
+        }
+
+        g.count += 1;
+        const t = getType(activity);
+        g.typeCounts[t] = (g.typeCounts[t] || 0) + 1;
+
+        if (Number.isFinite(activity.distance)) g.sumDistance += activity.distance;
+        if (Number.isFinite(activity.moving_time)) g.sumMovingTime += activity.moving_time;
+
+        if (activity.start_date_local) {
+            const hm = activity.start_date_local.split('T')[1]?.slice(0, 5);
+            if (hm) {
+                const [h, m] = hm.split(':').map(Number);
+                if (Number.isFinite(h) && Number.isFinite(m)) {
+                    addNumericStat(g.numericStats, 'start_hour', h * 60 + m);
+                }
+            }
+        }
+
+        Object.entries(activity || {}).forEach(([key, value]) => {
+            if (value === null || value === undefined) return;
+            if (Array.isArray(value) || typeof value === 'object') return;
+
+            if (typeof value === 'number' && Number.isFinite(value)) {
+                addNumericStat(g.numericStats, key, value);
+                return;
+            }
+
+            const textValue = String(value);
+            if (!g.textStats[key]) g.textStats[key] = {};
+            g.textStats[key][textValue] = (g.textStats[key][textValue] || 0) + 1;
+        });
+    });
+
+    return Array.from(groups.values()).map(g => {
+        const sortedTypes = Object.entries(g.typeCounts).sort((a, b) => b[1] - a[1]);
+        const dominantType = sortedTypes[0]?.[0] || 'Unknown';
+        const isMixedType = sortedTypes.length > 1;
+
+        return {
+            __isGroup: true,
+            __groupLabel: g.label,
+            __groupSortValue: g.sortValue,
+            __groupCount: g.count,
+            __groupMixedType: isMixedType,
+            __groupDominantType: dominantType,
+            __numericStats: g.numericStats,
+            __textStats: g.textStats,
+            __summaryActivity: {
+                id: g.firstId,
+                start_date_local: g.dateKey,
+                type: dominantType,
+                sport_type: dominantType,
+                distance: g.sumDistance,
+                moving_time: g.sumMovingTime,
+                name: `${g.count} activities`
+            }
+        };
+    });
+}
+
+function groupedCellValue(row, col, metricMode, textMode) {
+    if (!row.__isGroup) {
+        return String(col.format(row[col.key], row));
+    }
+
+    const key = col.key;
+    const summary = row.__summaryActivity;
+
+    if (key === 'start_date_local') {
+        return `${escapeHtml(row.__groupLabel)} <small>(${row.__groupCount} act.)</small>`;
+    }
+
+    if (key === 'name') {
+        return `${row.__groupCount} activities`;
+    }
+
+    if (key === 'type') {
+        if (row.__groupMixedType) {
+            return `🔀 <small>Mixed (${escapeHtml(row.__groupDominantType)})</small>`;
+        }
+        return `${sportEmoji(row.__groupDominantType)} <small>${escapeHtml(row.__groupDominantType)}</small>`;
+    }
+
+    if (key === 'pace_speed') {
+        return fmtPaceSpeed(summary);
+    }
+
+    if (key === 'start_hour') {
+        const stat = row.__numericStats.start_hour;
+        const avgMinutes = aggregateStat(stat, 'avg');
+        if (!Number.isFinite(avgMinutes)) return '–';
+        const h = Math.floor(avgMinutes / 60);
+        const m = Math.round(avgMinutes % 60);
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+
+    const numStat = row.__numericStats[key];
+    if (numStat && numStat.count > 0) {
+        const value = aggregateStat(numStat, metricModeForKey(key, metricMode));
+        return col.format(value, summary);
+    }
+
+    const textCounts = row.__textStats[key];
+    if (textCounts) {
+        const entries = Object.entries(textCounts).sort((a, b) => b[1] - a[1]);
+        if (textMode === 'mixed') {
+            return entries.length === 1
+                ? escapeHtml(entries[0][0])
+                : `<small>Mixed (${entries.length})</small>`;
+        }
+
+        const [winner, count] = entries[0] || ['', 0];
+        const tie = entries.length > 1 && entries[1][1] === count;
+        if (!winner) return '–';
+        if (tie) return `<small>Mixed (tie)</small>`;
+        const suffix = entries.length > 1 ? ` <small>(${count}/${row.__groupCount})</small>` : '';
+        return `${escapeHtml(winner)}${suffix}`;
+    }
+
+    return '–';
+}
+
+function groupedSortValue(row, col, metricMode) {
+    if (!row.__isGroup) return sortVal(row, col);
+    if (col === 'start_date_local') return row.__groupSortValue;
+    if (col === 'name') return row.__groupCount;
+    if (col === 'type') return row.__groupDominantType;
+    if (col === 'pace_speed') return sortVal(row.__summaryActivity, 'pace_speed');
+    if (col === 'start_hour') {
+        return aggregateStat(row.__numericStats.start_hour, 'avg') ?? -Infinity;
+    }
+
+    const stat = row.__numericStats[col];
+    if (stat && stat.count > 0) {
+        return aggregateStat(stat, metricModeForKey(col, metricMode));
+    }
+
+    const textCounts = row.__textStats[col];
+    if (textCounts) {
+        return Object.entries(textCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+    }
+
+    return -Infinity;
+}
+
+function groupedCellText(row, col, metricMode, textMode) {
+    return groupedCellValue(row, col, metricMode, textMode).replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
 }
 
 // ─── Sort value extractor ─────────────────────────────────────────────────────
@@ -233,6 +492,9 @@ export function renderActivitiesTab(allActivities) {
             sortDir: 'desc',
             visibleActivities: [],
             selectedCols: COLUMNS.map(c => c.key),
+            groupBy: 'none',
+            metricMode: 'auto',
+            textMode: 'frequent',
             filters: {
                 type: [], name: '', dateFrom: '', dateTo: '',
                 distMin: '', distMax: '', durMin: '', durMax: '',
@@ -292,6 +554,31 @@ export function renderActivitiesTab(allActivities) {
                     Date to
                     <input id="flt-date-to" type="text" inputmode="numeric" placeholder="dd/mm/yyyy" title="Format: dd/mm/yyyy">
                 </label>
+                <label class="act-filter-label">
+                    Group by
+                    <select id="flt-group-by">
+                        <option value="none">None</option>
+                        <option value="day">Day</option>
+                        <option value="week">Week</option>
+                        <option value="month">Month</option>
+                        <option value="year">Year</option>
+                    </select>
+                </label>
+                <label class="act-filter-label">
+                    Numeric metric
+                    <select id="flt-metric-mode">
+                        <option value="auto">Auto (smart)</option>
+                        <option value="sum">Total / Sum</option>
+                        <option value="avg">Average</option>
+                    </select>
+                </label>
+                <label class="act-filter-label">
+                    Text metric
+                    <select id="flt-text-mode">
+                        <option value="frequent">Most frequent</option>
+                        <option value="mixed">Mixed</option>
+                    </select>
+                </label>
                 <div class="act-filter-actions">
                     <button id="flt-reset" class="act-reset-btn" title="Clear all filters" type="button">✕ Reset</button>
                     <button id="act-edit-cols" class="act-edit-btn" type="button">Edit table</button>
@@ -350,7 +637,7 @@ export function renderActivitiesTab(allActivities) {
             <div id="act-col-editor" class="act-col-editor" hidden></div>
         </div>`;
 
-        const IDS = ['flt-type', 'flt-name', 'flt-date-from', 'flt-date-to',
+        const IDS = ['flt-type', 'flt-name', 'flt-date-from', 'flt-date-to', 'flt-group-by', 'flt-metric-mode', 'flt-text-mode',
             'flt-dist-min', 'flt-dist-max', 'flt-dur-min', 'flt-dur-max',
             'flt-hr-min', 'flt-hr-max', 'flt-elev-min', 'flt-elev-max',
             'flt-power-min', 'flt-power-max', 'flt-tss-min', 'flt-tss-max'];
@@ -364,6 +651,12 @@ export function renderActivitiesTab(allActivities) {
             f.name = document.getElementById('flt-name').value.trim().toLowerCase();
             f.dateFrom = utils.parseDateInputToIso(document.getElementById('flt-date-from').value);
             f.dateTo = utils.parseDateInputToIso(document.getElementById('flt-date-to').value);
+            const groupBy = document.getElementById('flt-group-by').value;
+            const metricMode = document.getElementById('flt-metric-mode').value;
+            const textMode = document.getElementById('flt-text-mode').value;
+            state.groupBy = GROUP_BY_OPTIONS.includes(groupBy) ? groupBy : 'none';
+            state.metricMode = METRIC_MODE_OPTIONS.includes(metricMode) ? metricMode : 'auto';
+            state.textMode = TEXT_MODE_OPTIONS.includes(textMode) ? textMode : 'frequent';
             f.distMin = document.getElementById('flt-dist-min').value;
             f.distMax = document.getElementById('flt-dist-max').value;
             f.durMin = document.getElementById('flt-dur-min').value;
@@ -393,8 +686,17 @@ export function renderActivitiesTab(allActivities) {
                 'flt-hr-min', 'flt-hr-max', 'flt-elev-min', 'flt-elev-max',
                 'flt-power-min', 'flt-power-max', 'flt-tss-min', 'flt-tss-max'
             ].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+            const groupByEl = document.getElementById('flt-group-by');
+            const metricModeEl = document.getElementById('flt-metric-mode');
+            const textModeEl = document.getElementById('flt-text-mode');
+            if (groupByEl) groupByEl.value = 'none';
+            if (metricModeEl) metricModeEl.value = 'auto';
+            if (textModeEl) textModeEl.value = 'frequent';
             const f = state.filters;
             Object.keys(f).forEach(k => f[k] = k === 'type' ? types.slice() : '');
+            state.groupBy = 'none';
+            state.metricMode = 'auto';
+            state.textMode = 'frequent';
             render();
         });
 
@@ -484,13 +786,13 @@ export function renderActivitiesTab(allActivities) {
     }
 
     // ── Sort logic ────────────────────────────────────────────────────────────
-    function applySort(acts) {
+    function applySort(acts, grouped) {
         const { sortCol, sortDir } = state;
         const factor = sortDir === 'desc' ? -1 : 1;
         return acts.slice().sort((a, b) => {
-            const va = sortVal(a, sortCol);
-            const vb = sortVal(b, sortCol);
-            if (sortCol === 'start_date_local')
+            const va = grouped ? groupedSortValue(a, sortCol, state.metricMode) : sortVal(a, sortCol);
+            const vb = grouped ? groupedSortValue(b, sortCol, state.metricMode) : sortVal(b, sortCol);
+            if (!grouped && sortCol === 'start_date_local')
                 return ((new Date(a.start_date_local || 0)) - (new Date(b.start_date_local || 0))) * factor;
             if (typeof va === 'number' && typeof vb === 'number')
                 return (va - vb) * factor;
@@ -501,7 +803,9 @@ export function renderActivitiesTab(allActivities) {
     // ── Render table ──────────────────────────────────────────────────────────
     function render() {
         const filtered = applyFilters(allActivities);
-        const sorted = applySort(filtered);
+        const groupedRows = aggregateByPeriod(filtered, state.groupBy);
+        const grouped = state.groupBy !== 'none';
+        const sorted = applySort(groupedRows, grouped);
         state.visibleActivities = sorted;
         const selectedCols = new Set(state.selectedCols && state.selectedCols.length ? state.selectedCols : COLUMNS.map(c => c.key));
         const visibleColumns = allColumns.filter(c => selectedCols.has(c.key));
@@ -520,11 +824,11 @@ export function renderActivitiesTab(allActivities) {
         </tr></thead>`;
 
         const emptyRow = `<tr><td colspan="${visibleColumns.length}" class="act-empty">
-            No activities match the current filters</td></tr>`;
+            ${grouped ? 'No grouped periods match the current filters' : 'No activities match the current filters'}</td></tr>`;
 
         const tbodyHtml = `<tbody>${sorted.length === 0 ? emptyRow : sorted.map(act => `
             <tr>
-                ${visibleColumns.map(col => `<td>${col.format(act[col.key], act)}</td>`).join('')}
+                ${visibleColumns.map(col => `<td>${groupedCellValue(act, col, state.metricMode, state.textMode)}</td>`).join('')}
             </tr>`).join('')}
         </tbody>`;
 
@@ -543,7 +847,9 @@ export function renderActivitiesTab(allActivities) {
         // Row counter
         if (counterEl) {
             counterEl.innerHTML = `
-                <span>${sorted.length} / ${allActivities.length} activities</span>
+                <span>${grouped
+                    ? `${sorted.length} groups / ${filtered.length} activities`
+                    : `${sorted.length} / ${allActivities.length} activities`}</span>
                 <button id="act-export-csv" class="act-export-btn" type="button">Download CSV</button>
             `;
 
@@ -551,7 +857,13 @@ export function renderActivitiesTab(allActivities) {
             if (exportBtn) {
                 exportBtn.addEventListener('click', () => {
                     const visible = state.visibleActivities || [];
-                    const csv = buildActivitiesCsv(visible, visibleColumns);
+                    const csv = buildActivitiesCsv(visible, visibleColumns, (row, col) => {
+                        return grouped
+                            ? groupedCellText(row, col, state.metricMode, state.textMode)
+                            : (col.csv
+                                ? col.csv(row[col.key], row)
+                                : groupedCellText(row, col, state.metricMode, state.textMode));
+                    });
                     const now = new Date();
                     const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
                     downloadTextFile(csv, `activities_filtered_${stamp}.csv`, 'text/csv;charset=utf-8;');

@@ -1437,7 +1437,7 @@ function renderReadinessGauge(score, readinessData) {
         </div>
 
         <div class="readiness-insights" style="border-left-color: ${color}; background: ${color}15;">
-            <strong>Today's Insight:</strong> ${insight}
+             ${insight}
         </div>
     </div>
 
