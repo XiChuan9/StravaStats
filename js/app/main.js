@@ -135,6 +135,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- TAB NAVIGATION ---
     const tabLinks = document.querySelectorAll('.tab-link');
     const tabContents = document.querySelectorAll('.tab-content');
+    const WIP_TABS = {
+        'weather-tab': 'Weather is currently Work in Progress. Some metrics may be incomplete.\n\nDo you want to continue anyway?',
+        'ai-chat-tab': 'AI Coach is currently Work in Progress. Responses and features may be unstable.\n\nDo you want to continue anyway?'
+    };
 
     const routeToTab = {
         '/': 'analysis-tab',
@@ -177,6 +181,24 @@ document.addEventListener('DOMContentLoaded', () => {
     function getTabIdFromPath(pathname) {
         const normalized = normalizePath(pathname);
         return routeToTab[normalized] || 'analysis-tab';
+    }
+
+    function setupWipTabIndicators() {
+        Object.entries(WIP_TABS).forEach(([tabId]) => {
+            const link = document.querySelector(`.tab-link[data-tab="${tabId}"]`);
+            if (!link) return;
+            link.classList.add('tab-link-wip');
+            link.title = 'Work in Progress';
+            link.setAttribute('aria-label', `${link.textContent.trim()} (Work in Progress)`);
+
+            if (!link.querySelector('.tab-wip-badge')) {
+                const badge = document.createElement('span');
+                badge.className = 'tab-wip-badge';
+                badge.textContent = 'WIP';
+                badge.setAttribute('aria-hidden', 'true');
+                link.appendChild(badge);
+            }
+        });
     }
 
     function syncDateInputs() {
@@ -287,9 +309,16 @@ document.addEventListener('DOMContentLoaded', () => {
     tabLinks.forEach(link => {
         link.addEventListener('click', () => {
             const tabId = link.getAttribute('data-tab');
+            const warningMessage = WIP_TABS[tabId];
+            if (warningMessage) {
+                const proceed = window.confirm(warningMessage);
+                if (!proceed) return;
+            }
             activateTab(tabId, { updateUrl: true });
         });
     });
+
+    setupWipTabIndicators();
 
     window.addEventListener('popstate', () => {
         activateTab(getTabIdFromPath(window.location.pathname));

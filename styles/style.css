@@ -1549,6 +1549,26 @@ th[data-sort].sort-desc::after {
     font-weight: bold;
 }
 
+.tab-link.tab-link-wip {
+    padding-right: 36px;
+}
+
+.tab-wip-badge {
+    position: absolute;
+    top: 3px;
+    right: 5px;
+    font-size: 0.58rem;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0.03em;
+    padding: 2px 4px;
+    border-radius: 999px;
+    color: #8a4b00;
+    border: 1px solid #ffb55a;
+    background: #ffe5bf;
+    pointer-events: none;
+}
+
 /* ── Collapsible top bar ─────────────────────────────── */
 #collapsible-header {
     overflow: hidden;
@@ -5340,6 +5360,17 @@ body {
         border-top: 3px solid var(--strava-orange);
         border-bottom: none;
         background: #f9f9f9;
+    }
+
+    .tab-link.tab-link-wip {
+        padding-right: 1.15rem;
+    }
+
+    .tab-wip-badge {
+        top: 2px;
+        right: 2px;
+        font-size: 0.5rem;
+        padding: 2px 3px;
     }
 
     /* Cards */
