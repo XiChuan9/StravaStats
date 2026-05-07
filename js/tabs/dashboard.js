@@ -3,6 +3,7 @@ import * as utils from './utils.js';
 let selectedRangeDays = 'last30'; // rango inicial
 let tssUnit = 'tss'; // unit for TSS chart: 'tss', 'activities', or 'hours'
 let acuteLoadBandMode = 'aggressive'; // always aggressive, no user selection
+let readinessTimelineMetric = 'readiness';
 const READINESS_HRV_STORAGE_KEY = 'dashboard_readiness_hrv';
 let dashboardRenderContext = {
     allActivities: [],
@@ -1856,10 +1857,13 @@ function getReadinessMetricTone(score01) {
     };
 }
 
-function renderReadinessMetricItem(title, value, metaLine, score01) {
+function renderReadinessMetricItem(title, value, metaLine, score01, metricKey, isActive = false, isDisabled = false) {
     const tone = getReadinessMetricTone(score01);
+    const stateClass = isActive ? ' readiness-metric-item--active' : '';
+    const disabledClass = isDisabled ? ' readiness-metric-item--disabled' : '';
+    const attr = isDisabled ? '' : ` data-readiness-metric="${metricKey}" role="button" tabindex="0"`;
     return `
-        <div class="readiness-metric-item" style="border:1px solid ${tone.color}33;background:${tone.color}10;">
+        <div class="readiness-metric-item readiness-metric-item--switch${stateClass}${disabledClass}" style="border:1px solid ${tone.color}33;background:${tone.color}10;"${attr}>
             <div class="readiness-metric-label" style="color:${tone.color};">${title}</div>
             <div class="readiness-metric-value">${value}</div>
             <small style="color:${tone.color};">${metaLine}</small>
@@ -1872,15 +1876,19 @@ function renderReadinessMetricItem(title, value, metaLine, score01) {
  */
 function renderReadinessHrvItem(readinessData, hrvEntry) {
     const hasImportedHrv = Boolean(readinessData.hrvMeta?.entries?.length);
+    const isActive = readinessTimelineMetric === 'hrv';
     const hrvLabel = hrvEntry ? `${hrvEntry.nightly.toFixed(0)} ms` : 'Not imported';
     const hrvMetaLine = hrvEntry
         ? `${hrvEntry.referenceLow.toFixed(0)}-${hrvEntry.referenceHigh.toFixed(0)} ref · +${hrvEntry.points.toFixed(1)} pts`
         : formatHrvImportSummary(readinessData.hrvMeta);
     const score01 = hrvEntry?.score ?? 0.5;
     const tone = getReadinessMetricTone(score01);
+    const stateClass = isActive ? ' readiness-metric-item--active' : '';
+    const disabledClass = hasImportedHrv ? '' : ' readiness-metric-item--disabled';
+    const interactiveAttr = hasImportedHrv ? ' data-readiness-metric="hrv" role="button" tabindex="0"' : '';
 
     return `
-        <div class="readiness-metric-item" style="border:1px solid ${tone.color}33;background:${tone.color}10;display:flex;flex-direction:column;gap:0.35rem;">
+        <div class="readiness-metric-item readiness-metric-item--switch${stateClass}${disabledClass}" style="border:1px solid ${tone.color}33;background:${tone.color}10;display:flex;flex-direction:column;gap:0.35rem;"${interactiveAttr}>
             <div class="readiness-metric-label" style="color:${tone.color};">HRV</div>
             <div class="readiness-metric-value">${hrvLabel}</div>
             <small style="color:${tone.color};">${hrvMetaLine}</small>
@@ -1963,6 +1971,49 @@ function setupReadinessHrvControls() {
     }
 }
 
+function setupReadinessMetricSwitcher(readinessData) {
+    const metricItems = Array.from(document.querySelectorAll('[data-readiness-metric]'));
+    if (!metricItems.length) return;
+
+    const hasHrv = readinessData.breakdown.some(part => part?.hrv);
+    const allowed = new Set(['readiness', 'tsb', 'ctl', 'atl', 'injury', 'recovery']);
+    if (hasHrv) {
+        allowed.add('hrv');
+    }
+    if (!allowed.has(readinessTimelineMetric)) {
+        readinessTimelineMetric = 'readiness';
+    }
+
+    const activateMetric = metric => {
+        if (!allowed.has(metric)) return;
+        readinessTimelineMetric = metric;
+        renderReadinessGauge(
+            readinessData.readiness[readinessData.labels.length - 1] ?? readinessData.readinessRaw[readinessData.labels.length - 1] ?? 0,
+            readinessData
+        );
+        renderReadinessTimelineChart(readinessData);
+    };
+
+    metricItems.forEach(item => {
+        if (item.dataset.listenerReady) return;
+        item.dataset.listenerReady = '1';
+        item.addEventListener('click', event => {
+            const target = event.currentTarget;
+            const metric = target?.dataset?.readinessMetric;
+            if (!metric) return;
+            activateMetric(metric);
+        });
+        item.addEventListener('keydown', event => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            const target = event.currentTarget;
+            const metric = target?.dataset?.readinessMetric;
+            if (!metric) return;
+            activateMetric(metric);
+        });
+    });
+}
+
 /**
  * Render readiness card next to gauge.
  */
@@ -1993,6 +2044,10 @@ function renderReadinessGauge(score, readinessData) {
     const hrvMetaLine = hrv
         ? `${hrv.referenceLow.toFixed(0)}-${hrv.referenceHigh.toFixed(0)} ref · +${hrv.points.toFixed(1)} pts`
         : 'Optional Garmin CSV import';
+    const hasHrvSeries = readinessData.breakdown.some(part => part?.hrv);
+    if (readinessTimelineMetric === 'hrv' && !hasHrvSeries) {
+        readinessTimelineMetric = 'readiness';
+    }
     const injuryToneLabel = Number.isFinite(risk)
         ? `${risk <= 0.25 ? 'Low' : risk <= 0.5 ? 'Elevated' : 'High'} risk · ref only`
         : 'Reference only';
@@ -2010,7 +2065,7 @@ function renderReadinessGauge(score, readinessData) {
 
     container.innerHTML = `
     <div class="readiness-top">
-        <div class="readiness-score-display">
+        <div class="readiness-score-display readiness-score-display--switch${readinessTimelineMetric === 'readiness' ? ' readiness-score-display--active' : ''}" data-readiness-metric="readiness" role="button" tabindex="0" aria-label="Show readiness score chart">
             <div class="readiness-score-value">
                 <span class="score-number">${score.toFixed(0)}</span>
                 <span class="score-unit">/100</span>
@@ -2024,16 +2079,400 @@ function renderReadinessGauge(score, readinessData) {
     </div>
 
     <div class="readiness-metrics">
-        ${renderReadinessMetricItem('TSB (Freshness)', tsb.toFixed(1), `${tsbStatus.label} · +${parts.tsb.points.toFixed(1)} pts`, parts.tsb.score)}
-        ${renderReadinessMetricItem('CTL (Fitness)', ctl.toFixed(1), `${ctlStatus.label} · +${parts.ctl.points.toFixed(1)} pts`, parts.ctl.score)}
-        ${renderReadinessMetricItem('ATL (Fatigue)', atl.toFixed(1), `${atlStatus.label} · +${parts.atl.points.toFixed(1)} pts`, 1 - parts.atl.fatigueScore)}
-        ${renderReadinessMetricItem('Injury Risk', Number.isFinite(risk) ? risk.toFixed(3) : '–', injuryToneLabel, parts.injury.score)}
-        ${renderReadinessMetricItem('Recovery Hours', `${recovery}h`, `${describeRecoveryHours(recovery, tsb).split('.')[0]}.`, normalize01(1 - (recovery / 96)))}
+        ${renderReadinessMetricItem('TSB (Freshness)', tsb.toFixed(1), `${tsbStatus.label} · +${parts.tsb.points.toFixed(1)} pts`, parts.tsb.score, 'tsb', readinessTimelineMetric === 'tsb')}
+        ${renderReadinessMetricItem('CTL (Fitness)', ctl.toFixed(1), `${ctlStatus.label} · +${parts.ctl.points.toFixed(1)} pts`, parts.ctl.score, 'ctl', readinessTimelineMetric === 'ctl')}
+        ${renderReadinessMetricItem('ATL (Fatigue)', atl.toFixed(1), `${atlStatus.label} · +${parts.atl.points.toFixed(1)} pts`, 1 - parts.atl.fatigueScore, 'atl', readinessTimelineMetric === 'atl')}
+        ${renderReadinessMetricItem('Injury Risk', Number.isFinite(risk) ? risk.toFixed(3) : '–', injuryToneLabel, parts.injury.score, 'injury', readinessTimelineMetric === 'injury')}
+        ${renderReadinessMetricItem('Recovery Hours', `${recovery}h`, `${describeRecoveryHours(recovery, tsb).split('.')[0]}.`, normalize01(1 - (recovery / 96)), 'recovery', readinessTimelineMetric === 'recovery')}
         ${renderReadinessHrvItem(readinessData, hrv)}
     </div>
 `;
 
+    setupReadinessMetricSwitcher(readinessData);
     setupReadinessHrvControls();
+}
+
+function getReadinessTimelineSpec(metricKey, data, visibleIndices) {
+    const buildVisible = source => visibleIndices.map(index => source[index]);
+
+    const getHrvSeries = extractor => visibleIndices.map(index => {
+        const hrv = data.breakdown[index]?.hrv;
+        return hrv ? extractor(hrv) : null;
+    });
+
+    const ctlValues = data.ctlDaily.filter(Number.isFinite);
+    const ctlBands = buildCtlBands(ctlValues);
+
+    if (metricKey === 'tsb') {
+        const series = buildVisible(data.tsbDaily);
+        const t = data.profile.thresholds;
+        return {
+            metricLabel: 'TSB',
+            valueFormatter: value => `${value.toFixed(1)}`,
+            primarySeries: series,
+            primaryLabel: 'TSB',
+            primaryColor: '#00a1d6',
+            primaryFill: 'rgba(0, 161, 214, 0.12)',
+            guides: {
+                bands: [
+                    { min: null, max: t.deepFatigue, color: 'rgba(231, 76, 60, 0.10)' },
+                    { min: t.deepFatigue, max: t.fatigue, color: 'rgba(255, 133, 27, 0.09)' },
+                    { min: t.fatigue, max: t.balanced, color: 'rgba(39, 174, 96, 0.09)' },
+                    { min: t.balanced, max: t.fresh, color: 'rgba(0, 116, 217, 0.08)' },
+                    { min: t.fresh, max: null, color: 'rgba(108, 117, 125, 0.07)' }
+                ],
+                lines: [
+                    { value: t.fatigue, color: '#27ae60', dash: [6, 4], width: 1.2 },
+                    { value: t.balanced, color: '#0074D9', dash: [6, 4], width: 1.1 },
+                    { value: t.fresh, color: '#6c757d', dash: [6, 4], width: 1.1 }
+                ]
+            },
+            yPaddingFactor: 0.4,
+            yPaddingMin: 4,
+            minSpan: 18,
+            yStepSmall: 2,
+            yStepLarge: 5
+        };
+    }
+
+    if (metricKey === 'ctl') {
+        const series = buildVisible(data.ctlDaily);
+        const thresholds = {
+            p25: ctlBands[0]?.max,
+            p45: ctlBands[1]?.max,
+            p70: ctlBands[2]?.max,
+            p90: ctlBands[3]?.max,
+        };
+        return {
+            metricLabel: 'CTL',
+            valueFormatter: value => `${value.toFixed(1)}`,
+            primarySeries: series,
+            primaryLabel: 'CTL',
+            primaryColor: '#5b6bd5',
+            primaryFill: 'rgba(91, 107, 213, 0.12)',
+            guides: {
+                bands: [
+                    { min: null, max: thresholds.p25, color: 'rgba(243, 156, 18, 0.08)' },
+                    { min: thresholds.p25, max: thresholds.p45, color: 'rgba(108, 117, 125, 0.07)' },
+                    { min: thresholds.p45, max: thresholds.p70, color: 'rgba(39, 174, 96, 0.08)' },
+                    { min: thresholds.p70, max: thresholds.p90, color: 'rgba(31, 157, 85, 0.08)' },
+                    { min: thresholds.p90, max: null, color: 'rgba(0, 116, 217, 0.07)' }
+                ],
+                lines: [
+                    { value: thresholds.p45, color: '#27ae60', dash: [6, 4], width: 1.2 },
+                    { value: thresholds.p70, color: '#1f9d55', dash: [6, 4], width: 1.1 },
+                    { value: thresholds.p90, color: '#0074D9', dash: [6, 4], width: 1.1 }
+                ]
+            },
+            yPaddingFactor: 0.3,
+            yPaddingMin: 3,
+            minSpan: 12,
+            yStepSmall: 2,
+            yStepLarge: 5
+        };
+    }
+
+    if (metricKey === 'atl') {
+        const series = buildVisible(data.atlDaily);
+        const ctlVisible = buildVisible(data.ctlDaily);
+        const productiveHigh = ctlVisible.map(v => Number.isFinite(v) ? v + 4 : null);
+        const buildHigh = ctlVisible.map(v => Number.isFinite(v) ? v + 12 : null);
+        const overloadHigh = ctlVisible.map(v => Number.isFinite(v) ? v + 22 : null);
+        return {
+            metricLabel: 'ATL',
+            valueFormatter: value => `${value.toFixed(1)}`,
+            primarySeries: series,
+            primaryLabel: 'ATL',
+            primaryColor: '#e67e22',
+            primaryFill: 'rgba(230, 126, 34, 0.14)',
+            guides: {
+                lines: [
+                    { value: ctlVisible, color: '#6c757d', dash: [6, 4], width: 1.1 },
+                    { value: productiveHigh, color: '#27ae60', dash: [5, 4], width: 1.1 },
+                    { value: buildHigh, color: '#f39c12', dash: [5, 4], width: 1.1 },
+                    { value: overloadHigh, color: '#e74c3c', dash: [5, 4], width: 1.1 }
+                ]
+            },
+            yPaddingFactor: 0.3,
+            yPaddingMin: 3,
+            minSpan: 12,
+            yStepSmall: 2,
+            yStepLarge: 5
+        };
+    }
+
+    if (metricKey === 'injury') {
+        const series = buildVisible(data.riskDaily);
+        return {
+            metricLabel: 'Injury Risk',
+            valueFormatter: value => `${value.toFixed(3)}`,
+            primarySeries: series,
+            primaryLabel: 'Injury Risk',
+            primaryColor: '#b5651d',
+            primaryFill: 'rgba(181, 101, 29, 0.13)',
+            guides: {
+                bands: [
+                    { min: 0, max: 0.25, color: 'rgba(39, 174, 96, 0.08)' },
+                    { min: 0.25, max: 0.5, color: 'rgba(241, 196, 15, 0.08)' },
+                    { min: 0.5, max: 0.75, color: 'rgba(243, 156, 18, 0.08)' },
+                    { min: 0.75, max: 1, color: 'rgba(231, 76, 60, 0.09)' }
+                ],
+                lines: [
+                    { value: 0.25, color: '#27ae60', dash: [6, 4], width: 1.1 },
+                    { value: 0.5, color: '#f39c12', dash: [6, 4], width: 1.1 },
+                    { value: 0.75, color: '#e74c3c', dash: [6, 4], width: 1.1 }
+                ]
+            },
+            yPaddingFactor: 0.2,
+            yPaddingMin: 0.06,
+            minSpan: 0.35,
+            yStepSmall: 0.1,
+            yStepLarge: 0.2,
+            clampMin: 0,
+            clampMax: 1
+        };
+    }
+
+    if (metricKey === 'recovery') {
+        const series = buildVisible(data.recoveryDaily);
+        return {
+            metricLabel: 'Recovery Hours',
+            valueFormatter: value => `${value.toFixed(1)} h`,
+            primarySeries: series,
+            primaryLabel: 'Recovery Hours',
+            primaryColor: '#34495e',
+            primaryFill: 'rgba(52, 73, 94, 0.12)',
+            guides: {
+                bands: [
+                    { min: 0, max: 12, color: 'rgba(39, 174, 96, 0.08)' },
+                    { min: 12, max: 24, color: 'rgba(241, 196, 15, 0.08)' },
+                    { min: 24, max: 48, color: 'rgba(243, 156, 18, 0.08)' },
+                    { min: 48, max: 72, color: 'rgba(231, 76, 60, 0.09)' },
+                    { min: 72, max: 100, color: 'rgba(192, 57, 43, 0.10)' }
+                ],
+                lines: [
+                    { value: 12, color: '#27ae60', dash: [6, 4], width: 1.1 },
+                    { value: 24, color: '#f1c40f', dash: [6, 4], width: 1.1 },
+                    { value: 48, color: '#f39c12', dash: [6, 4], width: 1.1 },
+                    { value: 72, color: '#e74c3c', dash: [6, 4], width: 1.1 }
+                ]
+            },
+            yPaddingFactor: 0.25,
+            yPaddingMin: 4,
+            minSpan: 20,
+            yStepSmall: 4,
+            yStepLarge: 8,
+            clampMin: 0,
+            clampMax: 100
+        };
+    }
+
+    if (metricKey === 'hrv') {
+        const nightly = getHrvSeries(hrv => hrv.nightly);
+        const lowRef = getHrvSeries(hrv => hrv.referenceLow);
+        const highRef = getHrvSeries(hrv => hrv.referenceHigh);
+        const refLowValues = lowRef.filter(Number.isFinite);
+        const refHighValues = highRef.filter(Number.isFinite);
+        const median = values => {
+            if (!values.length) return null;
+            const sorted = [...values].sort((a, b) => a - b);
+            const middle = Math.floor(sorted.length / 2);
+            return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+        };
+        const medianLow = median(refLowValues);
+        const medianHigh = median(refHighValues);
+        return {
+            metricLabel: 'HRV',
+            valueFormatter: value => `${value.toFixed(0)} ms`,
+            primarySeries: nightly,
+            primaryLabel: 'Nightly HRV',
+            primaryColor: '#8e44ad',
+            primaryFill: 'rgba(142, 68, 173, 0.13)',
+            spanGaps: true,
+            guides: {
+                bands: Number.isFinite(medianLow) && Number.isFinite(medianHigh)
+                    ? [{ min: Math.min(medianLow, medianHigh), max: Math.max(medianLow, medianHigh), color: 'rgba(79, 70, 229, 0.08)' }]
+                    : [],
+                lines: [
+                    ...(Number.isFinite(medianLow) ? [{ value: medianLow, color: '#6c757d', dash: [6, 4], width: 1.1 }] : []),
+                    ...(Number.isFinite(medianHigh) ? [{ value: medianHigh, color: '#4f46e5', dash: [6, 4], width: 1.1 }] : [])
+                ]
+            },
+            yPaddingFactor: 0.35,
+            yPaddingMin: 4,
+            minSpan: 15,
+            yStepSmall: 2,
+            yStepLarge: 5
+        };
+    }
+
+    const readinessSeries = buildVisible(data.readiness);
+    return {
+        metricLabel: 'Readiness Score',
+        valueFormatter: value => `${value.toFixed(1)}`,
+        primarySeries: readinessSeries,
+        primaryLabel: 'Readiness Score',
+        primaryColor: '#4f46e5',
+        primaryFill: 'rgba(79, 70, 229, 0.12)',
+        guides: {
+            bands: [
+                { min: 0, max: 40, color: 'rgba(231, 76, 60, 0.10)' },
+                { min: 40, max: 75, color: 'rgba(243, 156, 18, 0.08)' },
+                { min: 75, max: 100, color: 'rgba(46, 204, 113, 0.09)' }
+            ],
+            lines: [
+                { value: 40, color: '#f39c12', dash: [6, 4], width: 1.1 },
+                { value: 75, color: '#2ecc71', dash: [6, 4], width: 1.1 }
+            ]
+        },
+        yPaddingFactor: 0.35,
+        yPaddingMin: 6,
+        minSpan: 20,
+        yStepSmall: 5,
+        yStepLarge: 10
+    };
+}
+
+function buildReadinessPrimaryDataset(spec) {
+    return {
+        label: spec.primaryLabel || spec.metricLabel,
+        data: spec.primarySeries,
+        borderColor: spec.primaryColor || '#4f46e5',
+        backgroundColor: spec.primaryFill || 'rgba(79, 70, 229, 0.12)',
+        borderWidth: 2.5,
+        fill: true,
+        tension: 0.35,
+        pointRadius: 0,
+        pointHoverRadius: 5,
+        pointHitRadius: 12,
+        spanGaps: Boolean(spec.spanGaps)
+    };
+}
+
+function buildReadinessGuidePlugin(guides = {}) {
+    const bands = Array.isArray(guides.bands) ? guides.bands : [];
+    const lines = Array.isArray(guides.lines) ? guides.lines : [];
+
+    return {
+        id: 'readinessGuideLayer',
+        beforeDatasetsDraw(chart) {
+            const yScale = chart.scales?.y;
+            const xScale = chart.scales?.x;
+            if (!yScale || !xScale) return;
+
+            const area = chart.chartArea;
+            if (!area) return;
+
+            const ctx = chart.ctx;
+            const yMin = yScale.min;
+            const yMax = yScale.max;
+
+            const clamp = value => Math.max(yMin, Math.min(yMax, value));
+
+            bands.forEach(band => {
+                const min = Number.isFinite(band.min) ? clamp(band.min) : yMin;
+                const max = Number.isFinite(band.max) ? clamp(band.max) : yMax;
+                if (max <= min) return;
+                const yTop = yScale.getPixelForValue(max);
+                const yBottom = yScale.getPixelForValue(min);
+                ctx.save();
+                ctx.fillStyle = band.color || 'rgba(0,0,0,0.04)';
+                ctx.fillRect(area.left, yTop, area.right - area.left, yBottom - yTop);
+                ctx.restore();
+            });
+
+            lines.forEach(line => {
+                const values = Array.isArray(line.value) ? line.value : null;
+                const lineWidth = line.width || 1;
+                const dash = line.dash || [6, 4];
+                const color = line.color || '#999';
+
+                if (!values) {
+                    if (!Number.isFinite(line.value)) return;
+                    const y = yScale.getPixelForValue(clamp(line.value));
+                    ctx.save();
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = lineWidth;
+                    ctx.setLineDash(dash);
+                    ctx.beginPath();
+                    ctx.moveTo(area.left, y);
+                    ctx.lineTo(area.right, y);
+                    ctx.stroke();
+                    ctx.restore();
+                    return;
+                }
+
+                ctx.save();
+                ctx.strokeStyle = color;
+                ctx.lineWidth = lineWidth;
+                ctx.setLineDash(dash);
+                ctx.beginPath();
+                let started = false;
+
+                values.forEach((value, index) => {
+                    if (!Number.isFinite(value)) {
+                        started = false;
+                        return;
+                    }
+                    const x = xScale.getPixelForValue(index);
+                    const y = yScale.getPixelForValue(clamp(value));
+                    if (!started) {
+                        ctx.moveTo(x, y);
+                        started = true;
+                    } else {
+                        ctx.lineTo(x, y);
+                    }
+                });
+
+                ctx.stroke();
+                ctx.restore();
+            });
+        }
+    };
+}
+
+function getNiceAxisBounds(values, options = {}) {
+    const finiteValues = values.filter(Number.isFinite);
+    if (!finiteValues.length) {
+        return { min: 0, max: 100, step: 10 };
+    }
+
+    const minRaw = Math.min(...finiteValues);
+    const maxRaw = Math.max(...finiteValues);
+    const spread = Math.max(options.minSpread ?? 8, maxRaw - minRaw);
+    const padding = Math.max(options.paddingMin ?? 4, spread * (options.paddingFactor ?? 0.35));
+    const stepSmall = options.yStepSmall ?? 5;
+    const stepLarge = options.yStepLarge ?? 10;
+
+    let min = minRaw - padding;
+    let max = maxRaw + padding;
+
+    if (Number.isFinite(options.clampMin)) {
+        min = Math.max(options.clampMin, min);
+    }
+    if (Number.isFinite(options.clampMax)) {
+        max = Math.min(options.clampMax, max);
+    }
+
+    if (max - min < (options.minSpan ?? 20)) {
+        const center = (max + min) / 2;
+        min = center - (options.minSpan ?? 20) / 2;
+        max = center + (options.minSpan ?? 20) / 2;
+        if (Number.isFinite(options.clampMin)) min = Math.max(options.clampMin, min);
+        if (Number.isFinite(options.clampMax)) max = Math.min(options.clampMax, max);
+    }
+
+    const step = max - min <= (options.minSpan ?? 20) * 1.25 ? stepSmall : stepLarge;
+    min = Math.floor(min / step) * step;
+    max = Math.ceil(max / step) * step;
+
+    if (Number.isFinite(options.clampMin)) min = Math.max(options.clampMin, min);
+    if (Number.isFinite(options.clampMax)) max = Math.min(options.clampMax, max);
+    if (max <= min) {
+        max = min + step;
+    }
+
+    return { min, max, step };
 }
 
 /**
@@ -2055,85 +2494,52 @@ function renderReadinessTimelineChart(data) {
         return date >= data.visibleStart && date <= data.visibleEnd ? i : -1;
     }).filter(i => i !== -1);
 
-    const visibleLabels = data.labels.filter((_, i) => visibleIndices.includes(i));
-    const visibleReadiness = data.readiness.filter((_, i) => visibleIndices.includes(i));
-    const visibleBreakdown = data.breakdown.filter((_, i) => visibleIndices.includes(i));
+    const visibleLabels = visibleIndices.map(i => data.labels[i]);
+    const visibleReadiness = visibleIndices.map(i => data.readiness[i]);
+    const visibleCtl = visibleIndices.map(i => data.ctlDaily[i]);
+    const visibleAtl = visibleIndices.map(i => data.atlDaily[i]);
+    const visibleTsb = visibleIndices.map(i => data.tsbDaily[i]);
 
-    const readinessValues = visibleReadiness.filter(Number.isFinite);
-    const minReadiness = readinessValues.length ? Math.min(...readinessValues) : 0;
-    const maxReadiness = readinessValues.length ? Math.max(...readinessValues) : 100;
-    const spread = Math.max(8, maxReadiness - minReadiness);
-    const padding = Math.max(6, spread * 0.35);
-
-    let yMin = Math.max(0, Math.floor((minReadiness - padding) / 5) * 5);
-    let yMax = Math.min(100, Math.ceil((maxReadiness + padding) / 5) * 5);
-
-    // Keep enough vertical room to avoid a visually flat line when values are tightly clustered.
-    if (yMax - yMin < 20) {
-        const center = (yMin + yMax) / 2;
-        yMin = Math.max(0, Math.floor((center - 10) / 5) * 5);
-        yMax = Math.min(100, Math.ceil((center + 10) / 5) * 5);
+    const hasHrvSeries = data.breakdown.some(part => part?.hrv);
+    if (readinessTimelineMetric === 'hrv' && !hasHrvSeries) {
+        readinessTimelineMetric = 'readiness';
     }
 
-    const yStep = yMax - yMin <= 30 ? 5 : 10;
+    const timelineSpec = getReadinessTimelineSpec(readinessTimelineMetric, data, visibleIndices);
+    const guideValues = [
+        ...(timelineSpec.guides?.lines || []).flatMap(line => Array.isArray(line.value) ? line.value : [line.value]),
+        ...(timelineSpec.guides?.bands || []).flatMap(band => [band.min, band.max])
+    ];
+    const axisValues = [...timelineSpec.primarySeries, ...guideValues];
+    const axis = getNiceAxisBounds(axisValues, {
+        paddingFactor: timelineSpec.yPaddingFactor,
+        paddingMin: timelineSpec.yPaddingMin,
+        minSpread: timelineSpec.minSpan,
+        yStepSmall: timelineSpec.yStepSmall,
+        yStepLarge: timelineSpec.yStepLarge,
+        minSpan: timelineSpec.minSpan,
+        clampMin: timelineSpec.clampMin,
+        clampMax: timelineSpec.clampMax
+    });
+
+    const timelineTitle = document.querySelector('.readiness-timeline-container h4');
+    if (timelineTitle) {
+        timelineTitle.textContent = `${timelineSpec.metricLabel} Over Time`;
+    }
+
+    const guideLayerPlugin = buildReadinessGuidePlugin(timelineSpec.guides);
 
     const config = {
         type: 'line',
         data: {
             labels: visibleLabels,
-            datasets: [
-                {
-                    label: 'Readiness Score',
-                    data: visibleReadiness,
-                    borderColor: '#4f46e5',
-                    backgroundColor: 'rgba(79, 70, 229, 0.05)',
-                    borderWidth: 2.5,
-                    fill: true,
-                    tension: 0.4,
-                    pointRadius: 0,
-                    pointHoverRadius: 6,
-                    pointBackgroundColor: '#4f46e5',
-                    pointBorderColor: '#fff',
-                    pointBorderWidth: 2,
-                },
-                {
-                    label: 'Optimal Zone',
-                    data: Array(visibleLabels.length).fill(75),
-                    borderColor: '#2ecc71',
-                    backgroundColor: 'rgba(46, 204, 113, 0.08)',
-                    borderWidth: 1.5,
-                    fill: false,
-                    borderDash: [5, 5],
-                    pointRadius: 0,
-                    tension: 0,
-                },
-                {
-                    label: 'Caution Zone',
-                    data: Array(visibleLabels.length).fill(40),
-                    borderColor: '#f39c12',
-                    backgroundColor: 'rgba(243, 156, 18, 0.08)',
-                    borderWidth: 1.5,
-                    fill: false,
-                    borderDash: [5, 5],
-                    pointRadius: 0,
-                    tension: 0,
-                },
-                {
-                    label: 'Danger Zone',
-                    data: Array(visibleLabels.length).fill(25),
-                    borderColor: '#e74c3c',
-                    backgroundColor: 'rgba(231, 76, 60, 0.08)',
-                    borderWidth: 1.5,
-                    fill: false,
-                    borderDash: [8, 6],
-                    pointRadius: 0,
-                    tension: 0,
-                },
-            ]
+            datasets: [buildReadinessPrimaryDataset(timelineSpec)]
         },
+        plugins: [guideLayerPlugin],
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            animation: { duration: 280 },
             interaction: {
                 mode: 'index',
                 intersect: false,
@@ -2144,7 +2550,7 @@ function renderReadinessTimelineChart(data) {
                     position: 'top',
                     labels: {
                         boxWidth: 12,
-                        padding: 12,
+                        padding: 10,
                         font: { size: 12, weight: '600' },
                         color: '#444',
                     },
@@ -2154,29 +2560,30 @@ function renderReadinessTimelineChart(data) {
                     padding: 10,
                     titleFont: { size: 13, weight: 'bold' },
                     bodyFont: { size: 12 },
-                    displayColors: true,
+                    displayColors: false,
                     callbacks: {
-                        label: function (context) {
-                            if (context.dataset.label === 'Readiness Score') {
-                                const score = context.parsed.y;
-                                return score != null ? `${context.dataset.label}: ${score.toFixed(1)}` : null;
-                            }
+                        title: function (items) {
+                            const item = items && items[0];
+                            if (!item) return '';
+                            return item.label;
+                        },
+                        label: function () {
                             return null;
                         },
                         afterBody: function (items) {
                             const item = items && items[0];
-                            if (!item || item.dataset.label !== 'Readiness Score') return [];
+                            if (!item) return [];
                             const index = item.dataIndex;
-                            const parts = visibleBreakdown[index];
-                            if (!parts) return [];
+                            const readiness = visibleReadiness[index];
+                            const atl = visibleAtl[index];
+                            const ctl = visibleCtl[index];
+                            const tsb = visibleTsb[index];
 
                             return [
-                                `TSB contribution: +${parts.tsb.points.toFixed(1)} pts`,
-                                `CTL contribution: +${parts.ctl.points.toFixed(1)} pts`,
-                                `ATL contribution: +${parts.atl.points.toFixed(1)} pts`,
-                                `Load contribution: +${parts.load.points.toFixed(1)} pts`,
-                                ...(parts.hrv ? [`HRV contribution: +${parts.hrv.points.toFixed(1)} pts`] : []),
-                                `Injury risk: ref only (${parts.injury.value.toFixed(3)})`
+                                `Readiness Score: ${Number.isFinite(readiness) ? readiness.toFixed(1) : '–'}`,
+                                `ATL: ${Number.isFinite(atl) ? atl.toFixed(1) : '–'}`,
+                                `CTL: ${Number.isFinite(ctl) ? ctl.toFixed(1) : '–'}`,
+                                `TSB: ${Number.isFinite(tsb) ? tsb.toFixed(1) : '–'}`
                             ];
                         }
                     }
@@ -2185,12 +2592,20 @@ function renderReadinessTimelineChart(data) {
             scales: {
                 y: {
                     type: 'linear',
-                    min: yMin,
-                    max: yMax,
+                    min: axis.min,
+                    max: axis.max,
                     ticks: {
-                        stepSize: yStep,
+                        stepSize: axis.step,
                         font: { size: 11 },
                         color: '#999',
+                        callback: value => {
+                            const n = Number(value);
+                            if (!Number.isFinite(n)) return value;
+                            if (readinessTimelineMetric === 'injury') return n.toFixed(2);
+                            if (readinessTimelineMetric === 'recovery') return `${n.toFixed(0)}h`;
+                            if (readinessTimelineMetric === 'hrv') return `${n.toFixed(0)}ms`;
+                            return n.toFixed(0);
+                        }
                     },
                     grid: {
                         color: 'rgba(0, 0, 0, 0.05)',
@@ -2205,6 +2620,8 @@ function renderReadinessTimelineChart(data) {
                     ticks: {
                         font: { size: 10 },
                         color: '#999',
+                        autoSkip: true,
+                        maxTicksLimit: window.innerWidth <= 768 ? 8 : 14,
                         maxRotation: 45,
                         minRotation: 0,
                     },
