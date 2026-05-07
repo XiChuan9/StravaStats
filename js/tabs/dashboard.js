@@ -1256,7 +1256,7 @@ function calculateRecoveryHoursRemaining(activitiesToday, recoveryHoursNeeded) {
 
     // Calculate remaining recovery hours
     const remaining = Math.max(0, recoveryHoursNeeded - elapsedHours);
-    
+
     return Math.round(remaining * 10) / 10; // Round to 1 decimal place
 }
 
@@ -1266,7 +1266,7 @@ function calculateRecoveryHoursRemaining(activitiesToday, recoveryHoursNeeded) {
 function getTodaysActivities(sortedActivities) {
     const today = new Date();
     const todayStr = toLocalYMD(today);
-    
+
     return sortedActivities.filter(activity => {
         const actDate = new Date(activity.start_date_local);
         const actDateStr = toLocalYMD(actDate);
@@ -1976,11 +1976,11 @@ function renderReadinessGauge(score, readinessData) {
     const tsb = readinessData.tsbDaily[lastIndex] || 0;
     const risk = readinessData.riskDaily[lastIndex] || 0;
     const recoveryNeeded = readinessData.recoveryDaily[lastIndex] || 4;
-    
+
     // Calculate actual recovery hours remaining based on when the activity happened
     const todaysActivities = getTodaysActivities(readinessData.sortedActivities);
     const recovery = calculateRecoveryHoursRemaining(todaysActivities, recoveryNeeded);
-    
+
     const parts = readinessData.breakdown[lastIndex];
 
     const label = getReadinessLabel(score);
