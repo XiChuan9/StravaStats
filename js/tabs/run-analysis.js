@@ -27,6 +27,14 @@ export function renderRunAnalysisTab(allActivities, dateFilterFrom, dateFilterTo
     renderTopRuns(runs);
     renderActivitiesTable(runs);
     renderPaceHistogram(runs);
+    renderPaceHrCurveChart(runs);
+    renderPaceChangeHrChart(runs);
+    renderConsistencyImprovementChart(runs);
+    renderVolumeImprovementChart(runs);
+    renderIntensityImprovementChart(runs);
+    renderEfficiencyEvolutionChart(runs);
+    renderDistanceEfficiencyChart(runs);
+    renderPaceHrEfficiencyChart(runs);
 }
 
 function buildWeeklyDistanceSeries(activities, distanceGetter) {
@@ -1681,4 +1689,646 @@ function renderActivitiesTable(runs) {
     `;
 
     makeSortable(document.getElementById('run-all-table'));
+}
+
+export function renderPaceHrCurveChart(runs) {
+    const validRuns = runs.filter(r => r.average_heartrate && r.distance && r.moving_time);
+    if (validRuns.length === 0) return;
+
+    // Sort runs by date
+    const sortedRuns = validRuns.sort((a, b) => new Date(a.start_date_local) - new Date(b.start_date_local));
+    
+    // Split into first and last 33%
+    const third = Math.floor(sortedRuns.length / 3);
+    const earlyRuns = sortedRuns.slice(0, third);
+    const lateRuns = sortedRuns.slice(-third);
+
+    // Group by 5 bpm bins
+    const binSize = 5;
+    const minHr = Math.min(...validRuns.map(r => r.average_heartrate));
+    const maxHr = Math.max(...validRuns.map(r => r.average_heartrate));
+    const minBin = Math.floor(minHr / binSize) * binSize;
+    const maxBin = Math.ceil(maxHr / binSize) * binSize;
+    
+    const bins = [];
+    for (let hr = minBin; hr <= maxBin; hr += binSize) {
+        bins.push(hr);
+    }
+
+    const calculatePace = r => (r.moving_time / 60) / (r.distance / 1000); // min/km
+
+    const earlyData = bins.map(hr => {
+        const binRuns = earlyRuns.filter(r => Math.abs(r.average_heartrate - hr) < binSize / 2);
+        const avgPace = binRuns.length > 0 ? binRuns.reduce((sum, r) => sum + calculatePace(r), 0) / binRuns.length : null;
+        return avgPace;
+    });
+
+    const lateData = bins.map(hr => {
+        const binRuns = lateRuns.filter(r => Math.abs(r.average_heartrate - hr) < binSize / 2);
+        const avgPace = binRuns.length > 0 ? binRuns.reduce((sum, r) => sum + calculatePace(r), 0) / binRuns.length : null;
+        return avgPace;
+    });
+
+    createChart('pace-hr-curve-chart', {
+        type: 'line',
+        data: {
+            labels: bins,
+            datasets: [
+                {
+                    label: 'Early runs (first 33%)',
+                    data: earlyData,
+                    borderColor: 'rgba(252, 82, 0, 1)',
+                    backgroundColor: 'rgba(252, 82, 0, 0.1)',
+                    tension: 0.4
+                },
+                {
+                    label: 'Late runs (last 33%)',
+                    data: lateData,
+                    borderColor: 'rgba(93, 22, 1, 1)',
+                    backgroundColor: 'rgba(93, 22, 1, 0.1)',
+                    tension: 0.4
+                }
+            ]
+        },
+        options: {
+            scales: {
+                x: { title: { display: true, text: 'Heart Rate (bpm)' } },
+                y: { title: { display: true, text: 'Average Pace (min/km)' } }
+            }
+        }
+    });
+}
+
+export function renderPaceChangeHrChart(runs) {
+    const validRuns = runs.filter(r => r.average_heartrate && r.distance && r.moving_time);
+    if (validRuns.length === 0) return;
+
+    // Sort runs by date
+    const sortedRuns = validRuns.sort((a, b) => new Date(a.start_date_local) - new Date(b.start_date_local));
+    
+    // Split into first and last third
+    const third = Math.floor(sortedRuns.length / 3);
+    const earlyRuns = sortedRuns.slice(0, third);
+    const lateRuns = sortedRuns.slice(-third);
+
+    // Group by HR bins and calculate average pace per bin
+    const binSize = 5;
+    const allHrs = validRuns.map(r => r.average_heartrate);
+    const minHr = Math.min(...allHrs);
+    const maxHr = Math.max(...allHrs);
+    const minBin = Math.floor(minHr / binSize) * binSize;
+    const maxBin = Math.ceil(maxHr / binSize) * binSize;
+
+    const calculatePace = r => (r.moving_time / 60) / (r.distance / 1000);
+
+    const hrBins = [];
+    for (let hr = minBin; hr <= maxBin; hr += binSize) {
+        const earlyBinRuns = earlyRuns.filter(r => Math.abs(r.average_heartrate - hr) < binSize / 2);
+        const lateBinRuns = lateRuns.filter(r => Math.abs(r.average_heartrate - hr) < binSize / 2);
+        
+        if (earlyBinRuns.length > 0 && lateBinRuns.length > 0) {
+            const earlyPace = earlyBinRuns.reduce((sum, r) => sum + calculatePace(r), 0) / earlyBinRuns.length;
+            const latePace = lateBinRuns.reduce((sum, r) => sum + calculatePace(r), 0) / lateBinRuns.length;
+            const paceChange = latePace - earlyPace;
+            hrBins.push({ hr, paceChange });
+        }
+    }
+
+    if (hrBins.length === 0) return;
+
+    const changes = hrBins.map(b => b.paceChange);
+    const minChange = Math.min(...changes);
+    const maxChange = Math.max(...changes);
+    const changeRange = maxChange - minChange;
+    const binCount = 20;
+    const binWidth = changeRange / binCount;
+
+    const histBins = [];
+    for (let i = 0; i < binCount; i++) {
+        const binStart = minChange + i * binWidth;
+        const binEnd = binStart + binWidth;
+        const count = changes.filter(c => c >= binStart && c < binEnd).length;
+        histBins.push({
+            x: binStart + binWidth / 2,
+            y: count
+        });
+    }
+
+    // Simple KDE approximation
+    const kdePoints = [];
+    const bandwidth = changeRange / 20;
+    for (let x = minChange; x <= maxChange; x += changeRange / 100) {
+        let density = 0;
+        changes.forEach(c => {
+            const diff = (x - c) / bandwidth;
+            density += Math.exp(-0.5 * diff * diff) / (bandwidth * Math.sqrt(2 * Math.PI));
+        });
+        density /= changes.length;
+        kdePoints.push({ x, y: density * changes.length * binWidth });
+    }
+
+    createChart('pace-change-hr-chart', {
+        type: 'bar',
+        data: {
+            datasets: [
+                {
+                    label: 'Histogram',
+                    data: histBins,
+                    backgroundColor: 'rgba(252, 82, 0, 0.5)',
+                    type: 'bar'
+                },
+                {
+                    label: 'KDE',
+                    data: kdePoints,
+                    borderColor: 'rgba(93, 22, 1, 1)',
+                    backgroundColor: 'rgba(93, 22, 1, 0.1)',
+                    type: 'line',
+                    tension: 0.4,
+                    pointRadius: 0
+                }
+            ]
+        },
+        options: {
+            scales: {
+                x: { title: { display: true, text: 'Pace Change (min/km)' } },
+                y: { title: { display: true, text: 'Frequency' } }
+            }
+        }
+    });
+}
+
+export function renderConsistencyImprovementChart(runs) {
+    const validRuns = runs.filter(r => r.average_heartrate && r.distance && r.moving_time);
+    if (validRuns.length === 0) return;
+
+    // Group by month
+    const monthlyData = {};
+    validRuns.forEach(run => {
+        const date = new Date(run.start_date_local);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        
+        if (!monthlyData[monthKey]) {
+            monthlyData[monthKey] = [];
+        }
+        monthlyData[monthKey].push(run);
+    });
+
+    const calculatePace = r => (r.moving_time / 60) / (r.distance / 1000);
+    const calculateEfficiency = r => calculatePace(r) / r.average_heartrate;
+
+    const monthlyStats = Object.entries(monthlyData).map(([month, monthRuns]) => {
+        const runsCount = monthRuns.length;
+        const efficiencies = monthRuns.map(calculateEfficiency);
+        const mean = efficiencies.reduce((a, b) => a + b, 0) / efficiencies.length;
+        const std = Math.sqrt(efficiencies.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / efficiencies.length);
+        const cv = std / mean;
+        
+        return { month, runsCount, cv, meanEfficiency: mean };
+    }).filter(stat => stat.runsCount >= 3); // Need at least 3 runs for meaningful CV
+
+    if (monthlyStats.length < 2) return;
+
+    // Calculate improvement: efficiency improvement compared to previous month
+    const improvementData = [];
+    for (let i = 1; i < monthlyStats.length; i++) {
+        const current = monthlyStats[i];
+        const previous = monthlyStats[i - 1];
+        const improvement = (previous.meanEfficiency - current.meanEfficiency) / previous.meanEfficiency; // Positive = improvement
+        improvementData.push({
+            cv: current.cv,
+            improvement: improvement * 100, // as percentage
+            month: current.month
+        });
+    }
+
+    if (improvementData.length === 0) return;
+
+    // Simple linear regression
+    const n = improvementData.length;
+    const sumX = improvementData.reduce((sum, d) => sum + d.cv, 0);
+    const sumY = improvementData.reduce((sum, d) => sum + d.improvement, 0);
+    const sumXY = improvementData.reduce((sum, d) => sum + d.cv * d.improvement, 0);
+    const sumXX = improvementData.reduce((sum, d) => sum + d.cv * d.cv, 0);
+    
+    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+    const intercept = (sumY - slope * sumX) / n;
+
+    const regressionLine = [
+        { x: Math.min(...improvementData.map(d => d.cv)), y: slope * Math.min(...improvementData.map(d => d.cv)) + intercept },
+        { x: Math.max(...improvementData.map(d => d.cv)), y: slope * Math.max(...improvementData.map(d => d.cv)) + intercept }
+    ];
+
+    createChart('consistency-improvement-chart', {
+        type: 'scatter',
+        data: {
+            datasets: [
+                {
+                    label: 'Monthly data',
+                    data: improvementData.map(d => ({ x: d.cv, y: d.improvement })),
+                    backgroundColor: 'rgba(252, 82, 0, 0.7)',
+                    pointRadius: 6
+                },
+                {
+                    label: `Regression (r² = ${(slope > 0 ? 'positive' : 'negative')} correlation)`,
+                    data: regressionLine,
+                    borderColor: 'rgba(93, 22, 1, 1)',
+                    backgroundColor: 'rgba(93, 22, 1, 0.1)',
+                    type: 'line',
+                    pointRadius: 0,
+                    tension: 0
+                }
+            ]
+        },
+        options: {
+            scales: {
+                x: { title: { display: true, text: 'Monthly Consistency (CV)' } },
+                y: { title: { display: true, text: 'Efficiency Improvement (%)' } }
+            }
+        }
+    });
+}
+
+export function renderVolumeImprovementChart(runs) {
+    const validRuns = runs.filter(r => r.average_heartrate && r.distance && r.moving_time);
+    if (validRuns.length === 0) return;
+
+    // Group by month and calculate volume and efficiency
+    const monthlyData = {};
+    validRuns.forEach(run => {
+        const date = new Date(run.start_date_local);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        
+        if (!monthlyData[monthKey]) {
+            monthlyData[monthKey] = { runs: [], volume: 0 };
+        }
+        monthlyData[monthKey].runs.push(run);
+        monthlyData[monthKey].volume += run.distance / 1000; // km
+    });
+
+    const calculateEfficiency = r => ((r.moving_time / 60) / (r.distance / 1000)) / r.average_heartrate;
+
+    const monthlyStats = Object.entries(monthlyData)
+        .map(([month, data]) => {
+            const efficiencies = data.runs.map(calculateEfficiency);
+            const meanEfficiency = efficiencies.reduce((a, b) => a + b, 0) / efficiencies.length;
+            return { month, volume: data.volume, meanEfficiency };
+        })
+        .sort((a, b) => a.volume - b.volume);
+
+    if (monthlyStats.length < 6) return; // Need enough months for quintiles
+
+    // Divide into quintiles
+    const quintileSize = Math.floor(monthlyStats.length / 5);
+    const quintiles = [];
+    for (let i = 0; i < 5; i++) {
+        const start = i * quintileSize;
+        const end = i === 4 ? monthlyStats.length : (i + 1) * quintileSize;
+        quintiles.push(monthlyStats.slice(start, end));
+    }
+
+    // Calculate improvement percentage for each quintile
+    const improvementRates = quintiles.map((quintile, idx) => {
+        let improvementCount = 0;
+        quintile.forEach(monthStat => {
+            // Find previous month
+            const monthIndex = monthlyStats.findIndex(m => m.month === monthStat.month);
+            if (monthIndex > 0) {
+                const prevEfficiency = monthlyStats[monthIndex - 1].meanEfficiency;
+                const currentEfficiency = monthStat.meanEfficiency;
+                if (currentEfficiency < prevEfficiency) { // Lower efficiency = better (faster)
+                    improvementCount++;
+                }
+            }
+        });
+        
+        const totalMonths = quintile.length;
+        const improvementRate = totalMonths > 0 ? (improvementCount / totalMonths) * 100 : 0;
+        
+        return {
+            quintile: `Q${idx + 1} (${quintile[0].volume.toFixed(1)}-${quintile[quintile.length - 1].volume.toFixed(1)} km)`,
+            improvementRate,
+            avgVolume: quintile.reduce((sum, m) => sum + m.volume, 0) / quintile.length
+        };
+    });
+
+    createChart('volume-improvement-chart', {
+        type: 'bar',
+        data: {
+            labels: improvementRates.map(d => d.quintile),
+            datasets: [{
+                label: 'Improvement Rate (%)',
+                data: improvementRates.map(d => d.improvementRate),
+                backgroundColor: 'rgba(252, 82, 0, 0.7)',
+                borderColor: 'rgba(252, 82, 0, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            scales: {
+                x: { title: { display: true, text: 'Volume Quintiles' } },
+                y: { title: { display: true, text: 'Improvement Rate (%)' } }
+            }
+        }
+    });
+}
+
+export function renderIntensityImprovementChart(runs) {
+    const validRuns = runs.filter(r => r.average_heartrate && r.max_heartrate && r.distance && r.moving_time);
+    if (validRuns.length === 0) return;
+
+    // Sort runs by date
+    const sortedRuns = validRuns.sort((a, b) => new Date(a.start_date_local) - new Date(b.start_date_local));
+    
+    // Split into first and last half for comparison
+    const midPoint = Math.floor(sortedRuns.length / 2);
+    const earlyRuns = sortedRuns.slice(0, midPoint);
+    const lateRuns = sortedRuns.slice(midPoint);
+
+    // Calculate intensity and efficiency for each run
+    const calculateIntensity = r => r.average_heartrate / r.max_heartrate;
+    const calculateEfficiency = r => ((r.moving_time / 60) / (r.distance / 1000)) / r.average_heartrate;
+
+    const earlyData = earlyRuns.map(r => ({
+        intensity: calculateIntensity(r),
+        efficiency: calculateEfficiency(r)
+    }));
+
+    const lateData = lateRuns.map(r => ({
+        intensity: calculateIntensity(r),
+        efficiency: calculateEfficiency(r)
+    }));
+
+    // Group by intensity terciles
+    const allIntensities = [...earlyData, ...lateData].map(d => d.intensity).sort((a, b) => a - b);
+    const tercileSize = Math.floor(allIntensities.length / 3);
+    const tercileBounds = [
+        allIntensities[tercileSize],
+        allIntensities[tercileSize * 2]
+    ];
+
+    const getTercile = intensity => {
+        if (intensity <= tercileBounds[0]) return 'Low';
+        if (intensity <= tercileBounds[1]) return 'Medium';
+        return 'High';
+    };
+
+    // Calculate improvement for each tercile
+    const tercileData = ['Low', 'Medium', 'High'].map(tercile => {
+        const earlyTercile = earlyData.filter(d => getTercile(d.intensity) === tercile);
+        const lateTercile = lateData.filter(d => getTercile(d.intensity) === tercile);
+        
+        if (earlyTercile.length === 0 || lateTercile.length === 0) return null;
+        
+        const earlyAvgEfficiency = earlyTercile.reduce((sum, d) => sum + d.efficiency, 0) / earlyTercile.length;
+        const lateAvgEfficiency = lateTercile.reduce((sum, d) => sum + d.efficiency, 0) / lateTercile.length;
+        const improvement = (earlyAvgEfficiency - lateAvgEfficiency) / earlyAvgEfficiency * 100; // Positive = improvement
+        
+        return {
+            tercile,
+            avgIntensity: [...earlyTercile, ...lateTercile].reduce((sum, d) => sum + d.intensity, 0) / (earlyTercile.length + lateTercile.length),
+            improvement,
+            count: earlyTercile.length + lateTercile.length
+        };
+    }).filter(d => d !== null);
+
+    if (tercileData.length === 0) return;
+
+    // Prepare scatter plot data
+    const scatterData = [];
+    tercileData.forEach(tercile => {
+        const tercileRuns = [...earlyData, ...lateData].filter(d => getTercile(d.intensity) === tercile.tercile);
+        tercileRuns.forEach(d => {
+            scatterData.push({
+                x: d.intensity,
+                y: tercile.improvement,
+                tercile: tercile.tercile
+            });
+        });
+    });
+
+    createChart('intensity-improvement-chart', {
+        type: 'scatter',
+        data: {
+            datasets: [
+                {
+                    label: 'Low Intensity',
+                    data: scatterData.filter(d => d.tercile === 'Low'),
+                    backgroundColor: 'rgba(252, 82, 0, 0.7)',
+                    pointRadius: 6
+                },
+                {
+                    label: 'Medium Intensity',
+                    data: scatterData.filter(d => d.tercile === 'Medium'),
+                    backgroundColor: 'rgba(199, 164, 4, 0.7)',
+                    pointRadius: 6
+                },
+                {
+                    label: 'High Intensity',
+                    data: scatterData.filter(d => d.tercile === 'High'),
+                    backgroundColor: 'rgba(93, 22, 1, 0.7)',
+                    pointRadius: 6
+                }
+            ]
+        },
+        options: {
+            scales: {
+                x: { title: { display: true, text: 'Intensity (HR% of Max)' } },
+                y: { title: { display: true, text: 'Efficiency Improvement (%)' } }
+            }
+        }
+    });
+}
+
+export function renderEfficiencyEvolutionChart(runs) {
+    const validRuns = runs.filter(r => r.average_heartrate && r.distance && r.moving_time);
+    if (validRuns.length === 0) return;
+
+    // Sort by date
+    const sortedRuns = validRuns.sort((a, b) => new Date(a.start_date_local) - new Date(b.start_date_local));
+    
+    // Calculate efficiency for each run
+    const calculateEfficiency = r => ((r.moving_time / 60) / (r.distance / 1000)) / r.average_heartrate;
+    
+    const efficiencyData = sortedRuns.map((run, index) => ({
+        date: new Date(run.start_date_local),
+        efficiency: calculateEfficiency(run),
+        index
+    }));
+
+    // Simple LOESS smoothing (local regression)
+    const smoothedData = [];
+    const windowSize = Math.max(5, Math.floor(efficiencyData.length * 0.1)); // 10% of data or min 5
+    
+    efficiencyData.forEach((point, i) => {
+        const start = Math.max(0, i - Math.floor(windowSize / 2));
+        const end = Math.min(efficiencyData.length, i + Math.floor(windowSize / 2) + 1);
+        const window = efficiencyData.slice(start, end);
+        
+        // Weighted average (tricubic kernel)
+        let weightedSum = 0;
+        let weightSum = 0;
+        
+        window.forEach(w => {
+            const distance = Math.abs(w.index - i);
+            const weight = Math.pow(1 - Math.pow(distance / (windowSize / 2), 3), 3);
+            weightedSum += w.efficiency * weight;
+            weightSum += weight;
+        });
+        
+        const smoothedEfficiency = weightSum > 0 ? weightedSum / weightSum : point.efficiency;
+        smoothedData.push({
+            x: point.date,
+            y: smoothedEfficiency
+        });
+    });
+
+    createChart('efficiency-evolution-chart', {
+        type: 'line',
+        data: {
+            datasets: [
+                {
+                    label: 'Raw Efficiency',
+                    data: efficiencyData.map(d => ({ x: d.date, y: d.efficiency })),
+                    backgroundColor: 'rgba(252, 82, 0, 0.3)',
+                    borderColor: 'rgba(252, 82, 0, 0.5)',
+                    pointRadius: 2,
+                    tension: 0
+                },
+                {
+                    label: 'LOESS Smoothed',
+                    data: smoothedData,
+                    borderColor: 'rgba(93, 22, 1, 1)',
+                    backgroundColor: 'rgba(93, 22, 1, 0.1)',
+                    pointRadius: 0,
+                    tension: 0.4,
+                    borderWidth: 2
+                }
+            ]
+        },
+        options: {
+            scales: {
+                x: { 
+                    type: 'time',
+                    title: { display: true, text: 'Date' }
+                },
+                y: { title: { display: true, text: 'Efficiency (pace/HR)' } }
+            }
+        }
+    });
+}
+
+export function renderDistanceEfficiencyChart(runs) {
+    const validRuns = runs.filter(r => r.average_heartrate && r.distance && r.moving_time);
+    if (validRuns.length === 0) return;
+
+    const calculateEfficiency = r => ((r.moving_time / 60) / (r.distance / 1000)) / r.average_heartrate;
+    
+    const data = validRuns.map(r => ({
+        x: r.distance / 1000, // km
+        y: calculateEfficiency(r)
+    }));
+
+    // Simple linear regression
+    const n = data.length;
+    const sumX = data.reduce((sum, d) => sum + d.x, 0);
+    const sumY = data.reduce((sum, d) => sum + d.y, 0);
+    const sumXY = data.reduce((sum, d) => sum + d.x * d.y, 0);
+    const sumXX = data.reduce((sum, d) => sum + d.x * d.x, 0);
+    
+    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+    const intercept = (sumY - slope * sumX) / n;
+
+    const minX = Math.min(...data.map(d => d.x));
+    const maxX = Math.max(...data.map(d => d.x));
+    const regressionLine = [
+        { x: minX, y: slope * minX + intercept },
+        { x: maxX, y: slope * maxX + intercept }
+    ];
+
+    createChart('distance-efficiency-chart', {
+        type: 'scatter',
+        data: {
+            datasets: [
+                {
+                    label: 'Run Data',
+                    data: data,
+                    backgroundColor: 'rgba(252, 82, 0, 0.7)',
+                    pointRadius: 4
+                },
+                {
+                    label: `Regression (slope: ${slope.toFixed(4)})`,
+                    data: regressionLine,
+                    borderColor: 'rgba(93, 22, 1, 1)',
+                    backgroundColor: 'rgba(93, 22, 1, 0.1)',
+                    type: 'line',
+                    pointRadius: 0,
+                    tension: 0
+                }
+            ]
+        },
+        options: {
+            scales: {
+                x: { title: { display: true, text: 'Distance (km)' } },
+                y: { title: { display: true, text: 'Efficiency (pace/HR)' } }
+            }
+        }
+    });
+}
+
+export function renderPaceHrEfficiencyChart(runs) {
+    const validRuns = runs.filter(r => r.average_heartrate && r.distance && r.moving_time);
+    if (validRuns.length === 0) return;
+
+    const calculatePace = r => (r.moving_time / 60) / (r.distance / 1000); // min/km
+    
+    const data = validRuns.map(r => ({
+        x: r.average_heartrate,
+        y: calculatePace(r)
+    }));
+
+    // Simple linear regression
+    const n = data.length;
+    const sumX = data.reduce((sum, d) => sum + d.x, 0);
+    const sumY = data.reduce((sum, d) => sum + d.y, 0);
+    const sumXY = data.reduce((sum, d) => sum + d.x * d.y, 0);
+    const sumXX = data.reduce((sum, d) => sum + d.x * d.x, 0);
+    
+    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+    const intercept = (sumY - slope * sumX) / n;
+
+    const minX = Math.min(...data.map(d => d.x));
+    const maxX = Math.max(...data.map(d => d.x));
+    const regressionLine = [
+        { x: minX, y: slope * minX + intercept },
+        { x: maxX, y: slope * maxX + intercept }
+    ];
+
+    createChart('pace-hr-efficiency-chart', {
+        type: 'scatter',
+        data: {
+            datasets: [
+                {
+                    label: 'Run Data',
+                    data: data,
+                    backgroundColor: 'rgba(252, 82, 0, 0.7)',
+                    pointRadius: 4
+                },
+                {
+                    label: `Regression (slope: ${slope.toFixed(4)} min/km per bpm)`,
+                    data: regressionLine,
+                    borderColor: 'rgba(93, 22, 1, 1)',
+                    backgroundColor: 'rgba(93, 22, 1, 0.1)',
+                    type: 'line',
+                    pointRadius: 0,
+                    tension: 0
+                }
+            ]
+        },
+        options: {
+            scales: {
+                x: { title: { display: true, text: 'Heart Rate (bpm)' } },
+                y: { title: { display: true, text: 'Pace (min/km)' } }
+            }
+        }
+    });
 }
