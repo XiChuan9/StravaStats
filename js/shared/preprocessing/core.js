@@ -500,12 +500,116 @@ function calculateInjuryRiskImproved(tsb, rampRate, atl, tssSeries) {
     return riskHistory;
 }
 
+// ===================================================================
+// 6b. RECOVERY HOURS (based on TSS, sport factor, HR zone, duration, TSB)
+// ===================================================================
+const RECOVERY_SPORT_FACTORS = {
+    Run: 1.2,
+    TrailRun: 1.5,
+    Ride: 0.9,
+    MountainBikeRide: 1.1,
+    Swim: 0.7,
+    WeightTraining: 1.0,
+    Soccer: 1.1,
+    Padel: 0.8,
+    AlpineSki: 0.8,
+    Hike: 0.7,
+    Rowing: 1.0,
+    Walk: 0.4,
+    Workout: 0.8,
+    VirtualRun: 1.1,
+    VirtualRide: 0.85,
+    GravelRide: 0.95,
+    EBikeRide: 0.75,
+};
 
+const RECOVERY_HR_ZONE_MULTIPLIERS = {
+    1: 0.60, // Z1: recovery
+    2: 0.85, // Z2: aerobic easy
+    3: 1.00, // Z3: aerobic base
+    4: 1.25, // Z4: threshold
+    5: 1.50, // Z5: max effort
+};
+
+function getRecoverySportFactor(activity) {
+    const sport = activity.sport_type || activity.type || 'Run';
+    return RECOVERY_SPORT_FACTORS[sport] ?? 1.0;
+}
+
+function getRecoveryHrZone(avgHr, maxHr) {
+    if (!avgHr || !maxHr || avgHr <= 0 || maxHr <= 0) return 3; // default Z3
+    const pct = avgHr / maxHr;
+    if (pct < 0.60) return 1;
+    if (pct < 0.70) return 2;
+    if (pct < 0.80) return 3;
+    if (pct < 0.90) return 4;
+    return 5;
+}
+
+function calculateRecoveryHours(activity, maxHr = MAX_HR_DEFAULT) {
+    if (!activity) return 4;
+
+    const tss = activity.tss || 30; // fallback
+    const durHours = (activity.moving_time || 3600) / 3600;
+    const avgHr = activity.average_heartrate;
+    const tsb = activity.tsb ?? null;
+
+    const sf = getRecoverySportFactor(activity);
+    const zone = getRecoveryHrZone(avgHr, maxHr);
+    const hm = RECOVERY_HR_ZONE_MULTIPLIERS[zone];
+    const df = Math.sqrt(durHours);
+
+    let raw = (tss * sf * hm * df) / 10;
+
+    // Ajuste por TSB acumulado
+    if (typeof tsb === 'number' && !isNaN(tsb)) {
+        if (tsb <= -20) raw += 24;
+        else if (tsb <= -10) raw += 12;
+    }
+
+    return Math.round(Math.min(Math.max(raw, 4), 96));
+}
+
+function calculateDailyRecovery(activitiesArray) {
+    if (!activitiesArray || !activitiesArray.length) return 0;
+    if (activitiesArray.length === 1) return calculateRecoveryHours(activitiesArray[0]);
+
+    const hours = activitiesArray.map(a => calculateRecoveryHours(a));
+    const maxH = Math.max(...hours);
+    const rest = hours.filter(h => h !== maxH);
+    const combined = maxH * 0.7 + (rest.length > 0 ? rest.reduce((s, h) => s + h, 0) * 0.3 : 0);
+    const penalty = 1.0 + (hours.length - 1) * 0.12;
+    return Math.round(Math.min(combined * penalty, 96));
+}
+
+function calculateRecoveryHoursSeries(activities, dates) {
+    const dailyMap = {};
+
+    // Initialize daily buckets
+    dates.forEach(date => {
+        dailyMap[date] = [];
+    });
+
+    // Group activities by date
+    activities.forEach(a => {
+        const date = a.start_date_local?.split('T')[0];
+        if (date && dailyMap[date]) {
+            dailyMap[date].push(a);
+        }
+    });
+
+    // Calculate daily recovery for each date
+    const recoveryHours = dates.map(date => {
+        return calculateDailyRecovery(dailyMap[date]);
+    });
+
+    return recoveryHours;
+}
 
 // ===================================================================
 // 7. Asignar métricas
 // ===================================================================
-function assignMetrics(activities, dates, pmc, injuryRisk) {
+function assignMetrics(activities, dates, pmc, injuryRisk, recoveryHours) {
     const map = Object.fromEntries(dates.map((d, i) => [d, i]));
 
     activities.forEach(a => {
@@ -516,8 +620,9 @@ function assignMetrics(activities, dates, pmc, injuryRisk) {
             a.ctl = +pmc.ctl[i].toFixed(1);
             a.tsb = +pmc.tsb[i].toFixed(1);
             a.injuryRisk = +injuryRisk[i].toFixed(3); // 3 decimales para precisión
+            a.recovery_hours = recoveryHours[i] ?? 4;
         } else {
-            a.atl = a.ctl = a.tsb = a.injuryRisk = null;
+            a.atl = a.ctl = a.tsb = a.injuryRisk = a.recovery_hours = null;
         }
     });
 }
@@ -551,8 +656,9 @@ export async function preprocessActivities(activities, userProfile = {}, zones =
     const { dates, tssValues } = getTimeSeries(daily);
     const pmc = calculatePMC(tssValues);
     const injuryRisk = calculateInjuryRiskImproved(pmc.tsb, pmc.rampRate, pmc.atl, pmc.tssSeries);
+    const recoveryHours = calculateRecoveryHoursSeries(activities, dates);
 
-    assignMetrics(activities, dates, pmc, injuryRisk);
+    assignMetrics(activities, dates, pmc, injuryRisk, recoveryHours);
 
     return activities;
 }

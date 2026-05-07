@@ -813,6 +813,14 @@ function renderActivityStats(activity) {
     const hrMax = activity.max_heartrate ? Math.round(activity.max_heartrate) : '-';
     const avgPower = activity.average_watts ? Math.round(activity.average_watts) : null;
 
+    // Training metrics
+    const tss = activity.tss ? activity.tss.toFixed(1) : '-';
+    const atl = activity.atl ? activity.atl.toFixed(1) : '-';
+    const ctl = activity.ctl ? activity.ctl.toFixed(1) : '-';
+    const tsb = activity.tsb ? activity.tsb.toFixed(1) : '-';
+    const recovery = activity.recovery_hours ? activity.recovery_hours : '-';
+    const injuryRisk = activity.injuryRisk ? (activity.injuryRisk * 100).toFixed(0) : '-';
+
     DOM.stats.innerHTML = `
         <h3>Stats</h3>
         <ul>
@@ -825,6 +833,12 @@ function renderActivityStats(activity) {
             <li><b>HR Avg:</b> ${hrAvg} bpm</li>
             <li><b>HR Max:</b> ${hrMax} bpm</li>
             ${avgPower ? `<li><b>Avg Power:</b> ${avgPower} W</li>` : ''}
+            <li><b>TSS:</b> ${tss}</li>
+            <li><b>CTL:</b> ${ctl}</li>
+            <li><b>ATL:</b> ${atl}</li>
+            <li><b>TSB:</b> ${tsb}</li>
+            <li><b>Recovery Hours:</b> ${recovery}${recovery !== '-' ? 'h' : ''}</li>
+            <li><b>Injury Risk:</b> ${injuryRisk}${injuryRisk !== '-' ? '%' : ''}</li>
         </ul>
     `;
 }

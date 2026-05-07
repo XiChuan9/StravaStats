@@ -606,6 +606,15 @@ function describeInjuryRisk(value, context) {
     return 'Low estimated risk relative to your recent pattern. Current load balance looks broadly manageable.';
 }
 
+function describeRecoveryHours(value, tsbValue) {
+    if (value <= 0) return 'Fully recovered! Your body has completed the recovery demand from today\'s activity.';
+    if (value >= 72) return 'Extensive recovery needed (3+ days). This follows very hard training or accumulated fatigue. Prioritize sleep and light activity.';
+    if (value >= 48) return 'Substantial recovery needed (2–3 days). Your system is heavily loaded. Consider spacing hard sessions or adding active recovery days.';
+    if (value >= 24) return 'Moderate recovery needed (1–2 days). Allow rest or easy movement before the next hard effort.';
+    if (value >= 12) return 'Light recovery needed (12–24 hours). Next session can be moderate, but avoid back-to-back hard efforts.';
+    return 'Minimal recovery needed (< 12 hours). Your system recovered quickly from this session.';
+}
+
 function getCtlStatus(value, activities, profile) {
     const ctlValues = activities.map(activity => activity.ctl).filter(Number.isFinite);
     const ctlPercentile = percentileRank(ctlValues, value);
@@ -743,6 +752,7 @@ function buildRollingSevenDayLoad(activities, rangeStart, rangeEnd) {
 
     const tssByDay = new Map();
     const metricsByDay = new Map();
+    const recoveryByDay = new Map();
 
     sorted.forEach(activity => {
         const date = new Date(activity.start_date_local);
@@ -756,6 +766,30 @@ function buildRollingSevenDayLoad(activities, rangeStart, rangeEnd) {
         existing.riskSum += activity.injuryRisk || 0;
         existing.count += 1;
         metricsByDay.set(key, existing);
+
+        // Calculate recovery hours for this day (max of all sessions + weighted sum of rest)
+        if (!recoveryByDay.has(key)) {
+            recoveryByDay.set(key, []);
+        }
+        const dayActivities = recoveryByDay.get(key);
+        dayActivities.push(activity);
+    });
+
+    // Pre-calculate daily recovery hours for each day
+    recoveryByDay.forEach((dayActivities, date) => {
+        if (dayActivities.length === 1) {
+            const recHours = dayActivities[0].recovery_hours ?? 4;
+            recoveryByDay.set(date, recHours);
+        } else {
+            // Multiple sessions in same day: combine them
+            const hours = dayActivities.map(a => a.recovery_hours ?? 4);
+            const maxH = Math.max(...hours);
+            const rest = hours.filter(h => h !== maxH);
+            const combined = maxH * 0.7 + (rest.length > 0 ? rest.reduce((s, h) => s + h, 0) * 0.3 : 0);
+            const penalty = 1.0 + (hours.length - 1) * 0.12;
+            const final = Math.round(Math.min(combined * penalty, 96));
+            recoveryByDay.set(date, final);
+        }
     });
 
     const fullStart = new Date(sorted[0].start_date_local || new Date());
@@ -773,6 +807,7 @@ function buildRollingSevenDayLoad(activities, rangeStart, rangeEnd) {
     const atlDaily = [];
     const tsbDaily = [];
     const riskDaily = [];
+    const recoveryDaily = [];
     const load7d = [];
 
     let cursor = new Date(fullStart);
@@ -780,6 +815,7 @@ function buildRollingSevenDayLoad(activities, rangeStart, rangeEnd) {
     let lastAtl = sorted[0].atl || 0;
     let lastTsb = sorted[0].tsb || 0;
     let lastRisk = sorted[0].injuryRisk || 0;
+    let lastRecovery = sorted[0].recovery_hours || 4;
     let rollingTssSum = 0;
     const rollingTssWindow = [];
 
@@ -802,12 +838,17 @@ function buildRollingSevenDayLoad(activities, rangeStart, rangeEnd) {
             lastRisk = entry.riskSum / entry.count;
         }
 
+        if (recoveryByDay.has(key)) {
+            lastRecovery = recoveryByDay.get(key);
+        }
+
         // Always push to arrays so we have full history
         labels.push(key);
         ctlDaily.push(+lastCtl.toFixed(1));
         atlDaily.push(+lastAtl.toFixed(1));
         tsbDaily.push(+(toDisplayTsb(lastTsb)).toFixed(1));
         riskDaily.push(+lastRisk.toFixed(3));
+        recoveryDaily.push(lastRecovery);
         load7d.push(+rollingTssSum.toFixed(1));
 
         cursor = addDays(cursor, 1);
@@ -815,7 +856,7 @@ function buildRollingSevenDayLoad(activities, rangeStart, rangeEnd) {
 
     // Return full series and visible range info
     return {
-        labels, load7d, ctlDaily, atlDaily, tsbDaily, riskDaily, sorted,
+        labels, load7d, ctlDaily, atlDaily, tsbDaily, riskDaily, recoveryDaily, sorted,
         fullStart, today, visibleStart, visibleEnd
     };
 }
@@ -1013,7 +1054,7 @@ function buildTsbBands(profile) {
     ];
 }
 
-function renderAcuteLoadExplanation(visibleActivities, historyActivities, profile, currentBand, currentStatus, currentLoad, currentCtl, currentAtl, currentTsb, currentRisk) {
+function renderAcuteLoadExplanation(visibleActivities, historyActivities, profile, currentBand, currentStatus, currentLoad, currentCtl, currentAtl, currentTsb, currentRisk, currentRecovery = 4) {
     const container = document.getElementById('acute-load-explainer');
     if (!container) return;
 
@@ -1179,7 +1220,58 @@ function renderAcuteLoadExplanation(visibleActivities, historyActivities, profil
             </div>
             <small>${describeInjuryRisk(currentRisk, context)} <span style="opacity:.6;">Ideal &lt; 0.25.</span></small>
         </div>
+        <div class="pmc-explainer-card pmc-explainer-recovery">
+            <div class="pmc-explainer-header">
+                <span class="pmc-dot"></span>
+                <strong>Recovery Hours</strong> <small style="opacity:.65;">Est. needed today</small>
+                <span class="pmc-explainer-value">${currentRecovery}h</span>
+            </div>
+            <small><strong>Recovery Hours</strong> is the estimated physical recovery time your body needs after today's training load, based on activity type, intensity, duration, and accumulated fatigue (TSB). Higher values indicate more recovery is needed.</small>
+            <small style="margin-top:.2rem;display:block;">${describeRecoveryHours(currentRecovery, currentTsb)} <span style="opacity:.6;">Range: 4–96 hours.</span></small>
+        </div>
     `;
+}
+
+/**
+ * Calculate actual recovery hours remaining based on the most recent activity time today
+ * If the activity was done many hours ago, recovery might already be complete
+ */
+function calculateRecoveryHoursRemaining(activitiesToday, recoveryHoursNeeded) {
+    if (!activitiesToday || activitiesToday.length === 0) {
+        return 0; // No activities today, fully recovered
+    }
+
+    // Find the most recent activity by timestamp
+    const mostRecent = activitiesToday.reduce((latest, activity) => {
+        const actTime = new Date(activity.start_date_local).getTime();
+        const latestTime = new Date(latest.start_date_local).getTime();
+        return actTime > latestTime ? activity : latest;
+    });
+
+    // Calculate hours elapsed since that activity
+    const activityTime = new Date(mostRecent.start_date_local);
+    const now = new Date();
+    const elapsedMs = now.getTime() - activityTime.getTime();
+    const elapsedHours = elapsedMs / (1000 * 60 * 60);
+
+    // Calculate remaining recovery hours
+    const remaining = Math.max(0, recoveryHoursNeeded - elapsedHours);
+    
+    return Math.round(remaining * 10) / 10; // Round to 1 decimal place
+}
+
+/**
+ * Get today's activities from the sorted array
+ */
+function getTodaysActivities(sortedActivities) {
+    const today = new Date();
+    const todayStr = toLocalYMD(today);
+    
+    return sortedActivities.filter(activity => {
+        const actDate = new Date(activity.start_date_local);
+        const actDateStr = toLocalYMD(actDate);
+        return actDateStr === todayStr;
+    });
 }
 
 /**
@@ -1725,6 +1817,7 @@ function buildTrainingReadinessSeries(activities, rangeStart, rangeEnd) {
         atlDaily: series.atlDaily,
         tsbDaily: series.tsbDaily,
         riskDaily: series.riskDaily,
+        recoveryDaily: series.recoveryDaily,
         hrvMeta: hrvLookup?.meta || null,
         fullStart: series.fullStart,
         today: series.today,
@@ -1770,6 +1863,34 @@ function renderReadinessMetricItem(title, value, metaLine, score01) {
             <div class="readiness-metric-label" style="color:${tone.color};">${title}</div>
             <div class="readiness-metric-value">${value}</div>
             <small style="color:${tone.color};">${metaLine}</small>
+        </div>
+    `;
+}
+
+/**
+ * Combined HRV mini score + import/clear controls (6 mini scores total)
+ */
+function renderReadinessHrvItem(readinessData, hrvEntry) {
+    const hasImportedHrv = Boolean(readinessData.hrvMeta?.entries?.length);
+    const hrvLabel = hrvEntry ? `${hrvEntry.nightly.toFixed(0)} ms` : 'Not imported';
+    const hrvMetaLine = hrvEntry
+        ? `${hrvEntry.referenceLow.toFixed(0)}-${hrvEntry.referenceHigh.toFixed(0)} ref · +${hrvEntry.points.toFixed(1)} pts`
+        : formatHrvImportSummary(readinessData.hrvMeta);
+    const score01 = hrvEntry?.score ?? 0.5;
+    const tone = getReadinessMetricTone(score01);
+
+    return `
+        <div class="readiness-metric-item" style="border:1px solid ${tone.color}33;background:${tone.color}10;display:flex;flex-direction:column;gap:0.35rem;">
+            <div class="readiness-metric-label" style="color:${tone.color};">HRV</div>
+            <div class="readiness-metric-value">${hrvLabel}</div>
+            <small style="color:${tone.color};">${hrvMetaLine}</small>
+            <div style="display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center;margin-top:0.15rem;">
+                <label style="display:inline-flex;align-items:center;justify-content:center;padding:0.35rem 0.55rem;border:1px solid #4f46e533;border-radius:999px;cursor:pointer;background:#fff;color:#2f3b52;font-size:0.7rem;font-weight:600;">
+                    <span>Import CSV</span>
+                    <input id="readiness-hrv-file" type="file" accept=".csv,text/csv" style="display:none;">
+                </label>
+                <button id="readiness-hrv-clear" type="button" style="padding:0.35rem 0.55rem;border:1px solid #d0d7e2;border-radius:999px;background:#fff;cursor:pointer;font-size:0.7rem;font-weight:600;${hasImportedHrv ? '' : 'display:none;'}">Clear</button>
+            </div>
         </div>
     `;
 }
@@ -1854,6 +1975,12 @@ function renderReadinessGauge(score, readinessData) {
     const atl = readinessData.atlDaily[lastIndex] || 0;
     const tsb = readinessData.tsbDaily[lastIndex] || 0;
     const risk = readinessData.riskDaily[lastIndex] || 0;
+    const recoveryNeeded = readinessData.recoveryDaily[lastIndex] || 4;
+    
+    // Calculate actual recovery hours remaining based on when the activity happened
+    const todaysActivities = getTodaysActivities(readinessData.sortedActivities);
+    const recovery = calculateRecoveryHoursRemaining(todaysActivities, recoveryNeeded);
+    
     const parts = readinessData.breakdown[lastIndex];
 
     const label = getReadinessLabel(score);
@@ -1897,12 +2024,12 @@ function renderReadinessGauge(score, readinessData) {
     </div>
 
     <div class="readiness-metrics">
-        ${renderReadinessHrvControlCard(readinessData)}
         ${renderReadinessMetricItem('TSB (Freshness)', tsb.toFixed(1), `${tsbStatus.label} · +${parts.tsb.points.toFixed(1)} pts`, parts.tsb.score)}
         ${renderReadinessMetricItem('CTL (Fitness)', ctl.toFixed(1), `${ctlStatus.label} · +${parts.ctl.points.toFixed(1)} pts`, parts.ctl.score)}
         ${renderReadinessMetricItem('ATL (Fatigue)', atl.toFixed(1), `${atlStatus.label} · +${parts.atl.points.toFixed(1)} pts`, 1 - parts.atl.fatigueScore)}
         ${renderReadinessMetricItem('Injury Risk', Number.isFinite(risk) ? risk.toFixed(3) : '–', injuryToneLabel, parts.injury.score)}
-        ${renderReadinessMetricItem('HRV', hrvLabel, hrvMetaLine, hrv?.score ?? 0.5)}
+        ${renderReadinessMetricItem('Recovery Hours', `${recovery}h`, `${describeRecoveryHours(recovery, tsb).split('.')[0]}.`, normalize01(1 - (recovery / 96)))}
+        ${renderReadinessHrvItem(readinessData, hrv)}
     </div>
 `;
 
@@ -2279,6 +2406,7 @@ function renderAcuteLoadChart(activities, rangeStart, rangeEnd) {
     const lastAtl = series.atlDaily[series.atlDaily.length - 1] || 0;
     const lastTsb = series.tsbDaily[series.tsbDaily.length - 1] || 0;
     const lastRisk = series.riskDaily[series.riskDaily.length - 1] || 0;
+    const lastRecovery = series.recoveryDaily[series.recoveryDaily.length - 1] || 4;
     const lastStatus = getAcuteLoadStatus(lastLoad, lastBand);
     const maxY = Math.max(...bandUpper, ...load7d, ...ctl7dBase, 10);
     const minTsb = Math.min(...tsbData, -10);
@@ -2289,7 +2417,7 @@ function renderAcuteLoadChart(activities, rangeStart, rangeEnd) {
         return date >= rangeStart && date <= rangeEnd;
     });
 
-    renderAcuteLoadExplanation(visibleActivities, series.sorted, profile, lastBand, lastStatus, lastLoad, lastCtl, lastAtl, lastTsb, lastRisk);
+    renderAcuteLoadExplanation(visibleActivities, series.sorted, profile, lastBand, lastStatus, lastLoad, lastCtl, lastAtl, lastTsb, lastRisk, lastRecovery);
 
     dashboardCharts['acute-load-chart'] = new Chart(ctx, {
         type: 'line',
