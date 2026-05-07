@@ -1757,6 +1757,14 @@ export function renderPaceHrCurveChart(runs) {
             }
         }
     });
+
+    utils.upsertChartInfo('pace-hr-curve-chart', {
+        title: 'Speed–Heart Rate Curve',
+        bodyHtml: `This chart compares your pace at similar heart rates between your early runs (first 33%) and late runs (last 33%).<br>
+        Each point shows the average pace for runs grouped by 5 bpm heart rate bins.<br>
+        If the late curve is below the early curve, you're running faster at the same heart rate - a sign of improved aerobic efficiency.`,
+        accentColor: '#FC5200'
+    });
 }
 
 export function renderPaceChangeHrChart(runs) {
@@ -1855,6 +1863,15 @@ export function renderPaceChangeHrChart(runs) {
             }
         }
     });
+
+    utils.upsertChartInfo('pace-change-hr-chart', {
+        title: 'Speed Change at Constant HR',
+        bodyHtml: `This chart answers: "Am I running faster now than before when my heart beats at the same rate?"<br>
+        We compare your early runs (first 33%) vs late runs (last 33%) at similar heart rates.<br>
+        Negative values mean you're running faster at the same heart rate (improved efficiency).<br>
+        The distribution shows how consistent your aerobic improvements are across different heart rate zones.`,
+        accentColor: '#FC5200'
+    });
 }
 
 export function renderConsistencyImprovementChart(runs) {
@@ -1946,6 +1963,14 @@ export function renderConsistencyImprovementChart(runs) {
             }
         }
     });
+
+    utils.upsertChartInfo('consistency-improvement-chart', {
+        title: 'Monthly Consistency vs Improvement',
+        bodyHtml: `This chart shows how regular you are training month to month and how that relates to your improvement.<br>
+        On the X-axis is your monthly variability (CV: the higher, the more irregular), and on the Y-axis your performance improvement at constant heart rate.<br>
+        Points further left (more consistency) and higher up (more improvement) represent months where you trained steadily and your aerobic efficiency improved.`,
+        accentColor: '#FC5200'
+    });
 }
 
 export function renderVolumeImprovementChart(runs) {
@@ -2029,6 +2054,14 @@ export function renderVolumeImprovementChart(runs) {
                 y: { title: { display: true, text: 'Improvement Rate (%)' } }
             }
         }
+    });
+
+    utils.upsertChartInfo('volume-improvement-chart', {
+        title: 'Monthly Volume vs Improvement Probability',
+        bodyHtml: `Here you see how monthly training volume relates to the probability of improvement.<br>
+        We group your months by volume (total distance or number of sessions) and calculate in what percentage of those months your performance at constant heart rate improved compared to the previous month.<br>
+        Higher bars indicate that, in those volume ranges, it's more likely that your training translates into real improvement.`,
+        accentColor: '#FC5200'
     });
 }
 
@@ -2137,6 +2170,14 @@ export function renderIntensityImprovementChart(runs) {
             }
         }
     });
+
+    utils.upsertChartInfo('intensity-improvement-chart', {
+        title: 'Intensity vs Improvement',
+        bodyHtml: `This chart relates your average training intensity (percentage of average heart rate relative to your maximum) to your performance improvement at constant heart rate.<br>
+        Each point or box represents a group of runs with similar intensity.<br>
+        If you see that at very high intensities improvement doesn't increase (or even worsens), it's a sign that always pushing hard doesn't necessarily make you more efficient.`,
+        accentColor: '#FC5200'
+    });
 }
 
 export function renderEfficiencyEvolutionChart(runs) {
@@ -2215,6 +2256,14 @@ export function renderEfficiencyEvolutionChart(runs) {
             }
         }
     });
+
+    utils.upsertChartInfo('efficiency-evolution-chart', {
+        title: 'Aerobic Efficiency Evolution',
+        bodyHtml: `This chart tracks the evolution of your aerobic efficiency over time.<br>
+        Efficiency is calculated as your pace divided by your average heart rate: the lower this value, the better you're converting each heartbeat into speed.<br>
+        The smoothed line (LOESS) helps you see the general trend: if it decreases over time, your aerobic engine is improving.`,
+        accentColor: '#FC5200'
+    });
 }
 
 export function renderDistanceEfficiencyChart(runs) {
@@ -2273,6 +2322,14 @@ export function renderDistanceEfficiencyChart(runs) {
             }
         }
     });
+
+    utils.upsertChartInfo('distance-efficiency-chart', {
+        title: 'Distance vs Efficiency',
+        bodyHtml: `This chart shows how your aerobic efficiency changes with the distance of your runs.<br>
+        On the X-axis is the distance of each run, and on the Y-axis your efficiency (pace divided by heart rate).<br>
+        If the regression line slopes downward, it means you're more efficient in longer runs, which is normal. If it slopes upward, you might be struggling with longer distances.`,
+        accentColor: '#FC5200'
+    });
 }
 
 export function renderPaceHrEfficiencyChart(runs) {
@@ -2330,5 +2387,14 @@ export function renderPaceHrEfficiencyChart(runs) {
                 y: { title: { display: true, text: 'Pace (min/km)' } }
             }
         }
+    });
+
+    utils.upsertChartInfo('pace-hr-efficiency-chart', {
+        title: 'Pace vs HR (Own Aerobic Efficiency Curve)',
+        bodyHtml: `This is your personal aerobic efficiency curve: how your pace changes with heart rate.<br>
+        The slope of the regression line tells you how much slower you run for each additional beat per minute.<br>
+        A steeper slope means your pace deteriorates more quickly as heart rate increases (less efficient aerobic system).<br>
+        Compare this slope over time to see if your aerobic efficiency is improving.`,
+        accentColor: '#FC5200'
     });
 }
