@@ -42,10 +42,8 @@ export function renderRunAnalysisTab(allActivities, dateFilterFrom, dateFilterTo
     renderActivitiesTable(runs);
     renderPaceHistogram(runs);
     renderPaceHrCurveChart(runs);
-    renderPaceChangeHrChart(runs);
     renderConsistencyImprovementChart(runs);
     renderVolumeImprovementChart(runs);
-    renderIntensityImprovementChart(runs);
     renderEfficiencyEvolutionChart(runs);
     renderDistanceEfficiencyChart(runs);
     renderPaceHrEfficiencyChart(runs);
@@ -1711,7 +1709,7 @@ export function renderPaceHrCurveChart(runs) {
 
     // Sort runs by date
     const sortedRuns = validRuns.sort((a, b) => new Date(a.start_date_local) - new Date(b.start_date_local));
-    
+
     // Split into first and last 33%
     const third = Math.floor(sortedRuns.length / 3);
     const earlyRuns = sortedRuns.slice(0, third);
@@ -1723,7 +1721,7 @@ export function renderPaceHrCurveChart(runs) {
     const maxHr = Math.max(...validRuns.map(r => r.average_heartrate));
     const minBin = Math.floor(minHr / binSize) * binSize;
     const maxBin = Math.ceil(maxHr / binSize) * binSize;
-    
+
     const bins = [];
     for (let hr = minBin; hr <= maxBin; hr += binSize) {
         bins.push(hr);
@@ -1731,43 +1729,148 @@ export function renderPaceHrCurveChart(runs) {
 
     const calculatePace = r => (r.moving_time / 60) / (r.distance / 1000); // min/km
 
-    const earlyData = bins.map(hr => {
-        const binRuns = earlyRuns.filter(r => Math.abs(r.average_heartrate - hr) < binSize / 2);
-        const avgPace = binRuns.length > 0 ? binRuns.reduce((sum, r) => sum + calculatePace(r), 0) / binRuns.length : null;
-        return avgPace;
-    });
+    const percentile = (arr, p) => {
+        if (arr.length === 0) return null;
 
-    const lateData = bins.map(hr => {
-        const binRuns = lateRuns.filter(r => Math.abs(r.average_heartrate - hr) < binSize / 2);
-        const avgPace = binRuns.length > 0 ? binRuns.reduce((sum, r) => sum + calculatePace(r), 0) / binRuns.length : null;
-        return avgPace;
-    });
+        const sorted = [...arr].sort((a, b) => a - b);
+        const index = (sorted.length - 1) * p;
+        const lower = Math.floor(index);
+        const upper = Math.ceil(index);
+
+        if (lower === upper) return sorted[lower];
+
+        return sorted[lower] + (sorted[upper] - sorted[lower]) * (index - lower);
+    };
+
+    const buildDatasetStats = (runsSubset) => {
+        return bins.map(hr => {
+            const binRuns = runsSubset.filter(
+                r => Math.abs(r.average_heartrate - hr) < binSize / 2
+            );
+
+            if (binRuns.length === 0) {
+                return {
+                    avg: null,
+                    q25: null,
+                    q75: null
+                };
+            }
+
+            const paces = binRuns.map(calculatePace);
+
+            return {
+                avg: paces.reduce((sum, p) => sum + p, 0) / paces.length,
+                q25: percentile(paces, 0.25),
+                q75: percentile(paces, 0.75)
+            };
+        });
+    };
+
+    const earlyStats = buildDatasetStats(earlyRuns);
+    const lateStats = buildDatasetStats(lateRuns);
 
     createChart('pace-hr-curve-chart', {
         type: 'line',
         data: {
             labels: bins,
             datasets: [
+                // EARLY AREA RANGE
                 {
-                    label: 'Early runs (first 33%)',
-                    data: earlyData,
-                    borderColor: 'rgba(252, 82, 0, 1)',
-                    backgroundColor: 'rgba(252, 82, 0, 0.1)',
-                    tension: 0.4
+                    label: 'Early runs Q75',
+                    data: earlyStats.map(d => d.q75),
+                    borderWidth: 0,
+                    pointRadius: 0,
+                    fill: false
                 },
                 {
+                    label: 'Early runs range',
+                    data: earlyStats.map(d => d.q25),
+                    borderWidth: 0,
+                    pointRadius: 0,
+                    backgroundColor: 'rgba(252, 82, 0, 0.12)',
+                    fill: '-1'
+                },
+
+                // EARLY AVG LINE
+                {
+                    label: 'Early runs (first 33%)',
+                    data: earlyStats.map(d => d.avg),
+                    borderColor: 'rgba(252, 82, 0, 1)',
+                    backgroundColor: 'rgba(252, 82, 0, 0.1)',
+                    tension: 0.4,
+                    pointRadius: 2,
+                    borderWidth: 2
+                },
+
+                // LATE AREA RANGE
+                {
+                    label: 'Late runs Q75',
+                    data: lateStats.map(d => d.q75),
+                    borderWidth: 0,
+                    pointRadius: 0,
+                    fill: false
+                },
+                {
+                    label: 'Late runs range',
+                    data: lateStats.map(d => d.q25),
+                    borderWidth: 0,
+                    pointRadius: 0,
+                    backgroundColor: 'rgba(93, 22, 1, 0.12)',
+                    fill: '-1'
+                },
+
+                // LATE AVG LINE
+                {
                     label: 'Late runs (last 33%)',
-                    data: lateData,
+                    data: lateStats.map(d => d.avg),
                     borderColor: 'rgba(93, 22, 1, 1)',
                     backgroundColor: 'rgba(93, 22, 1, 0.1)',
-                    tension: 0.4
+                    tension: 0.4,
+                    pointRadius: 2,
+                    borderWidth: 2
                 }
             ]
         },
         options: {
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const value = context.raw;
+                            if (value == null) return '';
+
+                            const min = Math.floor(value);
+                            const sec = Math.round((value - min) * 60);
+
+                            return `${context.dataset.label}: ${min}:${sec.toString().padStart(2, '0')} min/km`;
+                        }
+                    }
+                },
+                legend: {
+                    labels: {
+                        filter: (item) =>
+                            !item.text.includes('Q75') &&
+                            !item.text.includes('range')
+                    }
+                }
+            },
             scales: {
-                x: { title: { display: true, text: 'Heart Rate (bpm)' } },
-                y: { title: { display: true, text: 'Average Pace (min/km)' } }
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Heart Rate (bpm)'
+                    }
+                },
+                y: {
+                    title: {
+                        display: true,
+                        text: 'Average Pace (min/km)'
+                    }
+                }
             }
         }
     });
@@ -1775,155 +1878,9 @@ export function renderPaceHrCurveChart(runs) {
     utils.upsertChartInfo('pace-hr-curve-chart', {
         title: 'Speed–Heart Rate Curve',
         bodyHtml: `This chart compares your pace at similar heart rates between your early runs (first 33%) and late runs (last 33%).<br>
-        Each point shows the average pace for runs grouped by 5 bpm heart rate bins.<br>
+        The solid lines show the average pace for each 5 bpm heart rate bin.<br>
+        The shaded bands represent the interquartile range (25th-75th percentile), showing pace variability at each effort level.<br>
         If the late curve is below the early curve, you're running faster at the same heart rate - a sign of improved aerobic efficiency.`,
-        accentColor: '#FC5200'
-    });
-}
-
-export function renderPaceChangeHrChart(runs) {
-    const validRuns = runs.filter(r => r.average_heartrate && r.distance && r.moving_time);
-    if (validRuns.length === 0) return;
-
-    // Sort runs by date
-    const sortedRuns = validRuns.sort((a, b) => new Date(a.start_date_local) - new Date(b.start_date_local));
-
-    // Split into early (first 33%) and late (last 33%) periods
-    const earlyEnd = Math.floor(sortedRuns.length * 0.33);
-    const lateStart = Math.floor(sortedRuns.length * 0.67);
-    const earlyRuns = sortedRuns.slice(0, earlyEnd);
-    const lateRuns = sortedRuns.slice(lateStart);
-
-    // Create HR bins (5 bpm bins)
-    const binSize = 5;
-    const allHrs = validRuns.map(r => r.average_heartrate);
-    const minHr = Math.min(...allHrs);
-    const maxHr = Math.max(...allHrs);
-    const hrBins = [];
-    for (let hr = Math.floor(minHr / binSize) * binSize; hr <= Math.ceil(maxHr / binSize) * binSize; hr += binSize) {
-        hrBins.push(hr);
-    }
-
-    const calculatePace = r => (r.moving_time / 60) / (r.distance / 1000);
-
-    // Calculate average pace per HR bin for early and late periods
-    const earlyPaceByBin = {};
-    const latePaceByBin = {};
-
-    earlyRuns.forEach(run => {
-        const hr = run.average_heartrate;
-        const bin = hrBins.find(b => hr >= b && hr < b + binSize);
-        if (bin !== undefined) {
-            if (!earlyPaceByBin[bin]) earlyPaceByBin[bin] = [];
-            earlyPaceByBin[bin].push(calculatePace(run));
-        }
-    });
-
-    lateRuns.forEach(run => {
-        const hr = run.average_heartrate;
-        const bin = hrBins.find(b => hr >= b && hr < b + binSize);
-        if (bin !== undefined) {
-            if (!latePaceByBin[bin]) latePaceByBin[bin] = [];
-            latePaceByBin[bin].push(calculatePace(run));
-        }
-    });
-
-    // Calculate pace change for bins with data in both periods
-    const paceChanges = [];
-    hrBins.forEach(bin => {
-        const earlyPaces = earlyPaceByBin[bin];
-        const latePaces = latePaceByBin[bin];
-
-        if (earlyPaces && latePaces && earlyPaces.length > 0 && latePaces.length > 0) {
-            const earlyAvg = earlyPaces.reduce((a, b) => a + b, 0) / earlyPaces.length;
-            const lateAvg = latePaces.reduce((a, b) => a + b, 0) / latePaces.length;
-            const change = lateAvg - earlyAvg; // Positive = slower, Negative = faster
-
-            paceChanges.push(change);
-        }
-    });
-
-    if (paceChanges.length === 0) return;
-
-    // Create histogram of pace changes
-    const minChange = Math.min(...paceChanges);
-    const maxChange = Math.max(...paceChanges);
-    const changeRange = maxChange - minChange;
-    const histBinCount = 20;
-    const histBinWidth = changeRange / histBinCount;
-
-    const histBins = [];
-    for (let i = 0; i < histBinCount; i++) {
-        const binStart = minChange + i * histBinWidth;
-        const binEnd = binStart + histBinWidth;
-        const count = paceChanges.filter(c => c >= binStart && c < binEnd).length;
-        histBins.push({
-            x: binStart + histBinWidth / 2,
-            y: count
-        });
-    }
-
-    // Simple KDE approximation
-    const kdePoints = [];
-    const bandwidth = changeRange / 20;
-    for (let x = minChange; x <= maxChange; x += changeRange / 100) {
-        let density = 0;
-        paceChanges.forEach(c => {
-            const diff = (x - c) / bandwidth;
-            density += Math.exp(-0.5 * diff * diff) / (bandwidth * Math.sqrt(2 * Math.PI));
-        });
-        density /= paceChanges.length;
-        kdePoints.push({ x, y: density * paceChanges.length * histBinWidth });
-    }
-
-    // Calculate median for reference line
-    const sortedChanges = [...paceChanges].sort((a, b) => a - b);
-    const medianChange = sortedChanges[Math.floor(sortedChanges.length / 2)];
-
-    createChart('pace-change-hr-chart', {
-        type: 'bar',
-        data: {
-            datasets: [
-                {
-                    label: 'Histogram',
-                    data: histBins,
-                    backgroundColor: 'rgba(252, 82, 0, 0.5)',
-                    type: 'bar'
-                },
-                {
-                    label: 'KDE',
-                    data: kdePoints,
-                    borderColor: 'rgba(93, 22, 1, 1)',
-                    backgroundColor: 'rgba(93, 22, 1, 0.1)',
-                    type: 'line',
-                    tension: 0.4,
-                    pointRadius: 0
-                },
-                {
-                    label: `Median: ${medianChange.toFixed(2)} min/km`,
-                    data: [{ x: medianChange, y: 0 }, { x: medianChange, y: Math.max(...histBins.map(b => b.y)) }],
-                    borderColor: 'rgba(255, 0, 0, 0.8)',
-                    borderWidth: 2,
-                    pointRadius: 0,
-                    type: 'line',
-                    fill: false
-                }
-            ]
-        },
-        options: {
-            scales: {
-                x: { title: { display: true, text: 'Pace Change (min/km)' } },
-                y: { title: { display: true, text: 'Frequency' } }
-            }
-        }
-    });
-
-    utils.upsertChartInfo('pace-change-hr-chart', {
-        title: 'Speed Change at Constant HR',
-        bodyHtml: `This chart answers: "Am I running faster now than before when my heart beats at the same rate?"<br>
-        We compare your early runs (first 33%) vs late runs (last 33%) at similar heart rates, grouped in 5 bpm bins.<br>
-        Negative values mean you're running faster at the same heart rate (improved efficiency).<br>
-        The distribution shows how consistent your aerobic improvements are across different heart rate zones. The red line shows the median change.`,
         accentColor: '#FC5200'
     });
 }
@@ -2115,189 +2072,6 @@ export function renderVolumeImprovementChart(runs) {
         bodyHtml: `Here you see how monthly training volume relates to the probability of improvement.<br>
         We group your months by volume (total distance or number of sessions) and calculate in what percentage of those months your performance at constant heart rate improved compared to the previous month.<br>
         Higher bars indicate that, in those volume ranges, it's more likely that your training translates into real improvement.`,
-        accentColor: '#FC5200'
-    });
-}
-
-export function renderIntensityImprovementChart(runs) {
-    const validRuns = runs.filter(r => r.average_heartrate && r.max_heartrate && r.distance && r.moving_time);
-    if (validRuns.length === 0) return;
-
-    // Calculate global HR max reference
-    const hrMaxRef = calculateGlobalHrMaxRef(validRuns);
-
-    // Sort runs by date
-    const sortedRuns = validRuns.sort((a, b) => new Date(a.start_date_local) - new Date(b.start_date_local));
-
-    // Split into early (first 33%) and late (last 33%) periods
-    const earlyEnd = Math.floor(sortedRuns.length * 0.33);
-    const lateStart = Math.floor(sortedRuns.length * 0.67);
-    const earlyRuns = sortedRuns.slice(0, earlyEnd);
-    const lateRuns = sortedRuns.slice(lateStart);
-
-    // Calculate intensity using global hr_max_ref and efficiency
-    const calculateIntensity = r => r.average_heartrate / hrMaxRef;
-    const calculateEfficiency = r => ((r.moving_time / 60) / (r.distance / 1000)) / r.average_heartrate;
-
-    // Create HR bins for pace comparison
-    const hrBins = [];
-    const binSize = 5; // 5 bpm bins
-    const minHr = Math.min(...validRuns.map(r => r.average_heartrate));
-    const maxHr = Math.max(...validRuns.map(r => r.average_heartrate));
-
-    for (let hr = Math.floor(minHr / binSize) * binSize; hr <= Math.ceil(maxHr / binSize) * binSize; hr += binSize) {
-        hrBins.push(hr);
-    }
-
-    // Calculate pace by HR bin for early and late periods
-    const calculatePace = r => (r.moving_time / 60) / (r.distance / 1000);
-
-    const earlyPaceByHr = {};
-    const latePaceByHr = {};
-
-    earlyRuns.forEach(run => {
-        const hr = run.average_heartrate;
-        const bin = hrBins.find(b => hr >= b && hr < b + binSize);
-        if (bin !== undefined) {
-            if (!earlyPaceByHr[bin]) earlyPaceByHr[bin] = [];
-            earlyPaceByHr[bin].push(calculatePace(run));
-        }
-    });
-
-    lateRuns.forEach(run => {
-        const hr = run.average_heartrate;
-        const bin = hrBins.find(b => hr >= b && hr < b + binSize);
-        if (bin !== undefined) {
-            if (!latePaceByHr[bin]) latePaceByHr[bin] = [];
-            latePaceByHr[bin].push(calculatePace(run));
-        }
-    });
-
-    // Calculate average pace change for each HR bin
-    const paceChanges = [];
-    hrBins.forEach(bin => {
-        const earlyPaces = earlyPaceByHr[bin];
-        const latePaces = latePaceByHr[bin];
-
-        if (earlyPaces && latePaces && earlyPaces.length > 0 && latePaces.length > 0) {
-            const earlyAvg = earlyPaces.reduce((a, b) => a + b, 0) / earlyPaces.length;
-            const lateAvg = latePaces.reduce((a, b) => a + b, 0) / latePaces.length;
-            const change = lateAvg - earlyAvg; // Positive = slower, Negative = faster
-
-            paceChanges.push({
-                hr: bin + binSize / 2, // bin center
-                change: change,
-                earlyPace: earlyAvg,
-                latePace: lateAvg
-            });
-        }
-    });
-
-    if (paceChanges.length === 0) return;
-
-    // Group runs by intensity terciles and calculate improvement
-    const runsWithIntensity = sortedRuns.map(run => ({
-        ...run,
-        intensity: calculateIntensity(run),
-        efficiency: calculateEfficiency(run)
-    }));
-
-    const intensities = runsWithIntensity.map(r => r.intensity).sort((a, b) => a - b);
-    const tercileSize = Math.floor(intensities.length / 3);
-    const tercileBounds = [
-        intensities[tercileSize],
-        intensities[tercileSize * 2]
-    ];
-
-    const getTercile = intensity => {
-        if (intensity <= tercileBounds[0]) return 'Low';
-        if (intensity <= tercileBounds[1]) return 'Medium';
-        return 'High';
-    };
-
-    // Calculate improvement for each tercile based on pace changes in that intensity range
-    const tercileData = ['Low', 'Medium', 'High'].map(tercile => {
-        const tercileRuns = runsWithIntensity.filter(r => getTercile(r.intensity) === tercile);
-        const tercileHrBins = tercileRuns.map(r => {
-            const hr = r.average_heartrate;
-            return hrBins.find(b => hr >= b && hr < b + binSize);
-        }).filter(b => b !== undefined);
-
-        const relevantChanges = paceChanges.filter(pc => tercileHrBins.includes(pc.hr - binSize / 2));
-
-        if (relevantChanges.length === 0) return null;
-
-        const avgImprovement = relevantChanges.reduce((sum, pc) => sum + (-pc.change), 0) / relevantChanges.length; // Negative change = improvement
-        const improvementPercent = (avgImprovement / relevantChanges.reduce((sum, pc) => sum + pc.earlyPace, 0) * relevantChanges.length) * 100;
-
-        return {
-            tercile,
-            avgIntensity: tercileRuns.reduce((sum, r) => sum + r.intensity, 0) / tercileRuns.length,
-            improvement: improvementPercent,
-            count: tercileRuns.length
-        };
-    }).filter(d => d !== null);
-
-    if (tercileData.length === 0) return;
-
-    // Prepare scatter plot data
-    const scatterData = [];
-    tercileData.forEach(tercile => {
-        const tercileRuns = runsWithIntensity.filter(r => getTercile(r.intensity) === tercile.tercile);
-        tercileRuns.forEach(r => {
-            scatterData.push({
-                x: r.intensity * 100, // Convert to percentage
-                y: tercile.improvement,
-                tercile: tercile.tercile
-            });
-        });
-    });
-
-    createChart('intensity-improvement-chart', {
-        type: 'scatter',
-        data: {
-            datasets: [
-                {
-                    label: 'Low Intensity',
-                    data: scatterData.filter(d => d.tercile === 'Low'),
-                    backgroundColor: 'rgba(252, 82, 0, 0.7)',
-                    pointRadius: 6
-                },
-                {
-                    label: 'Medium Intensity',
-                    data: scatterData.filter(d => d.tercile === 'Medium'),
-                    backgroundColor: 'rgba(199, 164, 4, 0.7)',
-                    pointRadius: 6
-                },
-                {
-                    label: 'High Intensity',
-                    data: scatterData.filter(d => d.tercile === 'High'),
-                    backgroundColor: 'rgba(93, 22, 1, 0.7)',
-                    pointRadius: 6
-                }
-            ]
-        },
-        options: {
-            scales: {
-                x: { 
-                    title: { display: true, text: 'Intensity (HR% of Max)' },
-                    ticks: {
-                        callback: function(value) {
-                            return value + '%';
-                        }
-                    }
-                },
-                y: { title: { display: true, text: 'Efficiency Improvement (%)' } }
-            }
-        }
-    });
-
-    utils.upsertChartInfo('intensity-improvement-chart', {
-        title: 'Intensity vs Improvement',
-        bodyHtml: `This chart relates your average training intensity (percentage of average heart rate relative to your global maximum HR reference) to your performance improvement at constant heart rate.<br>
-        Intensity is calculated as HR_avg / HR_max_ref where HR_max_ref is the 99th percentile of all your peak HR values (${hrMaxRef.toFixed(0)} bpm).<br>
-        Each point represents a run grouped by intensity tercile. The Y-axis shows improvement based on pace changes at constant HR between early and late training periods.<br>
-        If high-intensity training doesn't show more improvement (or shows less), it suggests that pushing harder doesn't necessarily lead to better aerobic efficiency gains.`,
         accentColor: '#FC5200'
     });
 }
