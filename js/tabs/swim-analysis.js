@@ -659,7 +659,8 @@ export function renderPaceHrCurveChart(swims) {
                     backgroundColor: 'rgba(86, 181, 248, 0.12)',
                     tension: 0.35,
                     pointRadius: 2,
-                    borderWidth: 2
+                    borderWidth: 2,
+                    spanGaps: true
                 },
                 {
                     label: 'Late swims Q75',
@@ -683,7 +684,8 @@ export function renderPaceHrCurveChart(swims) {
                     backgroundColor: 'rgba(50, 4, 212, 0.08)',
                     tension: 0.35,
                     pointRadius: 2,
-                    borderWidth: 2
+                    borderWidth: 2,
+                    spanGaps: true
                 }
             ]
         },
@@ -694,6 +696,10 @@ export function renderPaceHrCurveChart(swims) {
             },
             plugins: {
                 tooltip: {
+                    filter: function(tooltipItem) {
+                        const label = tooltipItem.dataset.label;
+                        return label.includes('(first 33%)') || label.includes('(last 33%)');
+                    },
                     callbacks: {
                         label(context) {
                             const value = context.raw;

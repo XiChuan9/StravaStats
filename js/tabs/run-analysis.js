@@ -1799,7 +1799,8 @@ export function renderPaceHrCurveChart(runs) {
                     backgroundColor: 'rgba(252, 82, 0, 0.1)',
                     tension: 0.4,
                     pointRadius: 2,
-                    borderWidth: 2
+                    borderWidth: 2,
+                    spanGaps: true
                 },
 
                 // LATE AREA RANGE
@@ -1827,7 +1828,8 @@ export function renderPaceHrCurveChart(runs) {
                     backgroundColor: 'rgba(93, 22, 1, 0.1)',
                     tension: 0.4,
                     pointRadius: 2,
-                    borderWidth: 2
+                    borderWidth: 2,
+                    spanGaps: true
                 }
             ]
         },
@@ -1838,6 +1840,10 @@ export function renderPaceHrCurveChart(runs) {
             },
             plugins: {
                 tooltip: {
+                    filter: function(tooltipItem) {
+                        const label = tooltipItem.dataset.label;
+                        return label.includes('(first 33%)') || label.includes('(last 33%)');
+                    },
                     callbacks: {
                         label: function (context) {
                             const value = context.raw;
