@@ -20,7 +20,8 @@
 
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script
+        src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix"></script>
 
     <!-- Leaflet + Leaflet.heat -->
@@ -324,6 +325,7 @@
                             <canvas id="pace-hr-efficiency-chart"></canvas>
                         </div>
                     </div>
+                    <div class="distance-section">
                         <div class="distance-controls">
                             <span class="distance-section-title">Distance Progression</span>
                             <div class="rolling-selector-small">
@@ -531,6 +533,21 @@
                         <div class="chart-container">
                             <h3>Pace vs Distance</h3>
                             <canvas id="swim-pace-distance-chart"></canvas>
+                        </div>
+
+                        <div class="chart-container">
+                            <h3>Speed-Heart Rate Curve</h3>
+                            <canvas id="swim-pace-hr-curve-chart"></canvas>
+                        </div>
+
+                        <div class="chart-container">
+                            <h3>Monthly Volume vs Improvement Probability</h3>
+                            <canvas id="swim-volume-improvement-chart"></canvas>
+                        </div>
+
+                        <div class="chart-container">
+                            <h3>Aerobic Efficiency Evolution</h3>
+                            <canvas id="swim-efficiency-evolution-chart"></canvas>
                         </div>
 
                         <div class="chart-container">

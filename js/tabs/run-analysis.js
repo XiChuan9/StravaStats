@@ -151,10 +151,10 @@ function createChart(canvasId, config) {
     if (charts[canvasId]) {
         charts[canvasId].destroy();
     }
-    // Ensure charts are responsive and maintain aspect ratio
+    // Use container-defined heights so charts remain stable across desktop/mobile.
     if (!config.options) config.options = {};
     config.options.responsive = true;
-    config.options.maintainAspectRatio = true;
+    config.options.maintainAspectRatio = false;
     charts[canvasId] = new Chart(canvas, config);
 }
 
@@ -1839,7 +1839,7 @@ export function renderPaceHrCurveChart(runs) {
             plugins: {
                 tooltip: {
                     callbacks: {
-                        label: function(context) {
+                        label: function (context) {
                             const value = context.raw;
                             if (value == null) return '';
 
@@ -1894,7 +1894,7 @@ export function renderConsistencyImprovementChart(runs) {
     validRuns.forEach(run => {
         const date = new Date(run.start_date_local);
         const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        
+
         if (!monthlyData[monthKey]) {
             monthlyData[monthKey] = [];
         }
@@ -1910,7 +1910,7 @@ export function renderConsistencyImprovementChart(runs) {
         const mean = efficiencies.reduce((a, b) => a + b, 0) / efficiencies.length;
         const std = Math.sqrt(efficiencies.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / efficiencies.length);
         const cv = std / mean;
-        
+
         return { month, runsCount, cv, meanEfficiency: mean };
     }).filter(stat => stat.runsCount >= 3); // Need at least 3 runs for meaningful CV
 
@@ -1937,7 +1937,7 @@ export function renderConsistencyImprovementChart(runs) {
     const sumY = improvementData.reduce((sum, d) => sum + d.improvement, 0);
     const sumXY = improvementData.reduce((sum, d) => sum + d.cv * d.improvement, 0);
     const sumXX = improvementData.reduce((sum, d) => sum + d.cv * d.cv, 0);
-    
+
     const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
     const intercept = (sumY - slope * sumX) / n;
 
@@ -1993,7 +1993,7 @@ export function renderVolumeImprovementChart(runs) {
     validRuns.forEach(run => {
         const date = new Date(run.start_date_local);
         const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        
+
         if (!monthlyData[monthKey]) {
             monthlyData[monthKey] = { runs: [], volume: 0 };
         }
@@ -2036,10 +2036,10 @@ export function renderVolumeImprovementChart(runs) {
                 }
             }
         });
-        
+
         const totalMonths = quintile.length;
         const improvementRate = totalMonths > 0 ? (improvementCount / totalMonths) * 100 : 0;
-        
+
         return {
             quintile: `Q${idx + 1} (${quintile[0].volume.toFixed(1)}-${quintile[quintile.length - 1].volume.toFixed(1)} km)`,
             improvementRate,
@@ -2082,10 +2082,10 @@ export function renderEfficiencyEvolutionChart(runs) {
 
     // Sort by date
     const sortedRuns = validRuns.sort((a, b) => new Date(a.start_date_local) - new Date(b.start_date_local));
-    
+
     // Calculate efficiency for each run
     const calculateEfficiency = r => ((r.moving_time / 60) / (r.distance / 1000)) / r.average_heartrate;
-    
+
     const efficiencyData = sortedRuns.map((run, index) => ({
         date: new Date(run.start_date_local),
         efficiency: calculateEfficiency(run),
@@ -2095,23 +2095,23 @@ export function renderEfficiencyEvolutionChart(runs) {
     // Simple LOESS smoothing (local regression)
     const smoothedData = [];
     const windowSize = Math.max(5, Math.floor(efficiencyData.length * 0.1)); // 10% of data or min 5
-    
+
     efficiencyData.forEach((point, i) => {
         const start = Math.max(0, i - Math.floor(windowSize / 2));
         const end = Math.min(efficiencyData.length, i + Math.floor(windowSize / 2) + 1);
         const window = efficiencyData.slice(start, end);
-        
+
         // Weighted average (tricubic kernel)
         let weightedSum = 0;
         let weightSum = 0;
-        
+
         window.forEach(w => {
             const distance = Math.abs(w.index - i);
             const weight = Math.pow(1 - Math.pow(distance / (windowSize / 2), 3), 3);
             weightedSum += w.efficiency * weight;
             weightSum += weight;
         });
-        
+
         const smoothedEfficiency = weightSum > 0 ? weightedSum / weightSum : point.efficiency;
         smoothedData.push({
             x: point.date,
@@ -2144,7 +2144,7 @@ export function renderEfficiencyEvolutionChart(runs) {
         },
         options: {
             scales: {
-                x: { 
+                x: {
                     type: 'time',
                     title: { display: true, text: 'Date' }
                 },
@@ -2167,7 +2167,7 @@ export function renderDistanceEfficiencyChart(runs) {
     if (validRuns.length === 0) return;
 
     const calculateEfficiency = r => ((r.moving_time / 60) / (r.distance / 1000)) / r.average_heartrate;
-    
+
     const data = validRuns.map(r => ({
         x: r.distance / 1000, // km
         y: calculateEfficiency(r)
@@ -2179,7 +2179,7 @@ export function renderDistanceEfficiencyChart(runs) {
     const sumY = data.reduce((sum, d) => sum + d.y, 0);
     const sumXY = data.reduce((sum, d) => sum + d.x * d.y, 0);
     const sumXX = data.reduce((sum, d) => sum + d.x * d.x, 0);
-    
+
     const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
     const intercept = (sumY - slope * sumX) / n;
 
@@ -2233,7 +2233,7 @@ export function renderPaceHrEfficiencyChart(runs) {
     if (validRuns.length === 0) return;
 
     const calculatePace = r => (r.moving_time / 60) / (r.distance / 1000); // min/km
-    
+
     const data = validRuns.map(r => ({
         x: r.average_heartrate,
         y: calculatePace(r)
@@ -2245,7 +2245,7 @@ export function renderPaceHrEfficiencyChart(runs) {
     const sumY = data.reduce((sum, d) => sum + d.y, 0);
     const sumXY = data.reduce((sum, d) => sum + d.x * d.y, 0);
     const sumXX = data.reduce((sum, d) => sum + d.x * d.x, 0);
-    
+
     const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
     const intercept = (sumY - slope * sumX) / n;
 

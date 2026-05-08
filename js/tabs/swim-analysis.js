@@ -29,6 +29,18 @@ function paceMinPer100m(act) {
     return sec / 60;
 }
 
+function getSwimPaceMinPer100m(swim) {
+    if (swim?.pace_min100 && Number.isFinite(swim.pace_min100)) return swim.pace_min100;
+    if (!swim?.distance || !swim?.moving_time) return null;
+    return (swim.moving_time / 60) / (swim.distance / 100);
+}
+
+function getSwimEfficiency(swim) {
+    const paceMinPer100m = getSwimPaceMinPer100m(swim);
+    if (!paceMinPer100m || !swim?.average_heartrate) return null;
+    return paceMinPer100m / swim.average_heartrate;
+}
+
 
 
 // ------------------------
@@ -145,6 +157,9 @@ export function renderSwimAnalysisTab(allActivities, dateFilterFrom, dateFilterT
     renderPaceHistogram(enriched);
 
     renderPaceVsDistanceChart(enriched);
+    renderPaceHrCurveChart(enriched);
+    renderVolumeImprovementChart(enriched);
+    renderEfficiencyEvolutionChart(enriched);
 
     renderTopSwims(enriched);
     renderSwimsTable(enriched);
@@ -261,10 +276,10 @@ function createChart(canvasId, config) {
 
     if (charts[canvasId]) charts[canvasId].destroy();
 
-    // Ensure charts are responsive and maintain aspect ratio
+    // Use container-defined heights so charts remain stable across desktop/mobile.
     if (!config.options) config.options = {};
     config.options.responsive = true;
-    config.options.maintainAspectRatio = true;
+    config.options.maintainAspectRatio = false;
 
     const ctx = canvas.getContext("2d");
     const chart = new Chart(ctx, config);
@@ -568,6 +583,306 @@ function renderPaceVsDistanceChart(swims) {
                 }
             }
         }
+    });
+}
+
+export function renderPaceHrCurveChart(swims) {
+    const validSwims = swims.filter(s =>
+        s.average_heartrate &&
+        Number.isFinite(getSwimPaceMinPer100m(s)) &&
+        getSwimPaceMinPer100m(s) > 0
+    );
+    if (validSwims.length < 6) return;
+
+    const sortedSwims = [...validSwims].sort((a, b) => new Date(a.start_date_local) - new Date(b.start_date_local));
+    const third = Math.max(1, Math.floor(sortedSwims.length / 3));
+    const earlySwims = sortedSwims.slice(0, third);
+    const lateSwims = sortedSwims.slice(-third);
+
+    const binSize = 5;
+    const minHr = Math.min(...validSwims.map(s => s.average_heartrate));
+    const maxHr = Math.max(...validSwims.map(s => s.average_heartrate));
+    const minBin = Math.floor(minHr / binSize) * binSize;
+    const maxBin = Math.ceil(maxHr / binSize) * binSize;
+    const bins = [];
+    for (let hr = minBin; hr <= maxBin; hr += binSize) bins.push(hr);
+
+    const percentile = (arr, p) => {
+        if (!arr.length) return null;
+        const sorted = [...arr].sort((a, b) => a - b);
+        const index = (sorted.length - 1) * p;
+        const lower = Math.floor(index);
+        const upper = Math.ceil(index);
+        if (lower === upper) return sorted[lower];
+        return sorted[lower] + (sorted[upper] - sorted[lower]) * (index - lower);
+    };
+
+    const buildStats = (subset) => bins.map(hr => {
+        const binSwims = subset.filter(s => Math.abs(s.average_heartrate - hr) < binSize / 2);
+        if (!binSwims.length) return { avg: null, q25: null, q75: null };
+        const paces = binSwims.map(getSwimPaceMinPer100m).filter(v => Number.isFinite(v));
+        if (!paces.length) return { avg: null, q25: null, q75: null };
+        return {
+            avg: paces.reduce((sum, p) => sum + p, 0) / paces.length,
+            q25: percentile(paces, 0.25),
+            q75: percentile(paces, 0.75)
+        };
+    });
+
+    const earlyStats = buildStats(earlySwims);
+    const lateStats = buildStats(lateSwims);
+
+    createChart('swim-pace-hr-curve-chart', {
+        type: 'line',
+        data: {
+            labels: bins,
+            datasets: [
+                {
+                    label: 'Early swims Q75',
+                    data: earlyStats.map(d => d.q75),
+                    borderWidth: 0,
+                    pointRadius: 0,
+                    fill: false
+                },
+                {
+                    label: 'Early swims range',
+                    data: earlyStats.map(d => d.q25),
+                    borderWidth: 0,
+                    pointRadius: 0,
+                    backgroundColor: 'rgba(86, 181, 248, 0.15)',
+                    fill: '-1'
+                },
+                {
+                    label: 'Early swims (first 33%)',
+                    data: earlyStats.map(d => d.avg),
+                    borderColor: 'rgba(86, 181, 248, 1)',
+                    backgroundColor: 'rgba(86, 181, 248, 0.12)',
+                    tension: 0.35,
+                    pointRadius: 2,
+                    borderWidth: 2
+                },
+                {
+                    label: 'Late swims Q75',
+                    data: lateStats.map(d => d.q75),
+                    borderWidth: 0,
+                    pointRadius: 0,
+                    fill: false
+                },
+                {
+                    label: 'Late swims range',
+                    data: lateStats.map(d => d.q25),
+                    borderWidth: 0,
+                    pointRadius: 0,
+                    backgroundColor: 'rgba(50, 4, 212, 0.15)',
+                    fill: '-1'
+                },
+                {
+                    label: 'Late swims (last 33%)',
+                    data: lateStats.map(d => d.avg),
+                    borderColor: 'rgba(50, 4, 212, 1)',
+                    backgroundColor: 'rgba(50, 4, 212, 0.08)',
+                    tension: 0.35,
+                    pointRadius: 2,
+                    borderWidth: 2
+                }
+            ]
+        },
+        options: {
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label(context) {
+                            const value = context.raw;
+                            if (value == null) return '';
+                            const min = Math.floor(value);
+                            const sec = Math.round((value - min) * 60);
+                            return `${context.dataset.label}: ${min}:${sec.toString().padStart(2, '0')} min/100m`;
+                        }
+                    }
+                },
+                legend: {
+                    labels: {
+                        filter: (item) => !item.text.includes('Q75') && !item.text.includes('range')
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    title: { display: true, text: 'Heart Rate (bpm)' }
+                },
+                y: {
+                    title: { display: true, text: 'Pace (min/100m)' }
+                }
+            }
+        }
+    });
+
+    utils.upsertChartInfo('swim-pace-hr-curve-chart', {
+        title: 'Swim Speed-Heart Rate Curve',
+        bodyHtml: `Compares your pace at similar heart rates between early swims and recent swims.<br>
+        If the recent curve is lower, you're swimming faster at the same effort.`,
+        accentColor: '#56b5f8'
+    });
+}
+
+export function renderVolumeImprovementChart(swims) {
+    const validSwims = swims.filter(s => Number.isFinite(getSwimEfficiency(s)) && s.distance_km > 0);
+    if (validSwims.length === 0) return;
+
+    const monthlyData = {};
+    validSwims.forEach(swim => {
+        const date = new Date(swim.start_date_local);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        if (!monthlyData[monthKey]) monthlyData[monthKey] = { swims: [], volume: 0 };
+        monthlyData[monthKey].swims.push(swim);
+        monthlyData[monthKey].volume += swim.distance_km;
+    });
+
+    const monthlyStats = Object.entries(monthlyData)
+        .map(([month, data]) => {
+            const efficiencies = data.swims.map(getSwimEfficiency).filter(v => Number.isFinite(v));
+            if (!efficiencies.length) return null;
+            const meanEfficiency = efficiencies.reduce((a, b) => a + b, 0) / efficiencies.length;
+            return { month, volume: data.volume, meanEfficiency };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.volume - b.volume);
+
+    if (monthlyStats.length < 6) return;
+
+    const quintileSize = Math.floor(monthlyStats.length / 5);
+    const quintiles = [];
+    for (let i = 0; i < 5; i++) {
+        const start = i * quintileSize;
+        const end = i === 4 ? monthlyStats.length : (i + 1) * quintileSize;
+        const slice = monthlyStats.slice(start, end);
+        if (slice.length) quintiles.push(slice);
+    }
+    if (quintiles.length === 0) return;
+
+    const improvementRates = quintiles.map((quintile, idx) => {
+        let improvementCount = 0;
+        quintile.forEach(monthStat => {
+            const monthIndex = monthlyStats.findIndex(m => m.month === monthStat.month);
+            if (monthIndex > 0) {
+                const prevEfficiency = monthlyStats[monthIndex - 1].meanEfficiency;
+                const currentEfficiency = monthStat.meanEfficiency;
+                if (currentEfficiency < prevEfficiency) improvementCount++;
+            }
+        });
+
+        const totalMonths = quintile.length;
+        const improvementRate = totalMonths > 0 ? (improvementCount / totalMonths) * 100 : 0;
+        return {
+            quintile: `Q${idx + 1} (${quintile[0].volume.toFixed(1)}-${quintile[quintile.length - 1].volume.toFixed(1)} km)`,
+            improvementRate
+        };
+    });
+
+    createChart('swim-volume-improvement-chart', {
+        type: 'bar',
+        data: {
+            labels: improvementRates.map(d => d.quintile),
+            datasets: [{
+                label: 'Improvement Rate (%)',
+                data: improvementRates.map(d => d.improvementRate),
+                backgroundColor: 'rgba(86, 181, 248, 0.75)',
+                borderColor: '#56b5f8',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            scales: {
+                x: { title: { display: true, text: 'Volume Quintiles' } },
+                y: { title: { display: true, text: 'Improvement Rate (%)' } }
+            }
+        }
+    });
+
+    utils.upsertChartInfo('swim-volume-improvement-chart', {
+        title: 'Monthly Volume vs Improvement Probability',
+        bodyHtml: `Groups your months by swim volume and shows how often efficiency improved versus the previous month.`,
+        accentColor: '#56b5f8'
+    });
+}
+
+export function renderEfficiencyEvolutionChart(swims) {
+    const validSwims = swims.filter(s => Number.isFinite(getSwimEfficiency(s)));
+    if (validSwims.length < 5) return;
+
+    const sortedSwims = [...validSwims].sort((a, b) => new Date(a.start_date_local) - new Date(b.start_date_local));
+    const efficiencyData = sortedSwims.map((swim, index) => ({
+        date: new Date(swim.start_date_local),
+        efficiency: getSwimEfficiency(swim),
+        index
+    }));
+
+    const smoothedData = [];
+    const windowSize = Math.max(5, Math.floor(efficiencyData.length * 0.1));
+
+    efficiencyData.forEach((point, i) => {
+        const start = Math.max(0, i - Math.floor(windowSize / 2));
+        const end = Math.min(efficiencyData.length, i + Math.floor(windowSize / 2) + 1);
+        const window = efficiencyData.slice(start, end);
+
+        let weightedSum = 0;
+        let weightSum = 0;
+
+        window.forEach(w => {
+            const denominator = windowSize / 2 || 1;
+            const distance = Math.abs(w.index - i);
+            const normalized = Math.min(1, distance / denominator);
+            const weight = Math.pow(1 - Math.pow(normalized, 3), 3);
+            weightedSum += w.efficiency * weight;
+            weightSum += weight;
+        });
+
+        const smoothedEfficiency = weightSum > 0 ? weightedSum / weightSum : point.efficiency;
+        smoothedData.push({ x: point.date, y: smoothedEfficiency });
+    });
+
+    createChart('swim-efficiency-evolution-chart', {
+        type: 'line',
+        data: {
+            datasets: [
+                {
+                    label: 'Raw Efficiency',
+                    data: efficiencyData.map(d => ({ x: d.date, y: d.efficiency })),
+                    backgroundColor: 'rgba(86, 181, 248, 0.3)',
+                    borderColor: 'rgba(86, 181, 248, 0.45)',
+                    pointRadius: 2,
+                    tension: 0
+                },
+                {
+                    label: 'LOESS Smoothed',
+                    data: smoothedData,
+                    borderColor: 'rgba(50, 4, 212, 0.95)',
+                    backgroundColor: 'rgba(50, 4, 212, 0.08)',
+                    pointRadius: 0,
+                    tension: 0.35,
+                    borderWidth: 2
+                }
+            ]
+        },
+        options: {
+            scales: {
+                x: {
+                    type: 'time',
+                    title: { display: true, text: 'Date' }
+                },
+                y: { title: { display: true, text: 'Efficiency (pace/HR)' } }
+            }
+        }
+    });
+
+    utils.upsertChartInfo('swim-efficiency-evolution-chart', {
+        title: 'Aerobic Efficiency Evolution',
+        bodyHtml: `Tracks pace-per-heartbeat over time in swimming. Lower values indicate better aerobic efficiency.`,
+        accentColor: '#56b5f8'
     });
 }
 
