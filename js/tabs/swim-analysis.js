@@ -595,7 +595,7 @@ export function renderPaceHrCurveChart(swims) {
     if (validSwims.length < 6) return;
 
     const sortedSwims = [...validSwims].sort((a, b) => new Date(a.start_date_local) - new Date(b.start_date_local));
-    const third = Math.max(1, Math.floor(sortedSwims.length / 3));
+    const third = Math.max(1, Math.floor(sortedSwims.length * 0.4));
     const earlySwims = sortedSwims.slice(0, third);
     const lateSwims = sortedSwims.slice(-third);
 

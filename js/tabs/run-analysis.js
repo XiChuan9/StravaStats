@@ -1711,7 +1711,7 @@ export function renderPaceHrCurveChart(runs) {
     const sortedRuns = validRuns.sort((a, b) => new Date(a.start_date_local) - new Date(b.start_date_local));
 
     // Split into first and last 33%
-    const third = Math.floor(sortedRuns.length / 3);
+    const third = Math.floor(sortedRuns.length * 0.4);
     const earlyRuns = sortedRuns.slice(0, third);
     const lateRuns = sortedRuns.slice(-third);
 
