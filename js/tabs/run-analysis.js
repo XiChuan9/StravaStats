@@ -342,6 +342,8 @@ export function renderActivityTypeChart(runs) {
     const p80Distance = [...runs].map(a => a.distance)
         .sort((a, b) => a - b)[Math.floor(0.8 * runs.length)];
 
+    const avg_tss = runs.reduce((sum, a) => sum + (a.tss || 0), 0) / runs.length;
+
     // Clasificación de cada actividad.
     runs.forEach(a => {
         if (a.sport_type === 'TrailRun') {
@@ -351,13 +353,13 @@ export function renderActivityTypeChart(runs) {
         } else if (a.workout_type === 1) {
             a.workout_type_classified = 'Race';
         }
-        else if (a.suffer_score && a.suffer_score >= 50) {
+        else if (a.tss && a.tss >= avg_tss * 1.5) {
             a.workout_type_classified = 'High intensity Run';
         }
-        else if (a.suffer_score && a.suffer_score >= 30) {
+        else if (a.tss && a.tss >= avg_tss * 0.5) {
             a.workout_type_classified = 'Moderate intensity Run';
         }
-        else if (a.suffer_score && a.suffer_score < 15) {
+        else if (a.tss && a.tss < avg_tss * 0.5) {
             a.workout_type_classified = 'Low intensity Run';
         }
         else {
@@ -892,7 +894,7 @@ export function renderRollingMeanDistanceChart(runs, rollingWindowWeeks = 26) {
                         padding: 15,
                         font: { size: 11 }
                     },
-                    onClick: function(event, legendItem, legend) {
+                    onClick: function (event, legendItem, legend) {
                         const datasetIndex = legendItem.datasetIndex;
                         const chart = legend.chart;
                         const meta = chart.getDatasetMeta(datasetIndex);
@@ -1746,7 +1748,7 @@ export function renderPaceHrCurveChart(runs) {
     const sortedRuns = validRuns.sort((a, b) => new Date(a.start_date_local) - new Date(b.start_date_local));
 
     // Split into first and last 33%
-    const third = Math.floor(sortedRuns.length * 0.25);
+    const third = Math.floor(sortedRuns.length * 0.33);
     const earlyRuns = sortedRuns.slice(0, third);
     const lateRuns = sortedRuns.slice(-third);
 
@@ -1827,7 +1829,7 @@ export function renderPaceHrCurveChart(runs) {
             },
             plugins: {
                 tooltip: {
-                    filter: function(tooltipItem) {
+                    filter: function (tooltipItem) {
                         const label = tooltipItem.dataset.label;
                         return label.includes('First runs') || label.includes('Last runs');
                     },
@@ -2161,8 +2163,9 @@ export function renderDistanceEfficiencyChart(runs) {
     const calculateEfficiency = r => ((r.moving_time / 60) / (r.distance / 1000)) / r.average_heartrate;
 
     const data = validRuns.map(r => ({
-        x: r.distance / 1000, // km
-        y: calculateEfficiency(r)
+        x: r.distance / 1000,
+        y: calculateEfficiency(r),
+        date: r.start_date
     }));
 
     // Simple linear regression
@@ -2204,6 +2207,23 @@ export function renderDistanceEfficiencyChart(runs) {
             ]
         },
         options: {
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function (context) {
+                            const point = context.raw;
+
+                            const date = new Date(point.date).toLocaleDateString('en-GB');
+
+                            return [
+                                `Date: ${date}`,
+                                `Distance: ${point.x.toFixed(2)} km`,
+                                `Efficiency: ${point.y.toFixed(4)}`
+                            ];
+                        }
+                    }
+                }
+            },
             scales: {
                 x: { title: { display: true, text: 'Distance (km)' } },
                 y: { title: { display: true, text: 'Efficiency (pace/HR)' } }

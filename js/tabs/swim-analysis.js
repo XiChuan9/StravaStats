@@ -595,7 +595,7 @@ export function renderPaceHrCurveChart(swims) {
     if (validSwims.length < 6) return;
 
     const sortedSwims = [...validSwims].sort((a, b) => new Date(a.start_date_local) - new Date(b.start_date_local));
-    const third = Math.max(1, Math.floor(sortedSwims.length * 0.3));
+    const third = Math.max(1, Math.floor(sortedSwims.length * 0.33));
     const earlySwims = sortedSwims.slice(0, third);
     const lateSwims = sortedSwims.slice(-third);
 
@@ -638,22 +638,7 @@ export function renderPaceHrCurveChart(swims) {
             labels: bins,
             datasets: [
                 {
-                    label: 'Early swims Q75',
-                    data: earlyStats.map(d => d.q75),
-                    borderWidth: 0,
-                    pointRadius: 0,
-                    fill: false
-                },
-                {
-                    label: 'Early swims range',
-                    data: earlyStats.map(d => d.q25),
-                    borderWidth: 0,
-                    pointRadius: 0,
-                    backgroundColor: 'rgba(86, 181, 248, 0.15)',
-                    fill: '-1'
-                },
-                {
-                    label: 'Early swims (first 33%)',
+                    label: 'First swims 33%',
                     data: earlyStats.map(d => d.avg),
                     borderColor: 'rgba(86, 181, 248, 1)',
                     backgroundColor: 'rgba(86, 181, 248, 0.12)',
@@ -663,22 +648,7 @@ export function renderPaceHrCurveChart(swims) {
                     spanGaps: true
                 },
                 {
-                    label: 'Late swims Q75',
-                    data: lateStats.map(d => d.q75),
-                    borderWidth: 0,
-                    pointRadius: 0,
-                    fill: false
-                },
-                {
-                    label: 'Late swims range',
-                    data: lateStats.map(d => d.q25),
-                    borderWidth: 0,
-                    pointRadius: 0,
-                    backgroundColor: 'rgba(50, 4, 212, 0.15)',
-                    fill: '-1'
-                },
-                {
-                    label: 'Late swims (last 33%)',
+                    label: 'Last swims 33%',
                     data: lateStats.map(d => d.avg),
                     borderColor: 'rgba(50, 4, 212, 1)',
                     backgroundColor: 'rgba(50, 4, 212, 0.08)',
@@ -698,7 +668,7 @@ export function renderPaceHrCurveChart(swims) {
                 tooltip: {
                     filter: function(tooltipItem) {
                         const label = tooltipItem.dataset.label;
-                        return label.includes('(first 33%)') || label.includes('(last 33%)');
+                        return label.includes('First swims 33%') || label.includes('Last swims 33%');
                     },
                     callbacks: {
                         label(context) {
@@ -728,7 +698,7 @@ export function renderPaceHrCurveChart(swims) {
     });
 
     utils.upsertChartInfo('swim-pace-hr-curve-chart', {
-        title: 'Swim Speed-Heart Rate Curve',
+        title: 'Swim Pace-Heart Rate Curve',
         bodyHtml: `Compares your pace at similar heart rates between early swims and recent swims.<br>
         If the recent curve is lower, you're swimming faster at the same effort.`,
         accentColor: '#56b5f8'
