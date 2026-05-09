@@ -2326,55 +2326,149 @@ export function renderDistanceEfficiencyChart(runs) {
     });
 }
 
-export function renderPaceHrEfficiencyChart(runs) {
+export function renderPaceHrEfficiencyChart(runs, mode = 'single') {
     const validRuns = runs.filter(r => r.average_heartrate && r.distance && r.moving_time);
     if (validRuns.length === 0) return;
 
     const calculatePace = r => (r.moving_time / 60) / (r.distance / 1000); // min/km
 
-    const data = validRuns.map(r => ({
+    const sortedRuns = [...validRuns].sort((a, b) => new Date(a.start_date_local) - new Date(b.start_date_local));
+
+    const data = sortedRuns.map(r => ({
         x: r.average_heartrate,
         y: calculatePace(r)
     }));
 
-    // Simple linear regression
-    const n = data.length;
-    const sumX = data.reduce((sum, d) => sum + d.x, 0);
-    const sumY = data.reduce((sum, d) => sum + d.y, 0);
-    const sumXY = data.reduce((sum, d) => sum + d.x * d.y, 0);
-    const sumXX = data.reduce((sum, d) => sum + d.x * d.x, 0);
+    function calculateRegression(dataPoints) {
+        const n = dataPoints.length;
+        if (n < 2) return null;
+        const sumX = dataPoints.reduce((sum, d) => sum + d.x, 0);
+        const sumY = dataPoints.reduce((sum, d) => sum + d.y, 0);
+        const sumXY = dataPoints.reduce((sum, d) => sum + d.x * d.y, 0);
+        const sumXX = dataPoints.reduce((sum, d) => sum + d.x * d.x, 0);
+        const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+        const intercept = (sumY - slope * sumX) / n;
+        const minX = Math.min(...dataPoints.map(d => d.x));
+        const maxX = Math.max(...dataPoints.map(d => d.x));
+        return {
+            slope,
+            intercept,
+            line: [
+                { x: minX, y: slope * minX + intercept },
+                { x: maxX, y: slope * maxX + intercept }
+            ]
+        };
+    }
 
-    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
-    const intercept = (sumY - slope * sumX) / n;
+    let datasets;
+    let title;
+    let bodyHtml;
 
-    const minX = Math.min(...data.map(d => d.x));
-    const maxX = Math.max(...data.map(d => d.x));
-    const regressionLine = [
-        { x: minX, y: slope * minX + intercept },
-        { x: maxX, y: slope * maxX + intercept }
-    ];
+    if (mode === 'single') {
+        const regression = calculateRegression(data);
+        datasets = [
+            {
+                label: 'Run Data',
+                data: data,
+                backgroundColor: 'rgba(252, 82, 0, 0.7)',
+                pointRadius: 4
+            },
+            {
+                label: `Regression (slope: ${regression.slope.toFixed(4)} min/km per bpm)`,
+                data: regression.line,
+                borderColor: 'rgba(93, 22, 1, 1)',
+                backgroundColor: 'rgba(93, 22, 1, 0.1)',
+                type: 'line',
+                pointRadius: 0,
+                tension: 0
+            }
+        ];
+        title = 'Pace vs Heart Rate';
+        bodyHtml = `
+        <button class="toggle-regression-btn" style="margin-bottom: 10px;">Show Progress Regressions</button><br>
+        This chart shows how your running pace changes relative to heart rate across different runs.<br><br>
+        The X-axis represents average heart rate, while the Y-axis shows pace in minutes per kilometer.<br><br>
+        In general, lower pace values (faster running) at the same heart rate indicate better aerobic efficiency and running economy.<br><br>
+        The regression line highlights the overall relationship between heart rate and pace:
+        <ul>
+            <li>If higher heart rates correspond to much faster paces, it may indicate good aerobic responsiveness.</li>
+            <li>If pace remains relatively slow despite higher heart rates, it may suggest fatigue, heat, elevation, or reduced efficiency.</li>
+        </ul>
+        `;
+    } else {
+        const third = Math.floor(sortedRuns.length / 3);
+        const firstThird = sortedRuns.slice(0, third);
+        const middleThird = sortedRuns.slice(third, 2 * third);
+        const lastThird = sortedRuns.slice(2 * third);
+
+        const firstData = firstThird.map(r => ({ x: r.average_heartrate, y: calculatePace(r) }));
+        const middleData = middleThird.map(r => ({ x: r.average_heartrate, y: calculatePace(r) }));
+        const lastData = lastThird.map(r => ({ x: r.average_heartrate, y: calculatePace(r) }));
+
+        const firstReg = calculateRegression(firstData);
+        const middleReg = calculateRegression(middleData);
+        const lastReg = calculateRegression(lastData);
+
+        datasets = [
+            {
+                label: 'First 33% runs',
+                data: firstData,
+                backgroundColor: 'rgba(252, 82, 0, 0.7)',
+                pointRadius: 4
+            },
+            {
+                label: 'Middle 33% runs',
+                data: middleData,
+                backgroundColor: 'rgba(255, 165, 0, 0.7)',
+                pointRadius: 4
+            },
+            {
+                label: 'Last 33% runs',
+                data: lastData,
+                backgroundColor: 'rgba(93, 22, 1, 0.7)',
+                pointRadius: 4
+            }
+        ];
+
+        if (firstReg) datasets.push({
+            label: `First regression (slope: ${firstReg.slope.toFixed(4)})`,
+            data: firstReg.line,
+            borderColor: 'rgba(252, 82, 0, 1)',
+            type: 'line',
+            pointRadius: 0,
+            tension: 0
+        });
+
+        if (middleReg) datasets.push({
+            label: `Middle regression (slope: ${middleReg.slope.toFixed(4)})`,
+            data: middleReg.line,
+            borderColor: 'rgba(255, 165, 0, 1)',
+            type: 'line',
+            pointRadius: 0,
+            tension: 0
+        });
+
+        if (lastReg) datasets.push({
+            label: `Last regression (slope: ${lastReg.slope.toFixed(4)})`,
+            data: lastReg.line,
+            borderColor: 'rgba(93, 22, 1, 1)',
+            type: 'line',
+            pointRadius: 0,
+            tension: 0
+        });
+
+        title = 'Pace vs Heart Rate Progress';
+        bodyHtml = `
+        <button class="toggle-regression-btn" style="margin-bottom: 10px;">Show Single Regression</button><br>
+        This chart shows progress by splitting your runs into three periods: first 33%, middle 33%, and last 33%.<br><br>
+        Each period has its own regression line, allowing you to see how your pace-HR relationship has evolved over time.<br><br>
+        If the later regressions are below the earlier ones, it indicates improvement in aerobic efficiency.
+        `;
+    }
 
     createChart('pace-hr-efficiency-chart', {
         type: 'scatter',
-        data: {
-            datasets: [
-                {
-                    label: 'Run Data',
-                    data: data,
-                    backgroundColor: 'rgba(252, 82, 0, 0.7)',
-                    pointRadius: 4
-                },
-                {
-                    label: `Regression (slope: ${slope.toFixed(4)} min/km per bpm)`,
-                    data: regressionLine,
-                    borderColor: 'rgba(93, 22, 1, 1)',
-                    backgroundColor: 'rgba(93, 22, 1, 0.1)',
-                    type: 'line',
-                    pointRadius: 0,
-                    tension: 0
-                }
-            ]
-        },
+        data: { datasets },
         options: {
             scales: {
                 x: { title: { display: true, text: 'Heart Rate (bpm)' } },
@@ -2384,22 +2478,19 @@ export function renderPaceHrEfficiencyChart(runs) {
     });
 
     utils.upsertChartInfo('pace-hr-efficiency-chart', {
-        title: 'Pace vs Heart Rate',
-        bodyHtml: `
-        This chart shows how your running pace changes relative to heart rate across different runs.<br><br>
-
-        The X-axis represents average heart rate, while the Y-axis shows pace in minutes per kilometer.<br><br>
-
-        In general, lower pace values (faster running) at the same heart rate indicate better aerobic efficiency and running economy.<br><br>
-
-        The regression line highlights the overall relationship between heart rate and pace:
-        <ul>
-            <li>If higher heart rates correspond to much faster paces, it may indicate good aerobic responsiveness.</li>
-            <li>If pace remains relatively slow despite higher heart rates, it may suggest fatigue, heat, elevation, or reduced efficiency.</li>
-        </ul>
-
-        This chart is most meaningful when comparing similar types of runs and terrain.
-        `,
+        title,
+        bodyHtml,
         accentColor: '#FC5200'
     });
+
+    // Add event listener to the button
+    setTimeout(() => {
+        const button = document.querySelector('.toggle-regression-btn');
+        if (button) {
+            button.addEventListener('click', () => {
+                const newMode = mode === 'single' ? 'multiple' : 'single';
+                renderPaceHrEfficiencyChart(runs, newMode);
+            });
+        }
+    }, 100);
 }
