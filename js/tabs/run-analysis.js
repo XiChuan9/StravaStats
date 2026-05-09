@@ -2071,45 +2071,68 @@ export function renderVolumeImprovementChart(runs) {
 }
 
 export function renderEfficiencyEvolutionChart(runs) {
-    const validRuns = runs.filter(r => r.average_heartrate && r.distance && r.moving_time);
+    const validRuns = runs.filter(
+        r => r.average_heartrate && r.distance && r.moving_time
+    );
+
     if (validRuns.length === 0) return;
 
     // Sort by date
-    const sortedRuns = validRuns.sort((a, b) => new Date(a.start_date_local) - new Date(b.start_date_local));
+    const sortedRuns = [...validRuns].sort(
+        (a, b) => new Date(a.start_date_local) - new Date(b.start_date_local)
+    );
 
-    // Calculate efficiency for each run
-    const calculateEfficiency = r => ((r.moving_time / 60) / (r.distance / 1000)) / r.average_heartrate;
+    // Efficiency = pace / HR
+    // Lower values are better, so we reverse the Y axis visually
+    const calculateEfficiency = r =>
+        ((r.moving_time / 60) / (r.distance / 1000)) / r.average_heartrate;
 
-    const efficiencyData = sortedRuns.map((run, index) => ({
-        date: new Date(run.start_date_local),
-        efficiency: calculateEfficiency(run),
-        index
-    }));
+    const efficiencyData = sortedRuns.map((run, index) => {
+        const pace = (run.moving_time / 60) / (run.distance / 1000);
 
-    // Simple LOESS smoothing (local regression)
+        return {
+            x: new Date(run.start_date_local),
+            y: calculateEfficiency(run),
+            date: run.start_date_local,
+            name: run.name,
+            distance: run.distance / 1000,
+            hr: run.average_heartrate,
+            pace,
+            index
+        };
+    });
+
+    // LOESS-style smoothing
     const smoothedData = [];
-    const windowSize = Math.max(5, Math.floor(efficiencyData.length * 0.1)); // 10% of data or min 5
+    const windowSize = Math.max(5, Math.floor(efficiencyData.length * 0.1));
 
     efficiencyData.forEach((point, i) => {
         const start = Math.max(0, i - Math.floor(windowSize / 2));
-        const end = Math.min(efficiencyData.length, i + Math.floor(windowSize / 2) + 1);
+        const end = Math.min(
+            efficiencyData.length,
+            i + Math.floor(windowSize / 2) + 1
+        );
+
         const window = efficiencyData.slice(start, end);
 
-        // Weighted average (tricubic kernel)
         let weightedSum = 0;
         let weightSum = 0;
 
         window.forEach(w => {
             const distance = Math.abs(w.index - i);
-            const weight = Math.pow(1 - Math.pow(distance / (windowSize / 2), 3), 3);
-            weightedSum += w.efficiency * weight;
+            const normalized = distance / (windowSize / 2);
+
+            const weight = normalized >= 1
+                ? 0
+                : Math.pow(1 - Math.pow(normalized, 3), 3);
+
+            weightedSum += w.y * weight;
             weightSum += weight;
         });
 
-        const smoothedEfficiency = weightSum > 0 ? weightedSum / weightSum : point.efficiency;
         smoothedData.push({
-            x: point.date,
-            y: smoothedEfficiency
+            x: point.x,
+            y: weightSum > 0 ? weightedSum / weightSum : point.y
         });
     });
 
@@ -2119,39 +2142,90 @@ export function renderEfficiencyEvolutionChart(runs) {
             datasets: [
                 {
                     label: 'Raw Efficiency',
-                    data: efficiencyData.map(d => ({ x: d.date, y: d.efficiency })),
-                    backgroundColor: 'rgba(252, 82, 0, 0.3)',
-                    borderColor: 'rgba(252, 82, 0, 0.5)',
-                    pointRadius: 2,
+                    data: efficiencyData,
+                    backgroundColor: 'rgba(252, 82, 0, 0.25)',
+                    borderColor: 'rgba(252, 82, 0, 0.45)',
+                    pointRadius: 3,
+                    pointHoverRadius: 5,
                     tension: 0
                 },
                 {
-                    label: 'LOESS Smoothed',
+                    label: 'Smoothed Trend',
                     data: smoothedData,
                     borderColor: 'rgba(93, 22, 1, 1)',
                     backgroundColor: 'rgba(93, 22, 1, 0.1)',
                     pointRadius: 0,
-                    tension: 0.4,
-                    borderWidth: 2
+                    borderWidth: 2,
+                    tension: 0.35
                 }
             ]
         },
         options: {
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const point = context.raw;
+
+                            if (!point.date) {
+                                return `Efficiency: ${point.y.toFixed(4)}`;
+                            }
+
+                            const date = new Date(point.date)
+                                .toLocaleDateString('en-GB');
+
+                            const paceMinutes = Math.floor(point.pace);
+                            const paceSeconds = Math.round(
+                                (point.pace - paceMinutes) * 60
+                            );
+
+                            const formattedPace =
+                                `${paceMinutes}:${paceSeconds.toString().padStart(2, '0')} /km`;
+
+                            return [
+                                `${point.name || 'Run'}`,
+                                `Date: ${date}`,
+                                `Pace: ${formattedPace}`,
+                                `HR Avg: ${point.hr} bpm`,
+                                `Distance: ${point.distance.toFixed(2)} km`,
+                                `Efficiency: ${point.y.toFixed(4)}`
+                            ];
+                        }
+                    }
+                }
+            },
             scales: {
                 x: {
                     type: 'time',
-                    title: { display: true, text: 'Date' }
+                    title: {
+                        display: true,
+                        text: 'Date'
+                    }
                 },
-                y: { title: { display: true, text: 'Efficiency (pace/HR)' } }
+                y: {
+                    reverse: true,
+                    title: {
+                        display: true,
+                        text: 'Aerobic Cost (pace / HR)'
+                    }
+                }
             }
         }
     });
 
     utils.upsertChartInfo('efficiency-evolution-chart', {
         title: 'Aerobic Efficiency Evolution',
-        bodyHtml: `This chart tracks the evolution of your aerobic efficiency over time.<br>
-        Efficiency is calculated as your pace divided by your average heart rate: the lower this value, the better you're converting each heartbeat into speed.<br>
-        The smoothed line (LOESS) helps you see the general trend: if it decreases over time, your aerobic engine is improving.`,
+        bodyHtml: `
+        This chart tracks how your aerobic efficiency changes over time.<br><br>
+
+        Efficiency is calculated as pace divided by average heart rate. Lower values indicate better efficiency, meaning you are able to maintain faster paces with less cardiovascular effort.<br><br>
+
+        The Y-axis is visually reversed so that improvements appear higher on the chart.<br><br>
+
+        The raw points represent individual runs, while the smoothed trend line helps reveal long-term progression by reducing day-to-day variability.<br><br>
+
+        An upward trend generally indicates improving aerobic fitness and running economy, while a downward trend may reflect fatigue, difficult conditions, or accumulated training stress.
+        `,
         accentColor: '#FC5200'
     });
 }
@@ -2233,9 +2307,21 @@ export function renderDistanceEfficiencyChart(runs) {
 
     utils.upsertChartInfo('distance-efficiency-chart', {
         title: 'Distance vs Efficiency',
-        bodyHtml: `This chart shows how your aerobic efficiency changes with the distance of your runs.<br>
-        On the X-axis is the distance of each run, and on the Y-axis your efficiency (pace divided by heart rate).<br>
-        If the regression line slopes downward, it means you're more efficient in longer runs, which is normal. If it slopes upward, you might be struggling with longer distances.`,
+        bodyHtml: `
+        This chart shows how your running efficiency changes with distance.<br><br>
+
+        The X-axis represents the distance of each run, while the Y-axis shows an efficiency score calculated as pace divided by average heart rate.<br><br>
+
+        Lower values indicate better efficiency, meaning you are able to run faster with less cardiovascular effort.<br><br>
+
+        The regression line helps identify how your efficiency changes in longer runs:
+        <ul>
+            <li>A downward slope suggests you maintain or improve efficiency over longer distances, which usually indicates good aerobic endurance.</li>
+            <li>An upward slope may indicate increasing fatigue or difficulty sustaining effort during longer runs.</li>
+        </ul>
+
+        Keep in mind that hills, terrain, weather, and recovery level can also affect this metric.
+        `,
         accentColor: '#FC5200'
     });
 }
@@ -2298,11 +2384,22 @@ export function renderPaceHrEfficiencyChart(runs) {
     });
 
     utils.upsertChartInfo('pace-hr-efficiency-chart', {
-        title: 'Pace vs HR (Own Aerobic Efficiency Curve)',
-        bodyHtml: `This is your personal aerobic efficiency curve: how your pace changes with heart rate.<br>
-        The slope of the regression line tells you how much slower you run for each additional beat per minute.<br>
-        A steeper slope means your pace deteriorates more quickly as heart rate increases (less efficient aerobic system).<br>
-        Compare this slope over time to see if your aerobic efficiency is improving.`,
+        title: 'Pace vs Heart Rate',
+        bodyHtml: `
+        This chart shows how your running pace changes relative to heart rate across different runs.<br><br>
+
+        The X-axis represents average heart rate, while the Y-axis shows pace in minutes per kilometer.<br><br>
+
+        In general, lower pace values (faster running) at the same heart rate indicate better aerobic efficiency and running economy.<br><br>
+
+        The regression line highlights the overall relationship between heart rate and pace:
+        <ul>
+            <li>If higher heart rates correspond to much faster paces, it may indicate good aerobic responsiveness.</li>
+            <li>If pace remains relatively slow despite higher heart rates, it may suggest fatigue, heat, elevation, or reduced efficiency.</li>
+        </ul>
+
+        This chart is most meaningful when comparing similar types of runs and terrain.
+        `,
         accentColor: '#FC5200'
     });
 }
