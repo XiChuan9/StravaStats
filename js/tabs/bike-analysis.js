@@ -990,8 +990,24 @@ export function renderAccumulatedDistanceChart(rides) {
 export function renderWeeklyDistanceTrendChart(rides, rollingWindowWeeks = 26) {
     if (!rides || rides.length === 0) return;
 
-    const { labels, weeklyKm } = buildWeeklyDistanceSeries(rides, a => (a.distance || 0) / 1000);
+    const weeklyData = rides.reduce((acc, ride) => {
+        const date = new Date(ride.start_date_local);
+        const weekStart = new Date(date);
+        weekStart.setDate(date.getDate() - date.getDay() + 1); // Monday
+        const weekKey = weekStart.toISOString().slice(0, 10);
+        if (!acc[weekKey]) acc[weekKey] = { distance: 0, time: 0 };
+        acc[weekKey].distance += (ride.distance || 0) / 1000;
+        acc[weekKey].time += ride.moving_time || 0;
+        return acc;
+    }, {});
+    const labels = Object.keys(weeklyData).sort();
+    const weeklyKm = labels.map(k => weeklyData[k].distance);
+    const weeklySpeed = labels.map(k => {
+        const d = weeklyData[k];
+        return d.time > 0 ? d.distance / (d.time / 3600) : 0;
+    });
     const rolling = utils.rollingMean(weeklyKm, rollingWindowWeeks).map(v => +v.toFixed(2));
+    const rollingSpeed = utils.rollingMean(weeklySpeed, rollingWindowWeeks).map(v => +v.toFixed(2));
 
     // Convert weeks to human-readable label
     const windowLabel = rollingWindowWeeks >= 52 ? '1 year'
@@ -1024,6 +1040,18 @@ export function renderWeeklyDistanceTrendChart(rides, rollingWindowWeeks = 26) {
                     borderWidth: 4,
                     tension: 0.25,
                     order: 1
+                },
+                {
+                    label: 'Rolling mean speed (km/h)',
+                    data: rollingSpeed,
+                    type: 'line',
+                    borderColor: '#d32f2f',
+                    backgroundColor: 'rgba(211,47,47,0.18)',
+                    pointRadius: 0,
+                    borderWidth: 4,
+                    tension: 0.25,
+                    order: 1,
+                    hidden: true
                 }
             ]
         },
