@@ -1063,6 +1063,13 @@ export function renderWeeklyDistanceTrendChart(rides, rollingWindowWeeks = 26) {
                         boxWidth: 12,
                         padding: 15,
                         font: { size: 11 }
+                    },
+                    onClick: function(event, legendItem, legend) {
+                        const datasetIndex = legendItem.datasetIndex;
+                        const chart = legend.chart;
+                        const meta = chart.getDatasetMeta(datasetIndex);
+                        meta.hidden = !meta.hidden;
+                        chart.update();
                     }
                 }
             },

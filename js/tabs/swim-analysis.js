@@ -595,7 +595,7 @@ export function renderPaceHrCurveChart(swims) {
     if (validSwims.length < 6) return;
 
     const sortedSwims = [...validSwims].sort((a, b) => new Date(a.start_date_local) - new Date(b.start_date_local));
-    const third = Math.max(1, Math.floor(sortedSwims.length * 0.4));
+    const third = Math.max(1, Math.floor(sortedSwims.length * 0.3));
     const earlySwims = sortedSwims.slice(0, third);
     const lateSwims = sortedSwims.slice(-third);
 
@@ -1383,6 +1383,13 @@ export function renderWeeklyDistanceTrendChart(swims, rollingWindowWeeks = 26) {
                         boxWidth: 12,
                         padding: 15,
                         font: { size: 11 }
+                    },
+                    onClick: function(event, legendItem, legend) {
+                        const datasetIndex = legendItem.datasetIndex;
+                        const chart = legend.chart;
+                        const meta = chart.getDatasetMeta(datasetIndex);
+                        meta.hidden = !meta.hidden;
+                        chart.update();
                     }
                 }
             },

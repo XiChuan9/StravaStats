@@ -891,6 +891,13 @@ export function renderRollingMeanDistanceChart(runs, rollingWindowWeeks = 26) {
                         boxWidth: 12,
                         padding: 15,
                         font: { size: 11 }
+                    },
+                    onClick: function(event, legendItem, legend) {
+                        const datasetIndex = legendItem.datasetIndex;
+                        const chart = legend.chart;
+                        const meta = chart.getDatasetMeta(datasetIndex);
+                        meta.hidden = !meta.hidden;
+                        chart.update();
                     }
                 }
             },
@@ -1739,7 +1746,7 @@ export function renderPaceHrCurveChart(runs) {
     const sortedRuns = validRuns.sort((a, b) => new Date(a.start_date_local) - new Date(b.start_date_local));
 
     // Split into first and last 33%
-    const third = Math.floor(sortedRuns.length * 0.4);
+    const third = Math.floor(sortedRuns.length * 0.3);
     const earlyRuns = sortedRuns.slice(0, third);
     const lateRuns = sortedRuns.slice(-third);
 
