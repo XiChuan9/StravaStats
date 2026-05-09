@@ -1746,7 +1746,7 @@ export function renderPaceHrCurveChart(runs) {
     const sortedRuns = validRuns.sort((a, b) => new Date(a.start_date_local) - new Date(b.start_date_local));
 
     // Split into first and last 33%
-    const third = Math.floor(sortedRuns.length * 0.3);
+    const third = Math.floor(sortedRuns.length * 0.25);
     const earlyRuns = sortedRuns.slice(0, third);
     const lateRuns = sortedRuns.slice(-third);
 
@@ -1763,19 +1763,6 @@ export function renderPaceHrCurveChart(runs) {
     }
 
     const calculatePace = r => (r.moving_time / 60) / (r.distance / 1000); // min/km
-
-    const percentile = (arr, p) => {
-        if (arr.length === 0) return null;
-
-        const sorted = [...arr].sort((a, b) => a - b);
-        const index = (sorted.length - 1) * p;
-        const lower = Math.floor(index);
-        const upper = Math.ceil(index);
-
-        if (lower === upper) return sorted[lower];
-
-        return sorted[lower] + (sorted[upper] - sorted[lower]) * (index - lower);
-    };
 
     const buildDatasetStats = (runsSubset) => {
         return bins.map(hr => {
@@ -1795,8 +1782,6 @@ export function renderPaceHrCurveChart(runs) {
 
             return {
                 avg: paces.reduce((sum, p) => sum + p, 0) / paces.length,
-                q25: percentile(paces, 0.25),
-                q75: percentile(paces, 0.75)
             };
         });
     };
@@ -1809,26 +1794,10 @@ export function renderPaceHrCurveChart(runs) {
         data: {
             labels: bins,
             datasets: [
-                // EARLY AREA RANGE
-                {
-                    label: 'Early runs Q75',
-                    data: earlyStats.map(d => d.q75),
-                    borderWidth: 0,
-                    pointRadius: 0,
-                    fill: false
-                },
-                {
-                    label: 'Early runs range',
-                    data: earlyStats.map(d => d.q25),
-                    borderWidth: 0,
-                    pointRadius: 0,
-                    backgroundColor: 'rgba(252, 82, 0, 0.12)',
-                    fill: '-1'
-                },
 
                 // EARLY AVG LINE
                 {
-                    label: 'Early runs (first 33%)',
+                    label: 'First runs',
                     data: earlyStats.map(d => d.avg),
                     borderColor: 'rgba(252, 82, 0, 1)',
                     backgroundColor: 'rgba(252, 82, 0, 0.1)',
@@ -1838,26 +1807,9 @@ export function renderPaceHrCurveChart(runs) {
                     spanGaps: true
                 },
 
-                // LATE AREA RANGE
-                {
-                    label: 'Late runs Q75',
-                    data: lateStats.map(d => d.q75),
-                    borderWidth: 0,
-                    pointRadius: 0,
-                    fill: false
-                },
-                {
-                    label: 'Late runs range',
-                    data: lateStats.map(d => d.q25),
-                    borderWidth: 0,
-                    pointRadius: 0,
-                    backgroundColor: 'rgba(93, 22, 1, 0.12)',
-                    fill: '-1'
-                },
-
                 // LATE AVG LINE
                 {
-                    label: 'Late runs (last 33%)',
+                    label: 'Last runs',
                     data: lateStats.map(d => d.avg),
                     borderColor: 'rgba(93, 22, 1, 1)',
                     backgroundColor: 'rgba(93, 22, 1, 0.1)',
@@ -1877,7 +1829,7 @@ export function renderPaceHrCurveChart(runs) {
                 tooltip: {
                     filter: function(tooltipItem) {
                         const label = tooltipItem.dataset.label;
-                        return label.includes('(first 33%)') || label.includes('(last 33%)');
+                        return label.includes('First runs') || label.includes('Last runs');
                     },
                     callbacks: {
                         label: function (context) {
@@ -1920,7 +1872,6 @@ export function renderPaceHrCurveChart(runs) {
         title: 'Speed–Heart Rate Curve',
         bodyHtml: `This chart compares your pace at similar heart rates between your early runs (first 33%) and late runs (last 33%).<br>
         The solid lines show the average pace for each 5 bpm heart rate bin.<br>
-        The shaded bands represent the interquartile range (25th-75th percentile), showing pace variability at each effort level.<br>
         If the late curve is below the early curve, you're running faster at the same heart rate - a sign of improved aerobic efficiency.`,
         accentColor: '#FC5200'
     });
