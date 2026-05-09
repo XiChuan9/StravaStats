@@ -256,7 +256,7 @@ function updatePredictions(runs) {
         ml: parseFloat(document.getElementById('ml-weight')?.value ?? 20),
         pb: parseFloat(document.getElementById('pb-weight')?.value ?? 20),
         vdot: parseFloat(document.getElementById('vdot-weight')?.value ?? 15),
-        readiness: parseFloat(document.getElementById('readiness-weight')?.value ?? 15),
+        readiness: parseFloat(document.getElementById('readiness-weight')?.value ?? 90),
     };
 
     // Normalize weights so they always sum to 100
@@ -756,7 +756,7 @@ function readPredictionSettings() {
         ml: parseFloat(document.getElementById('ml-weight')?.value ?? 20),
         pb: parseFloat(document.getElementById('pb-weight')?.value ?? 20),
         vdot: parseFloat(document.getElementById('vdot-weight')?.value ?? 15),
-        readiness: parseFloat(document.getElementById('readiness-weight')?.value ?? 15)
+        readiness: parseFloat(document.getElementById('readiness-weight')?.value ?? 90)
     };
 
     const totalWeight = Object.values(weights).reduce((sum, value) => sum + value, 0);

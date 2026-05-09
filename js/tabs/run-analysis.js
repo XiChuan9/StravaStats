@@ -1880,11 +1880,18 @@ export function renderPaceHrCurveChart(runs) {
 }
 
 export function renderConsistencyImprovementChart(runs) {
-    const validRuns = runs.filter(r => r.average_heartrate && r.distance && r.moving_time);
+    const validRuns = runs.filter(
+        r => r.average_heartrate && r.distance && r.moving_time
+    );
+
     if (validRuns.length === 0) return;
+
+    const calculatePace = r => (r.moving_time / 60) / (r.distance / 1000);
+    const calculateEfficiency = r => calculatePace(r) / r.average_heartrate;
 
     // Group by month
     const monthlyData = {};
+
     validRuns.forEach(run => {
         const date = new Date(run.start_date_local);
         const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -1892,53 +1899,88 @@ export function renderConsistencyImprovementChart(runs) {
         if (!monthlyData[monthKey]) {
             monthlyData[monthKey] = [];
         }
+
         monthlyData[monthKey].push(run);
     });
 
-    const calculatePace = r => (r.moving_time / 60) / (r.distance / 1000);
-    const calculateEfficiency = r => calculatePace(r) / r.average_heartrate;
+    // Sort months chronologically
+    const sortedMonths = Object.entries(monthlyData)
+        .sort((a, b) => new Date(a[0]) - new Date(b[0]));
 
-    const monthlyStats = Object.entries(monthlyData).map(([month, monthRuns]) => {
+    const monthlyStats = sortedMonths.map(([month, monthRuns]) => {
         const runsCount = monthRuns.length;
-        const efficiencies = monthRuns.map(calculateEfficiency);
-        const mean = efficiencies.reduce((a, b) => a + b, 0) / efficiencies.length;
-        const std = Math.sqrt(efficiencies.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / efficiencies.length);
-        const cv = std / mean;
 
-        return { month, runsCount, cv, meanEfficiency: mean };
-    }).filter(stat => stat.runsCount >= 3); // Need at least 3 runs for meaningful CV
+        const efficiencies = monthRuns.map(calculateEfficiency);
+
+        const mean =
+            efficiencies.reduce((a, b) => a + b, 0) / efficiencies.length;
+
+        const std = Math.sqrt(
+            efficiencies
+                .reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) /
+            efficiencies.length
+        );
+
+        const cv = mean !== 0 ? std / mean : 0;
+
+        return {
+            month,
+            runsCount,
+            cv,
+            meanEfficiency: mean
+        };
+    }).filter(stat => stat.runsCount >= 5);
 
     if (monthlyStats.length < 2) return;
 
-    // Calculate improvement: efficiency improvement compared to previous month
+    // Improvement vs previous month
     const improvementData = [];
+
     for (let i = 1; i < monthlyStats.length; i++) {
         const current = monthlyStats[i];
         const previous = monthlyStats[i - 1];
-        const improvement = (previous.meanEfficiency - current.meanEfficiency) / previous.meanEfficiency; // Positive = improvement
+
+        const improvement =
+            previous.meanEfficiency !== 0
+                ? (previous.meanEfficiency - current.meanEfficiency) /
+                  previous.meanEfficiency
+                : 0;
+
         improvementData.push({
-            cv: current.cv,
-            improvement: improvement * 100, // as percentage
+            x: current.cv,
+            y: improvement * 100,
             month: current.month
         });
     }
 
     if (improvementData.length === 0) return;
 
-    // Simple linear regression
+    // Linear regression
     const n = improvementData.length;
-    const sumX = improvementData.reduce((sum, d) => sum + d.cv, 0);
-    const sumY = improvementData.reduce((sum, d) => sum + d.improvement, 0);
-    const sumXY = improvementData.reduce((sum, d) => sum + d.cv * d.improvement, 0);
-    const sumXX = improvementData.reduce((sum, d) => sum + d.cv * d.cv, 0);
 
-    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+    const sumX = improvementData.reduce((sum, d) => sum + d.x, 0);
+    const sumY = improvementData.reduce((sum, d) => sum + d.y, 0);
+    const sumXY = improvementData.reduce((sum, d) => sum + d.x * d.y, 0);
+    const sumXX = improvementData.reduce((sum, d) => sum + d.x * d.x, 0);
+
+    const slope =
+        (n * sumXY - sumX * sumY) /
+        (n * sumXX - sumX * sumX || 1);
+
     const intercept = (sumY - slope * sumX) / n;
 
+    const minX = Math.min(...improvementData.map(d => d.x));
+    const maxX = Math.max(...improvementData.map(d => d.x));
+
     const regressionLine = [
-        { x: Math.min(...improvementData.map(d => d.cv)), y: slope * Math.min(...improvementData.map(d => d.cv)) + intercept },
-        { x: Math.max(...improvementData.map(d => d.cv)), y: slope * Math.max(...improvementData.map(d => d.cv)) + intercept }
+        { x: minX, y: slope * minX + intercept },
+        { x: maxX, y: slope * maxX + intercept }
     ];
+
+    const formatMonth = (m) => {
+        const [y, mo] = m.split('-');
+        return `${mo}/${y}`;
+    };
 
     createChart('consistency-improvement-chart', {
         type: 'scatter',
@@ -1946,12 +1988,12 @@ export function renderConsistencyImprovementChart(runs) {
             datasets: [
                 {
                     label: 'Monthly data',
-                    data: improvementData.map(d => ({ x: d.cv, y: d.improvement })),
+                    data: improvementData,
                     backgroundColor: 'rgba(252, 82, 0, 0.7)',
                     pointRadius: 6
                 },
                 {
-                    label: `Regression (r² = ${(slope > 0 ? 'positive' : 'negative')} correlation)`,
+                    label: `Trend line (slope: ${slope.toFixed(4)})`,
                     data: regressionLine,
                     borderColor: 'rgba(93, 22, 1, 1)',
                     backgroundColor: 'rgba(93, 22, 1, 0.1)',
@@ -1962,18 +2004,50 @@ export function renderConsistencyImprovementChart(runs) {
             ]
         },
         options: {
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function (context) {
+                            const point = context.raw;
+                            const month = formatMonth(point.month);
+
+                            return [
+                                `Month: ${month}`,
+                                `Consistency (CV): ${point.x.toFixed(3)}`,
+                                `Efficiency change: ${point.y.toFixed(2)}%`
+                            ];
+                        }
+                    }
+                }
+            },
             scales: {
-                x: { title: { display: true, text: 'Monthly Consistency (CV)' } },
-                y: { title: { display: true, text: 'Efficiency Improvement (%)' } }
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Monthly Consistency (CV)'
+                    }
+                },
+                y: {
+                    title: {
+                        display: true,
+                        text: 'Change in aerobic efficiency (%)'
+                    }
+                }
             }
         }
     });
 
     utils.upsertChartInfo('consistency-improvement-chart', {
         title: 'Monthly Consistency vs Improvement',
-        bodyHtml: `This chart shows how regular you are training month to month and how that relates to your improvement.<br>
-        On the X-axis is your monthly variability (CV: the higher, the more irregular), and on the Y-axis your performance improvement at constant heart rate.<br>
-        Points further left (more consistency) and higher up (more improvement) represent months where you trained steadily and your aerobic efficiency improved.`,
+        bodyHtml: `
+        This chart shows how training consistency within each month relates to changes in aerobic efficiency over time.<br><br>
+
+        Consistency (CV) measures how variable your runs are during a month. Lower values mean more stable training, while higher values indicate more variability.<br><br>
+
+        The vertical axis shows the percentage change in aerobic efficiency compared to the previous month. Positive values indicate improvement, while negative values indicate decline.<br><br>
+
+        This relationship is correlational and should be interpreted alongside training load, terrain, and intensity distribution.
+        `,
         accentColor: '#FC5200'
     });
 }
