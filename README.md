@@ -72,61 +72,79 @@ The application combines several classes of data:
 
 ## Key Features
 
-### Dashboard
+The SPA exposes thirteen main tabs and several dedicated detail pages. Each tab is implemented as a renderer in `js/tabs/<name>.js`.
 
-The Dashboard tab provides a training-load and consistency overview. It uses derived metrics such as TSS, ATL, CTL, TSB, rolling load, and goal progress to answer whether the user is building fitness, carrying fatigue, or drifting away from annual targets.
+### Dashboard (`js/tabs/dashboard.js`)
 
-### Run
+Training-load and consistency overview. Computes daily TSS, 7-day ATL, 42-day CTL, TSB, and a 7-day rolling load over a user-selected window. Renders KPI cards, an acute-load chart, a consistency heatmap, and goal progress (km, hours, or activity count). Range selector offers nine presets (This Week, Last 7 Days, This Month, Last 30 Days, Last 3 Months, Last 6 Months, This Year, Last 365 Days, All Time) plus a custom DD/MM/YYYY From/To pair with an Apply button. The acute-load band mode is hardcoded to `'aggressive'`. Derived per-window slices are memoized in a module-local `dashboardMemo` Map.
 
-The Run tab focuses on running-only activity subsets and includes date and gear filters, summary cards, consistency heatmaps, distance and elevation distributions, pace scatter plots, rolling trends, top runs, and a sortable activity table.
+### Run Analysis (`js/tabs/run-analysis.js`)
 
-### Bike
+Running-only subset with date and shoe (gear) filters. Summary cards, run-type chart, monthly distance and frequency, pace-vs-distance scatter, distance and elevation histograms, accumulated distance, weekly rolling-mean trend, consistency heatmap, run heatmap map, top runs, Eddington section, monthly shoe-usage Gantt, and a sortable activity table.
 
-The Bike tab segments cycling activity by bike type and gear, then visualizes distance, elevation, speed, power, cadence, and accumulated volume. It is designed to distinguish road, MTB, gravel, indoor, and electric usage patterns.
+### Bike Analysis (`js/tabs/bike-analysis.js`)
 
-### Swim
+Cycling subset segmented by bike type (road, MTB, gravel, indoor, electric) and bike gear. Summary cards, bike-type pie, distance and elevation histograms, speed-vs-distance, distance-vs-elevation, elevation-ratio, power-vs-speed scatters, accumulated distance, weekly trend, consistency heatmap, Eddington distribution and progression, top rides, and a sortable activities table.
 
-The Swim tab separates pool and open-water sessions, computes pace per 100 m, estimates pool length when possible, and exposes swim-specific summaries and distributions.
+### Swim Analysis (`js/tabs/swim-analysis.js`)
 
-### Athlete
+Pool vs open-water separation, pace per 100 m, pool-length estimation against common metric and imperial pool lengths. Summary cards, pool/open-water comparison, distance and pace histograms, pace-vs-distance scatter, pace/HR curve, volume improvement, efficiency evolution, accumulated distance, weekly trend, consistency heatmap, pool-length chart, Eddington section, top swims, and a sortable swims table.
 
-The Athlete tab acts as a profile and behavior lens. It combines athlete metadata, all-time totals, records, training zones, time-of-day patterns, weekday patterns, yearly comparisons, and dense matrix-style heatmaps.
+### Athlete (`js/tabs/athlete.js`)
 
-### Predictor
+Profile and behavior lens. Athlete card, all-time totals, records, training zones (HR and power), duration and start-time histograms, yearly comparison bars, weekly and monthly mix views, and several interactive matrix heatmaps with selectable axes and data type (time, count, distance).
 
-The Predictor tab blends classical endurance formulas and personal-history heuristics to estimate future race performance. It combines Riegel scaling, VDOT logic, direct PB matching, and a personal curve model with adjustable user-controlled weights.
+### Planner / Predictor (`js/tabs/planner.js`)
 
-### Gear
+Race-time prediction blending Riegel scaling, VDOT-style transfer, direct PB matching, and personal curve fitting with user-adjustable weights and conservative/moderate/aggressive scenarios. Personal-bests table, prediction table, prediction-evolution chart, training readiness section.
 
-The Gear tab tracks equipment usage, estimated health, average pace by gear, usage counts, last-use dates, and custom durability metadata stored locally.
+### Gear (`js/tabs/gear.js`)
 
-### Activities
+Gear lifecycle tracking. Per-item distance, usage count, first/last-use dates, average distance per use, average pace (for run gear), health percentage versus configurable expected durability, sortable gear list, distance-by-gear chart, monthly usage Gantt, and per-gear detail page.
 
-The Activities tab is the universal query layer over the raw activity catalog. It supports advanced filtering and sorting across sport, name, date, distance, duration, HR, and TSS dimensions.
+### Activities (`js/tabs/activities.js`)
 
-### Calendar
+Universal query layer over the preprocessed activity catalog with multi-select sport, name search, date range, distance range, duration range, HR range, and TSS range filters. Sortable table with sport-aware pace/speed formatting.
 
-The Calendar tab exposes year-level consistency and streak behavior using day and week streak calculations and an annual heatmap view.
+### Calendar (`js/tabs/calendar.js`)
 
-### Weather
+Week, month, and year views with type filtering. Day and week streaks, activities per day, total distance, hours, active days, TSS. Click a day for the detailed activity list.
 
-The Weather tab enriches runs with historical weather conditions and explores the relationship between temperature, wind, humidity, precipitation, and observed performance.
+### Weather (`js/tabs/weather.js`)
 
-### Map
+Open-Meteo archive enrichment for runs with start coordinates. Summary cards, monthly multi-variable overview, weather-conditions pie, temperature-vs-pace scatter, configurable histogram (temperature, rain, wind, humidity, clouds, pressure), and a weather-per-activity table.
 
-The Map tab visualizes activity geographies using decoded route polylines or density heatmaps, with filters for sport, date range, and display mode.
+### Maps (`js/tabs/maps.js`)
 
-### Report
+Leaflet visualization with route-polyline and density-heatmap modes, sport filter, date range, multiple tile providers, heatmap intensity/radius/blur sliders, and color-by-sport toggle. Polylines are decoded client-side from the Strava `map.summary_polyline` field.
 
-The Report tab provides a year-in-sport summary with year-over-year comparison, monthly volume, sport distribution, streak summaries, and top periods.
+### Wrapped / Report (`js/tabs/wrapped.js`)
 
-### AI Coach
+Year-in-sport retrospective with distance, time, elevation, activities, active days, longest activity, average distance, most active month, year-over-year deltas, monthly volume, sport-distribution pie, year comparison, top weeks, and monthly heatmap.
 
-The AI Coach tab is a browser-side assistant powered by a user-supplied Gemini API key. It constructs a context block from the loaded Strava history and lets the user ask natural-language questions about trends, performance, and planning.
+### AI Chat / Coach (`js/tabs/ai-chat.js`)
 
-### Activity-level advanced analysis
+Browser-side conversational assistant. Uses a user-supplied Gemini API key persisted to localStorage, assembles a context block from totals, sport breakdown, PB-like stats, gear summaries, and recent monthly volume, then calls Gemini Flash directly from the browser. Persistent chat history with starter suggestions.
 
-Separate activity pages expose stream-level analysis for individual workouts. These pages fetch per-activity metadata and streams, reconstruct a track, run preprocessing and sport-specific analysis engines, render charts, and support GPX/CSV/JSON export.
+### Activity-level advanced analysis (`js/pages/activity/`)
+
+Dedicated per-activity pages fetch metadata and streams from Strava, reconstruct a structured `ActivityTrack` with `TrackPoint`s, run the preprocessing and detection pipeline in `js/analysis/`, render stream charts and split tables, and support GPX, CSV, and JSON export.
+
+## Per-Activity Derived Fields
+
+`preprocessActivities` in `js/shared/preprocessing/core.js` enriches each activity object with derived metrics. The current cache schema version is `'v2-efficiency-moving-ratio'` and the following fields are added in addition to the existing TSS, CTL, ATL, TSB, weather, and VO2max fields:
+
+- `efficiency` (number | null) — sport-aware aerobic efficiency:
+  - Run: `pace_min_per_km / avgHR` (units: min/km/bpm; lower is better).
+  - Swim: `pace_min_per_100m / avgHR` (units: min/100m/bpm; lower is better).
+  - Bike / Ride / Cycling: `avg_speed_kmh / avgHR` (units: km/h/bpm; higher is better).
+  - Null when `avgHR`, `distance`, or `moving_time` are missing or non-positive.
+- `efficiency_method` (string | null) — one of `'pace_per_hr'`, `'pace100m_per_hr'`, `'speed_per_hr'`, or `null`.
+- `moving_ratio` (number | null) — `moving_time / elapsed_time`, decimal 0–1; null when `elapsed_time <= 0`.
+
+## Cache Versioning
+
+`js/app/main.js` defines `CACHE_VERSION = 'v2-efficiency-moving-ratio'` and stores it under the localStorage key `strava_cache_version`. On boot, the app reads the stored version and, when it does not match `CACHE_VERSION`, drops the previously cached preprocessed activities. The fresh activity payload is reprocessed and the new version key is written back. Bumping `CACHE_VERSION` whenever the preprocessing schema changes is how new derived fields propagate without manual cache busting.
 
 ## Architecture And System Design
 
@@ -328,7 +346,9 @@ npm install
 npm run dev
 ```
 
-Then open the local URL printed by the dev server and authenticate with Strava. See [LOCAL_SETUP.md](LOCAL_SETUP.md) for the full Strava OAuth setup and troubleshooting checklist.
+`npm run dev` runs `scripts/local-dev-server.mjs`, a small Node `http` server that serves the static frontend and dynamically imports the matching file in `api/` for any request to `/api/*`. The default port is `3001` (override with `PORT`). Required env vars: `STRAVA_CLIENT_ID` and `STRAVA_CLIENT_SECRET` from `.env.example`.
+
+Then open the local URL printed by the dev server and authenticate with Strava. To browse without a Strava account, click the demo button in the connect screen (`js/demo/index.js` sets `localStorage('strava_demo_mode')='true'` and generates ~250 synthetic activities). See [LOCAL_SETUP.md](LOCAL_SETUP.md) for the full Strava OAuth setup and troubleshooting checklist.
 
 ### Recommended local setup sequence
 
@@ -493,22 +513,68 @@ Interactivity includes:
 ## Repository Structure
 
 ```text
-api/                 Vercel serverless functions and shared auth helpers
-activities/          Static activity resources by sport
-html/                Dedicated detail pages
-js/app/              App bootstrap, auth, UI orchestration
-js/analysis/         Detailed activity analysis pipeline and exporters
-js/models/           Analysis domain models
-js/pages/            Activity, bike, run, swim, and gear page controllers
-js/services/         API clients and browser cache layer
-js/shared/           Shared preprocessing and utility helpers
-js/tabs/             Main dashboard tab renderers
-styles/              Global styling
-index.html           SPA entrypoint
-sw.js                Service worker
-manifest.json        PWA manifest
-vercel.json          Route rewrite configuration
+api/                              Vercel serverless functions (Strava OAuth proxy and endpoints)
+  _shared.js                      shared header/token helpers
+  config.js                       Strava client id / secret bridge
+  strava-auth.js                  OAuth code exchange + refresh
+  strava-activities.js            paginated activity history
+  strava-activity.js              single activity metadata
+  strava-athlete.js               athlete profile
+  strava-gear.js                  gear metadata
+  strava-streams.js               Strava activity streams
+  strava-zones.js                 training zones (HR + power)
+html/                             Dedicated detail-page HTML shells
+  activity-router.html, activity.html, run.html, bike.html, swim.html, gear.html, wrapped.html
+media/                            Per-tab background images (see media/README.md)
+scripts/
+  local-dev-server.mjs            Node dev server used by `npm run dev`
+js/
+  main.js                         Re-exports from js/app/main.js for direct script loading
+  app/                            App bootstrap, OAuth, navigation, shared UI orchestration
+    main.js, auth.js, ui.js
+  tabs/                           Renderer modules for the thirteen main SPA tabs
+    dashboard.js, run-analysis.js, bike-analysis.js, swim-analysis.js,
+    athlete.js, planner.js, gear.js, activities.js, calendar.js,
+    weather.js, maps.js, wrapped.js, ai-chat.js
+    index.js, utils.js, api.js    barrel and tab-local helpers
+  pages/                          Controllers for dedicated detail pages
+    activity/                     activity.js, advanced-analysis.js, analysis-ui-components.js
+    run/, bike/, swim/, gear/     per-sport detail pages
+  shared/
+    preprocessing/                core.js — preprocessActivities and derived fields
+    utils/                        core.js — formatters, math, helpers; weather-analysis.js; speed-insights.js
+  analysis/                       Stream-level activity analysis pipeline
+    config.js, index.js, preprocessing.js, virtual-gpx.js
+    analyzers/                    base-analyzer, running, trail-run, cycling, gravel-mtb, hiking
+    detection/                    climbs, stops
+    engines/                      fatigue, aero, physiology, insights-generator
+    segmentation/                 distance/time/terrain segmentation
+    export/                       gpx, csv, json
+  services/                       API clients and browser cache layer
+    api.js, index.js
+  demo/                           Offline demo-data generator and gating
+    index.js, generator.js, polylines.js
+  models/                         Analysis-domain typed objects
+    activity-track.js, track-point.js, segment.js, climb.js, analysis-result.js
+styles/
+  style.css                       single global stylesheet, includes sport CSS variables
+index.html                        SPA entrypoint
+sw.js                             Service worker (PWA, static-asset caching)
+manifest.json                     PWA manifest
+vercel.json                       Route rewrites
+classifyRun.js, classifyBike.js   Standalone classification heuristics
 ```
+
+## Sport Theming
+
+`styles/style.css` defines four sport color CSS variables on `:root`:
+
+- `--sport-default-color: #fc4c02` (Strava orange, used as the global accent)
+- `--sport-run-color: #2e7d32`
+- `--sport-bike-color: #1565c0`
+- `--sport-swim-color: #00838f`
+
+The Run Analysis (`#analysis-tab`), Bike Analysis (`#bike-tab`), and Swim Analysis (`#swim-tab`) containers override `.chart-container` `border-top-color` and `h3` `color` to the matching sport color so charts inside those tabs are visually grouped. Background images per tab follow the mapping in `media/README.md`.
 
 ## Additional Reading
 

@@ -23,6 +23,7 @@ import { isDemoMode } from '../demo/index.js';
 
 const ENABLE_TAB_BACKGROUND_IMAGES = false; // Set to false to disable all tab background images during development.
 const SHOW_HEADER_TOGGLE_BUTTON = true; // Set to true if you want the header collapse control visible.
+const CACHE_VERSION = 'v2-efficiency-moving-ratio';
 
 document.addEventListener('DOMContentLoaded', () => {
     // --- STATE ---
@@ -466,6 +467,13 @@ document.addEventListener('DOMContentLoaded', () => {
             progress = 8;
             showLoading('Checking local cache...', progress, elapsed());
 
+            const storedCacheVersion = localStorage.getItem('strava_cache_version');
+            if (storedCacheVersion !== CACHE_VERSION) {
+                localStorage.removeItem('strava_activities');
+                localStorage.removeItem('strava_activities_timestamp');
+                localStorage.setItem('strava_cache_version', CACHE_VERSION);
+            }
+
             const cachedActivities = localStorage.getItem('strava_activities');
             const cachedActivitiesTimestamp = localStorage.getItem('strava_activities_timestamp');
             const activitiesCacheAge = cachedActivitiesTimestamp ? Date.now() - parseInt(cachedActivitiesTimestamp) : Infinity;
@@ -489,6 +497,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 localStorage.setItem('strava_activities', JSON.stringify(activities));
                 localStorage.setItem('strava_activities_timestamp', Date.now().toString());
+                localStorage.setItem('strava_cache_version', CACHE_VERSION);
             }
 
             // Phase 2: Load athlete, zones, and gears (40% -> 90%)
@@ -614,6 +623,7 @@ document.addEventListener('DOMContentLoaded', () => {
             allActivities = await preprocessActivities(activities, athlete, zones, gears);
             localStorage.setItem('strava_activities', JSON.stringify(allActivities));
             localStorage.setItem('strava_activities_timestamp', Date.now().toString());
+            localStorage.setItem('strava_cache_version', CACHE_VERSION);
             showLoading(`Rebuilding views (${allActivities.length} activities)...`, 80, elapsed());
 
             // Reset rendered state so tabs re-render with fresh data

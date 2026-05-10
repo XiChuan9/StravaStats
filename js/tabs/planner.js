@@ -164,7 +164,7 @@ function renderPersonalBestsSection(runs) {
         const adjustedTime = (pb.time / pb.distance) * target.km;
         const timeStr = utils.formatTime(adjustedTime);
         const pace = utils.formatPace(adjustedTime, target.km);
-        const dateStr = pb.date ? new Date(pb.date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+        const dateStr = pb.date ? utils.formatDate(new Date(pb.date)) : '';
 
         // Get top 3 times for this distance
         const topTimes = allBests[target.km] ? allBests[target.km].slice(0, 3) : [];
@@ -887,7 +887,7 @@ function getHistoryBucketKey(date, granularity) {
 
 function formatHistoryBucketLabel(date, granularity) {
     if (granularity === 'day') {
-        return date.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: '2-digit' });
+        return utils.formatDate(date);
     }
     if (granularity === 'week') {
         return `W${String(utils.getISOWeek(date)).padStart(2, '0')} ${date.getFullYear()}`;

@@ -377,7 +377,7 @@ function ensureExportControls(selectedYear, current, previousYear) {
             pdf.text(`Moving time: ${utils.formatTime(totalTime)}`, 18, 100);
             pdf.text(`Elevation: ${Math.round(totalElevation).toLocaleString()} m`, 18, 110);
             pdf.text(`YoY baseline: ${previousYear || 'N/A'}`, 18, 120);
-            pdf.text(`Generated: ${new Date().toLocaleString()}`, 18, 130);
+            pdf.text(`Generated: ${utils.formatDate(new Date())}`, 18, 130);
 
             const canvas = await html2canvas(reportEl, { scale: 2, backgroundColor: '#ffffff' });
             const imageData = canvas.toDataURL('image/png');

@@ -4,7 +4,7 @@
  * Entry point: Query parameter ?id={activityId}
  */
 
-import { formatDate as sharedFormatDate } from '../../shared/utils/index.js';
+import { formatDate as sharedFormatDate, formatPaceSwim } from '../../shared/utils/index.js';
 import { renderWeatherAnalysis, renderWeatherMapDetails } from '../../shared/utils/weather-analysis.js';
 
 // =====================================================
@@ -121,10 +121,7 @@ function formatDate(date) {
  */
 function formatSwimPace(speedInMps) {
     if (!speedInMps || speedInMps === 0) return '-';
-    const paceInSecPer100m = 100 / speedInMps;
-    const min = Math.floor(paceInSecPer100m / 60);
-    const sec = Math.round(paceInSecPer100m % 60);
-    return `${min}:${sec.toString().padStart(2, '0')}/100m`;
+    return formatPaceSwim(100 / speedInMps);
 }
 
 function calculateVariability(data) {
@@ -634,8 +631,11 @@ function renderActivityAdvanced(activity) {
     const hrVariability = lapSource?.length > 1
         ? calculateVariability(lapSource.map(item => item.average_heartrate ?? null), 0)
         : '-';
-    const moveRatio = activity.elapsed_time
-        ? `${((activity.moving_time / activity.elapsed_time) * 100).toFixed(1)}%`
+    const moveRatio = activity.moving_ratio !== null && activity.moving_ratio !== undefined
+        ? `${(activity.moving_ratio * 100).toFixed(1)}%`
+        : '-';
+    const efficiency = activity.efficiency !== null && activity.efficiency !== undefined
+        ? `${activity.efficiency.toFixed(3)} min/100m/bpm`
         : '-';
     const fields = [];
     const pushField = (label, value) => {
@@ -646,6 +646,7 @@ function renderActivityAdvanced(activity) {
     pushField('Moving Time', formatTime(movingTime));
     pushField('Elapsed Time', formatTime(elapsedTime));
     pushField('Move Ratio', moveRatio);
+    pushField('Efficiency', efficiency);
     pushField('Pool Length', Number.isFinite(poolLength) && poolLength > 0 ? `${poolLength}m` : null);
     pushField('SWOLF Score', swolCount);
     pushField('Strokes per Meter', avgStrokesPerM);

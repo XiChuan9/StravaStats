@@ -1,3 +1,5 @@
+import { formatSpeedBike } from './core.js';
+
 const WEATHER_CACHE = new Map();
 
 function pad(value) {
@@ -310,7 +312,7 @@ function renderPointCard(point) {
             <div class="weather-point-card__title">${meta.text}</div>
             <div class="weather-point-card__grid">
                 <span>🌡️ ${Number.isFinite(point.temperature) ? point.temperature.toFixed(1) + '°C' : 'N/A'}</span>
-                <span>💨 ${Number.isFinite(point.wind_speed) ? point.wind_speed.toFixed(1) + ' km/h' : 'N/A'}</span>
+                <span>💨 ${Number.isFinite(point.wind_speed) ? formatSpeedBike(point.wind_speed) : 'N/A'}</span>
                 <span>🌧️ ${Number.isFinite(point.precipitation) ? point.precipitation.toFixed(1) + ' mm' : 'N/A'}</span>
                 <span>${point.relation.icon} ${point.relation.label}</span>
             </div>
@@ -449,7 +451,7 @@ export async function renderWeatherMapDetails(activity, coords, map, enabled) {
                 <div class="weather-popup">
                     <strong>${weatherCodeToMeta(point.weather_code).icon} ${weatherCodeToMeta(point.weather_code).text}</strong><br>
                     <span>🌡️ ${Number.isFinite(point.temperature) ? point.temperature.toFixed(1) + '°C' : 'N/A'}</span><br>
-                    <span>💨 ${Number.isFinite(point.wind_speed) ? point.wind_speed.toFixed(1) + ' km/h' : 'N/A'}</span><br>
+                    <span>💨 ${Number.isFinite(point.wind_speed) ? formatSpeedBike(point.wind_speed) : 'N/A'}</span><br>
                     <span>🌧️ ${Number.isFinite(point.precipitation) ? point.precipitation.toFixed(1) + ' mm' : 'N/A'}</span><br>
                     <span>${point.relation.icon} ${point.relation.label}</span>
                 </div>

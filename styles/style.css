@@ -18,6 +18,10 @@
     --shadow: 0 4px 15px rgba(0, 0, 0, 0.06);
     --border-radius-lg: 16px;
     --border-radius-md: 8px;
+    --sport-default-color: #fc4c02;
+    --sport-run-color: #2e7d32;
+    --sport-bike-color: #1565c0;
+    --sport-swim-color: #00838f;
 }
 
 * {
@@ -317,7 +321,7 @@ main {
     min-width: 0;
     width: 100%;
     box-sizing: border-box;
-    border-top: 4px solid #fc4c02;
+    border-top: 4px solid var(--sport-default-color);
     display: flex;
     flex-direction: column;
     align-items: stretch;
@@ -334,9 +338,28 @@ main {
     margin-bottom: 1.2rem;
     font-size: 1.18rem;
     font-weight: 700;
-    color: #fc4c02;
+    color: var(--sport-default-color);
     letter-spacing: 0.02em;
     text-align: left;
+}
+
+#analysis-tab .chart-container { border-top-color: var(--sport-run-color); }
+#analysis-tab .chart-container h3 { color: var(--sport-run-color); }
+#bike-tab .chart-container { border-top-color: var(--sport-bike-color); }
+#bike-tab .chart-container h3 { color: var(--sport-bike-color); }
+#swim-tab .chart-container { border-top-color: var(--sport-swim-color); }
+#swim-tab .chart-container h3 { color: var(--sport-swim-color); }
+
+.chart-container canvas {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.eddington-pair,
+.distance-pair,
+.readiness-layout,
+.acute-load-chart-container {
+    grid-column: 1 / -1;
 }
 
 .chart-info-button {
@@ -569,8 +592,9 @@ main {
     }
 
     .chart-container canvas {
-        height: 240px !important;
-        min-height: 180px;
+        aspect-ratio: 16 / 9;
+        min-height: 220px;
+        height: auto !important;
     }
 
     .activity-details-col {
@@ -655,8 +679,9 @@ main {
     }
 
     .chart-container canvas {
-        height: 200px !important;
-        min-height: 160px;
+        aspect-ratio: 16 / 9;
+        min-height: 200px;
+        height: auto !important;
         border-radius: 8px;
     }
 
@@ -687,7 +712,9 @@ main {
     }
 
     .chart-container canvas {
-        height: 180px !important;
+        aspect-ratio: 16 / 9;
+        min-height: 180px;
+        height: auto !important;
         border: 1px solid #f0e8e4;
     }
 
@@ -5563,8 +5590,9 @@ body {
 
     /* Charts */
     .chart-container canvas {
-        height: 180px !important;
-        min-height: 150px;
+        aspect-ratio: 16 / 9;
+        min-height: 180px;
+        height: auto !important;
     }
 
     #global-map {

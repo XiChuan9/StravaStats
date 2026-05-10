@@ -1886,8 +1886,7 @@ export function renderConsistencyImprovementChart(runs) {
 
     if (validRuns.length === 0) return;
 
-    const calculatePace = r => (r.moving_time / 60) / (r.distance / 1000);
-    const calculateEfficiency = r => calculatePace(r) / r.average_heartrate;
+    const calculateEfficiency = r => r.efficiency;
 
     // Group by month
     const monthlyData = {};
@@ -2069,7 +2068,7 @@ export function renderVolumeImprovementChart(runs) {
         monthlyData[monthKey].volume += run.distance / 1000; // km
     });
 
-    const calculateEfficiency = r => ((r.moving_time / 60) / (r.distance / 1000)) / r.average_heartrate;
+    const calculateEfficiency = r => r.efficiency;
 
     const monthlyStats = Object.entries(monthlyData)
         .map(([month, data]) => {
@@ -2158,8 +2157,7 @@ export function renderEfficiencyEvolutionChart(runs) {
 
     // Efficiency = pace / HR
     // Lower values are better, so we reverse the Y axis visually
-    const calculateEfficiency = r =>
-        ((r.moving_time / 60) / (r.distance / 1000)) / r.average_heartrate;
+    const calculateEfficiency = r => r.efficiency;
 
     const efficiencyData = sortedRuns.map((run, index) => {
         const pace = (run.moving_time / 60) / (run.distance / 1000);
@@ -2245,8 +2243,7 @@ export function renderEfficiencyEvolutionChart(runs) {
                                 return `Efficiency: ${point.y.toFixed(4)}`;
                             }
 
-                            const date = new Date(point.date)
-                                .toLocaleDateString('en-GB');
+                            const date = utils.formatDate(new Date(point.date));
 
                             const paceMinutes = Math.floor(point.pace);
                             const paceSeconds = Math.round(
@@ -2308,7 +2305,7 @@ export function renderDistanceEfficiencyChart(runs) {
     const validRuns = runs.filter(r => r.average_heartrate && r.distance && r.moving_time);
     if (validRuns.length === 0) return;
 
-    const calculateEfficiency = r => ((r.moving_time / 60) / (r.distance / 1000)) / r.average_heartrate;
+    const calculateEfficiency = r => r.efficiency;
 
     const data = validRuns.map(r => ({
         x: r.distance / 1000,
@@ -2361,7 +2358,7 @@ export function renderDistanceEfficiencyChart(runs) {
                         label: function (context) {
                             const point = context.raw;
 
-                            const date = new Date(point.date).toLocaleDateString('en-GB');
+                            const date = utils.formatDate(new Date(point.date));
 
                             return [
                                 `Date: ${date}`,

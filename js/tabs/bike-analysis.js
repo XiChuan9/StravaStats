@@ -251,7 +251,7 @@ function renderBikeTypeSummary(rides) {
             <td>${a.count}</td>
             <td>${a.totalDist.toFixed(0)} km</td>
             <td>${a.avgDist.toFixed(1)} km</td>
-            <td>${a.avgSpeed.toFixed(1)} km/h</td>
+            <td>${utils.formatSpeedBike(a.avgSpeed)}</td>
             <td>${a.avgTimeStr}</td>
         </tr>`;
     }).join("");
@@ -308,7 +308,7 @@ function renderSummaryCards(rides) {
 
         <div class="card">
             <h3>Avg Speed</h3>
-            <p>${avgSpeed.toFixed(1)} km/h</p>
+            <p>${utils.formatSpeedBike(avgSpeed)}</p>
         </div>
     `;
 }
@@ -635,7 +635,7 @@ function renderTopActivities(rides) {
             <thead><tr style="background: #2e7d32; color: #fff;"><th>#</th><th>Ride</th><th data-sort="num">km/h</th></tr></thead>
             <tbody>
                 ${topFastest.map((a, i) =>
-        `<tr><td>${i + 1}</td><td>${activityLink(a)}</td><td data-value="${a.speed}">${a.speed.toFixed(1)} km/h</td></tr>`
+        `<tr><td>${i + 1}</td><td>${activityLink(a)}</td><td data-value="${a.speed}">${utils.formatSpeedBike(a.speed)}</td></tr>`
     ).join("")}
             </tbody>
             </table>

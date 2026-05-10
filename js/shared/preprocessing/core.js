@@ -609,6 +609,39 @@ function calculateRecoveryHoursSeries(activities, dates) {
 // ===================================================================
 // 7. Asignar métricas
 // ===================================================================
+function getSportCategory(activity) {
+    const sportType = activity.sport_type || activity.type || '';
+    if (/Run/i.test(sportType)) return 'run';
+    if (/Swim/i.test(sportType)) return 'swim';
+    if (/Ride|Bike|Cycling/i.test(sportType)) return 'bike';
+    return null;
+}
+
+function computeEfficiencyFields(activity) {
+    const distance = Number(activity.distance) || 0;
+    const movingTime = Number(activity.moving_time) || 0;
+    const avgHr = Number(activity.average_heartrate) || 0;
+
+    if (!avgHr || distance <= 0 || movingTime <= 0) {
+        return { efficiency: null, method: null };
+    }
+
+    const category = getSportCategory(activity);
+    if (category === 'run') {
+        const paceMinPerKm = (movingTime / 60) / (distance / 1000);
+        return { efficiency: paceMinPerKm / avgHr, method: 'pace_per_hr' };
+    }
+    if (category === 'swim') {
+        const paceMinPer100m = (movingTime / 60) / (distance / 100);
+        return { efficiency: paceMinPer100m / avgHr, method: 'pace100m_per_hr' };
+    }
+    if (category === 'bike') {
+        const avgSpeedKmh = (distance / 1000) / (movingTime / 3600);
+        return { efficiency: avgSpeedKmh / avgHr, method: 'speed_per_hr' };
+    }
+    return { efficiency: null, method: null };
+}
+
 function assignMetrics(activities, dates, pmc, injuryRisk, recoveryHours) {
     const map = Object.fromEntries(dates.map((d, i) => [d, i]));
 
@@ -624,6 +657,14 @@ function assignMetrics(activities, dates, pmc, injuryRisk, recoveryHours) {
         } else {
             a.atl = a.ctl = a.tsb = a.injuryRisk = a.recovery_hours = null;
         }
+
+        const elapsed = Number(a.elapsed_time) || 0;
+        const moving = Number(a.moving_time) || 0;
+        a.moving_ratio = elapsed > 0 ? moving / elapsed : null;
+
+        const { efficiency, method } = computeEfficiencyFields(a);
+        a.efficiency = efficiency;
+        a.efficiency_method = method;
     });
 }
 

@@ -27,9 +27,8 @@ This document describes, tab by tab, everything currently shown by the applicati
 
 ### Filters
 
-- Quick time range (week, 7d, 30d, 3m, 6m, year, 365d).
-- From/to date filter.
-- Acute load band mode selector (conservative/aggressive).
+- Nine preset time-range buttons: This Week, Last 7 Days, This Month, Last 30 Days, Last 3 Months, Last 6 Months, This Year, Last 365 Days, All Time.
+- Custom From and To date pickers (DD/MM/YYYY text inputs) plus an Apply button. The custom range is dashboard-local and does not propagate to other tabs.
 
 ### Stats and KPIs
 
@@ -43,7 +42,7 @@ This document describes, tab by tab, everything currently shown by the applicati
 
 ### Charts and views
 
-- Acute Load Chart (load lines and productive band).
+- Acute Load Chart with productive-range band. The band mode is hardcoded to `'aggressive'`.
 - Consistency heatmap (calendar).
 - Load time series (CTL/ATL/TSB/risk).
 - Goal progress chart.
@@ -51,9 +50,8 @@ This document describes, tab by tab, everything currently shown by the applicati
 ### Actions
 
 - Apply filters.
-- Change range presets.
-- Change acute load mode.
-- Edit goals.
+- Change range presets or enter a custom date range.
+- Edit goals (km, hours, or activities target).
 
 ## 2) Run
 
@@ -96,75 +94,86 @@ This document describes, tab by tab, everything currently shown by the applicati
 - Open activity detail.
 - Apply/reset date and gear filters.
 
-## 3) Bike
+## 3) Bike Analysis
 
 ### Filters
 
 - From/to date.
-- Bike filter (gear).
+- Bike filter (gear selector across all known bike gears).
+- Year shortcut buttons.
 - Apply and reset filters.
 
 ### Stats and KPIs
 
 - Total rides.
-- Total distance.
-- Total time.
-- Total elevation.
-- Average distance.
-- Average speed.
+- Total distance, total moving time, total elevation gain.
+- Average ride distance.
+- Average speed (km/h).
 - Average cadence.
-- Average power.
+- Average power (watts) where available.
 - Average HR.
-- Summary by bike type: road, mtb, gravel, indoor, electric.
+- Summary card per bike type: road, mtb, gravel, indoor, electric — distance, time, elevation, count.
 
 ### Charts and views
 
-- Bike-type pie chart.
+- Bike-type distribution pie chart.
 - Distance histogram.
 - Elevation histogram.
-- Speed vs distance scatter.
-- Distance vs elevation scatter.
-- Elevation ratio chart.
-- Power vs speed scatter.
-- Accumulated distance.
-- Weekly trend.
-- Consistency heatmap.
-- Top activities.
-- Activities table.
+- Speed-vs-distance scatter.
+- Distance-vs-elevation scatter.
+- Elevation-ratio chart (m / km).
+- Power-vs-speed scatter for rides with power data.
+- Accumulated distance line.
+- Weekly rolling-distance trend.
+- Consistency heatmap (Cal-Heatmap style).
+- Eddington distribution and Eddington progression charts.
+- Top rides ranking.
+- Sortable activities table with date, sport, name, distance, time, speed, elevation, power, HR, TSS.
 
 ### Actions
 
-- Filter by date range and bike.
-- Sort table.
+- Filter by date range, bike, or quick year.
+- Sort the activities table by any column.
+- Open an activity row to jump to the detail page.
 
-## 4) Swim
+## 4) Swim Analysis
 
 ### Filters
 
 - From/to date.
+- Year shortcut buttons.
 - Apply and reset.
 
 ### Stats and KPIs
 
 - Total swims.
-- Total distance.
-- Total time.
+- Total distance and total time.
 - Average session distance.
-- Average pace (sec/100m).
+- Average pace per 100 m.
 - Average HR.
-- Pool vs open-water comparison (count, distance, average time).
-- Pool length estimation (when available).
+- Pool vs open-water comparison: count, distance, average session time.
+- Pool length estimation (matched against common metric and yard pool sizes).
 
 ### Charts and views
 
 - Distance histogram.
 - Pace histogram.
-- Pace vs distance scatter (pool/open water).
-- Swims table (date, name, distance, time, pace/100m, type, pool length).
+- Pace-vs-distance scatter colored by pool/open water.
+- Pace/HR curve and efficiency-evolution chart.
+- Volume-improvement chart.
+- Accumulated distance line.
+- Weekly rolling-distance trend.
+- Consistency heatmap.
+- Pool-length chart for indoor swims.
+- Eddington distribution and progression.
+- Top swims ranking.
+- Swims table with date, name, distance, time, pace/100m, type, pool length, HR.
 
 ### Actions
 
-- Filter by date.
+- Filter by date range or year.
+- Sort the swims table.
+- Open a swim row to navigate to the activity detail page.
 
 ## 5) Athlete
 
@@ -197,30 +206,37 @@ This document describes, tab by tab, everything currently shown by the applicati
 
 - Change sport/data type and time range.
 
-## 6) Predictor
+## 6) Planner (Predictor)
 
 ### Filters/inputs
 
-- Base distance/result.
-- Model-weight sliders.
-- Conservative/moderate/aggressive profile selector.
+- Base distance and reference time.
+- Model-weight sliders for Riegel, VDOT, direct PB matching, and personal curve fitting.
+- Scenario selector: conservative / moderate / aggressive.
+- Chart distance selector for the prediction evolution view.
 
 ### Stats and calculations
 
-- Personal bests for standard distances.
-- Historical top 3 by distance.
-- Riegel model prediction.
-- VDOT model prediction.
-- Final weighted prediction.
+- Personal bests at standard distances (5K, 10K, half marathon, marathon, etc.).
+- Top historical efforts per distance bracket.
+- Riegel formula (`T2 = T1 × (D2 / D1)^1.06`).
+- VDOT-style transfer.
+- Personal curve fit across the user's PB history.
+- Final blended prediction using the user-controlled weights.
+- Training readiness summary derived from recent load.
 
 ### Charts and views
 
 - PB table.
-- Prediction table (time, pace, margin).
+- Prediction table with target time, pace, and confidence margin.
+- Prediction-evolution chart showing how the model output drifted over time.
+- Training readiness section.
 
 ### Actions
 
-- Adjust model weights and recalculate predictions.
+- Adjust model weights and recalculate.
+- Switch scenario (conservative / moderate / aggressive).
+- Change the chart-distance focus.
 
 ## 7) Gear
 
@@ -279,27 +295,33 @@ This document describes, tab by tab, everything currently shown by the applicati
 
 ### Filters
 
-- Year selector.
+- View mode: Week, Month, Year.
+- Activity type multi-select (sports present in the data).
+- Year navigation through prev/next buttons and a Today shortcut.
 
 ### Stats and KPIs
 
 - Current and longest day streak.
 - Current and longest week streak.
-- Activities in period.
+- Activities in the selected period.
 - Total distance.
-- Total hours.
+- Total moving hours.
 - Active days.
 - Total TSS.
 
 ### Charts and views
 
-- Annual calendar heatmap.
-- Activities list grouped by date.
+- Annual calendar heatmap colored by selected sport.
+- Per-day activity tiles colored by sport with name, distance, and duration.
+- Streak summary card.
+- Activities list grouped by date for the selected window.
 
 ### Actions
 
-- Navigate by year.
-- Click a day to view details.
+- Switch between week, month, and year views.
+- Navigate prev/next or jump back to Today.
+- Filter the visible activity types.
+- Click an activity to open its detail page.
 
 ## 10) Weather
 
@@ -330,28 +352,31 @@ This document describes, tab by tab, everything currently shown by the applicati
 
 - Change histogram variable.
 
-## 11) Map
+## 11) Maps
 
 ### Filters
 
-- Sport.
-- Visualization mode (heat or routes).
-- Map tiles (OSM, Carto, etc.).
-- From/to date.
-- Heatmap intensity/radius/blur.
-- Color-by-sport toggle.
+- Sport selector.
+- Visualization mode (density heatmap or route polylines).
+- Map tile provider (OpenStreetMap, Carto Light/Dark, satellite, etc.).
+- From/to date range.
+- Heatmap intensity, radius, and blur sliders.
+- Color-by-sport toggle for the routes mode.
 
 ### Stats and views
 
-- Global map with two modes:
-  - Density heatmap.
-  - Route polylines.
-- Popups with activity names.
+- Full-screen Leaflet map with two render modes:
+  - Density heatmap using Leaflet.heat over decoded route points.
+  - Route polylines decoded client-side from each activity's `map.summary_polyline`.
+- Hover/click popups with activity name and date.
 
 ### Actions
 
-- Change map layers and visualization style.
-- Tune heatmap parameters.
+- Switch between heatmap and route modes.
+- Change the tile layer.
+- Apply the sport or date filters and re-render the layer.
+- Tune heatmap parameters live.
+- Click a route to open its activity detail page.
 
 ## 12) Report (Wrapped)
 
@@ -380,31 +405,34 @@ This document describes, tab by tab, everything currently shown by the applicati
 - Change report year.
 - Export/print summary.
 
-## 13) AI Coach
+## 13) AI Chat (Coach)
 
 ### Inputs
 
-- User-provided Gemini API key.
-- Chat prompt.
+- User-provided Gemini API key (stored in `localStorage('gemini_api_key')`).
+- Free-form chat prompt.
+- Starter suggestion buttons rendered above the input.
 
 ### Context used by the assistant
 
-- Global training summary.
+- Global training summary (totals, active days, sport mix).
 - Sport breakdown.
-- PBs.
-- Gear summary.
-- Recent activities.
-- Recent monthly volume.
+- PB-like stats from the historical run catalog.
+- Gear summary including current health for shoes and bikes.
+- Recent activities and recent monthly volume series.
 
 ### Views
 
-- Persistent chat history.
-- User/assistant messages.
+- Persistent chat transcript stored in `localStorage('ai_chat_history')`.
+- Distinct styling for user and assistant messages.
+- API-key entry banner shown until a key is configured.
 
 ### Actions
 
-- Send prompt.
-- Clear history.
+- Enter or update the Gemini API key.
+- Click a starter suggestion to seed the prompt.
+- Send a prompt; the request is made browser-side directly against the Gemini Flash preview endpoint.
+- Clear chat history.
 
 ## Cross-app settings
 

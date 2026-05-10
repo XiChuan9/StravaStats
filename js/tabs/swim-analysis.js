@@ -36,9 +36,7 @@ function getSwimPaceMinPer100m(swim) {
 }
 
 function getSwimEfficiency(swim) {
-    const paceMinPer100m = getSwimPaceMinPer100m(swim);
-    if (!paceMinPer100m || !swim?.average_heartrate) return null;
-    return paceMinPer100m / swim.average_heartrate;
+    return swim?.efficiency ?? null;
 }
 
 
@@ -307,14 +305,11 @@ function renderSummaryCards(swims) {
             .reduce((s, a) => s + a.pace_min100, 0) /
         Math.max(1, swims.filter(a => a.pace_min100).length);
 
-    const paceMin = Math.floor(avgPaceMin);
-    const paceSec = Math.round((avgPaceMin - paceMin) * 60);
-
     el.innerHTML = `
         <div class="card"><h3>Swims</h3><p>${swims.length}</p></div>
         <div class="card"><h3>Total Distance</h3><p>${totalDistance.toFixed(1)} km</p></div>
         <div class="card"><h3>Total Time</h3><p>${(totalTime / 3600).toFixed(1)} h</p></div>
-        <div class="card"><h3>Avg Pace</h3><p>${paceMin}:${paceSec.toString().padStart(2, '0')} /100m</p></div>
+        <div class="card"><h3>Avg Pace</h3><p>${utils.formatPaceSwim(avgPaceMin * 60)}</p></div>
     `;
 }
 
@@ -674,9 +669,7 @@ export function renderPaceHrCurveChart(swims) {
                         label(context) {
                             const value = context.raw;
                             if (value == null) return '';
-                            const min = Math.floor(value);
-                            const sec = Math.round((value - min) * 60);
-                            return `${context.dataset.label}: ${min}:${sec.toString().padStart(2, '0')} min/100m`;
+                            return `${context.dataset.label}: ${utils.formatPaceSwim(value * 60)}`;
                         }
                     }
                 },
