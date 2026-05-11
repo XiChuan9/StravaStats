@@ -40,9 +40,6 @@ export function renderAthleteTab(allActivities, dateFilterFrom, dateFilterTo, sp
     // Apply filtering using the unified helper
     const filteredActivities = filterActivities(allActivities, dateFilterFrom, dateFilterTo, sportFilter);
 
-    // Runs subset for run-specific components
-    const runs = filteredActivities.filter(a => a.type && a.type.includes('Run'));
-
     const athleteData = JSON.parse(localStorage.getItem('strava_athlete_data'));
     const zonesData = JSON.parse(localStorage.getItem('strava_training_zones'));
 
@@ -59,10 +56,10 @@ export function renderAthleteTab(allActivities, dateFilterFrom, dateFilterTo, sp
 
     // Render panels & charts (order: summary, records, charts)
     renderAllTimeStats(filteredActivities);
-    renderRecordStats(runs);
+    renderRecordStats(filteredActivities);
     renderAthleteCountHistogram(filteredActivities);
 
-    // Charts: many of these accept the whole filteredActivities but treat them as runs where appropriate
+    // Charts: use the filtered activity set for all visualizations
     renderStartTimeHistogram(filteredActivities, dataType);
     renderDurationHistogram(filteredActivities);
     renderYearlyComparison(filteredActivities, dataType);
@@ -186,37 +183,50 @@ function renderAthleteCountHistogram(activities) {
     });
 }
 
-function renderRecordStats(runs) {
+function renderRecordStats(activities) {
     const container = document.getElementById('record-stats');
-    if (!container || runs.length === 0) return;
+    if (!container || activities.length === 0) return;
 
-    const longestRun = [...runs].sort((a, b) => b.distance - a.distance)[0];
+    const longestActivity = [...activities].sort((a, b) => b.distance - a.distance)[0];
 
-    const fastestRun = [...runs].filter(r => r.distance > 1000).sort((a, b) => a.average_speed - b.average_speed).reverse()[0];
-    const paceMin = fastestRun.average_speed > 0 ? (1000 / fastestRun.average_speed) / 60 : 0;
+    const getSpeed = activity => {
+        const avgSpeed = Number(activity.average_speed) || 0;
+        if (avgSpeed > 0) return avgSpeed;
+        if (activity.moving_time > 0) return (activity.distance || 0) / activity.moving_time;
+        return 0;
+    };
+
+    const fastestCandidates = activities.filter(a => (a.distance || 0) > 1000 && getSpeed(a) > 0);
+    const fallbackCandidates = activities.filter(a => getSpeed(a) > 0);
+    const fastestActivity = fastestCandidates.length
+        ? fastestCandidates.sort((a, b) => getSpeed(b) - getSpeed(a))[0]
+        : fallbackCandidates.length
+            ? fallbackCandidates.sort((a, b) => getSpeed(b) - getSpeed(a))[0]
+            : activities[0];
+
+    const fastestSpeed = getSpeed(fastestActivity);
+    const paceMin = fastestSpeed > 0 ? (1000 / fastestSpeed) / 60 : 0;
     const paceStr = paceMin > 0 ? utils.paceDecimalToTime(paceMin) : '-';
 
-    const mostElev = [...runs].sort((a, b) => b.total_elevation_gain - a.total_elevation_gain)[0];
+    const mostElev = [...activities].sort((a, b) => b.total_elevation_gain - a.total_elevation_gain)[0];
 
-    const oldestRun = [...runs].sort((a, b) => new Date(a.start_date_local) - new Date(b.start_date_local))[0];
-    const newestRun = [...runs].sort((a, b) => new Date(b.start_date_local) - new Date(a.start_date_local))[0];
-    const timeDiffMs = new Date(newestRun.start_date_local) - new Date(oldestRun.start_date_local);
+    const oldestActivity = [...activities].sort((a, b) => new Date(a.start_date_local) - new Date(b.start_date_local))[0];
+    const newestActivity = [...activities].sort((a, b) => new Date(b.start_date_local) - new Date(a.start_date_local))[0];
+    const timeDiffMs = new Date(newestActivity.start_date_local) - new Date(oldestActivity.start_date_local);
     const timeDiffDays = Math.floor(timeDiffMs / (1000 * 60 * 60 * 24));
 
     const hourCounts = Array(24).fill(0);
-    runs.forEach(run => {
-        let hour = new Date(run.start_date_local).getHours();
+    activities.forEach(activity => {
+        let hour = new Date(activity.start_date_local).getHours();
         hour = (hour - 2 + 24) % 24;
         hourCounts[hour]++;
     });
     const favHour = hourCounts.indexOf(Math.max(...hourCounts));
 
     const dayCounts = Array(7).fill(0);
-    runs.forEach(run => {
-        const date = new Date(run.start_date_local);
-        // getDay(): 0=Sunday, 1=Monday, ..., 6=Saturday
+    activities.forEach(activity => {
+        const date = new Date(activity.start_date_local);
         let dayIdx = date.getDay();
-        // Shift so Monday=0, Sunday=6
         dayIdx = (dayIdx + 6) % 7;
         dayCounts[dayIdx]++;
     });
@@ -224,51 +234,48 @@ function renderRecordStats(runs) {
     const dayLabels = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
     const favDay = dayLabels[favDayIdx];
 
-    // Average distance
-    const avgDist = runs.length ? (runs.reduce((s, a) => s + a.distance, 0) / runs.length / 1000).toFixed(2) : 0;
+    const avgDist = activities.length ? (activities.reduce((s, a) => s + (a.distance || 0), 0) / activities.length / 1000).toFixed(2) : 0;
 
-    // Average pace
-    const avgPaceMin = runs.length
-        ? (runs.reduce((s, r) => s + (r.average_speed > 0 ? (1000 / r.average_speed) / 60 : 0), 0) / runs.length)
+    const avgPaceMin = activities.length
+        ? (activities.reduce((s, a) => s + (getSpeed(a) > 0 ? (1000 / getSpeed(a)) / 60 : 0), 0) / activities.length)
         : 0;
     const avgPaceStr = avgPaceMin > 0 ? utils.paceDecimalToTime(avgPaceMin) : '-';
 
-    // Solo vs Group workouts
-    const soloCount = runs.filter(r => Number(r.athlete_count) === 1).length;
-    const groupCount = runs.length - soloCount;
-    const soloPct = runs.length ? ((soloCount / runs.length) * 100).toFixed(1) : 0;
-    const groupPct = runs.length ? ((groupCount / runs.length) * 100).toFixed(1) : 0;
+    const soloCount = activities.filter(a => Number(a.athlete_count) === 1).length;
+    const groupCount = activities.length - soloCount;
+    const soloPct = activities.length ? ((soloCount / activities.length) * 100).toFixed(1) : 0;
+    const groupPct = activities.length ? ((groupCount / activities.length) * 100).toFixed(1) : 0;
 
     container.innerHTML = `
             <ul style="list-style: none; padding-left: 0; line-height: 1.8;">
-                <li><strong>Longest Run:</strong> ${(longestRun.distance / 1000).toFixed(2)} km (<a href="html/activity-router.html?id=${longestRun.id}" target="_blank">View</a>)</li>
-                <li><strong>Fastest Run (Pace):</strong> ${paceStr} /km over ${(fastestRun.distance / 1000).toFixed(1)}k (<a href="html/activity-router.html?id=${fastestRun.id}" target="_blank">View</a>)</li>
+                <li><strong>Longest Activity:</strong> ${(longestActivity.distance / 1000).toFixed(2)} km (<a href="html/activity-router.html?id=${longestActivity.id}" target="_blank">View</a>)</li>
+                <li><strong>Fastest Activity (Pace):</strong> ${paceStr} /km over ${(fastestActivity.distance / 1000).toFixed(1)}k (<a href="html/activity-router.html?id=${fastestActivity.id}" target="_blank">View</a>)</li>
                 <li><strong>Most Elevation:</strong> ${Math.round(mostElev.total_elevation_gain)} m (<a href="html/activity-router.html?id=${mostElev.id}" target="_blank">View</a>)</li>
-                <li><strong>Time Span:</strong> ${timeDiffDays} days (${oldestRun.start_date_local.substring(0, 10)} to ${newestRun.start_date_local.substring(0, 10)})</li>
+                <li><strong>Time Span:</strong> ${timeDiffDays} days (${oldestActivity.start_date_local.substring(0, 10)} to ${newestActivity.start_date_local.substring(0, 10)})</li>
                 <li><strong>Favourite Hour:</strong> ${favHour}:00</li>
                 <li><strong>Favourite Day:</strong> ${favDay}</li>
                 <li><strong>Average Distance:</strong> ${avgDist} km</li>
                 <li><strong>Average Pace:</strong> ${avgPaceStr} /km</li>
-                <li><strong>Solo Workouts:</strong> ${soloCount} (${soloPct}%)</li>
-                <li><strong>Group Workouts:</strong> ${groupCount} (${groupPct}%)</li>
+                <li><strong>Solo Activities:</strong> ${soloCount} (${soloPct}%)</li>
+                <li><strong>Group Activities:</strong> ${groupCount} (${groupPct}%)</li>
             </ul>
         `;
 }
 
-function renderStartTimeHistogram(runs, dataType = 'count') {
+function renderStartTimeHistogram(activities, dataType = 'count') {
     const values = Array(24).fill(0);
-    runs.forEach(run => {
-        let hour = new Date(run.start_date_local).getHours();
+    activities.forEach(activity => {
+        let hour = new Date(activity.start_date_local).getHours();
         hour = (hour - 2 + 24) % 24;
         switch (dataType) {
             case 'count':
                 values[hour]++;
                 break;
             case 'time':
-                values[hour] += run.moving_time / 3600;
+                values[hour] += activity.moving_time / 3600;
                 break;
             case 'distance':
-                values[hour] += run.distance / 1000;
+                values[hour] += activity.distance / 1000;
                 break;
         }
     });
@@ -395,7 +402,7 @@ function renderYearlyComparison(runs, dataType = 'count') {
             realData: distDataRaw
         },
         {
-            label: 'Number of Runs (scaled)',
+            label: 'Number of Activities (scaled)',
             data: countData,
             backgroundColor: 'rgba(252, 82, 0, 0.8)',
             hidden: true,
@@ -444,7 +451,7 @@ function renderYearlyComparison(runs, dataType = 'count') {
                             if (label === 'Total Distance') {
                                 return `${label}: ${value.toLocaleString(undefined, { maximumFractionDigits: 1 })} km`;
                             }
-                            if (label === 'Number of Runs') {
+                            if (label === 'Number of Activities') {
                                 return `${label}: ${value}`;
                             }
                             if (label === 'Total Elevation Gain') {
@@ -623,7 +630,7 @@ function renderHourMatrix(runs, dataType = 'count') {
     }
 
     const labelMap = {
-        count: 'Runs',
+        count: 'Activities',
         time: 'Time (h)',
         distance: 'Distance (km)'
     };
