@@ -96,24 +96,48 @@ function renderAthleteCountHistogram(activities) {
     const container = document.getElementById('athlete-count-histogram');
     if (!container || activities.length === 0) return;
 
-    // Categorizar por athlete_count
+    // Categorize activities by athlete count
     const categories = {
-        solo: { count: 0, label: '🏃 Solo', color: 'rgba(100, 200, 255, 0.8)' },          // 1
-        pareja: { count: 0, label: '👥 Pareja', color: 'rgba(100, 255, 200, 0.8)' },      // 2
-        grupoSmall: { count: 0, label: '👫 Grupo Pequeño', color: 'rgba(255, 200, 100, 0.8)' }, // 3-5
-        grupoBig: { count: 0, label: '👨‍👩‍👧‍👦 Grupo Grande', color: 'rgba(255, 100, 150, 0.8)' }  // 6+
+        solo: {
+            count: 0,
+            label: '🏃 Solo',
+            color: 'rgba(100, 200, 255, 0.8)' // 1
+        },
+        duo: {
+            count: 0,
+            label: '👥 Duo',
+            color: 'rgba(100, 255, 200, 0.8)' // 2
+        },
+        smallGroup: {
+            count: 0,
+            label: '👫 Small Group',
+            color: 'rgba(255, 200, 100, 0.8)' // 3-10
+        },
+        mediumGroup: {
+            count: 0,
+            label: '👨‍👩‍👧 Medium Group',
+            color: 'rgba(255, 150, 100, 0.8)' // 11-25
+        },
+        largeGroup: {
+            count: 0,
+            label: '👨‍👩‍👧‍👦 Large Group',
+            color: 'rgba(255, 100, 150, 0.8)' // 26+
+        }
     };
 
     activities.forEach(activity => {
         const athleteCount = Number(activity.athlete_count) || 1;
+
         if (athleteCount === 1) {
             categories.solo.count++;
         } else if (athleteCount === 2) {
-            categories.pareja.count++;
-        } else if (athleteCount >= 3 && athleteCount <= 5) {
-            categories.grupoSmall.count++;
-        } else if (athleteCount > 5) {
-            categories.grupoBig.count++;
+            categories.duo.count++;
+        } else if (athleteCount >= 3 && athleteCount <= 10) {
+            categories.smallGroup.count++;
+        } else if (athleteCount >= 11 && athleteCount <= 25) {
+            categories.mediumGroup.count++;
+        } else {
+            categories.largeGroup.count++;
         }
     });
 
@@ -140,8 +164,11 @@ function renderAthleteCountHistogram(activities) {
                     callbacks: {
                         afterLabel: function(context) {
                             const total = data.reduce((a, b) => a + b, 0);
-                            const pct = total > 0 ? ((context.parsed.y / total) * 100).toFixed(1) : 0;
-                            return `${pct}% of total`;
+                            const pct = total > 0
+                                ? ((context.parsed.y / total) * 100).toFixed(1)
+                                : 0;
+
+                            return `${pct}% of total activities`;
                         }
                     }
                 }
@@ -149,7 +176,10 @@ function renderAthleteCountHistogram(activities) {
             scales: {
                 y: {
                     beginAtZero: true,
-                    title: { display: true, text: 'Number of Activities' }
+                    title: {
+                        display: true,
+                        text: 'Number of Activities'
+                    }
                 }
             }
         }
