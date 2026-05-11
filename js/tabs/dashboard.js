@@ -1,6 +1,10 @@
 import * as utils from './utils.js';
 
 let selectedRangeDays = 'last30'; // rango inicial
+let customDateFromIso = null;
+let customDateToIso = null;
+const dashboardMemo = new Map();
+let lastActivitiesRef = null;
 let tssUnit = 'tss'; // unit for TSS chart: 'tss', 'activities', or 'hours'
 let acuteLoadBandMode = 'aggressive'; // always aggressive, no user selection
 let readinessTimelineMetric = 'readiness';
@@ -364,6 +368,13 @@ function addDays(date, days) {
 
 function getEffectiveDashboardWindow(dateFilterFrom, dateFilterTo) {
     const now = new Date();
+    if (selectedRangeDays === 'custom' && customDateFromIso && customDateToIso) {
+        const customStart = parseDateInput(customDateFromIso);
+        const customEnd = parseDateInput(customDateToIso, true);
+        if (customStart && customEnd) {
+            return { startDate: customStart, endDate: customEnd };
+        }
+    }
     const startDate = getRangeStartDate(selectedRangeDays);
     const minDate = parseDateInput(dateFilterFrom);
     const maxDate = parseDateInput(dateFilterTo, true);
@@ -1385,17 +1396,30 @@ function renderRangeSelector() {
     const container = document.getElementById('range-selector');
     if (!container) return;
 
+    const fromDisplay = customDateFromIso ? utils.isoToDisplayDate(customDateFromIso) : '';
+    const toDisplay = customDateToIso ? utils.isoToDisplayDate(customDateToIso) : '';
+
     container.innerHTML = RANGE_OPTIONS.map(r => `
-        <button 
-            class="range-btn ${r.type === selectedRangeDays ? 'active' : ''}" 
+        <button
+            class="range-btn ${r.type === selectedRangeDays ? 'active' : ''}"
             data-type="${r.type}">
             ${r.label}
         </button>
-    `).join('');
+    `).join('') + `
+        <input type="text" id="dashboard-date-from" placeholder="DD/MM/YYYY" value="${fromDisplay}">
+        <input type="text" id="dashboard-date-to" placeholder="DD/MM/YYYY" value="${toDisplay}">
+        <button id="dashboard-date-apply">Apply</button>
+    `;
 
     container.querySelectorAll('.range-btn').forEach(btn => {
         btn.onclick = () => {
             selectedRangeDays = btn.dataset.type;
+            customDateFromIso = null;
+            customDateToIso = null;
+            const fromInput = document.getElementById('dashboard-date-from');
+            const toInput = document.getElementById('dashboard-date-to');
+            if (fromInput) fromInput.value = '';
+            if (toInput) toInput.value = '';
             // Update active class immediately for snappy feedback
             container.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
@@ -1406,40 +1430,76 @@ function renderRangeSelector() {
             });
         };
     });
+
+    const applyBtn = document.getElementById('dashboard-date-apply');
+    if (applyBtn) {
+        applyBtn.onclick = () => {
+            const fromInput = document.getElementById('dashboard-date-from');
+            const toInput = document.getElementById('dashboard-date-to');
+            const fromIso = utils.parseDateInputToIso(fromInput ? fromInput.value : '');
+            const toIso = utils.parseDateInputToIso(toInput ? toInput.value : '');
+            if (!fromIso || !toIso) return;
+            if (fromIso > toIso) return;
+            customDateFromIso = fromIso;
+            customDateToIso = toIso;
+            selectedRangeDays = 'custom';
+            container.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+            requestAnimationFrame(() => {
+                const ctx = dashboardRenderContext;
+                renderDashboardContent(ctx.allActivities, ctx.dateFilterFrom, ctx.dateFilterTo);
+            });
+        };
+    }
 }
 
 
 function renderDashboardContent(allActivities, dateFilterFrom, dateFilterTo) {
     dashboardRenderContext = { allActivities, dateFilterFrom, dateFilterTo };
-    const filteredActivities = utils.filterActivitiesByDate(allActivities, dateFilterFrom, dateFilterTo);
-    const runs = filteredActivities
-        .filter(a => a.type && a.type.includes('Run'))
-        .sort((a, b) => new Date(a.start_date_local || 0) - new Date(b.start_date_local || 0));
+
+    if (lastActivitiesRef !== allActivities) {
+        dashboardMemo.clear();
+        lastActivitiesRef = allActivities;
+    }
 
     const { startDate, endDate } = getEffectiveDashboardWindow(dateFilterFrom, dateFilterTo);
-    const windowMs = Math.max(24 * 3600 * 1000, endDate.getTime() - startDate.getTime());
-    const previousStartDate = new Date(startDate.getTime() - windowMs);
-    const previousEndDate = new Date(startDate.getTime() - 1);
+    const memoKey = `${startDate.getTime()}|${endDate.getTime()}|${dateFilterFrom || ''}|${dateFilterTo || ''}`;
 
-    const recentRuns = runs.filter(r => {
-        const d = new Date(r.start_date_local);
-        return d >= startDate && d <= endDate;
-    });
+    let cached = dashboardMemo.get(memoKey);
+    if (!cached) {
+        const filteredActivities = utils.filterActivitiesByDate(allActivities, dateFilterFrom, dateFilterTo);
+        const runs = filteredActivities
+            .filter(a => a.type && a.type.includes('Run'))
+            .sort((a, b) => new Date(a.start_date_local || 0) - new Date(b.start_date_local || 0));
 
-    const previousRuns = runs.filter(r => {
-        const d = new Date(r.start_date_local);
-        return d >= previousStartDate && d <= previousEndDate;
-    });
+        const windowMs = Math.max(24 * 3600 * 1000, endDate.getTime() - startDate.getTime());
+        const previousStartDate = new Date(startDate.getTime() - windowMs);
+        const previousEndDate = new Date(startDate.getTime() - 1);
 
-    const recentActivities = filteredActivities.filter(activity => {
-        const d = new Date(activity.start_date_local);
-        return d >= startDate && d <= endDate;
-    });
+        const recentRuns = runs.filter(r => {
+            const d = new Date(r.start_date_local);
+            return d >= startDate && d <= endDate;
+        });
 
-    const previousActivities = filteredActivities.filter(activity => {
-        const d = new Date(activity.start_date_local);
-        return d >= previousStartDate && d <= previousEndDate;
-    });
+        const previousRuns = runs.filter(r => {
+            const d = new Date(r.start_date_local);
+            return d >= previousStartDate && d <= previousEndDate;
+        });
+
+        const recentActivities = filteredActivities.filter(activity => {
+            const d = new Date(activity.start_date_local);
+            return d >= startDate && d <= endDate;
+        });
+
+        const previousActivities = filteredActivities.filter(activity => {
+            const d = new Date(activity.start_date_local);
+            return d >= previousStartDate && d <= previousEndDate;
+        });
+
+        cached = { filteredActivities, runs, recentRuns, previousRuns, recentActivities, previousActivities };
+        dashboardMemo.set(memoKey, cached);
+    }
+
+    const { recentRuns, previousRuns, recentActivities, previousActivities } = cached;
 
     renderDashboardTopline(recentActivities);
     renderDashboardSummary(recentActivities, previousActivities, recentRuns, previousRuns);

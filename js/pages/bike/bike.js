@@ -4,7 +4,7 @@
  * Entry point: Query parameter ?id={activityId}
  */
 
-import { formatDate as sharedFormatDate } from '../../shared/utils/index.js';
+import { formatDate as sharedFormatDate, formatSpeedBike } from '../../shared/utils/index.js';
 import { renderWeatherAnalysis, renderWeatherMapDetails } from '../../shared/utils/weather-analysis.js';
 
 // =====================================================
@@ -118,7 +118,7 @@ function formatDate(date) {
 
 function formatSpeed(speedInMps) {
     if (!speedInMps || speedInMps <= 0) return '-';
-    return (speedInMps * 3.6).toFixed(1) + ' km/h';
+    return formatSpeedBike(speedInMps * 3.6);
 }
 
 function decodePolyline(str) {
@@ -521,8 +521,11 @@ function renderAdvancedStats(activity) {
     const hrVariability = lapSource?.length > 1
         ? calculateVariability(lapSource.map(item => item.average_heartrate ?? null), 0)
         : '-';
-    const moveRatio = activity.elapsed_time
-        ? `${((activity.moving_time / activity.elapsed_time) * 100).toFixed(1)}%`
+    const moveRatio = activity.moving_ratio !== null && activity.moving_ratio !== undefined
+        ? `${(activity.moving_ratio * 100).toFixed(1)}%`
+        : '-';
+    const efficiency = activity.efficiency !== null && activity.efficiency !== undefined
+        ? `${activity.efficiency.toFixed(3)} km/h/bpm`
         : '-';
 
     const fields = [];
@@ -540,6 +543,7 @@ function renderAdvancedStats(activity) {
     pushField('Comments', comments);
     pushField('Photos', photos);
     pushField('Move Ratio', moveRatio);
+    pushField('Efficiency', efficiency);
     pushField('Speed CV (Splits)', speedVariability);
     pushField('HR CV (Splits)', hrVariability);
 
@@ -1206,7 +1210,7 @@ function renderSpeedMinMaxAreaChart(streams, smoothingLevel = 100) {
         },
         options: {
             responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { display: true }, tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)} km/h` } } },
+            plugins: { legend: { display: true }, tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${formatSpeedBike(ctx.parsed.y)}` } } },
             scales: { x: { title: { display: true, text: 'Distance (km)' } }, y: { title: { display: true, text: 'Speed (km/h)' }, beginAtZero: false } }
         }
     });

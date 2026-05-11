@@ -4,7 +4,7 @@
  * Entry point: Query parameter ?id={activityId}
  */
 
-import { formatDate as sharedFormatDate, formatPace as sharedFormatPace } from '../../shared/utils/index.js';
+import { formatDate as sharedFormatDate, formatPace as sharedFormatPace, formatPaceRun } from '../../shared/utils/index.js';
 import { renderWeatherAnalysis, renderWeatherMapDetails } from '../../shared/utils/weather-analysis.js';
 
 // =====================================================
@@ -202,7 +202,7 @@ function paceDecimalToTime(paceDecimal) {
  */
 function formatPace(speedInMps) {
     if (!speedInMps || speedInMps === 0) return '-';
-    return sharedFormatPace(1000 / speedInMps, 1).replace(' /km', '');
+    return formatPaceRun(1000 / speedInMps);
 }
 
 /**
@@ -866,7 +866,7 @@ function renderActivityStats(activity) {
 
     pushField('Duration', duration);
     pushField('Distance', `${distanceKm} km`);
-    pushField('Pace', pace !== '-' ? `${pace} /km` : null);
+    pushField('Pace', pace !== '-' && pace !== '—' ? pace : null);
     pushField('Elevation Gain', `${elevation} m`);
     pushField('Elevation per Km', `${elevationPerKm} m`);
     pushField('Calories', calories);
@@ -891,8 +891,11 @@ function renderAdvancedStats(activity) {
     const elevationPerKm = activity.distance > 0
         ? (activity.total_elevation_gain / (activity.distance / 1000)).toFixed(2)
         : '-';
-    const moveRatio = activity.elapsed_time
-        ? `${((activity.moving_time / activity.elapsed_time) * 100).toFixed(1)}%`
+    const moveRatio = activity.moving_ratio !== null && activity.moving_ratio !== undefined
+        ? `${(activity.moving_ratio * 100).toFixed(1)}%`
+        : '-';
+    const efficiency = activity.efficiency !== null && activity.efficiency !== undefined
+        ? `${activity.efficiency.toFixed(3)} min/km/bpm`
         : '-';
     const effort = activity.suffer_score !== undefined && activity.suffer_score !== null
         ? activity.suffer_score
@@ -911,6 +914,7 @@ function renderAdvancedStats(activity) {
 
     pushField('Elevation per Km', `${elevationPerKm} m`);
     pushField('Move Ratio', moveRatio);
+    pushField('Efficiency', efficiency);
     pushField('Effort', effort);
     pushField('VO₂max (est)', vo2max);
     pushField('Pace CV (Splits)', paceVariabilityLaps);
@@ -1320,7 +1324,7 @@ function renderBestEfforts(bestEfforts) {
         <tr>
             <td>${effort.name}</td>
             <td>${formatTime(effort.moving_time)}</td>
-            <td>${pace} /km</td>
+            <td>${pace}</td>
             <td>${achievements}</td>
         </tr>`;
     }).join('');
@@ -1362,7 +1366,7 @@ function renderLaps(laps) {
             <td>${lap.lap_index}</td>
             <td>${(lap.distance / 1000).toFixed(2)} km</td>
             <td>${formatTime(lap.moving_time)}</td>
-            <td>${pace} /km</td>
+            <td>${pace}</td>
             <td>${Math.round(lap.total_elevation_gain)} m</td>
             <td>${lap.average_heartrate ? Math.round(lap.average_heartrate) : '-'} bpm</td>
         </tr>`;
@@ -1481,7 +1485,7 @@ function renderSegments(segments) {
         <tr>
             <td><a href="https://www.strava.com/segments/${effort.segment.id}" target="_blank">${effort.name}</a></td>
             <td>${formatTime(effort.moving_time)}</td>
-            <td>${pace} /km</td>
+            <td>${pace}</td>
             <td>${effort.average_heartrate ? Math.round(effort.average_heartrate) : '-'} bpm</td>
             <td>${rank}</td>
         </tr>`;

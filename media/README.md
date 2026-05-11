@@ -23,3 +23,8 @@ Place your background photos here. Each tab maps to a specific filename.
 - Landscape orientation works best (16:9 or wider)
 - The image is covered by a semi-transparent white overlay so content remains readable.
   Adjust `--tab-bg-overlay` in `styles/style.css` to change opacity (0 = full image, 1 = no image).
+- Run, Bike, and Swim background images coexist with the per-sport CSS variables
+  defined on `:root` in `styles/style.css`: `--sport-run-color`, `--sport-bike-color`,
+  `--sport-swim-color`. Chart containers inside `#analysis-tab`, `#bike-tab`, and
+  `#swim-tab` pick up those colors automatically, so pick photos whose tone does not
+  clash with the matching sport accent.

@@ -1,6 +1,8 @@
 // ai-chat.js — AI Chat tab powered by Google Gemini 2.0 Flash (free tier)
 // The user provides their own API key (stored in localStorage). No server cost.
 
+import * as utils from './utils.js';
+
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent';
 const STORAGE_KEY = 'gemini_api_key';
 const HISTORY_KEY = 'ai_chat_history';
@@ -85,7 +87,7 @@ BY SPORT:\n`;
         const fastestRide = rides.filter(a => a.average_speed).sort((a, b) => b.average_speed - a.average_speed)[0];
         ctx += `\nCYCLING PERSONAL BESTS:\n`;
         if (longestRide) ctx += `- Longest ride: ${km(longestRide.distance)} km on ${longestRide.start_date_local?.substring(0, 10)}\n`;
-        if (fastestRide) ctx += `- Fastest avg speed: ${fmt(fastestRide.average_speed * 3.6)} km/h on ${fastestRide.start_date_local?.substring(0, 10)}\n`;
+        if (fastestRide) ctx += `- Fastest avg speed: ${utils.formatSpeedBike(fastestRide.average_speed * 3.6)} on ${fastestRide.start_date_local?.substring(0, 10)}\n`;
     }
 
     // Gear summary
@@ -113,7 +115,7 @@ BY SPORT:\n`;
         const elev = a.total_elevation_gain ? ` | +${fmt(a.total_elevation_gain, 0)}m` : '';
         const speedInfo = a.type?.includes('Run')
             ? ` | pace: ${pace(1 / (a.average_speed || 1))}`
-            : a.average_speed ? ` | ${fmt(a.average_speed * 3.6)} km/h` : '';
+            : a.average_speed ? ` | ${utils.formatSpeedBike(a.average_speed * 3.6)}` : '';
         ctx += `- [${d}] ${a.type}: "${a.name}" — ${km(a.distance)} km in ${duration(a.moving_time)}${speedInfo}${hr}${elev}\n`;
     });
 

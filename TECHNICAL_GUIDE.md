@@ -62,13 +62,18 @@ These pages support richer, activity-specific or gear-specific exploration outsi
 
 The frontend is implemented as native browser ES modules without a bundler. The architecture is intentionally layered:
 
-- `js/app/*`: app bootstrap, authentication, navigation, shared UI orchestration
-- `js/services/*`: API clients, browser cache helpers, server interactions
-- `js/shared/*`: utilities and shared preprocessing used across product surfaces
-- `js/tabs/*`: tab-level renderers for the main SPA
-- `js/pages/*`: controllers for dedicated detail pages
-- `js/analysis/*`: stream-level advanced analysis pipeline, models, analyzers, detectors, and exporters
-- `js/models/*`: typed domain-style objects such as tracks, segments, and climbs
+- `js/app/` — bootstrap (`main.js`), OAuth and demo gating (`auth.js`), navigation and shared UI orchestration (`ui.js`).
+- `js/services/` — API clients and browser cache helpers (`api.js`, barrel `index.js`).
+- `js/shared/` — cross-surface helpers:
+  - `shared/preprocessing/core.js` exports `preprocessActivities(activities, userProfile, zones, gears)` and the supporting derivation helpers (TSS, CTL, ATL, TSB, efficiency, moving_ratio, weather enrichment hooks).
+  - `shared/utils/core.js` exports the formatters and math utilities consumed everywhere (dates, paces, speeds, sport emoji, rolling means, etc.).
+  - `shared/utils/weather-analysis.js` aggregates per-run weather summaries; `shared/utils/speed-insights.js` wires Vercel Speed Insights.
+- `js/tabs/` — one renderer module per main SPA tab plus a barrel (`index.js`), tab-local helpers (`utils.js`), and API surface (`api.js`).
+- `js/pages/` — controllers for dedicated detail pages, organised per sport: `activity/`, `run/`, `bike/`, `swim/`, `gear/`. The activity page wires `advanced-analysis.js` against the analysis pipeline.
+- `js/analysis/` — stream-level pipeline. `preprocessing.js` cleans streams (GPS spikes, Hampel altitude filter, speed-spike cleanup, smoothing). `analyzers/` contains sport-specific analyzers (running, trail-run, cycling, gravel-mtb, hiking) extending `base-analyzer.js`. `detection/` holds climb and stop detectors. `segmentation/` produces distance/time/terrain splits. `engines/` contains `fatigue.js`, `aero.js`, `physiology.js`, and `insights-generator.js`. `export/` emits GPX, CSV, and JSON.
+- `js/models/` — analysis-domain typed objects: `activity-track.js`, `track-point.js`, `segment.js`, `climb.js`, `analysis-result.js`.
+- `js/demo/` — `index.js` exposes `isDemoMode()`, `setDemoMode()`, `loadDemoData()`, `clearDemoData()`, gated through the `strava_demo_mode` localStorage flag. `generator.js` synthesises ~250 activities; `polylines.js` provides demo route geometry.
+- `scripts/local-dev-server.mjs` — Node `http` server backing `npm run dev`. Serves static assets and dynamically imports the corresponding `api/<name>.js` module for `/api/*` requests so OAuth and Strava proxies work locally.
 
 ### Backend architecture
 
@@ -139,12 +144,18 @@ Notable persisted keys include:
 - `strava_training_zones`
 - `strava_gears`
 - `strava_activities`
+- `strava_cache_version` — schema version of the cached preprocessed activities
+- `strava_demo_mode` / `strava_demo_activities` — demo gating and dataset
 - `dashboard_filters`
 - `dashboard_settings`
-- `dashboard_acute_load_mode`
+- `training_goals` — user-defined km/hours/activities goal configuration
 - `ai_chat_history`
 - `gemini_api_key`
 - gear-specific custom configuration records
+
+### Cache schema versioning
+
+`js/app/main.js` declares `const CACHE_VERSION = 'v2-efficiency-moving-ratio'`. On startup it reads `localStorage('strava_cache_version')` and, if it does not match the current `CACHE_VERSION`, drops the previously cached activities and re-runs `preprocessActivities` on the fresh API payload. The new version is written back to localStorage. Every time a preprocessing field is added or its semantics change, the `CACHE_VERSION` literal must be bumped so existing users invalidate their stale derived data on next load.
 
 ### Why this matters operationally
 
@@ -260,6 +271,27 @@ Normalization strategies include:
 - distance normalization for pace-per-100m and elevation-per-km
 - interpolation within HR zones for a refined zone-weighted intensity factor
 
+### Sport-aware formatters
+
+All inline pace and speed rendering across `js/tabs/*.js` and `js/pages/**/*.js` routes through the helpers in `js/shared/utils/core.js`:
+
+- `formatPaceRun(secondsPerKm)` returns `"M:SS /km"` for running pace; `"—"` for null/NaN/non-positive input.
+- `formatPaceSwim(secondsPer100m)` returns `"M:SS /100m"` for swim pace; same guard.
+- `formatSpeedBike(kmh)` returns `"X.X km/h"`; guards against null/NaN.
+- `formatSportPace(value, sport)` is the dispatcher: routes to swim/bike/run helpers based on a case-insensitive `Swim`/`Ride|Bike|Cycling`/`Run` match on the sport string, defaults to run pace.
+
+Use these when rendering tables, summary cards, or scatter-plot tooltips. Use `formatDate(date)` (also in `shared/utils/core.js`) for any DD/MM/YYYY date display. Do not inline new `Math.floor(.../60) + ":" + (... % 60)` constructions.
+
+### New per-activity fields
+
+`preprocessActivities` populates three fields beyond the legacy TSS/load/weather/VO2max set:
+
+- `efficiency` — sport-aware aerobic-efficiency ratio. Run = `pace_min_per_km / avgHR` (lower better). Swim = `pace_min_per_100m / avgHR` (lower better). Bike = `avg_speed_kmh / avgHR` (higher better). `null` when `avgHR`, `distance`, or `moving_time` are absent or non-positive.
+- `efficiency_method` — `'pace_per_hr' | 'pace100m_per_hr' | 'speed_per_hr' | null`. Use this when comparing efficiency values across activities to ensure they share units.
+- `moving_ratio` — `moving_time / elapsed_time` as a decimal in `[0, 1]`. `null` when `elapsed_time <= 0`.
+
+Whenever the set of derived fields is extended, the `CACHE_VERSION` literal in `js/app/main.js` must be bumped.
+
 ## 8. Analytics, Models, And Heuristics
 
 ### 8.1 Training load and performance management
@@ -364,37 +396,33 @@ Interactivity is implemented through DOM controls rather than a framework state 
 
 What the user sees:
 
-- time-range presets
-- custom date range
-- acute-load mode selector
+- nine time-range preset buttons: This Week, Last 7 Days, This Month, Last 30 Days, Last 3 Months, Last 6 Months, This Year, Last 365 Days, All Time
+- custom DD/MM/YYYY From and To text inputs with an Apply button
 - KPI summary cards
-- training-load charts
-- goal-progress views
+- training-load charts (CTL, ATL, TSB, 7-day rolling load, injury-risk proxy)
+- consistency heatmap
+- acute-load chart with productive-range band (band mode is hardcoded to `'aggressive'`)
+- goal-progress card configurable as kilometers, hours, or activity count
 
 What data is used:
 
-- full activity collection after preprocessing
+- full preprocessed activity collection
 - derived `tss`, `ctl`, `atl`, `tsb`, and injury-risk-style signals
+- HR zones loaded from `localStorage('strava_training_zones')`
+- goals from `localStorage('training_goals')`
 
 What runs behind the scenes:
 
-- activity filtering by date window
-- daily TSS aggregation
-- EMA-based load computation
+- activity filtering by date window via `getEffectiveDashboardWindow`; when `selectedRangeDays === 'custom'` the user-entered ISO dates short-circuit the preset table
+- daily TSS aggregation and EMA-based ATL (7d) / CTL (42d) / TSB computation
 - goal-progress accumulation
-
-What insight the user gets:
-
-- recent workload trajectory
-- fatigue-versus-fitness balance
-- consistency over the selected period
-- whether goal volume is on track
+- a module-level `dashboardMemo` Map caches the derived window slice (`filteredActivities`, `runs`, `recentRuns`, `previousRuns`, `recentActivities`, `previousActivities`) keyed by `${startTs}|${endTs}|${dateFilterFrom||''}|${dateFilterTo||''}`. The memo is cleared whenever the `allActivities` reference changes.
+- the custom range is dashboard-local; it does not propagate to the global tab filter
 
 Interactive elements:
 
-- quick time presets
-- custom from/to controls
-- acute-load band mode
+- preset buttons
+- custom from/to controls with Apply
 - goal editing flow
 
 ### Run
@@ -892,6 +920,25 @@ The advanced activity flow supports export to:
 
 This is particularly useful because it turns the application into both an analytics viewer and a derived-data generator.
 
+## 11b. Chart Styling Conventions
+
+The single stylesheet `styles/style.css` enforces a uniform chart appearance:
+
+- `:root` defines four sport color variables: `--sport-default-color: #fc4c02`, `--sport-run-color: #2e7d32`, `--sport-bike-color: #1565c0`, `--sport-swim-color: #00838f`. New code should reference these instead of hardcoding hex values.
+- `.chart-container` ships with `border-top: 4px solid var(--sport-default-color)` and an `h3` color of the same default. The Run Analysis (`#analysis-tab`), Bike Analysis (`#bike-tab`), and Swim Analysis (`#swim-tab`) ancestors override both to their matching sport color so a tab is visually coherent.
+- The default chart grid uses `.charts-grid`, two columns on desktop and a single column at mobile breakpoints (800 px, 700 px, 480 px). The class was previously misspelled as `.chart-grid` in the weather tab; that has been corrected in `index.html`.
+- Canvases use `aspect-ratio: 16 / 9; min-height: …; height: auto !important;` at narrow breakpoints. The earlier rules that forced `height: <px> !important` cropped Chart.js legends on mobile and have been removed.
+- Grouped chart sets stay together by spanning the full row: `.eddington-pair, .distance-pair, .readiness-layout, .acute-load-chart-container { grid-column: 1 / -1; }`.
+
+## 11c. Memoization Pattern (Dashboard)
+
+`js/tabs/dashboard.js` introduces a module-level `dashboardMemo = new Map()` that caches derived per-window slices. The cache key is the tuple `${startTs}|${endTs}|${dateFilterFrom||''}|${dateFilterTo||''}`. The cache is busted in two ways:
+
+1. The renderer compares the incoming `allActivities` reference against the previously rendered context and calls `dashboardMemo.clear()` when it changes.
+2. Adding a new range preset or custom-date input automatically participates because the cache key embeds the resolved start/end timestamps.
+
+When adding new memoizable derived state on another tab, follow the same shape: keep the Map at module scope, derive the cache key from every input that affects the value, and clear the entire map when the upstream activity array reference changes. Avoid leaking memoized references across users or sessions because the cache survives only for the lifetime of the page.
+
 ## 12. Visualizations In Detail
 
 ### Histograms
@@ -956,13 +1003,42 @@ The map system supports both route-line rendering and density heatmaps, which ad
 ### Setup steps
 
 1. Install dependencies with `npm install`.
-2. Configure `STRAVA_CLIENT_ID` and `STRAVA_CLIENT_SECRET`.
-3. Start the app with `npx vercel dev`.
-4. Open the local URL and authenticate against your Strava app.
+2. Copy `.env.example` to `.env.local` and set `STRAVA_CLIENT_ID` and `STRAVA_CLIENT_SECRET`.
+3. Run `npm run dev`.
+4. Open the local URL and authenticate against your Strava app, or click the demo button to load synthetic data.
 
-### Why Vercel CLI is required
+### Dev server
 
-The repository uses Vercel serverless functions directly and does not currently define local `npm` scripts. `vercel dev` is the correct local emulation layer for the API endpoints.
+`npm run dev` invokes `scripts/local-dev-server.mjs` (declared in `package.json`). It is a small Node `http` server with the following behaviour:
+
+- Serves any static file under the repository root.
+- For requests starting with `/api/`, it dynamically `import()`s the matching file in `api/` (e.g. `/api/strava-activities` -> `api/strava-activities.js`), invokes the default export as a Vercel-style handler, and forwards the response. Modules are reloaded per-request using a `?v=<version>` cache buster so edits take effect without restarting.
+- Listens on `PORT` (default `3001`).
+- Reads `.env.local` so `STRAVA_CLIENT_ID` and `STRAVA_CLIENT_SECRET` are available to the serverless modules.
+
+### API endpoints
+
+The handlers under `api/` are designed to be deployed as Vercel serverless functions and to run unchanged under the local dev server:
+
+- `api/_shared.js` — header parsing, token decoding, refresh helpers.
+- `api/config.js` — surfaces the public Strava client id to the frontend.
+- `api/strava-auth.js` — OAuth code exchange and refresh.
+- `api/strava-athlete.js` — athlete profile.
+- `api/strava-activities.js` — paginated activity history (`per_page=100`, pages until empty).
+- `api/strava-activity.js` — single-activity metadata.
+- `api/strava-streams.js` — activity streams (time, latlng, distance, altitude, velocity_smooth, grade_smooth, moving, heartrate, cadence, watts).
+- `api/strava-gear.js` — gear metadata.
+- `api/strava-zones.js` — HR and power training zones.
+
+### PWA
+
+- `manifest.json` defines the installable PWA identity, icons, and theme.
+- `sw.js` is the service worker, responsible for caching static assets and the SPA shell.
+- `vercel.json` rewrites tab routes (`/run`, `/dashboard`, `/bike`, `/swim`, `/weather`, `/ai-coach`, etc.) to `/index.html` so the SPA owns deep-link rendering.
+
+### Demo mode
+
+Demo mode is gated by a single localStorage flag, `strava_demo_mode`, read through `isDemoMode()` in `js/demo/index.js`. The dedicated demo button in the connect screen invokes `loadDemoData()` from `js/app/auth.js`, which generates ~250 synthetic activities via `js/demo/generator.js` (with route polylines from `js/demo/polylines.js`), writes them to the same localStorage keys the real API would populate, and installs a fake `demo_` token. The various tab renderers and the API layer detect demo mode and bypass network calls when it is active.
 
 ### Runtime assumptions
 

@@ -1,6 +1,6 @@
 ﻿// js/gear-analysis.js — Individual Gear Detail Page
 
-import { formatPace, formatTime, formatDate } from '../../shared/utils/index.js';
+import { formatPace, formatTime, formatDate, formatSpeedBike } from '../../shared/utils/index.js';
 
 // ===================================================================
 // HELPERS
@@ -124,7 +124,7 @@ function renderGearHero(gear, activities) {
                     ${statCell(activities.length, 'Activities')}
                     ${statCell(totalHours.toFixed(1) + ' h', 'Total Time')}
                     ${avgPaceSec > 0 && gear.type !== 'bike' ? statCell(formatPace(avgPaceSec, 1), 'Avg Pace') : ''}
-                    ${avgPaceSec > 0 && gear.type === 'bike' ? statCell((totalKm / totalHours).toFixed(1) + ' km/h', 'Avg Speed') : ''}
+                    ${avgPaceSec > 0 && gear.type === 'bike' ? statCell(formatSpeedBike(totalKm / totalHours), 'Avg Speed') : ''}
                 </div>
             </div>
         </div>
@@ -239,7 +239,7 @@ function renderGearStats(activities, gearType) {
 
     const avgSpeedKmh = totalHours > 0 ? (totalKm / totalHours) : 0;
     const effortMetric = gearType === 'bike'
-        ? statCell(avgSpeedKmh.toFixed(1) + ' km/h', 'Avg Speed')
+        ? statCell(formatSpeedBike(avgSpeedKmh), 'Avg Speed')
         : statCell(formatPace(avgPaceSec, 1), 'Avg Pace');
 
     container.innerHTML = `
@@ -302,8 +302,8 @@ function renderGearAdvanced(gear, activities) {
         return `
             <div style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid #f1f5f9;">
                 <p style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#94a3b8;margin:0 0 0.6rem;">Speed</p>
-                ${statRow('Avg Speed', avgSpd.toFixed(1) + ' km/h')}
-                ${statRow('Max Speed', maxSpd.toFixed(1) + ' km/h')}
+                ${statRow('Avg Speed', formatSpeedBike(avgSpd))}
+                ${statRow('Max Speed', formatSpeedBike(maxSpd))}
             </div>`;
     })() : '';
 

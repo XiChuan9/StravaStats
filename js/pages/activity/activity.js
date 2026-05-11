@@ -4,7 +4,7 @@
  * Entry point: Query parameter ?id={activityId}
  */
 
-import { formatDate as sharedFormatDate, formatPace as sharedFormatPace } from '../../shared/utils/index.js';
+import { formatDate as sharedFormatDate, formatPace as sharedFormatPace, formatPaceRun } from '../../shared/utils/index.js';
 import { AdvancedActivityAnalyzer } from './advanced-analysis.js';
 import { AnalysisResultsUI } from './analysis-ui-components.js';
 import { renderWeatherAnalysis, renderWeatherMapDetails } from '../../shared/utils/weather-analysis.js';
@@ -141,7 +141,7 @@ function paceDecimalToTime(paceDecimal) {
  */
 function formatPace(speedInMps) {
     if (!speedInMps || speedInMps === 0) return '-';
-    return sharedFormatPace(1000 / speedInMps, 1).replace(' /km', '');
+    return formatPaceRun(1000 / speedInMps);
 }
 
 /**
@@ -852,12 +852,21 @@ function renderAdvancedStats(activity) {
     const elevationPerKm = activity.distance > 0
         ? (activity.total_elevation_gain / (activity.distance / 1000)).toFixed(2)
         : '-';
-    const moveRatio = activity.elapsed_time
-        ? (activity.moving_time / activity.elapsed_time).toFixed(2)
+    const moveRatio = activity.moving_ratio !== null && activity.moving_ratio !== undefined
+        ? `${(activity.moving_ratio * 100).toFixed(1)}%`
         : '-';
     const effort = activity.suffer_score !== undefined
         ? activity.suffer_score
         : (activity.perceived_exertion !== undefined ? activity.perceived_exertion : '-');
+    const efficiencyUnitMap = {
+        pace_per_hr: 'min/km/bpm',
+        pace100m_per_hr: 'min/100m/bpm',
+        speed_per_hr: 'km/h/bpm',
+    };
+    const efficiencyUnit = efficiencyUnitMap[activity.efficiency_method];
+    const efficiency = (activity.efficiency !== null && activity.efficiency !== undefined && efficiencyUnit)
+        ? `${activity.efficiency.toFixed(3)} ${efficiencyUnit}`
+        : '-';
     const vo2max = estimateVO2max(activity);
     const paceVariabilityLaps = activity.pace_variability_laps || '-';
     const paceVariabilityStream = activity.pace_variability_stream || '-';
@@ -872,6 +881,7 @@ function renderAdvancedStats(activity) {
         <ul>
             <li><b>Elevation per Km:</b> ${elevationPerKm} m</li>
             <li><b>Move Ratio:</b> ${moveRatio}</li>
+            <li><b>Efficiency:</b> ${efficiency}</li>
             <li><b>Effort:</b> ${effort}</li>
             <li><b>VO₂max (est):</b> ${vo2max}</li>
             <li><b>Pace CV (Laps):</b> ${paceVariabilityLaps}</li>
@@ -1191,7 +1201,7 @@ function renderBestEfforts(bestEfforts) {
         <tr>
             <td>${effort.name}</td>
             <td>${formatTime(effort.moving_time)}</td>
-            <td>${pace} /km</td>
+            <td>${pace}</td>
             <td>${achievements}</td>
         </tr>`;
     }).join('');
@@ -1233,7 +1243,7 @@ function renderLaps(laps) {
             <td>${lap.lap_index}</td>
             <td>${(lap.distance / 1000).toFixed(2)} km</td>
             <td>${formatTime(lap.moving_time)}</td>
-            <td>${pace} /km</td>
+            <td>${pace}</td>
             <td>${Math.round(lap.total_elevation_gain)} m</td>
             <td>${lap.average_heartrate ? Math.round(lap.average_heartrate) : '-'} bpm</td>
         </tr>`;
@@ -1352,7 +1362,7 @@ function renderSegments(segments) {
         <tr>
             <td><a href="https://www.strava.com/segments/${effort.segment.id}" target="_blank">${effort.name}</a></td>
             <td>${formatTime(effort.moving_time)}</td>
-            <td>${pace} /km</td>
+            <td>${pace}</td>
             <td>${effort.average_heartrate ? Math.round(effort.average_heartrate) : '-'} bpm</td>
             <td>${rank}</td>
         </tr>`;

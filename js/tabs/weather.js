@@ -633,12 +633,12 @@ function renderCustomScatter(ctx, data, xVar, yVar, pointSize, colorScheme) {
                                     `Date: ${utils.formatDate(new Date(item.run_date))}`,
                                     `${xlabel}: ${item[xVar]?.toFixed(item[xVar] < 10 ? 2 : 1) ?? 'N/A'}`, // Formato dinámico
                                     `${ylabel}: ${item[yVar]?.toFixed(item[yVar] < 10 ? 2 : 1) ?? 'N/A'}`, // Formato dinámico
-                                    `Pace: ${item.pace ? utils.paceDecimalToTime(item.pace) : 'N/A'} /km`,
+                                    `Pace: ${item.pace ? utils.formatPaceRun(item.pace * 60) : 'N/A'}`,
                                     `Distance: ${item.distance?.toFixed(2) ?? 'N/A'} km`,
                                     `Time: ${item.moving_time?.toFixed(0) ?? 'N/A'} min`,
                                     `Temp: ${item.temperature?.toFixed(1) ?? 'N/A'}°C`,
                                     `Humidity: ${item.humidity?.toFixed(0) ?? 'N/A'}%`,
-                                    `Wind: ${item.wind_speed?.toFixed(1) ?? 'N/A'} km/h`,
+                                    `Wind: ${item.wind_speed != null ? utils.formatSpeedBike(item.wind_speed) : 'N/A'}`,
                                     `Rain: ${item.precipitation?.toFixed(1) ?? 'N/A'} mm`,
                                     `Pressure: ${item.pressure?.toFixed(0) ?? 'N/A'} hPa`,
                                     `Cloud Cover: ${item.cloudcover?.toFixed(0) ?? 'N/A'}%`,
