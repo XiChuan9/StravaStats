@@ -60,6 +60,7 @@ export function renderAthleteTab(allActivities, dateFilterFrom, dateFilterTo, sp
     // Render panels & charts (order: summary, records, charts)
     renderAllTimeStats(filteredActivities);
     renderRecordStats(runs);
+    renderAthleteCountHistogram(filteredActivities);
 
     // Charts: many of these accept the whole filteredActivities but treat them as runs where appropriate
     renderStartTimeHistogram(filteredActivities, dataType);
@@ -89,6 +90,70 @@ function renderAllTimeStats(activities) {
         <div class="card"><h3>Total Time</h3><p>${totalTime} h</p></div>
         <div class="card"><h3>Total Elevation</h3><p>${totalElev} m</p></div>
     `;
+}
+
+function renderAthleteCountHistogram(activities) {
+    const container = document.getElementById('athlete-count-histogram');
+    if (!container || activities.length === 0) return;
+
+    // Categorizar por athlete_count
+    const categories = {
+        solo: { count: 0, label: '🏃 Solo', color: 'rgba(100, 200, 255, 0.8)' },          // 1
+        pareja: { count: 0, label: '👥 Pareja', color: 'rgba(100, 255, 200, 0.8)' },      // 2
+        grupoSmall: { count: 0, label: '👫 Grupo Pequeño', color: 'rgba(255, 200, 100, 0.8)' }, // 3-5
+        grupoBig: { count: 0, label: '👨‍👩‍👧‍👦 Grupo Grande', color: 'rgba(255, 100, 150, 0.8)' }  // 6+
+    };
+
+    activities.forEach(activity => {
+        const athleteCount = Number(activity.athlete_count) || 1;
+        if (athleteCount === 1) {
+            categories.solo.count++;
+        } else if (athleteCount === 2) {
+            categories.pareja.count++;
+        } else if (athleteCount >= 3 && athleteCount <= 5) {
+            categories.grupoSmall.count++;
+        } else if (athleteCount > 5) {
+            categories.grupoBig.count++;
+        }
+    });
+
+    const labels = Object.values(categories).map(c => c.label);
+    const data = Object.values(categories).map(c => c.count);
+    const colors = Object.values(categories).map(c => c.color);
+
+    createUiChart('athlete-count-histogram', {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: '# of Activities',
+                data,
+                backgroundColor: colors,
+                borderColor: colors.map(c => c.replace('0.8', '1')),
+                borderWidth: 2
+            }]
+        },
+        options: {
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        afterLabel: function(context) {
+                            const total = data.reduce((a, b) => a + b, 0);
+                            const pct = total > 0 ? ((context.parsed.y / total) * 100).toFixed(1) : 0;
+                            return `${pct}% of total`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: { display: true, text: 'Number of Activities' }
+                }
+            }
+        }
+    });
 }
 
 function renderRecordStats(runs) {
