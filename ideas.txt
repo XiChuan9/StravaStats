@@ -26,10 +26,7 @@ IN PROGRESS
 
 TO DO
 🔴🩹[GENERAL] SEO
-🔴🩹[DASHBOARD] millorar o treure targetes de dashboard
-🔴🩹[ACTIVITY]power curve no surt a bike activity??
 🔴⚠️[ATHLETE]arreglar custom matix a Athlete (no fa be les bar charts, les ha de fer el grups de 1 km)
-🔴🩹[ACTIVITY]coords streams in activity -> veure cap a on va el vent -> % de vent a favor, en contra, de costat...
 🔴🚧[ACTIVITY]text de alerta si no hi ha dades de HR/cadence, watts, time...
 🔴🚧[GENERAL]time zones???
 🔴🚧[GENERAL]miles or km...
@@ -97,3 +94,6 @@ DONE
 🟢🩹[WRAPPED]wrapped -> exportar captura pels fans 
 🟢🩹[ANALYSIS]consistency map canvia al posar filre 2026??
 🟢🌈[GENERAL]afegir chat IA
+🟢🩹[ACTIVITY]power curve no surt a bike activity??
+🟢🩹[DASHBOARD] millorar o treure targetes de dashboard
+🟢🩹[ACTIVITY]coords streams in activity -> veure cap a on va el vent -> % de vent a favor, en contra, de costat...
