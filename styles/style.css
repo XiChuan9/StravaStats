@@ -7514,3 +7514,162 @@ body.activity-page .data-section h3 {
         min-height: 190px;
     }
 }
+
+/* =================================================================
+   DARK MODE
+   Activated via Settings > Dark mode toggle.
+   Uses data-theme="dark" on <html>.
+   ================================================================= */
+
+html[data-theme="dark"] {
+    --text-dark: #e8e8e8;
+    --text-medium: #b0b0b0;
+    --text-light: #888;
+    --bg-page: #1a1a2e;
+    --card-bg: #232342;
+    --bg-main: #1a1a2e;
+    --bg-card: #232342;
+    --border-color: #3a3a5c;
+    --shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+html[data-theme="dark"] body {
+    background: #1a1a2e;
+    color: #e8e8e8;
+}
+
+html[data-theme="dark"] .top-bar {
+    border-bottom-color: var(--border-color);
+}
+
+html[data-theme="dark"] .top-bar__title {
+    color: #fff;
+}
+
+html[data-theme="dark"] .action-btn {
+    background: #2a2a4a;
+    border-color: var(--border-color);
+    color: #ccc;
+}
+
+html[data-theme="dark"] .action-btn:hover {
+    background: #3a3a5c;
+    color: #fff;
+}
+
+html[data-theme="dark"] .tab-link {
+    background: #2a2a4a;
+    border-color: var(--border-color);
+    color: #b0b0b0;
+}
+
+html[data-theme="dark"] .tab-link:hover {
+    background: #3a3a5c;
+    color: #fff;
+}
+
+html[data-theme="dark"] .tab-link.active {
+    background: var(--strava-orange);
+    border-color: var(--strava-orange);
+    color: #fff;
+}
+
+html[data-theme="dark"] .chart-container,
+html[data-theme="dark"] .card {
+    background: var(--card-bg);
+    border-color: var(--border-color);
+}
+
+html[data-theme="dark"] .chart-container h3 {
+    color: #ddd;
+}
+
+html[data-theme="dark"] .settings-panel {
+    background: #2a2a4a;
+    border-color: var(--border-color);
+    color: #e8e8e8;
+}
+
+html[data-theme="dark"] .settings-panel select,
+html[data-theme="dark"] .settings-panel input[type="number"] {
+    background: #1a1a2e;
+    border-color: var(--border-color);
+    color: #e8e8e8;
+}
+
+html[data-theme="dark"] #loading-overlay {
+    background: rgba(26, 26, 46, 0.95);
+}
+
+html[data-theme="dark"] .loading-card {
+    background: #232342;
+}
+
+html[data-theme="dark"] .loading-text {
+    color: #e8e8e8;
+}
+
+html[data-theme="dark"] #loading-progress-track {
+    background: #3a3a5c;
+}
+
+html[data-theme="dark"] #login-section {
+    background: #232342;
+    color: #e8e8e8;
+}
+
+html[data-theme="dark"] #login-section h1 {
+    color: var(--strava-orange);
+}
+
+html[data-theme="dark"] .summary-grid .card,
+html[data-theme="dark"] .summary-card {
+    background: var(--card-bg);
+    border-color: var(--border-color);
+    color: #e8e8e8;
+}
+
+html[data-theme="dark"] .chart-modal-content {
+    background: #232342;
+    color: #e8e8e8;
+}
+
+html[data-theme="dark"] table,
+html[data-theme="dark"] .df-table,
+html[data-theme="dark"] .activities-table {
+    color: #e8e8e8;
+}
+
+html[data-theme="dark"] .activities-table thead th {
+    background: #2a2a4a;
+    color: #ccc;
+}
+
+html[data-theme="dark"] .activities-table tbody tr:hover {
+    background-color: #2a2a4a;
+}
+
+html[data-theme="dark"] input,
+html[data-theme="dark"] select {
+    background: #1a1a2e;
+    border-color: var(--border-color);
+    color: #e8e8e8;
+}
+
+/* Mobile bottom nav dark mode */
+@media (max-width: 480px) {
+    html[data-theme="dark"] .tabs {
+        background: #1e1e3a;
+        border-top-color: var(--border-color);
+    }
+
+    html[data-theme="dark"] .tab-link {
+        background: transparent;
+        color: #888;
+    }
+
+    html[data-theme="dark"] .tab-link.active {
+        background: rgba(252, 82, 0, 0.15);
+        color: var(--strava-orange);
+    }
+}
