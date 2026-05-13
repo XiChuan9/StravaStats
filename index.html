@@ -5,8 +5,24 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#FC5200">
-    <meta name="description" content="Complete analysis of your sports activities: running, cycling, swimming">
-    <title>StravaStats</title>
+    <meta name="description" content="StravaStats — Advanced sports analytics dashboard for runners, cyclists and swimmers. Track performance, predict race times, analyze trends.">
+    <meta name="keywords" content="strava, analytics, running, cycling, swimming, training, dashboard, performance, statistics">
+    <meta name="author" content="StravaStats">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="https://stravastats.vercel.app/">
+    <title>StravaStats — Sports Analytics Dashboard</title>
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="StravaStats — Sports Analytics Dashboard">
+    <meta property="og:description" content="Advanced sports analytics for runners, cyclists and swimmers. Connect your Strava account to unlock insights.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://stravastats.vercel.app/">
+    <meta property="og:image" content="https://stravastats.vercel.app/icon-sport.svg">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="StravaStats — Sports Analytics Dashboard">
+    <meta name="twitter:description" content="Advanced sports analytics for runners, cyclists and swimmers.">
 
     <!-- PWA Manifest -->
     <link rel="manifest" href="./manifest.json">
@@ -235,6 +251,10 @@
                 <label>
                     Tab backgrounds:
                     <input type="checkbox" id="bg-images-toggle">
+                </label>
+                <label>
+                    Dark mode:
+                    <input type="checkbox" id="dark-mode-toggle">
                 </label>
                 <button id="close-settings" aria-label="Close settings">Close</button>
             </div>
@@ -987,10 +1007,7 @@
 
 
                 <div id="activities-tab" class="tab-content">
-                    <h3>Activities</h3>
-
                     <div class="chart-container full-width">
-                        <h3>Activities List</h3>
 
                         <div id="activity-filters"></div>
 
@@ -1148,7 +1165,6 @@
 
 
                 <div id="map-tab" class="tab-content">
-                    <h2>🗺️ All Activities Map</h2>
                     <div class="map-controls">
                         <div class="filter-group">
                             <label>From: <input type="text" id="map-date-from" placeholder="dd/mm/yyyy"></label>
