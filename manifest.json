@@ -1,7 +1,7 @@
 {
     "name": "StravaStats",
     "short_name": "StravaStats",
-    "description": "Análisis completo de actividades deportivas: correr, ciclismo, natación",
+    "description": "Complete analysis of your sports activities: running, cycling, swimming",
     "start_url": "/",
     "scope": "/",
     "display": "standalone",
