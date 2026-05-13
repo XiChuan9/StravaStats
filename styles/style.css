@@ -383,12 +383,29 @@ main {
     text-align: left;
 }
 
-#analysis-tab .chart-container { border-top-color: var(--sport-run-color); }
-#analysis-tab .chart-container h3 { color: var(--sport-run-color); }
-#bike-tab .chart-container { border-top-color: var(--sport-bike-color); }
-#bike-tab .chart-container h3 { color: var(--sport-bike-color); }
-#swim-tab .chart-container { border-top-color: var(--sport-swim-color); }
-#swim-tab .chart-container h3 { color: var(--sport-swim-color); }
+#analysis-tab .chart-container {
+    border-top-color: var(--sport-run-color);
+}
+
+#analysis-tab .chart-container h3 {
+    color: var(--sport-run-color);
+}
+
+#bike-tab .chart-container {
+    border-top-color: var(--sport-bike-color);
+}
+
+#bike-tab .chart-container h3 {
+    color: var(--sport-bike-color);
+}
+
+#swim-tab .chart-container {
+    border-top-color: var(--sport-swim-color);
+}
+
+#swim-tab .chart-container h3 {
+    color: var(--sport-swim-color);
+}
 
 .chart-container canvas {
     flex: 1 1 auto;
@@ -614,13 +631,27 @@ main {
 }
 
 @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
 }
 
 @keyframes pulse-logo {
-    0%, 100% { transform: scale(1); opacity: 1; }
-    50% { transform: scale(1.05); opacity: 0.8; }
+
+    0%,
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+
+    50% {
+        transform: scale(1.05);
+        opacity: 0.8;
+    }
 }
 
 @media (max-width: 900px) {
@@ -7522,50 +7553,62 @@ body.activity-page .data-section h3 {
    ================================================================= */
 
 html[data-theme="dark"] {
-    --text-dark: #e8e8e8;
-    --text-medium: #b0b0b0;
-    --text-light: #888;
-    --bg-page: #1a1a2e;
-    --card-bg: #232342;
-    --bg-main: #1a1a2e;
-    --bg-card: #232342;
-    --border-color: #3a3a5c;
-    --shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    --text-dark: #f0f0f0;
+    --text-medium: #a8a8a8;
+    --text-light: #777;
+    --bg-page: #0f0f0f;
+    --card-bg: #1c1c1c;
+    --bg-main: #0f0f0f;
+    --bg-card: #1c1c1c;
+    --border-color: #2e2e2e;
+    --shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+    --strava-orange: #ff6b2b;
 }
 
 html[data-theme="dark"] body {
-    background: #1a1a2e;
-    color: #e8e8e8;
+    background: #0f0f0f;
+    color: #e0e0e0;
 }
 
+/* --- Top bar --- */
 html[data-theme="dark"] .top-bar {
     border-bottom-color: var(--border-color);
+    background: #141414;
 }
 
 html[data-theme="dark"] .top-bar__title {
-    color: #fff;
+    color: #f5f5f5;
 }
 
 html[data-theme="dark"] .action-btn {
-    background: #2a2a4a;
+    background: #1c1c1c;
     border-color: var(--border-color);
-    color: #ccc;
+    color: #aaa;
 }
 
 html[data-theme="dark"] .action-btn:hover {
-    background: #3a3a5c;
+    background: #2a2a2a;
     color: #fff;
+    border-color: #444;
 }
 
+html[data-theme="dark"] .action-btn--danger:hover {
+    background: #2a1515;
+    color: #ff6b6b;
+    border-color: #5a2020;
+}
+
+/* --- Tabs --- */
 html[data-theme="dark"] .tab-link {
-    background: #2a2a4a;
+    background: #1c1c1c;
     border-color: var(--border-color);
-    color: #b0b0b0;
+    color: #999;
 }
 
 html[data-theme="dark"] .tab-link:hover {
-    background: #3a3a5c;
-    color: #fff;
+    background: #262626;
+    color: #ddd;
+    border-color: #444;
 }
 
 html[data-theme="dark"] .tab-link.active {
@@ -7574,102 +7617,235 @@ html[data-theme="dark"] .tab-link.active {
     color: #fff;
 }
 
+/* --- Cards & Charts --- */
 html[data-theme="dark"] .chart-container,
 html[data-theme="dark"] .card {
     background: var(--card-bg);
-    border-color: var(--border-color);
-}
-
-html[data-theme="dark"] .chart-container h3 {
+    border: 1px solid var(--border-color);
     color: #ddd;
 }
 
+html[data-theme="dark"] .chart-container h3,
+html[data-theme="dark"] .chart-container h2 {
+    color: #e0e0e0;
+}
+
+/* --- Summary cards --- */
+html[data-theme="dark"] .summary-grid .card,
+html[data-theme="dark"] .summary-card,
+html[data-theme="dark"] .stat-card {
+    background: var(--card-bg);
+    border-color: var(--border-color);
+    color: #e0e0e0;
+}
+
+html[data-theme="dark"] .summary-card .card-value,
+html[data-theme="dark"] .stat-card .card-value {
+    color: #fff;
+}
+
+/* --- Settings panel --- */
 html[data-theme="dark"] .settings-panel {
-    background: #2a2a4a;
+    background: #1c1c1c;
     border-color: var(--border-color);
-    color: #e8e8e8;
+    color: #e0e0e0;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
 }
 
-html[data-theme="dark"] .settings-panel select,
-html[data-theme="dark"] .settings-panel input[type="number"] {
-    background: #1a1a2e;
+/* --- Forms & Inputs --- */
+html[data-theme="dark"] input,
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea {
+    background: #141414;
     border-color: var(--border-color);
-    color: #e8e8e8;
+    color: #e0e0e0;
 }
 
+html[data-theme="dark"] input:focus,
+html[data-theme="dark"] select:focus {
+    border-color: var(--strava-orange);
+    outline-color: var(--strava-orange);
+}
+
+html[data-theme="dark"] button {
+    color: #fff;
+}
+
+/* --- Filter controls --- */
+html[data-theme="dark"] .date-controls-container,
+html[data-theme="dark"] .filter-group,
+html[data-theme="dark"] .map-controls {
+    color: #ccc;
+}
+
+html[data-theme="dark"] .prediction-controls {
+    background: #141414;
+    border-color: var(--border-color);
+}
+
+html[data-theme="dark"] .prediction-controls fieldset {
+    border-color: var(--border-color);
+}
+
+/* --- Tables --- */
+html[data-theme="dark"] table,
+html[data-theme="dark"] .df-table,
+html[data-theme="dark"] .activities-table {
+    color: #e0e0e0;
+}
+
+html[data-theme="dark"] .activities-table thead th,
+html[data-theme="dark"] .df-table thead th,
+html[data-theme="dark"] table thead th {
+    background: #1c1c1c;
+    color: #bbb;
+    border-bottom-color: var(--border-color);
+}
+
+html[data-theme="dark"] .activities-table tbody tr:hover,
+html[data-theme="dark"] .df-table tbody tr:hover,
+html[data-theme="dark"] table tbody tr:hover {
+    background-color: #222;
+}
+
+html[data-theme="dark"] td,
+html[data-theme="dark"] th {
+    border-color: var(--border-color);
+}
+
+/* --- Loading screen --- */
 html[data-theme="dark"] #loading-overlay {
-    background: rgba(26, 26, 46, 0.95);
+    background: rgba(15, 15, 15, 0.96);
 }
 
 html[data-theme="dark"] .loading-card {
-    background: #232342;
+    background: #1c1c1c;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
 }
 
 html[data-theme="dark"] .loading-text {
-    color: #e8e8e8;
+    color: #e0e0e0;
+}
+
+html[data-theme="dark"] .loading-spinner {
+    border-color: #333;
+    border-top-color: var(--strava-orange);
 }
 
 html[data-theme="dark"] #loading-progress-track {
-    background: #3a3a5c;
+    background: #2a2a2a;
 }
 
+/* --- Login --- */
 html[data-theme="dark"] #login-section {
-    background: #232342;
-    color: #e8e8e8;
+    background: #1c1c1c;
+    color: #e0e0e0;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
 }
 
 html[data-theme="dark"] #login-section h1 {
     color: var(--strava-orange);
 }
 
-html[data-theme="dark"] .summary-grid .card,
-html[data-theme="dark"] .summary-card {
-    background: var(--card-bg);
-    border-color: var(--border-color);
-    color: #e8e8e8;
-}
-
+/* --- Modal --- */
 html[data-theme="dark"] .chart-modal-content {
-    background: #232342;
-    color: #e8e8e8;
+    background: #1c1c1c;
+    color: #e0e0e0;
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.8);
 }
 
-html[data-theme="dark"] table,
-html[data-theme="dark"] .df-table,
-html[data-theme="dark"] .activities-table {
-    color: #e8e8e8;
+html[data-theme="dark"] .chart-modal-close {
+    color: #999;
 }
 
-html[data-theme="dark"] .activities-table thead th {
-    background: #2a2a4a;
-    color: #ccc;
+html[data-theme="dark"] .chart-modal-close:hover {
+    color: #fff;
 }
 
-html[data-theme="dark"] .activities-table tbody tr:hover {
-    background-color: #2a2a4a;
+/* --- Miscellaneous --- */
+html[data-theme="dark"] h1,
+html[data-theme="dark"] h2,
+html[data-theme="dark"] h3,
+html[data-theme="dark"] h4 {
+    color: #f0f0f0;
 }
 
-html[data-theme="dark"] input,
-html[data-theme="dark"] select {
-    background: #1a1a2e;
+html[data-theme="dark"] a {
+    color: var(--strava-orange);
+}
+
+html[data-theme="dark"] hr {
     border-color: var(--border-color);
-    color: #e8e8e8;
 }
 
-/* Mobile bottom nav dark mode */
+html[data-theme="dark"] .privacy-policy {
+    color: #888 !important;
+}
+
+html[data-theme="dark"] .tab-wip-badge {
+    background: #3a2a10;
+    border-color: #6b4b1a;
+    color: #ffb55a;
+}
+
+/* Scrollbar dark */
+html[data-theme="dark"] ::-webkit-scrollbar {
+    background: #141414;
+}
+
+html[data-theme="dark"] ::-webkit-scrollbar-thumb {
+    background: #333;
+    border-radius: 4px;
+}
+
+html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+    background: #444;
+}
+
+/* --- Eddington / distance sections --- */
+html[data-theme="dark"] .eddington-mode-btn {
+    background: #1c1c1c;
+    border-color: var(--border-color);
+    color: #999;
+}
+
+html[data-theme="dark"] .eddington-mode-btn:hover {
+    border-color: var(--strava-orange);
+    color: var(--strava-orange);
+}
+
+html[data-theme="dark"] .eddington-mode-btn.active {
+    background: var(--strava-orange);
+    border-color: var(--strava-orange);
+    color: #fff;
+}
+
+/* --- Year buttons --- */
+html[data-theme="dark"] .year-btn {
+    background: #1c1c1c;
+    border-color: var(--border-color);
+    color: #bbb;
+}
+
+html[data-theme="dark"] .year-btn:hover {
+    border-color: var(--strava-orange);
+    color: var(--strava-orange);
+}
+
+/* --- Mobile bottom nav dark mode --- */
 @media (max-width: 480px) {
     html[data-theme="dark"] .tabs {
-        background: #1e1e3a;
+        background: #141414;
         border-top-color: var(--border-color);
     }
 
     html[data-theme="dark"] .tab-link {
         background: transparent;
-        color: #888;
+        color: #777;
     }
 
     html[data-theme="dark"] .tab-link.active {
-        background: rgba(252, 82, 0, 0.15);
+        background: rgba(255, 107, 43, 0.12);
         color: var(--strava-orange);
     }
 }
