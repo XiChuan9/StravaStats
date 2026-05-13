@@ -88,6 +88,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const hrMaxInput = document.getElementById('hr-max');
     const ageInput = document.getElementById('age');
     const bgImagesToggle = document.getElementById('bg-images-toggle');
+    const darkModeToggle = document.getElementById('dark-mode-toggle');
 
     // --- SETTINGS ---
     if (settingsButton && settingsPanel && closeSettings) {
@@ -107,6 +108,10 @@ document.addEventListener('DOMContentLoaded', () => {
         );
     }
 
+    function applyDarkMode(enabled) {
+        document.documentElement.dataset.theme = enabled ? 'dark' : 'light';
+    }
+
     function loadSettings() {
         const saved = JSON.parse(localStorage.getItem('dashboard_settings') || '{}');
         if (saved.units && unitSelect) unitSelect.value = saved.units;
@@ -115,6 +120,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const bgEnabled = saved.bgImages === true;
         if (bgImagesToggle) bgImagesToggle.checked = bgEnabled;
         applyBgImages(bgEnabled);
+        const darkEnabled = saved.darkMode === true;
+        if (darkModeToggle) darkModeToggle.checked = darkEnabled;
+        applyDarkMode(darkEnabled);
     }
 
     function saveSettings() {
@@ -122,10 +130,12 @@ document.addEventListener('DOMContentLoaded', () => {
             units: unitSelect?.value,
             hrMax: hrMaxInput?.value,
             age: ageInput?.value,
-            bgImages: bgImagesToggle?.checked || false
+            bgImages: bgImagesToggle?.checked || false,
+            darkMode: darkModeToggle?.checked || false
         };
         localStorage.setItem('dashboard_settings', JSON.stringify(settings));
         applyBgImages(settings.bgImages);
+        applyDarkMode(settings.darkMode);
     }
 
     loadSettings();
@@ -134,6 +144,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (hrMaxInput) hrMaxInput.addEventListener('input', saveSettings);
     if (ageInput) ageInput.addEventListener('input', saveSettings);
     if (bgImagesToggle) bgImagesToggle.addEventListener('change', saveSettings);
+    if (darkModeToggle) darkModeToggle.addEventListener('change', saveSettings);
 
     // --- TAB NAVIGATION ---
     const tabLinks = document.querySelectorAll('.tab-link');
