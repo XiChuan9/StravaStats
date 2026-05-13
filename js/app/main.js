@@ -22,7 +22,6 @@ import { preprocessActivities } from '../shared/preprocessing/index.js';
 import { isDemoMode } from '../demo/index.js';
 
 const ENABLE_TAB_BACKGROUND_IMAGES = false; // Set to false to disable all tab background images during development.
-const SHOW_HEADER_TOGGLE_BUTTON = true; // Set to true if you want the header collapse control visible.
 const CACHE_VERSION = 'v2-efficiency-moving-ratio';
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -90,7 +89,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const hrMaxInput = document.getElementById('hr-max');
     const ageInput = document.getElementById('age');
     document.documentElement.dataset.tabBackgroundImages = ENABLE_TAB_BACKGROUND_IMAGES ? 'on' : 'off';
-    document.documentElement.dataset.showHeaderToggle = SHOW_HEADER_TOGGLE_BUTTON ? 'on' : 'off';
 
     // --- SETTINGS ---
     if (settingsButton && settingsPanel && closeSettings) {
