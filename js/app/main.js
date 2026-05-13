@@ -21,7 +21,6 @@ import { fetchAllActivities, fetchAthleteData, fetchTrainingZones, fetchAllGears
 import { preprocessActivities } from '../shared/preprocessing/index.js';
 import { isDemoMode } from '../demo/index.js';
 
-const ENABLE_TAB_BACKGROUND_IMAGES = false; // Set to false to disable all tab background images during development.
 const CACHE_VERSION = 'v2-efficiency-moving-ratio';
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -88,7 +87,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const unitSelect = document.getElementById('units');
     const hrMaxInput = document.getElementById('hr-max');
     const ageInput = document.getElementById('age');
-    document.documentElement.dataset.tabBackgroundImages = ENABLE_TAB_BACKGROUND_IMAGES ? 'on' : 'off';
+    const bgImagesToggle = document.getElementById('bg-images-toggle');
 
     // --- SETTINGS ---
     if (settingsButton && settingsPanel && closeSettings) {
@@ -101,6 +100,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function applyBgImages(enabled) {
+        document.documentElement.dataset.tabBackgroundImages = enabled ? 'on' : 'off';
         document.documentElement.style.setProperty(
             '--tab-bg-overlay',
             enabled ? 'rgba(255, 255, 255, 0.55)' : 'rgba(255, 255, 255, 1)'
@@ -112,17 +112,20 @@ document.addEventListener('DOMContentLoaded', () => {
         if (saved.units && unitSelect) unitSelect.value = saved.units;
         if (saved.hrMax && hrMaxInput) hrMaxInput.value = saved.hrMax;
         if (saved.age && ageInput) ageInput.value = saved.age;
-        applyBgImages(ENABLE_TAB_BACKGROUND_IMAGES);
+        const bgEnabled = saved.bgImages === true;
+        if (bgImagesToggle) bgImagesToggle.checked = bgEnabled;
+        applyBgImages(bgEnabled);
     }
 
     function saveSettings() {
         const settings = {
             units: unitSelect?.value,
             hrMax: hrMaxInput?.value,
-            age: ageInput?.value
+            age: ageInput?.value,
+            bgImages: bgImagesToggle?.checked || false
         };
         localStorage.setItem('dashboard_settings', JSON.stringify(settings));
-        applyBgImages(ENABLE_TAB_BACKGROUND_IMAGES);
+        applyBgImages(settings.bgImages);
     }
 
     loadSettings();
@@ -130,6 +133,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (unitSelect) unitSelect.addEventListener('change', saveSettings);
     if (hrMaxInput) hrMaxInput.addEventListener('input', saveSettings);
     if (ageInput) ageInput.addEventListener('input', saveSettings);
+    if (bgImagesToggle) bgImagesToggle.addEventListener('change', saveSettings);
 
     // --- TAB NAVIGATION ---
     const tabLinks = document.querySelectorAll('.tab-link');
