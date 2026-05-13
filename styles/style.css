@@ -101,19 +101,67 @@ button:focus {
     position: relative;
 }
 
-#app-section header {
+/* --- TOP BAR --- */
+.top-bar {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 2rem;
-    padding-bottom: 1rem;
+    padding: 0.6rem 0;
+    margin-bottom: 0.5rem;
     border-bottom: 1px solid var(--border-color);
 }
 
-#app-section header h1 {
-    margin: 0;
-    font-size: 2.2rem;
+.top-bar__brand {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.top-bar__logo {
+    width: 32px;
+    height: 32px;
+    object-fit: contain;
+}
+
+.top-bar__title {
+    font-size: 1.3rem;
+    font-weight: 700;
     color: var(--text-dark);
+    letter-spacing: -0.02em;
+}
+
+.top-bar__actions {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    margin: 0;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-md);
+    background: var(--card-bg);
+    color: var(--text-medium);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.action-btn:hover {
+    background: #f3f4f6;
+    color: var(--text-dark);
+    border-color: #ccc;
+}
+
+.action-btn--danger:hover {
+    background: #fef2f2;
+    color: #dc2626;
+    border-color: #fca5a5;
 }
 
 .settings-panel {
@@ -150,14 +198,6 @@ button:focus {
     border: 1px solid var(--border-color);
     border-radius: 4px;
     width: 100px;
-}
-
-#logout-button {
-    background-color: var(--text-medium);
-}
-
-#logout-button:hover {
-    background-color: var(--text-dark);
 }
 
 main {
@@ -1596,42 +1636,41 @@ th[data-sort].sort-desc::after {
     flex-wrap: nowrap;
     overflow-x: auto;
     overflow-y: hidden;
-    border-bottom: 2px solid #ddd;
-    margin-bottom: 1.5em;
+    gap: 0.35rem;
+    padding: 0.35rem 0;
+    margin-bottom: 1.25rem;
     scrollbar-width: none;
-    /* Firefox */
 }
 
 .tab-nav::-webkit-scrollbar {
     display: none;
 }
 
-/* Chrome/Safari */
-
 .tab-link {
-    padding: 5px 12px;
+    padding: 0.5rem 1rem;
     cursor: pointer;
-    border: none;
-    background-color: transparent;
-    font-size: 0.88em;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--card-bg);
+    font-size: 0.82rem;
     font-weight: 500;
-    color: #555;
-    position: relative;
-    top: 2px;
-    /* Alinea el borde inferior con el de la barra */
-    border-bottom: 2px solid transparent;
+    color: var(--text-medium);
+    white-space: nowrap;
+    transition: background 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 
 .tab-link:hover {
-    background-color: #f4f4f4;
-    color: #000;
+    background: #f3f4f6;
+    color: var(--text-dark);
+    border-color: #ccc;
 }
 
 .tab-link.active {
-    color: #FC5200;
-    /* Color naranja de Strava */
-    border-bottom-color: #FC5200;
-    font-weight: bold;
+    background: var(--strava-orange);
+    color: #fff;
+    border-color: var(--strava-orange);
+    font-weight: 600;
+    box-shadow: 0 1px 4px rgba(252, 82, 0, 0.2);
 }
 
 .tab-link.tab-link-wip {
@@ -1654,62 +1693,12 @@ th[data-sort].sort-desc::after {
     pointer-events: none;
 }
 
-/* ── Collapsible top bar ─────────────────────────────── */
-#collapsible-header {
-    overflow: hidden;
-    max-height: 200px;
-    transition: max-height 0.3s ease, opacity 0.3s ease, margin 0.3s ease;
-    opacity: 1;
-}
-
-#collapsible-header.header-hidden {
-    max-height: 0;
-    opacity: 0;
-    margin: 0;
-    pointer-events: none;
-}
-
-#app-section header {
-    margin-bottom: 0.75rem;
-    padding-bottom: 0.6rem;
-}
-
-#header-toggle {
-    position: absolute;
-    top: 0.75rem;
-    right: 0.75rem;
-    z-index: 10;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.35rem 0.75rem;
-    font-size: 0.75rem;
-    color: #999;
-    background: transparent;
-    border: 1px solid #ddd;
-    border-radius: 20px;
-    cursor: pointer;
-    line-height: 1.6;
-    transition: color 0.2s;
-}
-
-html[data-show-header-toggle='off'] #header-toggle {
-    display: none !important;
-}
-
-#header-toggle:hover {
-    color: #555;
-    border-color: #bbb;
-}
-
 .tab-content {
     display: none;
-    /* Oculta todas las pestañas por defecto */
 }
 
 .tab-content.active {
     display: block;
-    /* Muestra solo la pestaña activa */
 }
 
 /* --- Estilos para la calculadora VDOT (los mismos que antes) --- */
@@ -5443,20 +5432,23 @@ body {
     }
 
     /* Header optimizations */
-    #app-section header {
-        flex-wrap: wrap;
-        gap: 0.5rem;
-        margin-bottom: 1rem;
+    .top-bar {
+        padding: 0.4rem 0;
+        margin-bottom: 0.25rem;
     }
 
-    #app-section header h1 {
-        font-size: 1.5rem;
-        width: 100%;
+    .top-bar__logo {
+        width: 26px;
+        height: 26px;
     }
 
-    #app-section header button {
-        font-size: 0.85rem;
-        padding: 0.5rem 1rem;
+    .top-bar__title {
+        font-size: 1.05rem;
+    }
+
+    .action-btn {
+        width: 32px;
+        height: 32px;
     }
 
     /* Tab Navigation - Make it sticky bottom */
@@ -5467,8 +5459,10 @@ body {
         right: 0;
         display: flex;
         gap: 0;
+        padding: 0;
+        margin: 0;
         background: white;
-        border-top: 2px solid var(--border-color);
+        border-top: 1px solid var(--border-color);
         z-index: 999;
         box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
         overflow-x: auto;
@@ -5476,19 +5470,23 @@ body {
     }
 
     .tab-link {
-        flex: 1;
-        padding: 0.75rem 0.5rem;
-        font-size: 0.75rem;
+        flex: 0 0 auto;
+        padding: 0.6rem 0.75rem;
+        font-size: 0.72rem;
         text-align: center;
-        min-width: 70px;
+        min-width: 60px;
         border: none;
         border-radius: 0;
+        background: transparent;
+        color: var(--text-medium);
     }
 
     .tab-link.active {
-        border-top: 3px solid var(--strava-orange);
+        border-top: 2px solid var(--strava-orange);
         border-bottom: none;
-        background: #f9f9f9;
+        background: #fff5f0;
+        color: var(--strava-orange);
+        box-shadow: none;
     }
 
     .tab-link.tab-link-wip {
