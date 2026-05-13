@@ -1,6 +1,6 @@
 {
-    "name": "Strava Dashboard",
-    "short_name": "Strava",
+    "name": "StravaStats",
+    "short_name": "StravaStats",
     "description": "Análisis completo de actividades deportivas: correr, ciclismo, natación",
     "start_url": "/",
     "scope": "/",

@@ -1,4 +1,4 @@
-// Service Worker para Strava Dashboard PWA
+// Service Worker para StravaStats PWA
 const CACHE_NAME = 'strava-dashboard-v1';
 const urlsToCache = [
     '/',
