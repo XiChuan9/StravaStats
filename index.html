@@ -198,12 +198,27 @@
 
         <!-- MAIN APP SECTION -->
         <div id="app-section" class="hidden">
-            <!-- TOP BAR -->
+            <!-- TOP BAR (logo + tabs + actions in one row) -->
             <header class="top-bar">
                 <div class="top-bar__brand">
                     <img id="app-logo" src="./icon-sport.svg" alt="StravaStats logo" class="top-bar__logo">
                     <span id="athlete-name" class="top-bar__title">StravaStats</span>
                 </div>
+                <nav class="tab-nav tabs">
+                    <button class="tab-link active" data-tab="dashboard-tab" aria-controls="dashboard-tab">Dashboard</button>
+                    <button class="tab-link" data-tab="analysis-tab" aria-controls="analysis-tab">Run</button>
+                    <button class="tab-link" data-tab="bike-tab" aria-controls="bike-tab">Bike</button>
+                    <button class="tab-link" data-tab="swim-tab" aria-controls="swim-tab">Swim</button>
+                    <button class="tab-link" data-tab="athlete-tab" aria-controls="athlete-tab">Trends</button>
+                    <button class="tab-link" data-tab="planner-tab" aria-controls="planner-tab">Predictions</button>
+                    <button class="tab-link" data-tab="gear-tab" aria-controls="gear-tab">Gear</button>
+                    <button class="tab-link" data-tab="activities-tab" aria-controls="activities-tab">Activities</button>
+                    <button class="tab-link" data-tab="calendar-tab" aria-controls="calendar-tab">Calendar</button>
+                    <button class="tab-link tab-link-wip" data-tab="weather-tab" aria-controls="weather-tab">Weather<span class="tab-wip-badge">SOON</span></button>
+                    <button class="tab-link" data-tab="map-tab" aria-controls="map-tab">Map</button>
+                    <button class="tab-link" data-tab="wrapped-tab" aria-controls="wrapped-tab">Report</button>
+                    <button class="tab-link tab-link-wip" data-tab="ai-chat-tab" aria-controls="ai-chat-tab">AI Coach<span class="tab-wip-badge">SOON</span></button>
+                </nav>
                 <nav class="top-bar__actions">
                     <button id="settings-button" class="action-btn" aria-label="Open settings" title="Settings">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -261,33 +276,6 @@
                 </label>
                 <button id="close-settings" aria-label="Close settings">Close</button>
             </div>
-
-            <!-- TAB NAVIGATION -->
-            <nav class="tab-nav tabs">
-                <button class="tab-link active" data-tab="dashboard-tab" aria-controls="dashboard-tab"
-                    aria-label="Dashboard">Dashboard</button>
-                <button class="tab-link" data-tab="analysis-tab" aria-controls="analysis-tab"
-                    aria-label="Run">Run</button>
-                <button class="tab-link" data-tab="bike-tab" aria-controls="bike-tab" aria-label="Bike">Bike</button>
-                <button class="tab-link" data-tab="swim-tab" aria-controls="swim-tab" aria-label="Swim">Swim</button>
-                <button class="tab-link" data-tab="athlete-tab" aria-controls="athlete-tab"
-                    aria-label="Trends">Trends</button>
-                <button class="tab-link" data-tab="planner-tab" aria-controls="planner-tab"
-                    aria-label="Race Predictions">Predictions</button>
-                <button class="tab-link" data-tab="gear-tab" aria-controls="gear-tab" aria-label="Gear">Gear</button>
-                <button class="tab-link" data-tab="activities-tab" aria-controls="activities-tab"
-                    aria-label="Activities">Activities</button>
-                <button class="tab-link" data-tab="calendar-tab" aria-controls="calendar-tab"
-                    aria-label="Calendar">Calendar</button>
-                <button class="tab-link tab-link-wip" data-tab="weather-tab" aria-controls="weather-tab"
-                    aria-label="Weather">Weather<span class="tab-wip-badge">SOON</span></button>
-                <button class="tab-link" data-tab="map-tab" aria-controls="map-tab" aria-label="Map">Map</button>
-                <button class="tab-link" data-tab="wrapped-tab" aria-controls="wrapped-tab"
-                    aria-label="Annual Report">Report</button>
-                <button class="tab-link tab-link-wip" data-tab="ai-chat-tab" aria-controls="ai-chat-tab"
-                    aria-label="AI Coach">AI
-                    Coach<span class="tab-wip-badge">SOON</span></button>
-            </nav>
 
             <main>
                 <div id="analysis-tab" class="tab-content">
