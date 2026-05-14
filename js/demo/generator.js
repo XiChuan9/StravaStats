@@ -25,7 +25,7 @@ const ACTIVITY_TYPES = [
 // Centralized statistical profiles (easy to tweak per sport)
 const ACTIVITY_STAT_MODELS = {
     Run: {
-        distanceKm: { mean: 11, stdDev: 4, min: 3, max: 30 },
+        distanceKm: { mean: 11, stdDev: 10, min: 2, max: 42 },
         speedKmh: { mean: 12.4, stdDev: 1.4, min: 9, max: 18 },
         elevationMeters: { mean: 120, stdDev: 90, min: 0, max: 700 },
         avgHr: { mean: 151, stdDev: 8, min: 128, max: 175 },
@@ -33,13 +33,9 @@ const ACTIVITY_STAT_MODELS = {
     },
     WeightTraining: {
         distanceKm: { mean: 0, stdDev: 0, min: 0, max: 0 },
-        speedKmh: { mean: 0, stdDev: 0, min: 0, max: 0 },
         durationMin: { mean: 62, stdDev: 18, min: 25, max: 130 },
         avgHr: { mean: 122, stdDev: 10, min: 95, max: 145 },
         maxHr: { mean: 161, stdDev: 10, min: 130, max: 190 },
-        avgWatts: { mean: 0, stdDev: 0, min: 0, max: 0 },
-        weightedWatts: { mean: 0, stdDev: 0, min: 0, max: 0 },
-        maxWatts: { mean: 0, stdDev: 0, min: 0, max: 0 },
     },
     Swim: {
         distanceKm: { mean: 2.4, stdDev: 0.95, min: 1, max: 5 },
