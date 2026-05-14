@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Strava CSS Theme Preview</title>
+    <link rel="stylesheet" href="styles/colors.css">
+    <link rel="stylesheet" href="styles/responsive-components.css">
+    <link rel="stylesheet" href="styles/style.css">
+    <style>
+        body {
+            font-family: var(--font-family-base);
+            background: var(--color-bg-page);
+            padding: var(--spacing-lg);
+            color: var(--color-text-dark);
+        }
+
+        .preview-section {
+            background: var(--color-bg-card);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-lg);
+            padding: var(--spacing-lg);
+            margin-bottom: var(--spacing-xl);
+            box-shadow: var(--shadow-md);
+        }
+
+        .preview-section h2 {
+            margin-top: 0;
+            color: var(--color-primary);
+            border-bottom: 2px solid var(--color-border);
+            padding-bottom: var(--spacing-md);
+        }
+
+        .color-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: var(--spacing-md);
+            margin-top: var(--spacing-md);
+        }
+
+        .color-swatch {
+            border-radius: var(--radius-md);
+            padding: var(--spacing-md);
+            text-align: center;
+            color: white;
+            font-weight: var(--font-weight-semibold);
+            font-size: var(--font-size-sm);
+            box-shadow: var(--shadow-sm);
+            min-height: 100px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .button-group {
+            display: flex;
+            gap: var(--spacing-md);
+            flex-wrap: wrap;
+            margin-top: var(--spacing-md);
+        }
+
+        .card-example {
+            background: var(--color-bg-card);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-lg);
+            padding: var(--spacing-lg);
+            margin-top: var(--spacing-md);
+            box-shadow: var(--shadow-sm);
+            transition: all var(--transition-fast);
+        }
+
+        .card-example:hover {
+            box-shadow: var(--shadow-lg);
+            border-color: var(--color-primary);
+        }
+
+        .spacing-demo {
+            background: linear-gradient(90deg, var(--color-primary), var(--color-secondary));
+            color: white;
+            padding: var(--spacing-md);
+            border-radius: var(--radius-md);
+            margin-top: var(--spacing-sm);
+            font-weight: var(--font-weight-semibold);
+        }
+
+        .sport-example {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: var(--spacing-md);
+            margin-top: var(--spacing-md);
+        }
+
+        .sport-card {
+            padding: var(--spacing-lg);
+            border-radius: var(--radius-lg);
+            color: white;
+            font-weight: var(--font-weight-semibold);
+            box-shadow: var(--shadow-md);
+        }
+
+        .sport-card.run {
+            background: linear-gradient(135deg, var(--color-sport-run), #1b5e20);
+        }
+
+        .sport-card.bike {
+            background: linear-gradient(135deg, var(--color-sport-bike), #0d47a1);
+        }
+
+        .sport-card.swim {
+            background: linear-gradient(135deg, var(--color-sport-swim), #004d40);
+        }
+
+        .responsive-demo {
+            background: var(--color-bg-main);
+            padding: var(--spacing-lg);
+            border-radius: var(--radius-lg);
+            margin-top: var(--spacing-md);
+        }
+
+        .grid-demo {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: var(--spacing-md);
+        }
+
+        @media (min-width: 640px) {
+            .grid-demo {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (min-width: 1024px) {
+            .grid-demo {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
+        .grid-item {
+            background: var(--color-bg-card);
+            padding: var(--spacing-md);
+            border-radius: var(--radius-md);
+            border: 1px solid var(--color-border);
+            text-align: center;
+            font-size: var(--font-size-sm);
+        }
+    </style>
+</head>
+<body>
+    <h1 style="color: var(--color-primary); text-align: center; margin-bottom: var(--spacing-xl);">
+        🎨 Strava Dashboard CSS Theme Preview
+    </h1>
+
+    <!-- COLOR SWATCHES -->
+    <div class="preview-section">
+        <h2>Primary Colors</h2>
+        <div class="color-grid">
+            <div class="color-swatch" style="background: var(--color-primary);">
+                Primary<br>#fc4c02
+            </div>
+            <div class="color-swatch" style="background: var(--color-primary-light); color: #333;">
+                Light<br>#ffcc99
+            </div>
+            <div class="color-swatch" style="background: var(--color-primary-dark);">
+                Dark<br>#d84300
+            </div>
+            <div class="color-swatch" style="background: var(--color-secondary);">
+                Secondary<br>#4f46e5
+            </div>
+            <div class="color-swatch" style="background: var(--color-accent);">
+                Accent<br>#06b6d4
+            </div>
+        </div>
+    </div>
+
+    <!-- SPORT COLORS -->
+    <div class="preview-section">
+        <h2>Sport Colors</h2>
+        <div class="sport-example">
+            <div class="sport-card run">🏃 Running<br>var(--color-sport-run)</div>
+            <div class="sport-card bike">🚴 Cycling<br>var(--color-sport-bike)</div>
+            <div class="sport-card swim">🏊 Swimming<br>var(--color-sport-swim)</div>
+        </div>
+    </div>
+
+    <!-- TEXT & BACKGROUND COLORS -->
+    <div class="preview-section">
+        <h2>Text & Background Colors</h2>
+        <div style="display: grid; gap: var(--spacing-md);">
+            <div>
+                <strong>Text Dark:</strong>
+                <div style="color: var(--color-text-dark); padding: var(--spacing-md); background: var(--color-bg-page);">
+                    This is dark text (main headings, primary content)
+                </div>
+            </div>
+            <div>
+                <strong>Text Medium:</strong>
+                <div style="color: var(--color-text-medium); padding: var(--spacing-md); background: var(--color-bg-page);">
+                    This is medium text (normal paragraphs)
+                </div>
+            </div>
+            <div>
+                <strong>Text Light:</strong>
+                <div style="color: var(--color-text-light); padding: var(--spacing-md); background: var(--color-bg-page);">
+                    This is light text (secondary info, labels)
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- BUTTONS -->
+    <div class="preview-section">
+        <h2>Button Styles</h2>
+        <div class="button-group">
+            <button class="btn btn--primary">Primary Button</button>
+            <button class="btn btn--secondary">Secondary Button</button>
+            <button class="btn btn--outline">Outline Button</button>
+            <button class="btn btn--sm">Small Button</button>
+            <button class="btn btn--lg btn--primary">Large Button</button>
+        </div>
+    </div>
+
+    <!-- BADGES -->
+    <div class="preview-section">
+        <h2>Badges & Status</h2>
+        <div style="display: flex; gap: var(--spacing-md); flex-wrap: wrap; margin-top: var(--spacing-md);">
+            <span class="badge">Default</span>
+            <span class="badge badge--success">✓ Success</span>
+            <span class="badge badge--warning">⚠ Warning</span>
+            <span class="badge badge--danger">✕ Danger</span>
+            <span class="badge badge--info">ⓘ Info</span>
+        </div>
+    </div>
+
+    <!-- CARDS -->
+    <div class="preview-section">
+        <h2>Cards & Containers</h2>
+        <div class="card">
+            <h3 style="margin-top: 0; color: var(--color-primary);">Card Example</h3>
+            <p>This is a typical card component with rounded corners, border, and shadow.</p>
+            <p>Hover over it to see the shadow effect increase!</p>
+        </div>
+        <div class="card card--elevated" style="margin-top: var(--spacing-md);">
+            <h3 style="margin-top: 0; color: var(--color-secondary);">Elevated Card</h3>
+            <p>This card has an elevated shadow from the start.</p>
+        </div>
+    </div>
+
+    <!-- TYPOGRAPHY SIZES -->
+    <div class="preview-section">
+        <h2>Typography Sizes</h2>
+        <div style="display: grid; gap: var(--spacing-sm);">
+            <div class="text-xs">XS: This is extra small text (12px)</div>
+            <div class="text-sm">SM: This is small text (14px)</div>
+            <div class="text-base">Base: This is normal text (16px)</div>
+            <div class="text-lg">LG: This is large text (18px)</div>
+            <div class="text-xl">XL: This is extra large text (20px)</div>
+            <div class="text-2xl font-semibold">2XL: This is 2x large (24px)</div>
+            <div class="text-3xl font-bold">3XL: This is 3x large (30px)</div>
+        </div>
+    </div>
+
+    <!-- SHADOWS -->
+    <div class="preview-section">
+        <h2>Shadow Effects</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--spacing-md); margin-top: var(--spacing-md);">
+            <div class="shadow-sm" style="padding: var(--spacing-lg); background: var(--color-bg-card); border-radius: var(--radius-md); text-align: center;">
+                Shadow Small
+            </div>
+            <div class="shadow-md" style="padding: var(--spacing-lg); background: var(--color-bg-card); border-radius: var(--radius-md); text-align: center;">
+                Shadow Medium
+            </div>
+            <div class="shadow-lg" style="padding: var(--spacing-lg); background: var(--color-bg-card); border-radius: var(--radius-md); text-align: center;">
+                Shadow Large
+            </div>
+            <div class="shadow-xl" style="padding: var(--spacing-lg); background: var(--color-bg-card); border-radius: var(--radius-md); text-align: center;">
+                Shadow XL
+            </div>
+        </div>
+    </div>
+
+    <!-- SPACING SYSTEM -->
+    <div class="preview-section">
+        <h2>Spacing System</h2>
+        <div style="display: grid; gap: var(--spacing-md);">
+            <div class="spacing-demo">
+                padding: var(--spacing-xs) = 4px
+            </div>
+            <div class="spacing-demo">
+                padding: var(--spacing-sm) = 8px
+            </div>
+            <div class="spacing-demo">
+                padding: var(--spacing-md) = 16px
+            </div>
+            <div class="spacing-demo">
+                padding: var(--spacing-lg) = 24px
+            </div>
+            <div class="spacing-demo">
+                padding: var(--spacing-xl) = 32px
+            </div>
+        </div>
+    </div>
+
+    <!-- BORDER RADIUS -->
+    <div class="preview-section">
+        <h2>Border Radius</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--spacing-md); margin-top: var(--spacing-md);">
+            <div class="rounded-sm" style="padding: var(--spacing-lg); background: var(--color-bg-main); text-align: center; font-size: var(--font-size-sm);">
+                rounded-sm (4px)
+            </div>
+            <div class="rounded-md" style="padding: var(--spacing-lg); background: var(--color-bg-main); text-align: center; font-size: var(--font-size-sm);">
+                rounded-md (8px)
+            </div>
+            <div class="rounded-lg" style="padding: var(--spacing-lg); background: var(--color-bg-main); text-align: center; font-size: var(--font-size-sm);">
+                rounded-lg (12px)
+            </div>
+            <div class="rounded-xl" style="padding: var(--spacing-lg); background: var(--color-bg-main); text-align: center; font-size: var(--font-size-sm);">
+                rounded-xl (16px)
+            </div>
+            <div class="rounded-full" style="padding: var(--spacing-lg); background: var(--color-bg-main); text-align: center; font-size: var(--font-size-sm);">
+                rounded-full (999px)
+            </div>
+        </div>
+    </div>
+
+    <!-- RESPONSIVE GRID -->
+    <div class="preview-section">
+        <h2>Responsive Grid</h2>
+        <p>Resize the window to see the grid change (1 col on mobile, 2 on tablet, 3 on desktop)</p>
+        <div class="grid-demo">
+            <div class="grid-item">Mobile: 1 col</div>
+            <div class="grid-item">Tablet: 2 cols</div>
+            <div class="grid-item">Desktop: 3 cols</div>
+            <div class="grid-item">Item 4</div>
+            <div class="grid-item">Item 5</div>
+            <div class="grid-item">Item 6</div>
+        </div>
+    </div>
+
+    <!-- GRADIENTS -->
+    <div class="preview-section">
+        <h2>Gradient Backgrounds</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--spacing-md); margin-top: var(--spacing-md);">
+            <div style="background: var(--color-gradient-orange); padding: var(--spacing-lg); border-radius: var(--radius-lg); text-align: center; font-weight: var(--font-weight-semibold);">
+                Orange Gradient
+            </div>
+            <div style="background: var(--color-gradient-blue); padding: var(--spacing-lg); border-radius: var(--radius-lg); text-align: center; font-weight: var(--font-weight-semibold); color: var(--color-text-dark);">
+                Blue Gradient
+            </div>
+            <div style="background: var(--color-gradient-green); padding: var(--spacing-lg); border-radius: var(--radius-lg); text-align: center; font-weight: var(--font-weight-semibold); color: var(--color-text-dark);">
+                Green Gradient
+            </div>
+            <div style="background: var(--color-gradient-purple); padding: var(--spacing-lg); border-radius: var(--radius-lg); text-align: center; font-weight: var(--font-weight-semibold); color: var(--color-text-dark);">
+                Purple Gradient
+            </div>
+            <div style="background: var(--color-gradient-cyan); padding: var(--spacing-lg); border-radius: var(--radius-lg); text-align: center; font-weight: var(--font-weight-semibold); color: var(--color-text-dark);">
+                Cyan Gradient
+            </div>
+        </div>
+    </div>
+
+    <div style="text-align: center; padding: var(--spacing-xl); color: var(--color-text-light);">
+        <p>All colors and styles are defined in <code>styles/colors.css</code></p>
+        <p>Edit that file to change the entire theme! 🎨</p>
+    </div>
+</body>
+</html>

@@ -1,10 +1,17 @@
 /* =====================================================
    CALENDAR TAB - Month/Week/Year Calendar Views
+   Mobile-first responsive with centralized colors
    ===================================================== */
 
 /* ─── Calendar Root ────────────────────────────── */
 .cal-root {
-    padding: 1rem;
+    padding: var(--spacing-md);
+}
+
+@media (min-width: 768px) {
+    .cal-root {
+        padding: var(--spacing-lg);
+    }
 }
 
 .cal-header {
@@ -12,33 +19,35 @@
     align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
-    gap: .75rem;
-    margin-bottom: .75rem;
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
 }
 
 .cal-controls-left {
     display: flex;
-    gap: .75rem;
+    gap: var(--spacing-md);
     align-items: center;
     flex-wrap: wrap;
 }
 
 .cal-view-btns {
     display: flex;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
     overflow: hidden;
+    background: var(--color-bg-card);
 }
 
 .cal-view-btn {
-    padding: .32rem .8rem;
-    font-size: .82rem;
+    padding: var(--spacing-sm) var(--spacing-md);
+    font-size: var(--font-size-sm);
     border: none;
-    border-right: 1px solid var(--border-color);
-    background: #fff;
-    color: var(--text-dark);
+    border-right: 1px solid var(--color-border);
+    background: transparent;
+    color: var(--color-text-dark);
     cursor: pointer;
-    transition: background .12s, color .12s;
+    transition: all var(--transition-fast);
+    font-weight: var(--font-weight-medium);
 }
 
 .cal-view-btn:last-child {
@@ -46,56 +55,61 @@
 }
 
 .cal-view-btn:hover {
-    background: #f0f0f0;
+    background: var(--color-bg-hover);
 }
 
 .cal-view-btn.active {
-    background: var(--strava-orange);
-    color: #fff;
-    font-weight: 700;
+    background: var(--color-primary);
+    color: white;
+    font-weight: var(--font-weight-bold);
 }
 
 .cal-type-filter {
-    padding: .3rem .55rem;
-    font-size: .83rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: #fff;
-    color: var(--text-dark);
+    padding: var(--spacing-sm) var(--spacing-md);
+    font-size: var(--font-size-sm);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-bg-card);
+    color: var(--color-text-dark);
+    cursor: pointer;
+    transition: border-color var(--transition-fast);
 }
 
-.cal-type-filter option {
-    color: var(--text-dark);
+.cal-type-filter:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(252, 76, 2, 0.1);
 }
 
 .cal-nav {
     display: flex;
     align-items: center;
-    gap: .45rem;
+    gap: var(--spacing-sm);
 }
 
 .cal-nav-btn {
-    padding: .3rem .7rem;
-    font-size: 1rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: #fff;
-    color: var(--text-dark);
+    padding: var(--spacing-sm) var(--spacing-md);
+    font-size: var(--font-size-base);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-bg-card);
+    color: var(--color-text-dark);
     cursor: pointer;
-    transition: background .12s;
+    transition: all var(--transition-fast);
 }
 
 .cal-nav-btn:hover {
-    background: #f0f0f0;
+    background: var(--color-bg-hover);
+    border-color: var(--color-primary);
 }
 
 .cal-today-btn {
-    font-size: .78rem;
+    font-size: var(--font-size-xs);
 }
 
 .cal-title {
-    font-weight: 700;
-    font-size: 1.05rem;
+    font-weight: var(--font-weight-bold);
+    font-size: var(--font-size-lg);
     min-width: 200px;
     text-align: center;
 }
@@ -103,34 +117,42 @@
 /* ─── Streaks ──────────────────────────────── */
 .cal-streak-cards {
     display: flex;
-    gap: .65rem;
+    gap: var(--spacing-sm);
     flex-wrap: wrap;
-    margin-bottom: .9rem;
+    margin-bottom: var(--spacing-lg);
 }
 
 .cal-streak-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: var(--border-radius-md);
-    padding: .6rem 1rem;
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-md);
     text-align: center;
-    min-width: 95px;
-    flex: 1;
+    min-width: 90px;
+    flex: 1 1 100px;
+    box-shadow: var(--shadow-sm);
+    transition: all var(--transition-fast);
+}
+
+.cal-streak-card:hover {
+    box-shadow: var(--shadow-md);
+    border-color: var(--color-primary);
 }
 
 .cal-streak-num {
-    font-size: 1.6rem;
-    font-weight: 800;
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
     line-height: 1.1;
-    color: var(--strava-orange);
+    color: var(--color-primary);
 }
 
 .cal-streak-label {
-    font-size: .68rem;
-    color: var(--text-light);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-light);
     text-transform: uppercase;
-    letter-spacing: .04em;
-    margin-top: .15rem;
+    letter-spacing: 0.05em;
+    margin-top: var(--spacing-sm);
+    font-weight: var(--font-weight-semibold);
 }
 
 /* ─── Month Grid ───────────────────────────── */
@@ -138,33 +160,34 @@
     display: grid;
     grid-template-columns: repeat(7, 1fr);
     gap: 2px;
-    background: var(--border-color);
-    border: 1px solid var(--border-color);
-    border-radius: var(--border-radius-md);
+    background: var(--color-border);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
     overflow: hidden;
+    box-shadow: var(--shadow-sm);
 }
 
 .cal-dow-header {
-    background: #f8f9fa;
+    background: var(--color-bg-hover);
     text-align: center;
-    font-size: .75rem;
-    font-weight: 700;
-    color: var(--text-medium);
-    padding: .45rem 0;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text-medium);
+    padding: var(--spacing-md) 0;
     text-transform: uppercase;
-    letter-spacing: .05em;
+    letter-spacing: 0.05em;
 }
 
 .cal-day {
-    background: var(--bg-card);
+    background: var(--color-bg-card);
     min-height: 90px;
-    padding: .35rem;
+    padding: var(--spacing-sm);
     cursor: pointer;
-    transition: background .1s;
+    transition: all var(--transition-fast);
 }
 
 .cal-day:hover {
-    background: #f4f6f9;
+    background: var(--color-bg-hover);
 }
 
 .cal-day-empty {
@@ -173,26 +196,26 @@
 }
 
 .cal-today {
-    background: #fff7f4 !important;
-    outline: 2px solid var(--strava-orange);
+    background: linear-gradient(135deg, #fff4ec 0%, #ffffff 65%) !important;
+    outline: 2px solid var(--color-primary);
     outline-offset: -2px;
 }
 
 .cal-future {
-    opacity: .4;
+    opacity: 0.4;
     pointer-events: none;
 }
 
 .cal-day-num {
-    font-size: .78rem;
-    font-weight: 600;
-    color: var(--text-medium);
-    margin-bottom: .2rem;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-medium);
+    margin-bottom: var(--spacing-sm);
 }
 
 .cal-today .cal-day-num {
-    color: var(--strava-orange);
-    font-weight: 900;
+    color: var(--color-primary);
+    font-weight: var(--font-weight-bold);
 }
 
 .cal-day-pills {

@@ -1,96 +1,124 @@
 ﻿/* =====================================================
    GEAR TAB - Gear Cards, Filters, Stats
+   Mobile-first responsive with centralized colors
    ===================================================== */
 
+#gear-tab {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    padding: var(--spacing-sm);
+}
+
+@media (min-width: 768px) {
+    #gear-tab {
+        padding: var(--spacing-md);
+    }
+}
+
+/* ─── Gear Header ──────────────────────── */
 .gear-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 1.5rem;
-    padding-bottom: 1rem;
-    border-bottom: 2px solid #e5e7eb;
+    margin-bottom: var(--spacing-lg);
+    padding-bottom: var(--spacing-md);
+    border-bottom: 2px solid var(--color-border);
+    flex-wrap: wrap;
+    gap: var(--spacing-md);
 }
 
 .gear-header h3 {
-    font-size: 1.75rem;
-    font-weight: 700;
-    color: #111827;
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text-dark);
     margin: 0;
 }
 
-/* Edit Toggle Button */
+@media (min-width: 768px) {
+    .gear-header h3 {
+        font-size: var(--font-size-3xl);
+    }
+}
+
+/* ─── Edit Toggle Button ──────────────────────── */
 .edit-toggle-btn {
-    padding: 0.5rem 1.1rem;
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    padding: var(--spacing-sm) var(--spacing-lg);
+    background: linear-gradient(135deg, var(--color-secondary), #8b5cf6);
     color: white;
     border: none;
-    border-radius: 8px;
-    font-weight: 600;
-    font-size: 0.85rem;
+    border-radius: var(--radius-md);
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-sm);
     cursor: pointer;
-    transition: all 0.3s ease;
-    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+    transition: all var(--transition-fast);
+    box-shadow: var(--shadow-sm);
 }
 
 .edit-toggle-btn:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+    box-shadow: var(--shadow-md);
 }
 
-/* ÔöÇÔöÇ Summary Bar ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */
+.edit-toggle-btn:active {
+    transform: translateY(0);
+}
+
+/* ─── Summary Bar ──────────────────────── */
 .gear-summary-bar {
     display: flex;
-    gap: 1rem;
+    gap: var(--spacing-md);
     flex-wrap: wrap;
-    margin-bottom: 1.25rem;
-    padding: 1rem 1.25rem;
-    background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
-    border-radius: 14px;
-    border: 1px solid #e5e7eb;
+    margin-bottom: var(--spacing-lg);
+    padding: var(--spacing-lg);
+    background: linear-gradient(135deg, var(--color-bg-hover) 0%, var(--color-bg-main) 100%);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-border);
 }
 
 .gear-summary-stat {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
-    flex: 1 1 100px;
+    gap: var(--spacing-md);
+    flex: 1 1 120px;
     min-width: 0;
 }
 
-.gear-summary-stat>div {
+.gear-summary-stat > div {
     display: flex;
     flex-direction: column;
+    gap: var(--spacing-xs);
 }
 
 .summary-icon {
-    font-size: 1.4rem;
+    font-size: var(--font-size-2xl);
     line-height: 1;
 }
 
 .summary-value {
-    font-size: 1.35rem;
-    font-weight: 800;
-    color: #111827;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text-dark);
     line-height: 1.2;
 }
 
 .summary-label {
-    font-size: 0.72rem;
-    color: #6b7280;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-light);
     text-transform: uppercase;
-    letter-spacing: 0.4px;
-    font-weight: 600;
+    letter-spacing: 0.05em;
+    font-weight: var(--font-weight-semibold);
 }
 
 .gear-summary-stat--alert .summary-value {
-    color: #ef4444;
+    color: var(--color-danger);
 }
 
-/* ÔöÇÔöÇ Filter Bar ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */
+/* ─── Filter Bar ──────────────────────── */
 #gear-filters {
     display: flex;
-    gap: 0.5rem;
-    margin-bottom: 1.25rem;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-lg);
     flex-wrap: wrap;
     align-items: center;
 }
@@ -98,56 +126,72 @@
 .gear-filter-group {
     display: flex;
     gap: 0;
-    background: #f3f4f6;
-    border-radius: 10px;
+    background: var(--color-bg-hover);
+    border-radius: var(--radius-md);
     padding: 3px;
+    border: 1px solid var(--color-border-light);
 }
 
 .gear-filter-btn {
     background: transparent;
     border: none;
-    border-radius: 8px;
-    padding: 0.45rem 1rem;
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
     cursor: pointer;
-    transition: all 0.25s ease;
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: #6b7280;
+    transition: all var(--transition-fast);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-light);
 }
 
 .gear-filter-btn:hover {
-    color: #111827;
-    background: rgba(255, 255, 255, 0.6);
+    color: var(--color-text-dark);
+    background: var(--color-bg-card);
 }
 
 .gear-filter-btn.active {
-    background: var(--strava-orange);
+    background: var(--color-primary);
     color: white;
-    box-shadow: 0 2px 6px rgba(252, 82, 0, 0.3);
+    box-shadow: var(--shadow-sm);
 }
 
 .gear-retired-toggle {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    font-size: 0.82rem;
-    color: #6b7280;
+    gap: var(--spacing-sm);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-light);
     cursor: pointer;
     margin-left: auto;
     user-select: none;
 }
 
 .gear-retired-toggle input[type="checkbox"] {
-    accent-color: var(--strava-orange);
-    width: 16px;
-    height: 16px;
+    accent-color: var(--color-primary);
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
 }
 
-/* ÔöÇÔöÇ Grid Layout ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */
+/* ─── Grid Layout ──────────────────────── */
 .gear-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 1.25rem;
+    grid-template-columns: 1fr;
+    gap: var(--spacing-md);
+}
+
+@media (min-width: 640px) {
+    .gear-grid {
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    }
+}
+
+@media (min-width: 1024px) {
+    .gear-grid {
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: var(--spacing-lg);
+    }
+}
     margin-top: 1rem;
 }
 

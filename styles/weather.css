@@ -1,151 +1,200 @@
 ﻿/* =====================================================
    WEATHER TAB - Weather Analytics, Stats, Maps
+   Mobile-first responsive with centralized colors
    ===================================================== */
 
-/* Weather stats cards */
-.wa-stats-row {
+#weather-tab {
     display: flex;
-    justify-content: space-around;
-    align-items: stretch;
-    flex-wrap: wrap;
-    gap: 12px;
-    margin-top: 12px;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    padding: var(--spacing-sm);
+}
+
+@media (min-width: 768px) {
+    #weather-tab {
+        padding: var(--spacing-md);
+    }
+}
+
+/* ─── Weather Stats Cards ──────────────────── */
+.wa-stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: var(--spacing-md);
+    margin-top: var(--spacing-md);
 }
 
 .wa-card {
-    flex: 1 1 150px;
-    background: #f7f7f7;
-    border-radius: 12px;
-    padding: 10px 14px;
+    background: var(--color-bg-hover);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-md);
     text-align: center;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
-    transition: transform 0.15s ease;
+    box-shadow: var(--shadow-sm);
+    transition: all var(--transition-fast);
+    border: 1px solid var(--color-border-light);
 }
 
 .wa-card:hover {
     transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+    border-color: var(--color-primary);
 }
 
 .wa-card h4 {
-    font-size: 0.9rem;
-    color: #555;
-    margin-bottom: 6px;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-medium);
+    margin: 0 0 var(--spacing-sm);
+    font-weight: var(--font-weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
 }
 
 .wa-val {
-    font-size: 1.3rem;
-    font-weight: 600;
-    color: #222;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text-dark);
 }
 
-
-
-/* Weather Analysis (activity page) */
+/* ─── Weather Analysis ──────────────────────── */
 .weather-analysis__body {
     display: grid;
-    gap: 1rem;
+    gap: var(--spacing-lg);
 }
 
 .weather-tabs {
     display: inline-flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-bottom: 1rem;
-    padding: 0.35rem;
-    border-radius: 999px;
-    background: rgba(15, 23, 42, 0.04);
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-md);
+    padding: var(--spacing-sm);
+    border-radius: var(--radius-full);
+    background: var(--color-bg-hover);
 }
 
 .weather-tab {
     border: 0;
-    border-radius: 999px;
-    padding: 0.65rem 0.95rem;
+    border-radius: var(--radius-full);
+    padding: var(--spacing-md) var(--spacing-lg);
     background: transparent;
-    color: #475569;
-    font-weight: 700;
+    color: var(--color-text-medium);
+    font-weight: var(--font-weight-bold);
     cursor: pointer;
+    transition: all var(--transition-fast);
+    font-size: var(--font-size-sm);
 }
 
 .weather-tab.is-active {
-    background: linear-gradient(135deg, #f97316, #fb923c);
-    color: #fff;
-    box-shadow: 0 8px 18px rgba(249, 115, 22, 0.28);
+    background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
+    color: white;
+    box-shadow: var(--shadow-md);
 }
 
-.weather-summary-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.85rem;
-}
-
+.weather-summary-grid,
 .weather-wind-block {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.85rem;
+    grid-template-columns: 1fr;
+    gap: var(--spacing-md);
+}
+
+@media (min-width: 768px) {
+    .weather-summary-grid,
+    .weather-wind-block {
+        grid-template-columns: repeat(3, 1fr);
+    }
 }
 
 .weather-summary-card {
     display: grid;
-    gap: 0.25rem;
-    padding: 1rem;
-    border-radius: 18px;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.86));
-    border: 1px solid rgba(148, 163, 184, 0.18);
+    gap: var(--spacing-xs);
+    padding: var(--spacing-lg);
+    border-radius: var(--radius-xl);
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-light);
+    box-shadow: var(--shadow-sm);
+    transition: all var(--transition-fast);
+}
+
+.weather-summary-card:hover {
+    box-shadow: var(--shadow-md);
 }
 
 .weather-summary-card span {
-    font-size: 0.78rem;
-    color: #64748b;
-    font-weight: 700;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-light);
+    font-weight: var(--font-weight-bold);
     text-transform: uppercase;
     letter-spacing: 0.08em;
 }
 
 .weather-summary-card strong {
-    color: #0f172a;
-    font-size: 1.15rem;
+    color: var(--color-text-dark);
+    font-size: var(--font-size-lg);
 }
 
 .weather-summary-note {
     margin: 0;
-    color: #475569;
+    color: var(--color-text-medium);
     line-height: 1.5;
+    font-size: var(--font-size-sm);
 }
 
 .weather-point-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 0.85rem;
+    grid-template-columns: 1fr;
+    gap: var(--spacing-md);
+}
+
+@media (min-width: 640px) {
+    .weather-point-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (min-width: 1024px) {
+    .weather-point-grid {
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
 }
 
 .weather-point-card {
     display: grid;
-    gap: 0.6rem;
-    padding: 1rem;
-    border-radius: 20px;
-    background: rgba(255, 255, 255, 0.9);
-    border: 1px solid rgba(148, 163, 184, 0.18);
-    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.05);
+    gap: var(--spacing-md);
+    padding: var(--spacing-lg);
+    border-radius: var(--radius-xl);
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-light);
+    box-shadow: var(--shadow-sm);
+    transition: all var(--transition-fast);
+}
+
+.weather-point-card:hover {
+    box-shadow: var(--shadow-lg);
 }
 
 .weather-point-card__top {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.75rem;
+    gap: var(--spacing-md);
 }
-
 
 .map-toolbar__toggle {
     display: inline-flex;
     align-items: center;
-    gap: 0.45rem;
-    padding: 0.2rem 0.6rem;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.66);
-    color: #334155;
-    font-weight: 700;
-    border: 1px solid rgba(148, 163, 184, 0.2);
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-radius: var(--radius-full);
+    background: var(--color-bg-overlay-light);
+    color: var(--color-text-medium);
+    font-weight: var(--font-weight-bold);
+    border: 1px solid var(--color-border-light);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.map-toolbar__toggle:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
 }
 
 .weather-map-divicon {
@@ -159,11 +208,11 @@
     height: 54px;
     display: grid;
     place-items: center;
-    border-radius: 18px;
-    background: rgba(15, 23, 42, 0.78);
-    color: #fff;
-    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.22);
-    border: 1px solid var(--wind-color, rgba(255, 255, 255, 0.2));
+    border-radius: var(--radius-lg);
+    background: var(--color-text-dark);
+    color: white;
+    box-shadow: var(--shadow-lg);
+    border: 1px solid rgba(255, 255, 255, 0.2);
     overflow: hidden;
 }
 
@@ -171,32 +220,31 @@
     position: absolute;
     top: -12px;
     right: -12px;
-    font-size: 1.2rem;
+    font-size: var(--font-size-lg);
     line-height: 1;
-    color: var(--wind-color, #f8fafc);
+    color: var(--wind-color, white);
     opacity: 0.98;
-    text-shadow: 0 1px 2px rgba(15, 23, 42, 0.5);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
     filter: drop-shadow(0 0 5px var(--wind-color, rgba(255, 255, 255, 0.35)));
-    line-height: 1;
     transform-origin: center;
 }
 
 .weather-map-marker__body {
     display: grid;
     place-items: center;
-    gap: 0.08rem;
+    gap: var(--spacing-xs);
     text-align: center;
     line-height: 1;
     z-index: 1;
 }
 
 .weather-map-marker__icon {
-    font-size: 1rem;
+    font-size: var(--font-size-lg);
 }
 
 .weather-map-marker__temp {
-    font-size: 0.82rem;
-    font-weight: 800;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-bold);
 }
 
 .weather-map-marker__rain {

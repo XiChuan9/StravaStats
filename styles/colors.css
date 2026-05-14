@@ -1,0 +1,192 @@
+/* =================================================================
+   colors.css - CENTRALIZED COLOR PALETTE & THEME SYSTEM
+   Change colors easily here - applies globally to entire app
+   ================================================================= */
+
+:root {
+    /* PRIMARY COLORS */
+    --color-primary: #fc4c02;
+    --color-primary-light: #ffcc99;
+    --color-primary-dark: #d84300;
+    --color-secondary: #4f46e5;
+    --color-accent: #06b6d4;
+
+    /* SPORT COLORS */
+    --color-sport-run: #2e7d32;
+    --color-sport-bike: #1565c0;
+    --color-sport-swim: #00838f;
+    --color-sport-hike: #7b2d26;
+    --color-sport-trail: #5d4e37;
+
+    /* TEXT COLORS */
+    --color-text-dark: #232323;
+    --color-text-medium: #595959;
+    --color-text-light: #8c8c8c;
+    --color-text-lighter: #ababab;
+
+    /* BACKGROUND COLORS */
+    --color-bg-page: #f8fafc;
+    --color-bg-main: #f7f7f7;
+    --color-bg-card: #ffffff;
+    --color-bg-hover: #f3f4f6;
+    --color-bg-overlay-light: rgba(255, 255, 255, 0.55);
+    --color-bg-overlay-dark: rgba(0, 0, 0, 0.1);
+
+    /* BORDER & DIVIDER COLORS */
+    --color-border: #e8e8e8;
+    --color-border-light: #f1f1f1;
+    --color-border-dark: #d0d0d0;
+
+    /* STATUS COLORS */
+    --color-success: #10b981;
+    --color-warning: #f59e0b;
+    --color-danger: #ef4444;
+    --color-info: #3b82f6;
+
+    /* GRADIENT COLORS */
+    --color-gradient-orange: linear-gradient(135deg, #fff4ec 0%, #ffffff 65%);
+    --color-gradient-blue: linear-gradient(135deg, #e8f4f8 0%, #ffffff 65%);
+    --color-gradient-green: linear-gradient(135deg, #edf5f0 0%, #ffffff 65%);
+    --color-gradient-purple: linear-gradient(135deg, #f3e8ff 0%, #ffffff 65%);
+    --color-gradient-cyan: linear-gradient(135deg, #e0f2fe 0%, #ffffff 65%);
+
+    /* SHADOWS */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 15px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.1);
+    --shadow-xl: 0 12px 50px rgba(0, 0, 0, 0.15);
+
+    /* SPACING */
+    --spacing-xs: 0.25rem;
+    --spacing-sm: 0.5rem;
+    --spacing-md: 1rem;
+    --spacing-lg: 1.5rem;
+    --spacing-xl: 2rem;
+    --spacing-2xl: 3rem;
+
+    /* BORDER RADIUS */
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --radius-2xl: 20px;
+    --radius-full: 999px;
+
+    /* TYPOGRAPHY */
+    --font-family-base: 'Segoe UI', 'Roboto', Arial, sans-serif;
+    --font-size-xs: 0.75rem;
+    --font-size-sm: 0.875rem;
+    --font-size-base: 1rem;
+    --font-size-lg: 1.125rem;
+    --font-size-xl: 1.25rem;
+    --font-size-2xl: 1.5rem;
+    --font-size-3xl: 1.875rem;
+    --font-size-4xl: 2.25rem;
+
+    --font-weight-normal: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
+
+    /* TRANSITIONS */
+    --transition-fast: 0.15s;
+    --transition-normal: 0.3s;
+    --transition-slow: 0.5s;
+
+    /* Z-INDEX LAYERS */
+    --z-dropdown: 100;
+    --z-sticky: 200;
+    --z-fixed: 300;
+    --z-modal: 400;
+    --z-tooltip: 500;
+}
+
+/* DARK MODE SUPPORT (Optional - uncomment when ready) */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --color-text-dark: #f1f5f9;
+        --color-text-medium: #cbd5e1;
+        --color-text-light: #94a3b8;
+
+        --color-bg-page: #0f172a;
+        --color-bg-main: #1e293b;
+        --color-bg-card: #1e293b;
+        --color-bg-hover: #334155;
+
+        --color-border: #334155;
+        --color-border-light: #475569;
+        --color-border-dark: #1e293b;
+
+        --color-bg-overlay-light: rgba(15, 23, 42, 0.55);
+        --color-bg-overlay-dark: rgba(255, 255, 255, 0.1);
+
+        --color-gradient-orange: linear-gradient(135deg, #6b4423 0%, #1e293b 65%);
+        --color-gradient-blue: linear-gradient(135deg, #1e3a5f 0%, #1e293b 65%);
+        --color-gradient-green: linear-gradient(135deg, #1b3a2e 0%, #1e293b 65%);
+    }
+}
+
+/* SPORT-SPECIFIC BACKGROUND GRADIENTS */
+.bg-gradient-run {
+    background: linear-gradient(135deg, #edf5f0 0%, #ffffff 65%);
+}
+
+.bg-gradient-bike {
+    background: linear-gradient(135deg, #e0f2fe 0%, #ffffff 65%);
+}
+
+.bg-gradient-swim {
+    background: linear-gradient(135deg, #e0f7fa 0%, #ffffff 65%);
+}
+
+.bg-gradient-hike {
+    background: linear-gradient(135deg, #f5e6d3 0%, #ffffff 65%);
+}
+
+/* UTILITY CLASSES FOR QUICK COLOR CHANGES */
+.text-primary { color: var(--color-primary); }
+.text-secondary { color: var(--color-secondary); }
+.text-accent { color: var(--color-accent); }
+.text-dark { color: var(--color-text-dark); }
+.text-medium { color: var(--color-text-medium); }
+.text-light { color: var(--color-text-light); }
+
+.bg-primary { background-color: var(--color-primary); }
+.bg-secondary { background-color: var(--color-secondary); }
+.bg-accent { background-color: var(--color-accent); }
+.bg-card { background-color: var(--color-bg-card); }
+.bg-page { background-color: var(--color-bg-page); }
+
+.border-primary { border-color: var(--color-primary); }
+.border-secondary { border-color: var(--color-secondary); }
+.border-default { border-color: var(--color-border); }
+
+.shadow-sm { box-shadow: var(--shadow-sm); }
+.shadow-md { box-shadow: var(--shadow-md); }
+.shadow-lg { box-shadow: var(--shadow-lg); }
+.shadow-xl { box-shadow: var(--shadow-xl); }
+
+/* ROUNDED CORNERS */
+.rounded-sm { border-radius: var(--radius-sm); }
+.rounded-md { border-radius: var(--radius-md); }
+.rounded-lg { border-radius: var(--radius-lg); }
+.rounded-xl { border-radius: var(--radius-xl); }
+.rounded-full { border-radius: var(--radius-full); }
+
+/* SPACING HELPERS */
+.gap-xs { gap: var(--spacing-xs); }
+.gap-sm { gap: var(--spacing-sm); }
+.gap-md { gap: var(--spacing-md); }
+.gap-lg { gap: var(--spacing-lg); }
+
+.p-xs { padding: var(--spacing-xs); }
+.p-sm { padding: var(--spacing-sm); }
+.p-md { padding: var(--spacing-md); }
+.p-lg { padding: var(--spacing-lg); }
+.p-xl { padding: var(--spacing-xl); }
+
+.m-xs { margin: var(--spacing-xs); }
+.m-sm { margin: var(--spacing-sm); }
+.m-md { margin: var(--spacing-md); }
+.m-lg { margin: var(--spacing-lg); }
+.m-xl { margin: var(--spacing-xl); }

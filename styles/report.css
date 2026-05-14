@@ -1,19 +1,33 @@
 /* =====================================================
    WRAPPED/REPORT TAB - Year Stats, Breakdown, PBs
+   Mobile-first responsive with centralized colors
    ===================================================== */
+
+#wrapped-tab {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xl);
+    padding: var(--spacing-md);
+}
+
+@media (min-width: 768px) {
+    #wrapped-tab {
+        padding: var(--spacing-lg);
+    }
+}
 
 /* ─── Year Header ──────────────────────────── */
 .stats-year-header {
     text-align: center;
-    margin-bottom: 3rem;
-    padding: 2rem 0;
+    margin-bottom: var(--spacing-xl);
+    padding: var(--spacing-xl) 0;
 }
 
 .stats-year-header h2 {
-    font-size: 3rem;
-    font-weight: 800;
+    font-size: clamp(2rem, 8vw, 3rem);
+    font-weight: var(--font-weight-bold);
     margin: 0;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, var(--color-secondary), var(--color-accent));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -21,18 +35,15 @@
 }
 
 .stats-year-header p {
-    color: #666;
-    font-size: 1.1rem;
-    margin: 0.5rem 0 0;
+    color: var(--color-text-medium);
+    font-size: var(--font-size-lg);
+    margin: var(--spacing-md) 0 0;
 }
 
 @keyframes pulse {
-
-    0%,
-    100% {
+    0%, 100% {
         transform: scale(1);
     }
-
     50% {
         transform: scale(1.05);
     }
@@ -41,19 +52,31 @@
 /* ─── Stats Grid ───────────────────────────── */
 .stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1.5rem;
-    margin-bottom: 2rem;
+    grid-template-columns: 1fr;
+    gap: var(--spacing-lg);
+    margin-bottom: var(--spacing-xl);
+}
+
+@media (min-width: 640px) {
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (min-width: 1024px) {
+    .stats-grid {
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
 }
 
 .stat-card {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    padding: 2rem;
-    border-radius: 16px;
+    background: linear-gradient(135deg, var(--color-secondary), var(--color-accent));
+    padding: var(--spacing-xl);
+    border-radius: var(--radius-xl);
     text-align: center;
     color: white;
-    box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    box-shadow: var(--shadow-lg);
+    transition: all var(--transition-fast);
     position: relative;
     overflow: hidden;
 }
@@ -74,125 +97,127 @@
 }
 
 .stat-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 15px 40px rgba(102, 126, 234, 0.4);
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-xl);
 }
 
 .stat-card:nth-child(2) {
-    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-    box-shadow: 0 10px 30px rgba(245, 87, 108, 0.3);
-}
-
-.stat-card:nth-child(2):hover {
-    box-shadow: 0 15px 40px rgba(245, 87, 108, 0.4);
+    background: linear-gradient(135deg, #f093fb, #f5576c);
 }
 
 .stat-card:nth-child(3) {
-    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-    box-shadow: 0 10px 30px rgba(79, 172, 254, 0.3);
-}
-
-.stat-card:nth-child(3):hover {
-    box-shadow: 0 15px 40px rgba(79, 172, 254, 0.4);
+    background: linear-gradient(135deg, #4facfe, #00f2fe);
 }
 
 .stat-card:nth-child(4) {
-    background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
-    box-shadow: 0 10px 30px rgba(67, 233, 123, 0.3);
-}
-
-.stat-card:nth-child(4):hover {
-    box-shadow: 0 15px 40px rgba(67, 233, 123, 0.4);
+    background: linear-gradient(135deg, #43e97b, #38f9d7);
 }
 
 .stat-icon {
-    font-size: 2.5rem;
-    margin-bottom: 1rem;
+    font-size: var(--font-size-3xl);
+    margin-bottom: var(--spacing-md);
     opacity: 0.9;
     filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
 }
 
 .stat-value {
-    font-size: 2rem;
-    font-weight: 700;
-    margin-bottom: 0.5rem;
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
+    margin-bottom: var(--spacing-sm);
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .stat-label {
-    font-size: 0.9rem;
+    font-size: var(--font-size-sm);
     opacity: 0.9;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.05em;
+    font-weight: var(--font-weight-semibold);
 }
 
 /* ─── Quick Stats ──────────────────────────── */
 .quick-stats {
     display: flex;
-    gap: 1rem;
+    gap: var(--spacing-md);
     flex-wrap: wrap;
-    margin-bottom: 3rem;
+    margin-bottom: var(--spacing-xl);
 }
 
 .quick-stat-item {
-    background: white;
-    padding: 1rem 1.5rem;
-    border-radius: 12px;
+    background: var(--color-bg-card);
+    padding: var(--spacing-lg);
+    border-radius: var(--radius-lg);
     display: flex;
     align-items: center;
-    gap: 1rem;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-    transition: transform 0.2s ease;
+    gap: var(--spacing-md);
+    box-shadow: var(--shadow-sm);
+    transition: all var(--transition-fast);
+    border: 1px solid var(--color-border);
+    flex: 1 1 200px;
 }
 
 .quick-stat-item:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+    box-shadow: var(--shadow-md);
+    border-color: var(--color-primary);
 }
 
 .quick-stat-label {
-    color: #666;
-    font-size: 0.9rem;
+    color: var(--color-text-medium);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
 }
 
 .quick-stat-value {
-    font-weight: 700;
-    font-size: 1.1rem;
-    color: #667eea;
+    font-weight: var(--font-weight-bold);
+    font-size: var(--font-size-xl);
+    color: var(--color-secondary);
 }
 
 /* ─── Sport Breakdown ──────────────────────── */
 .sport-breakdown {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 1.5rem;
-    margin-bottom: 3rem;
+    grid-template-columns: 1fr;
+    gap: var(--spacing-lg);
+    margin-bottom: var(--spacing-xl);
+}
+
+@media (min-width: 768px) {
+    .sport-breakdown {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (min-width: 1024px) {
+    .sport-breakdown {
+        grid-template-columns: repeat(3, 1fr);
+    }
 }
 
 .sport-card {
-    background: white;
-    border-radius: 16px;
-    padding: 1.5rem;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
-    border: 1px solid rgba(0, 0, 0, 0.05);
+    background: var(--color-bg-card);
+    border-radius: var(--radius-xl);
+    padding: var(--spacing-lg);
+    box-shadow: var(--shadow-sm);
+    transition: all var(--transition-fast);
+    border: 1px solid var(--color-border);
 }
 
 .sport-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
-    border-color: #667eea;
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+    border-color: var(--color-secondary);
 }
 
 .sport-card-header {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-lg);
 }
 
 .sport-icon {
-    font-size: 2.5rem;
+    font-size: var(--font-size-3xl);
     width: 60px;
     height: 60px;
     display: flex;
