@@ -1,0 +1,11 @@
+﻿/* =====================================================
+   RUN TAB - Run Analysis specific styles
+   ===================================================== */
+
+#analysis-tab .chart-container {
+    border-top-color: var(--sport-run-color);
+}
+
+#analysis-tab .chart-container h3 {
+    color: var(--sport-run-color);
+}

@@ -1,0 +1,342 @@
+/* =====================================================
+   ACTIVITIES TAB - Activity Filters, Table, List
+   ===================================================== */
+
+.act-filters {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-md);
+    padding: .75rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: .55rem;
+    margin-bottom: 1rem;
+}
+
+.act-filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .65rem 1.1rem;
+}
+
+.act-filter-label {
+    display: flex;
+    flex-direction: column;
+    font-size: .78rem;
+    font-weight: 600;
+    color: var(--text-medium);
+    gap: .2rem;
+}
+
+.act-filter-label select,
+.act-filter-label input[type="text"],
+.act-filter-label input[type="date"],
+.act-filter-label input[type="number"] {
+    font-size: .85rem;
+    padding: .25rem .45rem;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    background: var(--bg-page);
+    color: inherit;
+    min-width: 0;
+}
+
+.act-filter-label select {
+    min-width: 130px;
+}
+
+.act-filter-label input[type="text"] {
+    width: 145px;
+}
+
+.act-filter-label input[type="date"] {
+    width: 140px;
+}
+
+.act-filter-label input[type="number"] {
+    width: 68px;
+}
+
+.act-range-pair {
+    display: flex;
+    align-items: center;
+    gap: .3rem;
+    font-weight: 400;
+    color: var(--text-light);
+}
+
+.act-reset-btn {
+    align-self: flex-end;
+    padding: .3rem .8rem;
+    font-size: .8rem;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    background: #fff;
+    cursor: pointer;
+    color: var(--text-medium);
+    transition: background .15s, color .15s;
+    margin-top: auto;
+}
+
+.act-filter-actions {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+    margin-top: auto;
+}
+
+.act-edit-btn {
+    padding: .3rem .8rem;
+    font-size: .8rem;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    background: #fff;
+    cursor: pointer;
+    color: var(--text-medium);
+    transition: background .15s, color .15s;
+}
+
+.act-edit-btn:hover {
+    background: #eef0f5;
+}
+
+.act-reset-btn:hover {
+    background: var(--strava-orange);
+    color: #fff;
+    border-color: var(--strava-orange);
+}
+
+.act-col-editor {
+    border-top: 1px dashed var(--border-color);
+    margin-top: .1rem;
+    padding-top: .55rem;
+}
+
+.act-col-editor-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: .28rem .8rem;
+}
+
+.act-col-option {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    font-size: .8rem;
+    color: var(--text-medium);
+}
+
+#act-counter {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    font-size: .82rem;
+    color: var(--text-light);
+    margin-bottom: .4rem;
+}
+
+.act-export-btn {
+    padding: .32rem .8rem;
+    font-size: .78rem;
+    border: 1px solid var(--strava-orange);
+    border-radius: 5px;
+    background: #fff;
+    color: var(--strava-orange);
+    cursor: pointer;
+    transition: background .15s, color .15s;
+}
+
+.act-export-btn:hover {
+    background: var(--strava-orange);
+    color: #fff;
+}
+
+/* ─── Activities Table ─────────────────────── */
+#activities-table.df-table th.sortable {
+    cursor: pointer;
+    white-space: nowrap;
+    user-select: none;
+}
+
+#activities-table.df-table th.sortable:hover {
+    background: #eef0f5;
+}
+
+#activities-table.df-table th.act-sort-active {
+    color: var(--strava-orange);
+}
+
+.act-name-link {
+    color: inherit;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.act-name-link:hover {
+    text-decoration: underline;
+    color: var(--strava-orange);
+}
+
+.act-empty {
+    text-align: center;
+    padding: 2.5rem;
+    opacity: .5;
+    font-style: italic;
+}
+
+#activities-table.df-table td small,
+#activities-table.df-table td small {
+    opacity: .65;
+    font-size: .8em;
+}
+
+/* ─── Sortable Headers ─────────────────────── */
+th[data-sort] {
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+    position: relative;
+}
+
+th[data-sort]:hover {
+    background: rgba(0, 0, 0, .05);
+}
+
+th[data-sort]::after {
+    content: ' ⇅';
+    opacity: .3;
+    font-size: .75em;
+}
+
+th[data-sort].sort-asc::after {
+    content: ' ▲';
+    opacity: .8;
+    font-size: .7em;
+}
+
+th[data-sort].sort-desc::after {
+    content: ' ▼';
+    opacity: .8;
+    font-size: .7em;
+}
+
+/* ─── General Tables ───────────────────────── */
+.df-table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 0.95em;
+    margin-top: 1rem;
+}
+
+.df-table th,
+.df-table td {
+    border: 1px solid #ddd;
+    padding: 8px 10px;
+    text-align: left;
+}
+
+.df-table th {
+    background: #f8f9fa;
+    font-weight: 600;
+    color: var(--text-medium);
+}
+
+.df-table tr:nth-child(even) {
+    background: #fdfdfd;
+}
+
+/* ─── Responsive ───────────────────────────── */
+@media (max-width: 768px) {
+    .act-filters {
+        padding: 0.6rem 0.8rem;
+        gap: 0.4rem;
+    }
+
+    .act-filter-row {
+        gap: 0.45rem 0.85rem;
+    }
+
+    .act-filter-label {
+        font-size: 0.7rem;
+    }
+
+    .act-filter-label select,
+    .act-filter-label input[type="text"],
+    .act-filter-label input[type="date"],
+    .act-filter-label input[type="number"] {
+        font-size: 0.8rem;
+        padding: 0.2rem 0.35rem;
+    }
+
+    .act-filter-label select {
+        min-width: 110px;
+    }
+
+    .act-filter-label input[type="text"] {
+        width: 120px;
+    }
+
+    .act-filter-label input[type="date"] {
+        width: 115px;
+    }
+
+    .act-col-editor-grid {
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: 0.2rem 0.6rem;
+    }
+
+    .act-col-option {
+        font-size: 0.75rem;
+    }
+
+    #activities-table.df-table th,
+    #activities-table.df-table td {
+        padding: 6px 8px;
+        font-size: 0.85rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .act-filters {
+        flex-direction: column;
+        gap: 0.35rem;
+    }
+
+    .act-filter-row {
+        flex-direction: column;
+        gap: 0.3rem 0;
+    }
+
+    .act-filter-label {
+        width: 100%;
+    }
+
+    .act-filter-label select,
+    .act-filter-label input[type="text"],
+    .act-filter-label input[type="date"],
+    .act-filter-label input[type="number"] {
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+
+    .act-reset-btn,
+    .act-edit-btn {
+        width: 100%;
+    }
+
+    .act-col-editor-grid {
+        grid-template-columns: 1fr;
+    }
+
+    #activities-table {
+        font-size: 0.8rem;
+    }
+
+    #activities-table.df-table th,
+    #activities-table.df-table td {
+        padding: 5px 6px;
+    }
+}

@@ -1,3 +1,18 @@
+---
+
+🌈 [IDEA] CHART LAB / Custom Analytics Builder
+La idea era una pestaña avanzada ("Chart Lab") con:
+- 11 tipos de gráfico (scatter, line, bar, area, bubble, histogram, box, heatmap, density, calendar, multi-axis)
+- 50+ métricas seleccionables (pace, speed, HR, elevation, TSS, cadence, power, etc.)
+- Sistema de filtros avanzados con lógica AND/OR
+- Transformaciones de datos (rolling means 3-365 días, cumulative sums, agregaciones, resampling)
+- 10 presets rápidos (Running Progression, Training Load, HR Efficiency, etc.)
+- Exportación CSV/PNG/JSON
+- Layout de 3 paneles: sidebar izquierda (config/filtros), centro (Plotly chart), derecha (visualización)
+- Usaba Plotly.js como librería de gráficos
+
+Se eliminó completamente (JS, CSS, HTML, documentación) por decisión de limpieza.
+Si se quiere reactivar, reconstruir desde cero con la arquitectura modular actual.
 🔴 TO DO 
 🟡 IN PROGRESS
 🟢 DONE

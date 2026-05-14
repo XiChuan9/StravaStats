@@ -1,0 +1,184 @@
+/* =====================================================
+   PREDICTOR/PLANNER TAB - VDOT Calculator, Predictions
+   ===================================================== */
+
+/* ─── Prediction Controls ──────────────────── */
+.prediction-controls {
+    background-color: #f9f9f9;
+    border: 1px solid #eee;
+    border-radius: 8px;
+    padding: 1em;
+    margin-bottom: 1.5em;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    align-items: flex-end;
+}
+
+.prediction-controls fieldset {
+    border: none;
+    padding: 0;
+    margin: 0;
+    min-width: 200px;
+}
+
+.prediction-controls legend {
+    font-weight: bold;
+    margin-bottom: 0.5em;
+    font-size: 1em;
+    color: #333;
+}
+
+.prediction-controls .control-group {
+    display: flex;
+    gap: 1rem;
+}
+
+.prediction-controls .control-group.sliders {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.prediction-controls label {
+    display: flex;
+    align-items: center;
+    gap: 0.3em;
+    font-size: 0.9em;
+}
+
+.prediction-controls input[type="range"] {
+    width: 100%;
+}
+
+/* Make inline SVG focusable visible for keyboard users */
+.solo-svg:focus {
+    outline: 3px solid rgba(3, 169, 244, 0.18);
+    outline-offset: 3px;
+}
+
+/* Compact Solo vs Group: keep it tight in the header */
+.solo-group-compare {
+    font-size: 0.9rem;
+}
+
+.solo-group-compare .solo-group-svg {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.solo-group-compare .solo-svg {
+    width: 160px;
+    height: 22px;
+    display: block;
+}
+
+#update-predictions-btn {
+    padding: 0.5em 1em;
+    background-color: #FC5200;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: bold;
+    margin-left: auto;
+}
+
+#update-predictions-btn:hover {
+    background-color: #d94700;
+}
+
+/* ─── VDOT Calculator (Responsive Iframe) ─── */
+.iframe-responsive-container {
+    position: relative;
+    overflow: hidden;
+    width: 100%;
+    height: 1600px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+}
+
+.iframe-responsive-container iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+}
+
+#calculator-container p {
+    margin-top: -1em;
+    margin-bottom: 1.5em;
+    font-size: 0.9em;
+    color: #666;
+}
+
+/* ─── Responsive ───────────────────────────── */
+@media (max-width: 768px) {
+    .prediction-controls {
+        padding: 0.85rem;
+        gap: 1rem;
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .prediction-controls fieldset {
+        min-width: 0;
+    }
+
+    .prediction-controls .control-group {
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    #update-predictions-btn {
+        margin-left: 0;
+        width: 100%;
+    }
+
+    .solo-group-compare .solo-svg {
+        width: 100%;
+        height: auto;
+    }
+
+    .iframe-responsive-container {
+        height: 1200px;
+    }
+}
+
+@media (max-width: 480px) {
+    .prediction-controls {
+        padding: 0.75rem;
+        gap: 0.75rem;
+    }
+
+    .prediction-controls fieldset {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .prediction-controls legend {
+        font-size: 0.9em;
+        margin-bottom: 0.35em;
+    }
+
+    .prediction-controls label {
+        font-size: 0.85em;
+    }
+
+    #update-predictions-btn {
+        padding: 0.45em 0.8em;
+        font-size: 0.9em;
+    }
+
+    .iframe-responsive-container {
+        height: 900px;
+    }
+
+    #calculator-container p {
+        font-size: 0.85em;
+        margin-bottom: 1em;
+    }
+}

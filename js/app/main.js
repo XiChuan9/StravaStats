@@ -151,7 +151,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const tabContents = document.querySelectorAll('.tab-content');
     const WIP_TABS = {
         'weather-tab': 'Weather is currently Work in Progress. Some metrics may be incomplete.\n\nDo you want to continue anyway?',
-        'ai-chat-tab': 'AI Coach is currently Work in Progress. Responses and features may be unstable.\n\nDo you want to continue anyway?'
+        'ai-chat-tab': 'AI Coach is currently Work in Progress. Responses and features may be unstable.\n\nDo you want to continue anyway?',
+
     };
 
     const routeToTab = {
@@ -168,6 +169,7 @@ document.addEventListener('DOMContentLoaded', () => {
         '/weather': 'weather-tab',
         '/map': 'map-tab',
         '/wrapped': 'wrapped-tab',
+
         '/ai-coach': 'ai-chat-tab'
     };
 
@@ -184,6 +186,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'weather-tab': '/weather',
         'map-tab': '/map',
         'wrapped-tab': '/wrapped',
+
         'ai-chat-tab': '/ai-coach'
     };
 

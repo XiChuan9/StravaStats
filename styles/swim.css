@@ -1,0 +1,34 @@
+/* =====================================================
+   SWIM TAB - Swim Analysis Styles
+   ===================================================== */
+
+#swim-tab .chart-container {
+    border-top-color: var(--sport-swim-color);
+}
+
+#swim-tab .chart-container h3 {
+    color: var(--sport-swim-color);
+}
+
+/* Swim tab specific chart styles can be added here */
+@media (max-width: 768px) {
+    #swim-tab .chart-container {
+        padding: 0.85rem 0.65rem;
+    }
+
+    #swim-tab .chart-container h3 {
+        font-size: 1rem;
+        margin-bottom: 0.8rem;
+    }
+}
+
+@media (max-width: 480px) {
+    #swim-tab .chart-container {
+        padding: 0.75rem 0.5rem;
+    }
+
+    #swim-tab .chart-container h3 {
+        font-size: 0.9rem;
+        margin-bottom: 0.6rem;
+    }
+}

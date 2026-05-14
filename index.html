@@ -43,6 +43,7 @@
         src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix"></script>
 
+
     <!-- Leaflet + Leaflet.heat -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -50,104 +51,19 @@
 
     <!-- Tu CSS y scripts -->
     <link rel="stylesheet" href="../styles/style.css">
-    <style>
-        /* Map tab styles */
-        .map-controls {
-            display: flex;
-            gap: 0.75rem;
-            flex-wrap: wrap;
-            margin-bottom: 0.75rem;
-            align-items: center;
-        }
+    <link rel="stylesheet" href="../styles/run.css">
+    <link rel="stylesheet" href="../styles/bike.css">
+    <link rel="stylesheet" href="../styles/swim.css">
+    <link rel="stylesheet" href="../styles/dashboard.css">
+    <link rel="stylesheet" href="../styles/calendar.css">
+    <link rel="stylesheet" href="../styles/activities.css">
+    <link rel="stylesheet" href="../styles/predictor.css">
+    <link rel="stylesheet" href="../styles/report.css">
+    <link rel="stylesheet" href="../styles/gear.css">
+    <link rel="stylesheet" href="../styles/weather.css">
+    <link rel="stylesheet" href="../styles/map.css">
 
-        .map-controls .filter-group {
-            display: flex;
-            gap: .5rem;
-            align-items: center;
-        }
 
-        #global-map {
-            width: 100%;
-            height: 720px;
-            border: 1px solid #ddd;
-            border-radius: 6px;
-        }
-
-        .map-toolbar {
-            display: flex;
-            gap: .5rem;
-            align-items: center;
-        }
-
-        /* Chart modal styles */
-        .chart-modal {
-            display: none;
-            position: fixed;
-            z-index: 10000;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.6);
-            animation: fadeIn 0.3s ease-in;
-        }
-
-        .chart-modal.active {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .chart-modal-content {
-            background-color: white;
-            padding: 2rem;
-            border-radius: 8px;
-            max-width: 95vw;
-            max-height: 95vh;
-            width: 90vw;
-            height: 80vh;
-            position: relative;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-            overflow: auto;
-        }
-
-        .chart-modal-close {
-            position: absolute;
-            top: 1rem;
-            right: 1.5rem;
-            font-size: 2rem;
-            font-weight: bold;
-            color: #555;
-            cursor: pointer;
-            background: none;
-            border: none;
-            padding: 0;
-            transition: color 0.2s;
-        }
-
-        .chart-modal-close:hover {
-            color: #000;
-        }
-
-        .chart-container canvas {
-            cursor: pointer;
-            transition: opacity 0.2s;
-        }
-
-        .chart-container canvas:hover {
-            opacity: 0.8;
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-            }
-
-            to {
-                opacity: 1;
-            }
-        }
-    </style>
 
     <!-- Analytics -->
     <script>(function (w, d, s, l, i) {
@@ -205,19 +121,24 @@
                     <span id="athlete-name" class="top-bar__title">StravaStats</span>
                 </div>
                 <nav class="tab-nav tabs">
-                    <button class="tab-link active" data-tab="dashboard-tab" aria-controls="dashboard-tab">Dashboard</button>
+                    <button class="tab-link active" data-tab="dashboard-tab"
+                        aria-controls="dashboard-tab">Dashboard</button>
                     <button class="tab-link" data-tab="analysis-tab" aria-controls="analysis-tab">Run</button>
                     <button class="tab-link" data-tab="bike-tab" aria-controls="bike-tab">Bike</button>
                     <button class="tab-link" data-tab="swim-tab" aria-controls="swim-tab">Swim</button>
                     <button class="tab-link" data-tab="athlete-tab" aria-controls="athlete-tab">Trends</button>
                     <button class="tab-link" data-tab="planner-tab" aria-controls="planner-tab">Predictions</button>
                     <button class="tab-link" data-tab="gear-tab" aria-controls="gear-tab">Gear</button>
-                    <button class="tab-link" data-tab="activities-tab" aria-controls="activities-tab">Activities</button>
+                    <button class="tab-link" data-tab="activities-tab"
+                        aria-controls="activities-tab">Activities</button>
                     <button class="tab-link" data-tab="calendar-tab" aria-controls="calendar-tab">Calendar</button>
-                    <button class="tab-link tab-link-wip" data-tab="weather-tab" aria-controls="weather-tab">Weather<span class="tab-wip-badge">SOON</span></button>
+                    <button class="tab-link tab-link-wip" data-tab="weather-tab"
+                        aria-controls="weather-tab">Weather<span class="tab-wip-badge">SOON</span></button>
                     <button class="tab-link" data-tab="map-tab" aria-controls="map-tab">Map</button>
                     <button class="tab-link" data-tab="wrapped-tab" aria-controls="wrapped-tab">Report</button>
-                    <button class="tab-link tab-link-wip" data-tab="ai-chat-tab" aria-controls="ai-chat-tab">AI Coach<span class="tab-wip-badge">SOON</span></button>
+
+                    <button class="tab-link tab-link-wip" data-tab="ai-chat-tab" aria-controls="ai-chat-tab">AI
+                        Coach<span class="tab-wip-badge">SOON</span></button>
                 </nav>
                 <nav class="top-bar__actions">
                     <button id="settings-button" class="action-btn" aria-label="Open settings" title="Settings">
@@ -1227,6 +1148,8 @@
                     <div id="wrapped-extreme-stats" class="wrapped-section"></div>
                     <div id="wrapped-all-activities" class="wrapped-section"></div>
                 </div>
+
+
 
                 <div id="ai-chat-tab" class="tab-content"></div>
 

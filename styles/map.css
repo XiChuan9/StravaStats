@@ -1,0 +1,45 @@
+/* =====================================================
+   MAP TAB - Global Map, Heatmap, Routes
+   ===================================================== */
+
+.map-controls {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.75rem;
+    align-items: center;
+}
+
+.map-controls .filter-group {
+    display: flex;
+    gap: .5rem;
+    align-items: center;
+}
+
+#global-map {
+    width: 100%;
+    height: 720px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+}
+
+.map-toolbar {
+    display: flex;
+    gap: .5rem;
+    align-items: center;
+}
+
+@media (max-width: 768px) {
+    #global-map {
+        height: 450px;
+    }
+
+    .map-controls {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .map-toolbar {
+        flex-wrap: wrap;
+    }
+}
