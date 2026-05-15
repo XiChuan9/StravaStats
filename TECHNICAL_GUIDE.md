@@ -925,7 +925,7 @@ This is particularly useful because it turns the application into both an analyt
 The single stylesheet `styles/style.css` enforces a uniform chart appearance:
 
 - `:root` defines four sport color variables: `--sport-default-color: #fc4c02`, `--sport-run-color: #2e7d32`, `--sport-bike-color: #1565c0`, `--sport-swim-color: #00838f`. New code should reference these instead of hardcoding hex values.
-- `.chart-container` ships with `border-top: 4px solid var(--sport-default-color)` and an `h3` color of the same default. The Run Analysis (`#analysis-tab`), Bike Analysis (`#bike-tab`), and Swim Analysis (`#swim-tab`) ancestors override both to their matching sport color so a tab is visually coherent.
+- `.chart-container` ships with `border-top: 4px solid var(--sport-default-color)` and an `h3` color of the same default. The Run Analysis (`#run-tab`), Bike Analysis (`#bike-tab`), and Swim Analysis (`#swim-tab`) ancestors override both to their matching sport color so a tab is visually coherent.
 - The default chart grid uses `.charts-grid`, two columns on desktop and a single column at mobile breakpoints (800 px, 700 px, 480 px). The class was previously misspelled as `.chart-grid` in the weather tab; that has been corrected in `index.html`.
 - Canvases use `aspect-ratio: 16 / 9; min-height: …; height: auto !important;` at narrow breakpoints. The earlier rules that forced `height: <px> !important` cropped Chart.js legends on mobile and have been removed.
 - Grouped chart sets stay together by spanning the full row: `.eddington-pair, .distance-pair, .readiness-layout, .acute-load-chart-container { grid-column: 1 / -1; }`.

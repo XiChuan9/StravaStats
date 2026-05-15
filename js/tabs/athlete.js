@@ -11,18 +11,18 @@ let interactiveMatrixChart;
 // -------------------------
 // Public API
 // -------------------------
-export function renderAthleteTab(allActivities, dateFilterFrom, dateFilterTo, sportFilter = 'all', dataType = 'time') {
-    // Public entry to render the Athlete tab. Keeps signature used by `main.js`.
+export function renderTrendsTab(allActivities, dateFilterFrom, dateFilterTo, sportFilter = 'all', dataType = 'time') {
+    // Public entry to render the Trends tab. Keeps signature used by `main.js`.
     currentDataType = dataType;
 
     // Ensure filters UI exists (will insert only once)
     addAthleteFilters();
 
     // Update filter UI to reflect current state
-    const sportSelect = document.getElementById('athlete-sport-filter');
-    const dataTypeSelect = document.getElementById('athlete-data-type');
-    const dateFromInput = document.getElementById('athlete-date-from');
-    const dateToInput = document.getElementById('athlete-date-to');
+    const sportSelect = document.getElementById('trends-sport-filter');
+    const dataTypeSelect = document.getElementById('trends-data-type');
+    const dateFromInput = document.getElementById('trends-date-from');
+    const dateToInput = document.getElementById('trends-date-to');
 
     if (sportSelect) {
         const selectedSports = Array.isArray(sportFilter)
@@ -159,7 +159,7 @@ function renderAthleteCountHistogram(activities) {
                 legend: { display: false },
                 tooltip: {
                     callbacks: {
-                        afterLabel: function(context) {
+                        afterLabel: function (context) {
                             const total = data.reduce((a, b) => a + b, 0);
                             const pct = total > 0
                                 ? ((context.parsed.y / total) * 100).toFixed(1)
@@ -1661,11 +1661,11 @@ function createUiChart(canvasId, config) {
 }
 
 function addAthleteFilters() {
-    const filterContainer = document.getElementById('athlete-filters');
+    const filterContainer = document.getElementById('trends-filters');
     if (!filterContainer) return;
 
     // Check if filters already exist
-    if (document.getElementById('athlete-data-type')) return;
+    if (document.getElementById('trends-data-type')) return;
 
     // Get all activities to determine most practiced sports
     const allActivities = JSON.parse(localStorage.getItem('strava_activities') || '[]');
@@ -1683,7 +1683,7 @@ function addAthleteFilters() {
         .map(([sport]) => sport);
 
     const dataTypeSelect = document.createElement('select');
-    dataTypeSelect.id = 'athlete-data-type';
+    dataTypeSelect.id = 'trends-data-type';
     dataTypeSelect.innerHTML = `
         <option value="time">Time (hours)</option>
         <option value="distance">Distance (km)</option>
@@ -1696,7 +1696,7 @@ function addAthleteFilters() {
     dataTypeLabel.appendChild(dataTypeSelect);
 
     const sportSelect = document.createElement('select');
-    sportSelect.id = 'athlete-sport-filter';
+    sportSelect.id = 'trends-sport-filter';
     sportSelect.multiple = true;
     sportSelect.size = Math.min(8, Math.max(4, topSports.length));
 
@@ -1716,7 +1716,7 @@ function addAthleteFilters() {
 
     const dateFromInput = document.createElement('input');
     dateFromInput.type = 'text';
-    dateFromInput.id = 'athlete-date-from';
+    dateFromInput.id = 'trends-date-from';
     dateFromInput.placeholder = 'dd/mm/yyyy';
     dateFromInput.inputMode = 'numeric';
     dateFromInput.title = 'Format: dd/mm/yyyy';
@@ -1728,7 +1728,7 @@ function addAthleteFilters() {
 
     const dateToInput = document.createElement('input');
     dateToInput.type = 'text';
-    dateToInput.id = 'athlete-date-to';
+    dateToInput.id = 'trends-date-to';
     dateToInput.placeholder = 'dd/mm/yyyy';
     dateToInput.inputMode = 'numeric';
     dateToInput.title = 'Format: dd/mm/yyyy';
@@ -1739,7 +1739,7 @@ function addAthleteFilters() {
     dateToLabel.appendChild(dateToInput);
 
     const applyButton = document.createElement('button');
-    applyButton.id = 'athlete-apply-filters';
+    applyButton.id = 'trends-apply-filters';
     applyButton.textContent = 'Apply Filters';
 
     filterContainer.appendChild(dataTypeLabel);
@@ -1759,7 +1759,7 @@ function addAthleteFilters() {
         const selectedDateTo = utils.parseDateInputToIso(dateToInput.value) || null;
 
         // Dispatch custom event with filter values
-        const event = new CustomEvent('athlete-filters-changed', {
+        const event = new CustomEvent('trends-filters-changed', {
             detail: {
                 dateFilterFrom: selectedDateFrom,
                 dateFilterTo: selectedDateTo,

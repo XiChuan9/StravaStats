@@ -3,7 +3,7 @@
    Mobile-first responsive with centralized colors
    ===================================================== */
 
-#activities-tab {
+#activities-tab.active {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-md);
@@ -11,7 +11,7 @@
 }
 
 @media (min-width: 768px) {
-    #activities-tab {
+    #activities-tab.active {
         padding: var(--spacing-md);
     }
 }

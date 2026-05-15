@@ -3,7 +3,7 @@
    Mobile-first responsive with centralized colors
    ===================================================== */
 
-#gear-tab {
+#gear-tab.active {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-md);
@@ -11,7 +11,7 @@
 }
 
 @media (min-width: 768px) {
-    #gear-tab {
+    #gear-tab.active {
         padding: var(--spacing-md);
     }
 }
@@ -84,7 +84,7 @@
     min-width: 0;
 }
 
-.gear-summary-stat > div {
+.gear-summary-stat>div {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-xs);
@@ -192,8 +192,7 @@
         gap: var(--spacing-lg);
     }
 }
-    margin-top: 1rem;
-}
+
 
 /* ÔöÇÔöÇ Gear Card ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */
 .gear-card {
@@ -2626,7 +2625,7 @@ html[data-tab-background-images='off'] .tab-content {
         url('../media/bg-dashboard.jpg');
 }
 
-#analysis-tab.tab-content {
+#run-tab.tab-content {
     background-image:
         linear-gradient(var(--tab-bg-overlay), var(--tab-bg-overlay)),
         url('../media/bg-run.jpg');
@@ -2700,4 +2699,3 @@ html[data-tab-background-images='off'] .tab-content {
     color: #10b981;
     text-align: right;
 }
-

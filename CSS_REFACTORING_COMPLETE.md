@@ -120,7 +120,7 @@ Creados 3 archivos de documentación:
 ### Antes
 ```css
 /* run.css - 8 líneas simples */
-#analysis-tab .chart-container {
+#run-tab .chart-container {
     border-top-color: var(--sport-run-color);
 }
 ```
@@ -128,7 +128,7 @@ Creados 3 archivos de documentación:
 ### Después
 ```css
 /* run.css - 100+ líneas bien estructuradas */
-#analysis-tab {
+#run-tab {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-md);
@@ -136,12 +136,12 @@ Creados 3 archivos de documentación:
 }
 
 @media (min-width: 768px) {
-    #analysis-tab {
+    #run-tab {
         padding: var(--spacing-md);
     }
 }
 
-#analysis-tab .chart-container {
+#run-tab .chart-container {
     border-top: 4px solid var(--color-sport-run);
     background: var(--color-bg-card);
     box-shadow: var(--shadow-sm);

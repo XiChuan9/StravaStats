@@ -7,7 +7,7 @@ import {
     renderBikeAnalysisTab,
     renderSwimAnalysisTab,
     renderDashboardTab,
-    renderAthleteTab,
+    renderTrendsTab,
     renderPlannerTab,
     renderGearTab,
     renderWeatherTab,
@@ -28,8 +28,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let allActivities = [];
     let dateFilterFrom = null;
     let dateFilterTo = null;
-    let athleteSportFilter = 'all';
-    let athleteDataType = 'time';
+    let trendsSportFilter = 'all';
+    let trendsDataType = 'time';
     let runGearFilter = 'all';
     let bikeGearFilter = 'all';
     let runRollingWindow = 26; // default 6 months (26 weeks)
@@ -39,10 +39,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Tab rendering config: maps tab id → { render function, uses date filters } ---
     const tabConfig = {
         'dashboard-tab': { render: () => renderDashboardTab(allActivities, dateFilterFrom, dateFilterTo), usesFilters: true },
-        'analysis-tab': { render: () => renderRunAnalysisTab(allActivities, dateFilterFrom, dateFilterTo, runGearFilter, runRollingWindow), usesFilters: true },
+        'run-tab': { render: () => renderRunAnalysisTab(allActivities, dateFilterFrom, dateFilterTo, runGearFilter, runRollingWindow), usesFilters: true },
         'bike-tab': { render: () => renderBikeAnalysisTab(allActivities, dateFilterFrom, dateFilterTo, bikeGearFilter, bikeRollingWindow), usesFilters: true },
         'swim-tab': { render: () => renderSwimAnalysisTab(allActivities, dateFilterFrom, dateFilterTo, swimRollingWindow), usesFilters: true },
-        'athlete-tab': { render: () => renderAthleteTab(allActivities, dateFilterFrom, dateFilterTo, athleteSportFilter, athleteDataType), usesFilters: true },
+        'trends-tab': { render: () => renderTrendsTab(allActivities, dateFilterFrom, dateFilterTo, trendsSportFilter, trendsDataType), usesFilters: true },
         'planner-tab': { render: () => renderPlannerTab(allActivities) },
         'gear-tab': { render: () => renderGearTab(allActivities) },
         'activities-tab': { render: () => renderActivitiesTab(allActivities) },
@@ -156,12 +156,12 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const routeToTab = {
-        '/': 'analysis-tab',
-        '/run': 'analysis-tab',
+        '/': 'dashboard-tab',
+        '/run': 'run-tab',
         '/dashboard': 'dashboard-tab',
         '/bike': 'bike-tab',
         '/swim': 'swim-tab',
-        '/athlete': 'athlete-tab',
+        '/trends': 'trends-tab',
         '/planner': 'planner-tab',
         '/gear': 'gear-tab',
         '/activities': 'activities-tab',
@@ -174,11 +174,11 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const tabToRoute = {
-        'analysis-tab': '/run',
+        'run-tab': '/run',
         'dashboard-tab': '/dashboard',
         'bike-tab': '/bike',
         'swim-tab': '/swim',
-        'athlete-tab': '/athlete',
+        'trends-tab': '/trends',
         'planner-tab': '/planner',
         'gear-tab': '/gear',
         'activities-tab': '/activities',
@@ -197,7 +197,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getTabIdFromPath(pathname) {
         const normalized = normalizePath(pathname);
-        return routeToTab[normalized] || 'analysis-tab';
+        return routeToTab[normalized] || 'dashboard-tab'; // Default to dashboard-tab
     }
 
     function setupWipTabIndicators() {
@@ -346,8 +346,8 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('dashboard_filters', JSON.stringify({
             dateFilterFrom,
             dateFilterTo,
-            athleteSportFilter,
-            athleteDataType,
+            trendsSportFilter,
+            trendsDataType,
             runGearFilter,
             bikeGearFilter
         }));
@@ -367,8 +367,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Always start with no date filter on app load.
         dateFilterFrom = null;
         dateFilterTo = null;
-        athleteSportFilter = filters.athleteSportFilter || 'all';
-        athleteDataType = filters.athleteDataType || 'time';
+        trendsSportFilter = filters.trendsSportFilter || filters.athleteSportFilter || 'all';
+        trendsDataType = filters.trendsDataType || filters.athleteDataType || 'time';
         runGearFilter = filters.runGearFilter || 'all';
         bikeGearFilter = filters.bikeGearFilter || 'all';
 
@@ -378,8 +378,8 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('dashboard_filters', JSON.stringify({
             dateFilterFrom,
             dateFilterTo,
-            athleteSportFilter,
-            athleteDataType,
+            trendsSportFilter,
+            trendsDataType,
             runGearFilter,
             bikeGearFilter
         }));
@@ -605,7 +605,7 @@ document.addEventListener('DOMContentLoaded', () => {
             loadFilterState();
             populateGearFilters();
             renderRunAnalysisTab(allActivities, dateFilterFrom, dateFilterTo, runGearFilter, runRollingWindow);
-            renderedTabs.add('analysis-tab');
+            renderedTabs.add('run-tab');
             setupYearlySelector();
 
             const initialTabId = getTabIdFromPath(window.location.pathname);
@@ -647,7 +647,7 @@ document.addEventListener('DOMContentLoaded', () => {
             loadFilterState();
             populateGearFilters();
             renderRunAnalysisTab(allActivities, dateFilterFrom, dateFilterTo, runGearFilter, runRollingWindow);
-            renderedTabs.add('analysis-tab');
+            renderedTabs.add('run-tab');
             setupYearlySelector();
             activateTab(getTabIdFromPath(window.location.pathname));
             showLoading('Refresh completed', 100, elapsed());
@@ -681,15 +681,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- ATHLETE FILTER LISTENERS (via custom event) ---
-    document.addEventListener('athlete-filters-changed', (e) => {
+    // --- TRENDS FILTER LISTENERS (via custom event) ---
+    document.addEventListener('trends-filters-changed', (e) => {
         const { dateFilterFrom: newFrom, dateFilterTo: newTo, sportFilter, dataType, allActivities: activities } = e.detail;
-        athleteSportFilter = sportFilter;
-        athleteDataType = dataType;
+        trendsSportFilter = sportFilter;
+        trendsDataType = dataType;
         dateFilterFrom = newFrom;
         dateFilterTo = newTo;
         saveFilterState();
-        renderAthleteTab(activities, dateFilterFrom, dateFilterTo, athleteSportFilter, athleteDataType);
+        renderTrendsTab(activities, dateFilterFrom, dateFilterTo, trendsSportFilter, trendsDataType);
     });
 
     if (applyFilterButton) {

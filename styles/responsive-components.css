@@ -206,26 +206,12 @@
 @media (min-width: 640px) {
     .container {
         padding: var(--spacing-lg);
-        max-width: 640px;
-    }
-}
-
-@media (min-width: 768px) {
-    .container {
-        max-width: 768px;
     }
 }
 
 @media (min-width: 1024px) {
     .container {
-        max-width: 1024px;
         padding: var(--spacing-xl);
-    }
-}
-
-@media (min-width: 1280px) {
-    .container {
-        max-width: 1280px;
     }
 }
 
@@ -257,18 +243,49 @@ select:focus {
 }
 
 /* TYPOGRAPHY RESPONSIVE */
-.text-xs { font-size: var(--font-size-xs); }
-.text-sm { font-size: var(--font-size-sm); }
-.text-base { font-size: var(--font-size-base); }
-.text-lg { font-size: var(--font-size-lg); }
-.text-xl { font-size: var(--font-size-xl); }
-.text-2xl { font-size: var(--font-size-2xl); }
-.text-3xl { font-size: var(--font-size-3xl); }
+.text-xs {
+    font-size: var(--font-size-xs);
+}
 
-.font-normal { font-weight: var(--font-weight-normal); }
-.font-medium { font-weight: var(--font-weight-medium); }
-.font-semibold { font-weight: var(--font-weight-semibold); }
-.font-bold { font-weight: var(--font-weight-bold); }
+.text-sm {
+    font-size: var(--font-size-sm);
+}
+
+.text-base {
+    font-size: var(--font-size-base);
+}
+
+.text-lg {
+    font-size: var(--font-size-lg);
+}
+
+.text-xl {
+    font-size: var(--font-size-xl);
+}
+
+.text-2xl {
+    font-size: var(--font-size-2xl);
+}
+
+.text-3xl {
+    font-size: var(--font-size-3xl);
+}
+
+.font-normal {
+    font-weight: var(--font-weight-normal);
+}
+
+.font-medium {
+    font-weight: var(--font-weight-medium);
+}
+
+.font-semibold {
+    font-weight: var(--font-weight-semibold);
+}
+
+.font-bold {
+    font-weight: var(--font-weight-bold);
+}
 
 /* RESPONSIVE TEXT SIZING */
 h1 {
@@ -298,7 +315,9 @@ h3 {
     margin: var(--spacing-sm) 0;
 }
 
-h4, h5, h6 {
+h4,
+h5,
+h6 {
     font-size: var(--font-size-base);
     margin: var(--spacing-sm) 0;
 }
@@ -384,11 +403,11 @@ h4, h5, h6 {
     .no-print {
         display: none;
     }
-    
+
     .print-only {
         display: block !important;
     }
-    
+
     body {
         background: white;
     }

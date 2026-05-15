@@ -2,7 +2,7 @@ export { renderRunAnalysisTab } from './run-analysis.js';
 export { renderBikeAnalysisTab } from './bike-analysis.js';
 export { renderSwimAnalysisTab } from './swim-analysis.js';
 export { renderDashboardTab } from './dashboard.js';
-export { renderAthleteTab } from './athlete.js';
+export { renderTrendsTab } from './athlete.js';
 export { renderPlannerTab } from './planner.js';
 export { renderGearTab } from './gear.js';
 export { renderWeatherTab } from './weather.js';

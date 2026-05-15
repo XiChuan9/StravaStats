@@ -3,7 +3,7 @@
    Mobile-first responsive with sport-specific colors
    ===================================================== */
 
-#bike-tab {
+#bike-tab.active {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-md);
@@ -11,16 +11,16 @@
 }
 
 @media (min-width: 768px) {
-    #bike-tab {
+    #bike-tab.active {
         padding: var(--spacing-md);
     }
 }
 
 /* ─── Chart Container Styling ──────────────────────── */
 #bike-tab .chart-container {
-    border-top: 4px solid var(--color-sport-bike);
     background: var(--color-bg-card);
     border: 1px solid var(--color-border);
+    border-top: 4px solid var(--color-sport-bike);
     border-radius: var(--radius-lg);
     padding: var(--spacing-md);
     box-shadow: var(--shadow-sm);

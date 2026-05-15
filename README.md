@@ -574,7 +574,7 @@ classifyRun.js, classifyBike.js   Standalone classification heuristics
 - `--sport-bike-color: #1565c0`
 - `--sport-swim-color: #00838f`
 
-The Run Analysis (`#analysis-tab`), Bike Analysis (`#bike-tab`), and Swim Analysis (`#swim-tab`) containers override `.chart-container` `border-top-color` and `h3` `color` to the matching sport color so charts inside those tabs are visually grouped. Background images per tab follow the mapping in `media/README.md`.
+The Run Analysis (`#run-tab`), Bike Analysis (`#bike-tab`), and Swim Analysis (`#swim-tab`) containers override `.chart-container` `border-top-color` and `h3` `color` to the matching sport color so charts inside those tabs are visually grouped. Background images per tab follow the mapping in `media/README.md`.
 
 ## Additional Reading
 

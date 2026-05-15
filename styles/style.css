@@ -32,11 +32,12 @@
 }
 
 body {
-    background: linear-gradient(120deg, #fff 0%, #f7f7f7 100%);
-    font-family: 'Segoe UI', 'Roboto', Arial, sans-serif;
-    color: #222;
     margin: 0;
     padding: 0;
+    width: 100vw;
+    overflow-x: hidden;
+    font-family: 'Segoe UI', 'Roboto', Arial, sans-serif;
+    color: #222;
 }
 
 .hidden {
@@ -56,7 +57,7 @@ body {
 
 /* BUTTONS */
 button {
-    background: #fc4c02;
+    background: var(--color-primary);
     color: #fff;
     border: none;
     border-radius: 6px;
@@ -69,7 +70,7 @@ button {
 }
 
 button:hover {
-    background: #d84300;
+    background: var(--color-primary-dark);
 }
 
 /* TOP BAR */
@@ -204,7 +205,7 @@ button:hover {
 .tab-wip-badge {
     display: inline-block;
     background: #ffe4d6;
-    color: #d84300;
+    color: var(--color-primary-dark);
     padding: 0.2rem 0.6rem;
     border-radius: 999px;
     font-size: 0.7rem;
@@ -214,7 +215,10 @@ button:hover {
 
 .tab-content {
     display: none;
-    padding: 1rem;
+    /* Ensure non-active tabs are hidden */
+    width: 100%;
+    margin: 0;
+    padding: 0;
 }
 
 .tab-content.active {
@@ -224,6 +228,9 @@ button:hover {
 
 main {
     animation: fadeIn 0.5s ease-out;
+    max-width: 100%;
+    padding: 0;
+    margin: 0 auto;
 }
 
 @keyframes fadeIn {
@@ -239,9 +246,9 @@ main {
 /* CARDS & CHART CONTAINERS (shared across all tabs) */
 .card,
 .chart-container {
-    background: #fff;
+    background: var(--color-bg-card);
     border-radius: 18px;
-    box-shadow: 0 4px 18px rgba(252, 76, 2, 0.08), 0 1.5px 4px rgba(0, 0, 0, 0.04);
+    box-shadow: var(--shadow-md);
     padding: 1.7rem 1.2rem 2.2rem;
     min-width: 0;
     width: 100%;
@@ -255,7 +262,7 @@ main {
 
 .card:hover,
 .chart-container:hover {
-    box-shadow: 0 8px 32px rgba(252, 76, 2, 0.16), 0 2px 8px rgba(0, 0, 0, 0.07);
+    box-shadow: var(--shadow-lg);
     transform: translateY(-2px);
 }
 
@@ -276,9 +283,9 @@ main {
     height: auto !important;
     display: block;
     margin: 0 auto;
-    background: #fff;
+    background: var(--color-bg-card);
     border-radius: 10px;
-    border: 1.5px solid #f5e7e0;
+    border: 1.5px solid var(--color-border-light);
     box-shadow: none;
     aspect-ratio: 16 / 9;
     object-fit: contain;
@@ -342,7 +349,7 @@ main {
 }
 
 .rolling-selector select:hover {
-    border-color: #fc4c02;
+    border-color: var(--color-primary);
 }
 
 /* DATE CONTROLS (used in run, bike, swim tabs) */
@@ -418,13 +425,13 @@ main {
 }
 
 .eddington-mode-btn:hover {
-    border-color: #fc4c02;
-    color: #fc4c02;
+    border-color: var(--color-primary);
+    color: var(--color-primary);
 }
 
 .eddington-mode-btn.active {
-    background: #fc4c02;
-    border-color: #fc4c02;
+    background: var(--color-primary);
+    border-color: var(--color-primary);
     color: #fff;
     font-weight: 600;
 }
@@ -476,7 +483,7 @@ main {
 }
 
 .rolling-selector-small select:hover {
-    border-color: #fc4c02;
+    border-color: var(--color-primary);
 }
 
 .distance-pair {
@@ -614,7 +621,7 @@ main {
 }
 
 .compact-table td a {
-    color: #1a56db;
+    color: var(--color-info);
     text-decoration: none;
 }
 
@@ -628,7 +635,7 @@ main {
 }
 
 .compact-table th[data-sort]:hover {
-    color: #fc4c02;
+    color: var(--color-primary);
 }
 
 .compact-table th.sort-asc::after {

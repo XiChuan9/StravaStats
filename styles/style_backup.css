@@ -389,11 +389,11 @@ main {
     text-align: left;
 }
 
-#analysis-tab .chart-container {
+#run-tab .chart-container {
     border-top-color: var(--sport-run-color);
 }
 
-#analysis-tab .chart-container h3 {
+#run-tab .chart-container h3 {
     color: var(--sport-run-color);
 }
 
@@ -6912,7 +6912,7 @@ html[data-tab-background-images='off'] .tab-content {
         url('../media/bg-dashboard.jpg');
 }
 
-#analysis-tab.tab-content {
+#run-tab.tab-content {
     background-image:
         linear-gradient(var(--tab-bg-overlay), var(--tab-bg-overlay)),
         url('../media/bg-run.jpg');
@@ -6930,7 +6930,7 @@ html[data-tab-background-images='off'] .tab-content {
         url('../media/bg-swim.jpg');
 }
 
-#athlete-tab.tab-content {
+#trends-tab.tab-content {
     background-image:
         linear-gradient(var(--tab-bg-overlay), var(--tab-bg-overlay)),
         url('../media/bg-athlete.jpg');
@@ -7513,18 +7513,18 @@ body.activity-page .data-section h3 {
    Run + Swim chart rendering stability (desktop + mobile)
 ------------------------------------------------------------------ */
 
-#analysis-tab .charts-grid,
+#run-tab .charts-grid,
 #swim-tab .charts-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-#analysis-tab .chart-container,
+#run-tab .chart-container,
 #swim-tab .chart-container {
     min-width: 0;
     overflow: hidden;
 }
 
-#analysis-tab .chart-container canvas,
+#run-tab .chart-container canvas,
 #swim-tab .chart-container canvas {
     width: 100% !important;
     height: clamp(230px, 30vw, 360px) !important;
@@ -7535,7 +7535,7 @@ body.activity-page .data-section h3 {
 
 @media (max-width: 900px) {
 
-    #analysis-tab .charts-grid,
+    #run-tab .charts-grid,
     #swim-tab .charts-grid {
         grid-template-columns: 1fr;
     }
@@ -7543,7 +7543,7 @@ body.activity-page .data-section h3 {
 
 @media (max-width: 700px) {
 
-    #analysis-tab .chart-container canvas,
+    #run-tab .chart-container canvas,
     #swim-tab .chart-container canvas {
         height: 220px !important;
         min-height: 220px;
@@ -7553,7 +7553,7 @@ body.activity-page .data-section h3 {
 
 @media (max-width: 480px) {
 
-    #analysis-tab .chart-container canvas,
+    #run-tab .chart-container canvas,
     #swim-tab .chart-container canvas {
         height: 190px !important;
         min-height: 190px;

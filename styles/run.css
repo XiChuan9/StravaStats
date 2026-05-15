@@ -3,7 +3,7 @@
    Mobile-first responsive with sport-specific colors
    ===================================================== */
 
-#analysis-tab {
+#run-tab.active {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-md);
@@ -11,27 +11,27 @@
 }
 
 @media (min-width: 768px) {
-    #analysis-tab {
+    #run-tab.active {
         padding: var(--spacing-md);
     }
 }
 
 /* ─── Chart Container Styling ──────────────────────── */
-#analysis-tab .chart-container {
-    border-top: 4px solid var(--color-sport-run);
+#run-tab .chart-container {
     background: var(--color-bg-card);
     border: 1px solid var(--color-border);
+    border-top: 4px solid var(--color-sport-run);
     border-radius: var(--radius-lg);
     padding: var(--spacing-md);
     box-shadow: var(--shadow-sm);
     transition: all var(--transition-fast);
 }
 
-#analysis-tab .chart-container:hover {
+#run-tab .chart-container:hover {
     box-shadow: var(--shadow-md);
 }
 
-#analysis-tab .chart-container h3 {
+#run-tab .chart-container h3 {
     color: var(--color-sport-run);
     font-size: var(--font-size-lg);
     font-weight: var(--font-weight-semibold);
@@ -41,36 +41,36 @@
 }
 
 @media (min-width: 768px) {
-    #analysis-tab .chart-container h3 {
+    #run-tab .chart-container h3 {
         font-size: var(--font-size-xl);
     }
 }
 
 /* ─── Responsive Chart Padding ──────────────────────── */
 @media (max-width: 768px) {
-    #analysis-tab .chart-container {
+    #run-tab .chart-container {
         padding: var(--spacing-md) var(--spacing-sm);
     }
 
-    #analysis-tab .chart-container h3 {
+    #run-tab .chart-container h3 {
         font-size: var(--font-size-base);
         margin-bottom: var(--spacing-sm);
     }
 }
 
 @media (max-width: 480px) {
-    #analysis-tab .chart-container {
+    #run-tab .chart-container {
         padding: var(--spacing-sm);
     }
 
-    #analysis-tab .chart-container h3 {
+    #run-tab .chart-container h3 {
         font-size: var(--font-size-sm);
         margin-bottom: var(--spacing-xs);
     }
 }
 
 /* ─── Chart Content Grid ──────────────────────── */
-#analysis-tab .chart-row {
+#run-tab .chart-row {
     display: grid;
     grid-template-columns: 1fr;
     gap: var(--spacing-md);
@@ -78,7 +78,7 @@
 }
 
 @media (min-width: 1024px) {
-    #analysis-tab .chart-row {
+    #run-tab .chart-row {
         grid-template-columns: repeat(2, 1fr);
     }
 }

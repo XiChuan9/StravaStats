@@ -3,7 +3,7 @@
    Mobile-first responsive with centralized colors
    ===================================================== */
 
-#weather-tab {
+#weather-tab.active {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-md);
@@ -11,7 +11,7 @@
 }
 
 @media (min-width: 768px) {
-    #weather-tab {
+    #weather-tab.active {
         padding: var(--spacing-md);
     }
 }
@@ -97,6 +97,7 @@
 }
 
 @media (min-width: 768px) {
+
     .weather-summary-grid,
     .weather-wind-block {
         grid-template-columns: repeat(3, 1fr);
