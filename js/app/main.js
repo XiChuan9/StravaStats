@@ -307,6 +307,9 @@ document.addEventListener('DOMContentLoaded', () => {
         content.classList.add('active');
         activeTabId = tabId;
 
+        // Scroll active tab into view on mobile
+        link.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+
         // Sync date inputs when switching tabs
         syncDateInputs();
 

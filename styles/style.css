@@ -181,6 +181,21 @@ button:hover {
 }
 
 /* TABS */
+.tab-nav {
+    display: flex;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex: 1;
+    min-width: 0;
+    gap: 0.25rem;
+    align-items: center;
+}
+
+.tab-nav::-webkit-scrollbar {
+    display: none;
+}
+
 .tab-link {
     padding: 0.7rem 1.2rem;
     border: none;
@@ -192,6 +207,8 @@ button:hover {
     transition: all 0.2s ease;
     position: relative;
     margin: 0;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .tab-link:hover {
@@ -914,6 +931,10 @@ html[data-theme="dark"] .loading-text {
 }
 
 @media (max-width: 768px) {
+    .top-bar {
+        flex-wrap: wrap;
+    }
+
     body {
         padding: 1rem;
     }
@@ -984,6 +1005,41 @@ html[data-theme="dark"] .loading-text {
     }
 }
 
+@media (max-width: 768px) {
+    .tab-nav {
+        order: 3;
+        width: 100%;
+        padding: 0.3rem 0;
+        gap: 0.2rem;
+        border-top: 1px solid var(--border-color);
+        margin-top: 0.25rem;
+    }
+
+    .tab-link {
+        padding: 0.4rem 0.7rem;
+        font-size: 0.78rem;
+        border-bottom: 2px solid transparent;
+        border-radius: 6px;
+    }
+
+    .tab-link.active {
+        background: var(--strava-orange);
+        color: #fff;
+        border-bottom-color: transparent;
+        border-radius: 6px;
+    }
+
+    .tab-link:hover {
+        border-bottom-color: transparent;
+        background: rgba(252, 82, 0, 0.08);
+    }
+
+    .eddington-pair,
+    .distance-pair {
+        grid-template-columns: 1fr !important;
+    }
+}
+
 @media (max-width: 480px) {
     .top-bar {
         flex-wrap: wrap;
@@ -1012,6 +1068,11 @@ html[data-theme="dark"] .loading-text {
     .action-btn {
         width: 30px;
         height: 30px;
+    }
+
+    .tab-link {
+        padding: 0.35rem 0.6rem;
+        font-size: 0.72rem;
     }
 
     .card,
