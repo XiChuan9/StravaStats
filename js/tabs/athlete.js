@@ -237,11 +237,19 @@ function renderActivityFrequencyHistogram(activities, period = 'daily') {
             datasets: [{
                 label: 'Activities',
                 data,
-                backgroundColor: 'rgba(66, 133, 244, 0.75)'
+                backgroundColor: 'rgba(66, 133, 244, 0.75)',
+                borderColor: 'rgba(66, 133, 244, 1)',
+                borderWidth: 1,
+                barPercentage: 0.9,
+                categoryPercentage: 0.95
             }]
         },
         options: {
             plugins: {
+                title: {
+                    display: true,
+                    text: 'Activity Frequency Histogram'
+                },
                 legend: { display: false },
                 tooltip: {
                     callbacks: {
@@ -251,6 +259,10 @@ function renderActivityFrequencyHistogram(activities, period = 'daily') {
             },
             scales: {
                 x: {
+                    title: {
+                        display: true,
+                        text: 'Period'
+                    },
                     ticks: {
                         maxRotation: 45,
                         minRotation: 0
