@@ -294,24 +294,19 @@ main {
 
 .chart-container canvas {
     flex: 1 1 auto;
-    min-height: 0;
+    min-height: 240px;
     width: 100% !important;
     max-width: 100%;
     height: auto !important;
     display: block;
     margin: 0 auto;
-    background: var(--color-bg-card);
+    background: transparent;
     border-radius: 10px;
-    border: 1.5px solid var(--color-border-light);
+    border: none;
     box-shadow: none;
     aspect-ratio: 16 / 9;
     object-fit: contain;
     cursor: pointer;
-    transition: opacity 0.2s;
-}
-
-.chart-container canvas:hover {
-    opacity: 0.8;
 }
 
 /* LAYOUT GRIDS (used in run, bike, swim, athlete tabs) */
@@ -963,6 +958,7 @@ html[data-theme="dark"] .loading-text {
 
     .chart-container canvas {
         aspect-ratio: 4 / 3;
+        min-height: 240px;
     }
 
     .chart-container:has([id^="cal-heatmap"]) {
@@ -992,16 +988,10 @@ html[data-theme="dark"] .loading-text {
     }
 
     .chart-container canvas {
-        aspect-ratio: 16 / 9;
-        min-height: 200px;
+        aspect-ratio: 4 / 3;
+        min-height: 220px;
         height: auto !important;
         border-radius: 8px;
-        min-width: 280px;
-    }
-
-    .chart-container {
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
     }
 }
 
