@@ -5,8 +5,10 @@ import * as utils from './utils.js';
 // Module state / constants
 // -------------------------
 let currentDataType = 'time';
+let currentActivityFrequencyPeriod = 'daily';
 let uiCharts = {}; // cache chart instances for athlete tab
 let interactiveMatrixChart;
+let athleteActivities = [];
 
 // -------------------------
 // Public API
@@ -14,6 +16,7 @@ let interactiveMatrixChart;
 export function renderAthleteTab(allActivities, dateFilterFrom, dateFilterTo, sportFilter = 'all', dataType = 'time') {
     // Public entry to render the Athlete tab. Keeps signature used by `main.js`.
     currentDataType = dataType;
+    athleteActivities = Array.isArray(allActivities) ? allActivities : [];
 
     // Ensure filters UI exists (will insert only once)
     addAthleteFilters();
@@ -29,9 +32,7 @@ export function renderAthleteTab(allActivities, dateFilterFrom, dateFilterTo, sp
             ? sportFilter
             : (sportFilter && sportFilter !== 'all' ? [sportFilter] : []);
 
-        Array.from(sportSelect.options).forEach(opt => {
-            opt.selected = selectedSports.length === 0 || selectedSports.includes(opt.value);
-        });
+        populateAthleteSportOptions(sportSelect, selectedSports);
     }
     if (dataTypeSelect) dataTypeSelect.value = dataType;
     if (dateFromInput) dateFromInput.value = utils.isoToDisplayDate(dateFilterFrom);
@@ -57,7 +58,8 @@ export function renderAthleteTab(allActivities, dateFilterFrom, dateFilterTo, sp
     // Render panels & charts (order: summary, records, charts)
     renderAllTimeStats(filteredActivities);
     renderRecordStats(filteredActivities);
-    renderAthleteCountHistogram(filteredActivities);
+    renderAthleteCountHistogram(filteredActivities, dataType);
+    renderActivityFrequencyHistogram(filteredActivities, currentActivityFrequencyPeriod);
 
     // Charts: use the filtered activity set for all visualizations
     renderStartTimeHistogram(filteredActivities, dataType);
@@ -89,65 +91,75 @@ function renderAllTimeStats(activities) {
     `;
 }
 
-function renderAthleteCountHistogram(activities) {
+function renderAthleteCountHistogram(activities, dataType = 'count') {
     const container = document.getElementById('athlete-count-histogram');
     if (!container || activities.length === 0) return;
 
-    // Categorize activities by athlete count
     const categories = {
         solo: {
+            total: 0,
             count: 0,
             label: '🏃 Solo',
-            color: 'rgba(100, 200, 255, 0.8)' // 1
+            color: 'rgba(100, 200, 255, 0.8)'
         },
         duo: {
+            total: 0,
             count: 0,
             label: '👥 Duo',
-            color: 'rgba(100, 255, 200, 0.8)' // 2
+            color: 'rgba(100, 255, 200, 0.8)'
         },
         smallGroup: {
+            total: 0,
             count: 0,
             label: '👫 Small Group',
-            color: 'rgba(255, 200, 100, 0.8)' // 3-10
-        },
-        mediumGroup: {
-            count: 0,
-            label: '👨‍👩‍👧 Medium Group',
-            color: 'rgba(255, 150, 100, 0.8)' // 11-25
+            color: 'rgba(255, 200, 100, 0.8)'
         },
         largeGroup: {
+            total: 0,
             count: 0,
             label: '👨‍👩‍👧‍👦 Large Group',
-            color: 'rgba(255, 100, 150, 0.8)' // 26+
+            color: 'rgba(255, 100, 150, 0.8)'
         }
+    };
+
+    const getMetric = activity => {
+        if (dataType === 'distance') return (Number(activity.distance) || 0) / 1000;
+        if (dataType === 'time') return (Number(activity.moving_time) || 0) / 3600;
+        return 1;
     };
 
     activities.forEach(activity => {
         const athleteCount = Number(activity.athlete_count) || 1;
+        const value = getMetric(activity);
 
-        if (athleteCount === 1) {
-            categories.solo.count++;
-        } else if (athleteCount === 2) {
-            categories.duo.count++;
-        } else if (athleteCount >= 3 && athleteCount <= 10) {
-            categories.smallGroup.count++;
-        } else if (athleteCount >= 11 && athleteCount <= 25) {
-            categories.mediumGroup.count++;
-        } else {
-            categories.largeGroup.count++;
-        }
+        let bucket;
+        if (athleteCount === 1) bucket = categories.solo;
+        else if (athleteCount === 2) bucket = categories.duo;
+        else if (athleteCount >= 3 && athleteCount <= 15) bucket = categories.smallGroup;
+        else bucket = categories.largeGroup;
+
+        bucket.count++;
+        bucket.total += value;
     });
 
     const labels = Object.values(categories).map(c => c.label);
-    const data = Object.values(categories).map(c => c.count);
+    const data = Object.values(categories).map(c => c.total);
     const colors = Object.values(categories).map(c => c.color);
+
+    const labelMap = {
+        count: 'Number of Activities',
+        time: 'Total Time (h)',
+        distance: 'Total Distance (km)'
+    };
+
+    const displayLabel = labelMap[dataType] || labelMap.count;
 
     createUiChart('athlete-count-histogram', {
         type: 'bar',
         data: {
             labels,
             datasets: [{
-                label: '# of Activities',
+                label: displayLabel,
                 data,
                 backgroundColor: colors,
                 borderColor: colors.map(c => c.replace('0.8', '1')),
@@ -159,18 +171,103 @@ function renderAthleteCountHistogram(activities) {
                 legend: { display: false },
                 tooltip: {
                     callbacks: {
+                        label: function(context) {
+                            const bucket = Object.values(categories)[context.dataIndex];
+                            const valueText = dataType === 'count'
+                                ? `${bucket.total}`
+                                : `${bucket.total.toFixed(1)} ${dataType === 'time' ? 'h' : 'km'}`;
+                            return `${displayLabel}: ${valueText}`;
+                        },
                         afterLabel: function(context) {
-                            const total = data.reduce((a, b) => a + b, 0);
-                            const pct = total > 0
-                                ? ((context.parsed.y / total) * 100).toFixed(1)
-                                : 0;
-
-                            return `${pct}% of total activities`;
+                            const bucket = Object.values(categories)[context.dataIndex];
+                            return `Activities: ${bucket.count}`;
                         }
                     }
                 }
             },
             scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: displayLabel
+                    }
+                }
+            }
+        }
+    });
+}
+
+function getWeekLabel(date) {
+    const cloned = new Date(date.getTime());
+    const day = cloned.getDay() || 7;
+    cloned.setHours(0, 0, 0, 0);
+    cloned.setDate(cloned.getDate() + 1 - day);
+    const year = cloned.getFullYear();
+    const weekNum = Math.ceil((((cloned - new Date(year, 0, 1)) / 86400000) + 1) / 7);
+    return `${year}-W${String(weekNum).padStart(2, '0')}`;
+}
+
+function renderActivityFrequencyHistogram(activities, period = 'daily') {
+    const container = document.getElementById('activity-frequency-histogram');
+    if (!container) return;
+
+    const frequency = {
+        daily: date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
+        weekly: date => getWeekLabel(date),
+        monthly: date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+    };
+
+    const counts = {};
+    activities.forEach(activity => {
+        const date = new Date(activity.start_date_local || activity.start_date);
+        if (Number.isNaN(date.getTime())) return;
+        const key = frequency[period](date);
+        counts[key] = (counts[key] || 0) + 1;
+    });
+
+    const entries = Object.entries(counts).sort((a, b) => a[0].localeCompare(b[0]));
+    const labels = entries.map(([label]) => label);
+    const data = entries.map(([, value]) => value);
+
+    createUiChart('activity-frequency-histogram', {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: 'Activities',
+                data,
+                backgroundColor: 'rgba(66, 133, 244, 0.75)',
+                borderColor: 'rgba(66, 133, 244, 1)',
+                borderWidth: 1,
+                barPercentage: 0.9,
+                categoryPercentage: 0.95
+            }]
+        },
+        options: {
+            plugins: {
+                title: {
+                    display: true,
+                    text: 'Activity Frequency Histogram'
+                },
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => `Activities: ${ctx.parsed.y}`
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Period'
+                    },
+                    ticks: {
+                        maxRotation: 45,
+                        minRotation: 0
+                    }
+                },
                 y: {
                     beginAtZero: true,
                     title: {
@@ -1660,19 +1757,10 @@ function createUiChart(canvasId, config) {
     }
 }
 
-function addAthleteFilters() {
-    const filterContainer = document.getElementById('athlete-filters');
-    if (!filterContainer) return;
-
-    // Check if filters already exist
-    if (document.getElementById('athlete-data-type')) return;
-
-    // Get all activities to determine most practiced sports
-    const allActivities = JSON.parse(localStorage.getItem('strava_activities') || '[]');
-
+function populateAthleteSportOptions(sportSelect, selectedSports = []) {
     // Count sport occurrences
     const sportCounts = {};
-    allActivities.forEach(activity => {
+    athleteActivities.forEach(activity => {
         const sport = activity.type || 'Unknown';
         sportCounts[sport] = (sportCounts[sport] || 0) + 1;
     });
@@ -1681,6 +1769,24 @@ function addAthleteFilters() {
     const topSports = Object.entries(sportCounts)
         .sort(([, a], [, b]) => b - a)
         .map(([sport]) => sport);
+
+    sportSelect.size = Math.min(8, Math.max(4, topSports.length));
+    sportSelect.innerHTML = topSports.map(sport => {
+        const count = sportCounts[sport];
+        return `<option value="${sport}">${sport} (${count})</option>`;
+    }).join('');
+
+    Array.from(sportSelect.options).forEach(opt => {
+        opt.selected = selectedSports.length === 0 || selectedSports.includes(opt.value);
+    });
+}
+
+function addAthleteFilters() {
+    const filterContainer = document.getElementById('athlete-filters');
+    if (!filterContainer) return;
+
+    // Check if filters already exist
+    if (document.getElementById('athlete-data-type')) return;
 
     const dataTypeSelect = document.createElement('select');
     dataTypeSelect.id = 'athlete-data-type';
@@ -1698,16 +1804,7 @@ function addAthleteFilters() {
     const sportSelect = document.createElement('select');
     sportSelect.id = 'athlete-sport-filter';
     sportSelect.multiple = true;
-    sportSelect.size = Math.min(8, Math.max(4, topSports.length));
-
-    // Build options HTML
-    let optionsHtml = '';
-    topSports.forEach(sport => {
-        const count = sportCounts[sport];
-        optionsHtml += `<option value="${sport}">${sport} (${count})</option>`;
-    });
-
-    sportSelect.innerHTML = optionsHtml;
+    populateAthleteSportOptions(sportSelect);
 
     const sportLabel = document.createElement('label');
     sportLabel.style = 'display: flex; align-items: center; gap: 0.5rem;';
@@ -1742,6 +1839,42 @@ function addAthleteFilters() {
     applyButton.id = 'athlete-apply-filters';
     applyButton.textContent = 'Apply Filters';
 
+    const frequencyButtonGroup = document.getElementById('activity-frequency-button-group') || document.createElement('div');
+    frequencyButtonGroup.id = 'activity-frequency-button-group';
+    frequencyButtonGroup.style.cssText = 'display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;';
+
+    const frequencyOptions = [
+        { value: 'daily', label: 'Daily' },
+        { value: 'weekly', label: 'Weekly' },
+        { value: 'monthly', label: 'Monthly' }
+    ];
+
+    frequencyOptions.forEach(option => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = option.label;
+        button.dataset.period = option.value;
+        button.style.cssText = 'padding:0.5rem 0.85rem; border:1px solid #ccc; border-radius:5px; background:#fff; cursor:pointer;';
+        if (option.value === currentActivityFrequencyPeriod) {
+            button.style.background = '#fc5200';
+            button.style.color = '#fff';
+        }
+        button.addEventListener('click', () => {
+            currentActivityFrequencyPeriod = option.value;
+            Array.from(frequencyButtonGroup.children).forEach(btn => {
+                btn.style.background = btn.dataset.period === option.value ? '#fc5200' : '#fff';
+                btn.style.color = btn.dataset.period === option.value ? '#fff' : '#000';
+            });
+
+            const selectedSports = Array.from(sportSelect.selectedOptions || []).map(opt => opt.value);
+            const selectedDateFrom = utils.parseDateInputToIso(dateFromInput.value) || null;
+            const selectedDateTo = utils.parseDateInputToIso(dateToInput.value) || null;
+            const filtered = filterActivities(athleteActivities, selectedDateFrom, selectedDateTo, selectedSports);
+            renderActivityFrequencyHistogram(filtered, currentActivityFrequencyPeriod);
+        });
+        frequencyButtonGroup.appendChild(button);
+    });
+
     filterContainer.appendChild(dataTypeLabel);
     filterContainer.appendChild(sportLabel);
     filterContainer.appendChild(dateFromLabel);
@@ -1752,7 +1885,6 @@ function addAthleteFilters() {
 
     // Setup event listener for apply button
     applyButton.addEventListener('click', () => {
-        const allActivities = JSON.parse(localStorage.getItem('strava_activities') || '[]');
         const selectedSports = Array.from(sportSelect.selectedOptions || []).map(opt => opt.value);
         const selectedDataType = dataTypeSelect.value || 'time';
         const selectedDateFrom = utils.parseDateInputToIso(dateFromInput.value) || null;
@@ -1765,7 +1897,7 @@ function addAthleteFilters() {
                 dateFilterTo: selectedDateTo,
                 sportFilter: selectedSports,
                 dataType: selectedDataType,
-                allActivities: allActivities
+                allActivities: athleteActivities
             }
         });
         document.dispatchEvent(event);

@@ -17,7 +17,15 @@ import {
     renderMapTab,
     renderAIChatTab,
 } from '../tabs/index.js';
-import { fetchAllActivities, fetchAthleteData, fetchTrainingZones, fetchAllGears, setCachedGears } from '../services/index.js';
+import {
+    fetchAllActivities,
+    fetchAthleteData,
+    fetchTrainingZones,
+    fetchAllGears,
+    setCachedGears,
+    getCachedActivities,
+    saveCachedActivities,
+} from '../services/index.js';
 import { preprocessActivities } from '../shared/preprocessing/index.js';
 import { isDemoMode } from '../demo/index.js';
 
@@ -467,21 +475,14 @@ document.addEventListener('DOMContentLoaded', () => {
             progress = 8;
             showLoading('Checking local cache...', progress, elapsed());
 
-            const storedCacheVersion = localStorage.getItem('strava_cache_version');
-            if (storedCacheVersion !== CACHE_VERSION) {
-                localStorage.removeItem('strava_activities');
-                localStorage.removeItem('strava_activities_timestamp');
-                localStorage.setItem('strava_cache_version', CACHE_VERSION);
-            }
-
-            const cachedActivities = localStorage.getItem('strava_activities');
-            const cachedActivitiesTimestamp = localStorage.getItem('strava_activities_timestamp');
-            const activitiesCacheAge = cachedActivitiesTimestamp ? Date.now() - parseInt(cachedActivitiesTimestamp) : Infinity;
-            const activitiesCacheValid = cachedActivities && activitiesCacheAge < 60 * 60 * 1000; // 1 hour
+            const cachedActivities = await getCachedActivities({
+                cacheVersion: CACHE_VERSION,
+                maxAgeMs: 60 * 60 * 1000
+            });
 
             let activities;
-            if (activitiesCacheValid) {
-                activities = JSON.parse(cachedActivities);
+            if (cachedActivities?.activities?.length) {
+                activities = cachedActivities.activities;
                 progress = 40;
                 showLoading(`Activities loaded from cache (${activities.length})`, progress, elapsed());
                 if (!isDemoMode()) {
@@ -495,9 +496,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!isDemoMode()) {
                     console.log(`[Strava] Activities downloaded from API (${activities.length}):`, activities);
                 }
-                localStorage.setItem('strava_activities', JSON.stringify(activities));
-                localStorage.setItem('strava_activities_timestamp', Date.now().toString());
-                localStorage.setItem('strava_cache_version', CACHE_VERSION);
+                // Cache the raw Strava payload. Preprocessing mutates activity objects and runs on every load.
+                await saveCachedActivities(activities, CACHE_VERSION);
             }
 
             // Phase 2: Load athlete, zones, and gears (40% -> 90%)
@@ -619,11 +619,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 gears = [];
             }
 
-            // Keep refresh aligned with initial load: reuse preprocessed fields (including activity.tss).
+            // Cache the raw Strava payload before preprocessing mutates activity objects.
+            await saveCachedActivities(activities, CACHE_VERSION);
+
+            // Keep refresh aligned with initial load: preprocessing is rebuilt from raw activities.
             allActivities = await preprocessActivities(activities, athlete, zones, gears);
-            localStorage.setItem('strava_activities', JSON.stringify(allActivities));
-            localStorage.setItem('strava_activities_timestamp', Date.now().toString());
-            localStorage.setItem('strava_cache_version', CACHE_VERSION);
             showLoading(`Rebuilding views (${allActivities.length} activities)...`, 80, elapsed());
 
             // Reset rendered state so tabs re-render with fresh data
