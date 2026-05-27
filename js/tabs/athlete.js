@@ -390,8 +390,8 @@ function renderTransitions(activities) {
         return a.type || 'Other';
     };
 
-    // Find transitions: activities within 1 hour of each other
-    const MAX_GAP_MS = 60 * 60 * 1000; // 1 hour
+    // Find transitions: activities within 2 hours of each other
+    const MAX_GAP_MS = 2 * 60 * 60 * 1000; // 2 hours
     const transitionCounts = {}; // "Swim→Bike" → count
     const transitionExamples = {};
 
@@ -417,13 +417,12 @@ function renderTransitions(activities) {
             if (transitionExamples[key].length < 3) {
                 transitionExamples[key].push(curr.start_date_local.substring(0, 10));
             }
-            break; // Only count first valid transition from this activity
         }
     }
 
     const entries = Object.entries(transitionCounts).sort((a, b) => b[1] - a[1]);
     if (entries.length === 0) {
-        if (detailsEl) detailsEl.innerHTML = '<p style="color:#888;">No multi-sport transitions found (activities within 1h of each other).</p>';
+        if (detailsEl) detailsEl.innerHTML = '<p style="color:#888;">No multi-sport transitions found (activities within 2h of each other).</p>';
         return;
     }
 

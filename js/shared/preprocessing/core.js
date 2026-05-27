@@ -249,7 +249,7 @@ const SPORT_TSS_MULTIPLIER = {
     // Water
     Swim: 0.75,
     PoolSwim: 0.75,
-    OpenWaterSwim: 1.28, // Open water perceived effort ~1.7× pool (0.75 × 1.7 ≈ 1.28)
+    OpenWaterSwim: 2.0, // Open water rule: final TSS multiplier ×2
     // Team/field
     Soccer: 1.05,
     // Hiking & walking
