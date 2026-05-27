@@ -63,7 +63,7 @@ export function renderMapTab(activities = [], dateFrom = null, dateTo = null) {
     };
 
     // Populate sport types and apply defaults
-    const types = [...new Set(activities.map(a => a.type).filter(Boolean))].sort();
+    const types = [...new Set(activities.map(a => (a.sport_type || a.type || 'Unknown').trim()).filter(Boolean))].sort();
     sportSel.innerHTML = '<option value="all">All</option>' + types.map(t => `<option value="${t}">${t}</option>`).join('');
     // default control values
     sportSel.value = 'all';
@@ -117,7 +117,7 @@ export function renderMapTab(activities = [], dateFrom = null, dateTo = null) {
                 if (iso && d && d > iso) return false;
             }
             // Sport filter
-            if (sportSel?.value && sportSel.value !== 'all' && a.type !== sportSel.value) return false;
+            if (sportSel?.value && sportSel.value !== 'all' && (a.sport_type || a.type || 'Unknown').trim() !== sportSel.value) return false;
             return true;
         });
     }

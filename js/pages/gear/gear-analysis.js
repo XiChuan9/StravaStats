@@ -1,6 +1,7 @@
 ﻿// js/gear-analysis.js — Individual Gear Detail Page
 
 import { formatPace, formatTime, formatDate, formatSpeedBike } from '../../shared/utils/index.js';
+import { getCachedActivities } from '../../services/activity-cache.js';
 
 // ===================================================================
 // HELPERS
@@ -48,7 +49,8 @@ function statRow(label, value) {
 // ===================================================================
 
 export async function renderGearDetailPage(gearId) {
-    const allActivities = JSON.parse(localStorage.getItem('strava_activities') || '[]');
+    const activityCache = await getCachedActivities();
+    const allActivities = activityCache?.activities || [];
     const allGears = JSON.parse(localStorage.getItem('strava_gears') || '[]');
     const gear = allGears.find(g => g.id === gearId);
 

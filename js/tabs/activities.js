@@ -345,7 +345,7 @@ function groupedSortValue(row, col, metricMode) {
 }
 
 function groupedCellText(row, col, metricMode, textMode) {
-    return groupedCellValue(row, col, metricMode, textMode).replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+    return String(groupedCellValue(row, col, metricMode, textMode)).replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
 }
 
 // ─── Sort value extractor ─────────────────────────────────────────────────────

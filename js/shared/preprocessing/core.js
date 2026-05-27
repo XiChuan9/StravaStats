@@ -102,6 +102,50 @@ function applyIndoorSwimPool20mCorrection(activities, userProfile = {}) {
 }
 
 // ===================================================================
+// Pool length estimation for all swim activities
+// ===================================================================
+const STANDARD_POOL_LENGTHS = [20, 25, 50];
+
+function estimatePoolLengths(activities) {
+    const swims = activities.filter(a => {
+        const t = (a.sport_type || a.type || '').toLowerCase();
+        return t.includes('swim') && !t.includes('openwater');
+    });
+    if (!swims.length) return;
+
+    // Build historical frequency of which pool lengths appear
+    const historicalCounts = { 20: 0, 25: 0, 50: 0 };
+    swims.forEach(a => {
+        if (a.pool_length) { historicalCounts[a.pool_length] = (historicalCounts[a.pool_length] || 0) + 1; return; }
+        if (!a.distance) return;
+        const candidates = STANDARD_POOL_LENGTHS.filter(p => a.distance % p === 0);
+        if (candidates.length === 1) historicalCounts[candidates[0]]++;
+    });
+
+    // Assign pool_length to swims that don't have it yet
+    swims.forEach(a => {
+        if (a.pool_length) return; // Already set (e.g. by 20m correction)
+        if (!a.distance || !a.moving_time) return;
+
+        const candidates = STANDARD_POOL_LENGTHS.filter(p => {
+            if (a.distance % p !== 0) return false;
+            const lengths = a.distance / p;
+            const timePerLength = a.moving_time / lengths;
+            // Realistic time per length: 15-120 seconds
+            return timePerLength >= 15 && timePerLength <= 120;
+        });
+
+        if (candidates.length === 1) {
+            a.pool_length = candidates[0];
+        } else if (candidates.length > 1) {
+            // Use historical frequency to pick most likely
+            candidates.sort((x, y) => (historicalCounts[y] || 0) - (historicalCounts[x] || 0));
+            a.pool_length = candidates[0];
+        }
+    });
+}
+
+// ===================================================================
 // WEATHER API FUNCTION
 // ===================================================================
 function numericSafe(v) {
@@ -204,6 +248,8 @@ const SPORT_TSS_MULTIPLIER = {
     EBikeRide: 0.71,
     // Water
     Swim: 0.75,
+    PoolSwim: 0.75,
+    OpenWaterSwim: 1.28, // Open water perceived effort ~1.7× pool (0.75 × 1.7 ≈ 1.28)
     // Team/field
     Soccer: 1.05,
     // Hiking & walking
@@ -675,6 +721,7 @@ export async function preprocessActivities(activities, userProfile = {}, zones =
     if (!activities?.length) return [];
 
     applyIndoorSwimPool20mCorrection(activities, userProfile);
+    estimatePoolLengths(activities);
 
     // Derive maxHR from zones if available (last zone's max), fallback to profile, then default
     let maxHr = MAX_HR_DEFAULT;

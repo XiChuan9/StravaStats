@@ -346,23 +346,31 @@ function renderDistanceHistogram(rides) {
 
     if (!distances.length) return;
 
+    // Separate indoor (distance=0) from outdoor
+    const indoorCount = distances.filter(d => d === 0).length;
+    const outdoorDistances = distances.filter(d => d > 0);
+
     const binSize = 5; //km
-    const max = Math.max(...distances, 0);
+    const max = Math.max(...outdoorDistances, binSize);
     const bins = new Array(Math.ceil(max / binSize)).fill(0);
 
-    distances.forEach(d => {
+    outdoorDistances.forEach(d => {
         const idx = Math.floor(d / binSize);
         if (bins[idx] !== undefined) bins[idx]++;
     });
 
+    // Prepend indoor bin
+    const labels = ['Indoor (0 km)', ...bins.map((_, i) => `${i * binSize}-${(i + 1) * binSize}`)];
+    const data = [indoorCount, ...bins];
+
     createChart("bike-distance-histogram", {
         type: "bar",
         data: {
-            labels: bins.map((_, i) => `${i * binSize}-${(i + 1) * binSize}`),
+            labels,
             datasets: [{
                 label: "# rides",
-                data: bins,
-                backgroundColor: "rgba(46,125,50,0.7)"
+                data,
+                backgroundColor: data.map((_, i) => i === 0 ? "rgba(158,158,158,0.7)" : "rgba(46,125,50,0.7)")
             }]
         },
         options: {
@@ -387,23 +395,30 @@ function renderElevationHistogram(rides) {
 
     if (!values.length) return;
 
+    // Separate indoor/flat (elevation=0) from outdoor
+    const indoorCount = values.filter(v => v === 0).length;
+    const outdoorValues = values.filter(v => v > 0);
+
     const binSize = 25;
-    const max = Math.max(...values, 0);
+    const max = Math.max(...outdoorValues, binSize);
     const bins = new Array(Math.ceil(max / binSize)).fill(0);
 
-    values.forEach(v => {
+    outdoorValues.forEach(v => {
         const idx = Math.floor(v / binSize);
         if (bins[idx] !== undefined) bins[idx]++;
     });
 
+    const labels = ['Indoor (0 m)', ...bins.map((_, i) => `${i * binSize}-${(i + 1) * binSize}`)];
+    const data = [indoorCount, ...bins];
+
     createChart("bike-elevation-histogram", {
         type: "bar",
         data: {
-            labels: bins.map((_, i) => `${i * binSize}-${(i + 1) * binSize}`),
+            labels,
             datasets: [{
                 label: "# rides",
-                data: bins,
-                backgroundColor: "rgba(56,142,60,0.7)"
+                data,
+                backgroundColor: data.map((_, i) => i === 0 ? "rgba(158,158,158,0.7)" : "rgba(56,142,60,0.7)")
             }]
         },
         options: {
