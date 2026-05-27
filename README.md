@@ -58,7 +58,7 @@ The application combines several classes of data:
 - Strava training zones via `/api/strava-zones`
 - Strava gear metadata via `/api/strava-gear`
 - Strava activity streams via `/api/strava-streams`
-- Local browser persistence via `localStorage`
+- Local browser persistence via `localStorage` and IndexedDB (activity payload cache)
 - Historical weather enrichment from Open-Meteo archive endpoints for geolocated runs
 - Derived outputs exported as GPX, CSV, and JSON from the advanced activity analysis flow
 
@@ -68,7 +68,7 @@ The application combines several classes of data:
 - GPX: reconstructed export of analyzed activities
 - CSV: tabular export of processed track points
 - Encoded polylines: route rendering for the Map tab and detail pages
-- Browser storage keys: authentication tokens, filters, gear settings, athlete profile, zones, cached activities, and AI conversation state
+- Browser storage keys and stores: authentication tokens, filters, gear settings, athlete profile, zones, activity-cache metadata (`localStorage`) plus activity payloads in IndexedDB (`strava-dashboard-cache`), and AI conversation state
 
 ## Key Features
 
@@ -92,7 +92,7 @@ Pool vs open-water separation, pace per 100 m, pool-length estimation against co
 
 ### Athlete (`js/tabs/athlete.js`)
 
-Profile and behavior lens. Athlete card, all-time totals, records, training zones (HR and power), duration and start-time histograms, yearly comparison bars, weekly and monthly mix views, and several interactive matrix heatmaps with selectable axes and data type (time, count, distance).
+Profile and behavior lens. Athlete card, all-time totals, records, training zones (HR and power), duration and start-time histograms, group-size histogram by metric type, activity-frequency histogram (daily/weekly/monthly), yearly comparison bars, weekly and monthly mix views, and several interactive matrix heatmaps with selectable axes and data type (time, count, distance).
 
 ### Planner / Predictor (`js/tabs/planner.js`)
 
@@ -144,7 +144,15 @@ Dedicated per-activity pages fetch metadata and streams from Strava, reconstruct
 
 ## Cache Versioning
 
-`js/app/main.js` defines `CACHE_VERSION = 'v2-efficiency-moving-ratio'` and stores it under the localStorage key `strava_cache_version`. On boot, the app reads the stored version and, when it does not match `CACHE_VERSION`, drops the previously cached preprocessed activities. The fresh activity payload is reprocessed and the new version key is written back. Bumping `CACHE_VERSION` whenever the preprocessing schema changes is how new derived fields propagate without manual cache busting.
+`js/app/main.js` defines `CACHE_VERSION = 'v2-efficiency-moving-ratio'` and validates it through `js/services/activity-cache.js`.
+
+- Activity payloads are persisted in IndexedDB (`strava-dashboard-cache`, store `entries`, key `strava_activities`).
+- Metadata such as `strava_cache_version` and timestamps is kept in `localStorage`.
+- On boot, `getCachedActivities({ cacheVersion, maxAgeMs })` only accepts cache entries that match the current schema version and TTL.
+- On miss, the app fetches from Strava and writes through `saveCachedActivities(...)`.
+- If IndexedDB is unavailable, the service transparently falls back to `localStorage`.
+
+Bumping `CACHE_VERSION` whenever preprocessing semantics change ensures stale payloads are ignored and regenerated.
 
 ## Architecture And System Design
 
@@ -154,7 +162,7 @@ The application uses a hybrid architecture:
 
 - Frontend: static HTML plus native ES modules served directly in the browser
 - Backend: Vercel serverless functions that proxy Strava API requests and handle secure OAuth token exchange and refresh
-- Storage: browser `localStorage` for cached resources and UI state
+- Storage: browser `localStorage` for session/UI metadata plus IndexedDB for large cached activity payloads
 - Visualization: Chart.js, `chartjs-chart-matrix`, D3, Cal-Heatmap, Leaflet, and Leaflet.heat
 - Deployment: Vercel rewrites route tab paths to the SPA entrypoint
 

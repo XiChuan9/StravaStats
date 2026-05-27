@@ -143,8 +143,8 @@ Notable persisted keys include:
 - `strava_athlete_data`
 - `strava_training_zones`
 - `strava_gears`
-- `strava_activities`
-- `strava_cache_version` — schema version of the cached preprocessed activities
+- `strava_activities` (localStorage fallback only when IndexedDB is unavailable)
+- `strava_cache_version` — schema version tracked in localStorage metadata
 - `strava_demo_mode` / `strava_demo_activities` — demo gating and dataset
 - `dashboard_filters`
 - `dashboard_settings`
@@ -153,9 +153,20 @@ Notable persisted keys include:
 - `gemini_api_key`
 - gear-specific custom configuration records
 
+IndexedDB details for activity cache:
+
+- Database: `strava-dashboard-cache`
+- Store: `entries`
+- Primary key: `key` (`strava_activities` entry)
+- Stored value: raw activities array + timestamp + cache version
+
 ### Cache schema versioning
 
-`js/app/main.js` declares `const CACHE_VERSION = 'v2-efficiency-moving-ratio'`. On startup it reads `localStorage('strava_cache_version')` and, if it does not match the current `CACHE_VERSION`, drops the previously cached activities and re-runs `preprocessActivities` on the fresh API payload. The new version is written back to localStorage. Every time a preprocessing field is added or its semantics change, the `CACHE_VERSION` literal must be bumped so existing users invalidate their stale derived data on next load.
+`js/app/main.js` declares `const CACHE_VERSION = 'v2-efficiency-moving-ratio'` and validates cache entries through `js/services/activity-cache.js`.
+
+At startup, `getCachedActivities({ cacheVersion, maxAgeMs })` checks both schema version and age before serving cached activities. Cache writes go through `saveCachedActivities(...)`, which stores large payloads in IndexedDB and keeps lightweight metadata in localStorage. If IndexedDB is not available, the service automatically degrades to localStorage.
+
+Every time preprocessing semantics change, the `CACHE_VERSION` literal must be bumped so stale payloads are ignored and regenerated on next load.
 
 ### Why this matters operationally
 
