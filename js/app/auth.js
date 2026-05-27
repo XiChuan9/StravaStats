@@ -1,6 +1,7 @@
 // js/auth.js
 import { showLoading, handleError, hideLoading } from './ui.js';
 import { loadDemoData } from '../demo/index.js';
+import { clearCachedActivities } from '../services/activity-cache.js';
 
 const REDIRECT_URI = window.location.origin + window.location.pathname;
 
@@ -43,6 +44,7 @@ export async function logout() {
         }
     }
     localStorage.removeItem('strava_tokens');
+    await clearCachedActivities();
     localStorage.removeItem('strava_athlete_data');
     localStorage.removeItem('strava_athlete_data_timestamp');
     localStorage.removeItem('strava_training_zones');
@@ -88,6 +90,7 @@ async function getTokensFromCode(code) {
             refresh_token: data.refresh_token,
             expires_at: data.expires_at
         }));
+        await clearCachedActivities();
 
         window.history.replaceState({}, '', window.location.pathname);
     } catch (error) {
@@ -135,6 +138,7 @@ export async function handleAuth(onAuthenticated) {
             return;
         } else {
             localStorage.removeItem('strava_tokens');
+            await clearCachedActivities();
             localStorage.removeItem('strava_athlete_data');
             localStorage.removeItem('strava_athlete_data_timestamp');
             localStorage.removeItem('strava_training_zones');

@@ -8,6 +8,7 @@ let currentDataType = 'time';
 let currentActivityFrequencyPeriod = 'daily';
 let uiCharts = {}; // cache chart instances for athlete tab
 let interactiveMatrixChart;
+let athleteActivities = [];
 
 // -------------------------
 // Public API
@@ -15,6 +16,7 @@ let interactiveMatrixChart;
 export function renderAthleteTab(allActivities, dateFilterFrom, dateFilterTo, sportFilter = 'all', dataType = 'time') {
     // Public entry to render the Athlete tab. Keeps signature used by `main.js`.
     currentDataType = dataType;
+    athleteActivities = Array.isArray(allActivities) ? allActivities : [];
 
     // Ensure filters UI exists (will insert only once)
     addAthleteFilters();
@@ -30,9 +32,7 @@ export function renderAthleteTab(allActivities, dateFilterFrom, dateFilterTo, sp
             ? sportFilter
             : (sportFilter && sportFilter !== 'all' ? [sportFilter] : []);
 
-        Array.from(sportSelect.options).forEach(opt => {
-            opt.selected = selectedSports.length === 0 || selectedSports.includes(opt.value);
-        });
+        populateAthleteSportOptions(sportSelect, selectedSports);
     }
     if (dataTypeSelect) dataTypeSelect.value = dataType;
     if (dateFromInput) dateFromInput.value = utils.isoToDisplayDate(dateFilterFrom);
@@ -1757,19 +1757,10 @@ function createUiChart(canvasId, config) {
     }
 }
 
-function addAthleteFilters() {
-    const filterContainer = document.getElementById('athlete-filters');
-    if (!filterContainer) return;
-
-    // Check if filters already exist
-    if (document.getElementById('athlete-data-type')) return;
-
-    // Get all activities to determine most practiced sports
-    const allActivities = JSON.parse(localStorage.getItem('strava_activities') || '[]');
-
+function populateAthleteSportOptions(sportSelect, selectedSports = []) {
     // Count sport occurrences
     const sportCounts = {};
-    allActivities.forEach(activity => {
+    athleteActivities.forEach(activity => {
         const sport = activity.type || 'Unknown';
         sportCounts[sport] = (sportCounts[sport] || 0) + 1;
     });
@@ -1778,6 +1769,24 @@ function addAthleteFilters() {
     const topSports = Object.entries(sportCounts)
         .sort(([, a], [, b]) => b - a)
         .map(([sport]) => sport);
+
+    sportSelect.size = Math.min(8, Math.max(4, topSports.length));
+    sportSelect.innerHTML = topSports.map(sport => {
+        const count = sportCounts[sport];
+        return `<option value="${sport}">${sport} (${count})</option>`;
+    }).join('');
+
+    Array.from(sportSelect.options).forEach(opt => {
+        opt.selected = selectedSports.length === 0 || selectedSports.includes(opt.value);
+    });
+}
+
+function addAthleteFilters() {
+    const filterContainer = document.getElementById('athlete-filters');
+    if (!filterContainer) return;
+
+    // Check if filters already exist
+    if (document.getElementById('athlete-data-type')) return;
 
     const dataTypeSelect = document.createElement('select');
     dataTypeSelect.id = 'athlete-data-type';
@@ -1795,16 +1804,7 @@ function addAthleteFilters() {
     const sportSelect = document.createElement('select');
     sportSelect.id = 'athlete-sport-filter';
     sportSelect.multiple = true;
-    sportSelect.size = Math.min(8, Math.max(4, topSports.length));
-
-    // Build options HTML
-    let optionsHtml = '';
-    topSports.forEach(sport => {
-        const count = sportCounts[sport];
-        optionsHtml += `<option value="${sport}">${sport} (${count})</option>`;
-    });
-
-    sportSelect.innerHTML = optionsHtml;
+    populateAthleteSportOptions(sportSelect);
 
     const sportLabel = document.createElement('label');
     sportLabel.style = 'display: flex; align-items: center; gap: 0.5rem;';
@@ -1866,11 +1866,10 @@ function addAthleteFilters() {
                 btn.style.color = btn.dataset.period === option.value ? '#fff' : '#000';
             });
 
-            const allActivities = JSON.parse(localStorage.getItem('strava_activities') || '[]');
             const selectedSports = Array.from(sportSelect.selectedOptions || []).map(opt => opt.value);
             const selectedDateFrom = utils.parseDateInputToIso(dateFromInput.value) || null;
             const selectedDateTo = utils.parseDateInputToIso(dateToInput.value) || null;
-            const filtered = filterActivities(allActivities, selectedDateFrom, selectedDateTo, selectedSports);
+            const filtered = filterActivities(athleteActivities, selectedDateFrom, selectedDateTo, selectedSports);
             renderActivityFrequencyHistogram(filtered, currentActivityFrequencyPeriod);
         });
         frequencyButtonGroup.appendChild(button);
@@ -1886,7 +1885,6 @@ function addAthleteFilters() {
 
     // Setup event listener for apply button
     applyButton.addEventListener('click', () => {
-        const allActivities = JSON.parse(localStorage.getItem('strava_activities') || '[]');
         const selectedSports = Array.from(sportSelect.selectedOptions || []).map(opt => opt.value);
         const selectedDataType = dataTypeSelect.value || 'time';
         const selectedDateFrom = utils.parseDateInputToIso(dateFromInput.value) || null;
@@ -1899,7 +1897,7 @@ function addAthleteFilters() {
                 dateFilterTo: selectedDateTo,
                 sportFilter: selectedSports,
                 dataType: selectedDataType,
-                allActivities: allActivities
+                allActivities: athleteActivities
             }
         });
         document.dispatchEvent(event);
