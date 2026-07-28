@@ -1,9 +1,17 @@
-const DB_NAME = 'strava-dashboard-cache';
-const DB_VERSION = 1;
-const STORE_NAME = 'entries';
-const ACTIVITIES_KEY = 'strava_activities';
-const ACTIVITIES_TIMESTAMP_KEY = `${ACTIVITIES_KEY}_timestamp`;
-const CACHE_VERSION_KEY = 'strava_cache_version';
+import {
+    LEGACY_ACTIVITY_KEY,
+    LEGACY_DB_NAME,
+    LEGACY_DB_VERSION,
+    LEGACY_LOCAL_STORAGE_KEYS,
+    LEGACY_STORE_NAME
+} from './legacy-cache/constants.js';
+
+const DB_NAME = LEGACY_DB_NAME;
+const DB_VERSION = LEGACY_DB_VERSION;
+const STORE_NAME = LEGACY_STORE_NAME;
+const ACTIVITIES_KEY = LEGACY_ACTIVITY_KEY;
+const ACTIVITIES_TIMESTAMP_KEY = LEGACY_LOCAL_STORAGE_KEYS.activitiesTimestamp;
+const CACHE_VERSION_KEY = LEGACY_LOCAL_STORAGE_KEYS.cacheVersion;
 
 function canUseIndexedDb() {
     return typeof indexedDB !== 'undefined';
@@ -133,6 +141,28 @@ function removeLocalStorageActivityCache() {
     safeRemoveLocalStorage(ACTIVITIES_TIMESTAMP_KEY);
 }
 
+function snapshotLocalStorageActivityCache() {
+    return {
+        [ACTIVITIES_KEY]: localStorage.getItem(ACTIVITIES_KEY),
+        [ACTIVITIES_TIMESTAMP_KEY]: localStorage.getItem(ACTIVITIES_TIMESTAMP_KEY),
+        [CACHE_VERSION_KEY]: localStorage.getItem(CACHE_VERSION_KEY)
+    };
+}
+
+function restoreLocalStorageActivityCache(snapshot, changedKeys) {
+    const failures = [];
+    for (const key of [...changedKeys].reverse()) {
+        try {
+            const value = snapshot[key];
+            if (value === null) localStorage.removeItem(key);
+            else localStorage.setItem(key, value);
+        } catch (error) {
+            failures.push({ key, cause: error?.name || 'Error' });
+        }
+    }
+    return failures;
+}
+
 export async function getCachedActivities({ cacheVersion = null, maxAgeMs = Infinity } = {}) {
     try {
         const entry = await runStoreTransaction('readonly', store => store.get(ACTIVITIES_KEY));
@@ -170,15 +200,45 @@ export async function saveCachedActivities(activities, cacheVersion) {
         console.warn('Failed to save activities in IndexedDB, trying localStorage fallback:', error);
     }
 
+    let serializedActivities;
     try {
-        localStorage.setItem(ACTIVITIES_KEY, JSON.stringify(activities));
-        safeSetLocalStorage(ACTIVITIES_TIMESTAMP_KEY, String(timestamp));
-        if (cacheVersion) safeSetLocalStorage(CACHE_VERSION_KEY, cacheVersion);
+        serializedActivities = JSON.stringify(activities);
+    } catch (error) {
+        console.warn('Activity cache fallback skipped because activities could not be serialized:', error);
+        return false;
+    }
+
+    let fallbackSnapshot;
+    try {
+        fallbackSnapshot = snapshotLocalStorageActivityCache();
+    } catch (error) {
+        console.warn('Activity cache fallback skipped because its previous state could not be read:', error);
+        return false;
+    }
+
+    const changedKeys = [];
+    try {
+        localStorage.setItem(ACTIVITIES_TIMESTAMP_KEY, String(timestamp));
+        changedKeys.push(ACTIVITIES_TIMESTAMP_KEY);
+        if (cacheVersion) {
+            localStorage.setItem(CACHE_VERSION_KEY, cacheVersion);
+            changedKeys.push(CACHE_VERSION_KEY);
+        }
+        localStorage.setItem(ACTIVITIES_KEY, serializedActivities);
+        changedKeys.push(ACTIVITIES_KEY);
         return true;
     } catch (error) {
         console.warn('Activity cache skipped because browser storage quota was exceeded:', error);
-        removeLocalStorageActivityCache();
-        if (cacheVersion) safeSetLocalStorage(CACHE_VERSION_KEY, cacheVersion);
+        const rollbackFailures = restoreLocalStorageActivityCache(
+            fallbackSnapshot,
+            changedKeys
+        );
+        if (rollbackFailures.length > 0) {
+            console.warn(
+                'Failed to fully restore the previous localStorage activity cache:',
+                rollbackFailures
+            );
+        }
         return false;
     }
 }

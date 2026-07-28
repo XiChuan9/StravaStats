@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Approved for implementation |
+| Status | In progress |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/legacy-rescue` |
 | Worktree | `/Users/wangchuanliang/Documents/StravaStats-worktrees/legacy-rescue` |
@@ -74,8 +74,10 @@ IndexedDB v2、Canonical 或导入开发，唯一的浏览器数据副本可能�
   `strava-dashboard-cache`、version `1`、store `entries`、key
   `strava_activities`，entry 包含 `activities`、`timestamp` 和
   `cacheVersion`；
-- 仓库中没有 `indexedDB.deleteDatabase()` 或 `objectStore.clear()`；活动删除
-  使用 `objectStore.delete('strava_activities')`；
+- 调查基线中的活动删除使用
+  `objectStore.delete('strava_activities')`；B1 唯一批准的
+  `indexedDB.deleteDatabase()` 路径是删除失败 restore 在原本无库目标中新建的
+  `strava-dashboard-cache`，预先存在的数据库和 `objectStore.clear()` 仍禁止；
 - `getCachedActivities()` 的默认参数是 `cacheVersion = null` 和
   `maxAgeMs = Infinity`，因此默认调用不阻断 TTL 或 `cacheVersion`；
 - 现有 `getCachedActivities()` 不是合格的 Rescue Reader：它用固定 version
@@ -255,7 +257,9 @@ tests/fixtures/private/**
 
 - 修改 Canonical Schema；
 - 创建 IndexedDB v2；
-- 删除、清空、覆盖或原地升级 Legacy Cache；
+- 删除、清空、覆盖或原地升级预先存在的 Legacy Cache；唯一例外是 restore
+  前目标数据库不存在、由本次失败 apply 创建
+  `strava-dashboard-cache` 时，补偿回滚必须只删除该次新建数据库；
 - 把恢复实现为先清空再写入；
 - 使用真实 FIT、TCX、GPX、Strava ZIP、GPS、心率、功率或真实导出作为 fixture；
 - 读取、枚举、复制或提交 `tests/fixtures/private/`；
@@ -363,6 +367,22 @@ Gemini/API key、AI chat history、Demo namespace 和其他未列出的 localSto
 key。mixed Demo/Legacy 允许导出，但 manifest 必须包含
 `PROVENANCE_UNCERTAIN`。
 
+`legacy-activities.json` 必须包含被 hash 保护的 provenance：
+
+```text
+provenance.uncertain
+provenance.evidenceCodes
+provenance.sourceErrorCodes
+```
+
+manifest 中的 `PROVENANCE_UNCERTAIN` 和 `SOURCE_READ_ERROR` 必须从该 hashed
+provenance 派生，并在 verify 时核对一致。restore 的确认 gate 只读取已验证的
+hashed provenance，不得依赖可单独篡改的 manifest warning。
+
+allowlisted activities 或 metadata 中发现敏感字段时，逻辑 payload 必须记录
+不含值的 hashed redaction evidence，manifest 派生
+`SENSITIVE_FIELDS_REDACTED`；不得静默修改导出内容。
+
 确定性序列化规则冻结为：
 
 - `exportedAt` 必须由调用方注入；
@@ -388,6 +408,24 @@ warning：
 - bundle 含 `PROVENANCE_UNCERTAIN` 时必须再次明确确认，否则不得写入；
 - 写入失败必须事务或补偿回滚，并产生 `imported` / `skipped` / `failed` /
   `rolledBack` 报告；
+- restore plan 必须由模块私有机制签发、与 verified bundle 绑定并递归冻结；
+- restore 只允许不存在的目标或 version 1 目标；更高或未知不兼容版本 abort；
+- restore write open request 在 timeout/onblocked 后必须标记 cancelled，并等待
+  request error/success 终态；迟到 upgrade 只允许 abort，不得创建 store 或写入；
+- cancelled request 若仍以 success 证明创建了新 DB，apply 必须在返回前完成精确
+  删除；删除 error/blocked/timeout 返回 `RESTORE_ROLLBACK_FAILED` 和
+  `partial-rollback`；
+- 预存数据库只有在 restore write transaction 已触发 `complete`、且
+  `writeIndexedDbEntry` 成功 resolve 后，才允许补偿恢复或删除原 entry；
+  open/error/blocked/timeout、transaction abort 或写入失败不得触发 entry 补偿，
+  也不得报告 `rolledBack: indexedDbEntry`；
+- 预存 entry 补偿必须在同一个 readwrite transaction 中先读取当前 entry；仅当
+  当前值仍等于本次 restore 已提交的 desired entry 时，才能恢复 previous entry
+  或删除 key；若已被并发替换，必须保留并发值并返回
+  `RESTORE_ROLLBACK_FAILED`（带稳定 conflict evidence）和
+  `partial-rollback`；
+- 若失败 apply 创建了此前不存在的 Legacy DB，补偿回滚只删除该次新建 DB，并
+  等待 delete success/error/blocked/timeout；预先存在的 DB 永远不得删除；
 - 导出 bundle 不得因恢复被删除。
 
 ### Authentication lifecycle
@@ -423,6 +461,11 @@ Demo 必须使用独立 namespace，不调用真实 Legacy activities 或 metada
 - [ ] Token、API key、AI chat history、Demo namespace 和未列出 key 均被排除；
 - [ ] export 失败不修改源数据；
 - [ ] mixed Demo/Legacy 导出产生 `PROVENANCE_UNCERTAIN`；
+- [ ] hashed provenance 与 manifest warning 一致，删除或伪造 manifest warning
+      无法绕过 restore confirmation；
+- [ ] partial selected source 记录稳定 `SOURCE_READ_ERROR`，empty/error source
+      返回 `RESCUE_SOURCE_NOT_EXPORTABLE`；
+- [ ] 敏感字段 redaction 可观察、被 hash 保护且不改变源数据；
 - [ ] 未确认 `PROVENANCE_UNCERTAIN` 时 restore 零写入；
 - [ ] Demo namespace 不读写真实 Legacy cache；
 - [ ] `Disconnect Strava` 删除 Token 并保留活动和 Local Library；
@@ -432,13 +475,16 @@ Demo 必须使用独立 namespace，不调用真实 Legacy activities 或 metada
 - [ ] OAuth 不同或未知账号 fail closed，不读取或覆盖旧 cache；
 - [ ] restore 成功、失败和事务回滚均有自动测试；
 - [ ] restore 仅空目标；identical 为 no-op；冲突目标 abort；
+- [ ] restore plan 由模块签发、递归冻结并与 verified bundle 绑定；
+- [ ] 失败 apply 新建的 DB 被删除；预先存在的空 DB 不被删除；
+- [ ] version > 1、incompatible store 和 plan/apply TOCTOU 均 fail closed；
 - [ ] 恢复不删除导出包或未授权的源数据；
 - [ ] raw activities 和 athlete identity 不再写入 console；
 - [ ] Legacy 默认页面行为无变化；
 - [ ] 只使用 deterministic synthetic 测试数据；
 - [ ] 没有 Canonical Schema、IndexedDB v2、页面重构或分析改动；
 - [ ] 没有通用 401/403 retry framework 或 `sw.js` 修改；
-- [ ] Task Brief 状态保持 `Approved for implementation`。
+- [ ] B1 实施期间 Task Brief 状态保持 `In progress`。
 
 ## Required automated checks
 
@@ -475,8 +521,20 @@ disconnect revoke 失败删除 Token 并返回 revocation-unconfirmed
 OAuth 不同或未知账号 fail closed
 Demo 独立 namespace 不读写 Legacy
 mixed Demo/Legacy 导出 warning 与 restore 确认
+manifest provenance warning tamper
+empty/error/partial export source gate
+sensitive redaction hashed evidence
+forged/mutated restore plan
+restore 新建 DB 精确删除
+预先存在空 DB entry 回滚
+预存 DB open/transaction 未提交失败不触发 entry 补偿
+预存 DB 已提交 desired entry 的 compare-before-rollback
+rollback 前并发替换保留与 partial-rollback conflict evidence
+unsupported target version/store
+plan/apply target delete/create/upgrade
 restore 成功、失败和回滚
 restore 空目标、identical no-op、冲突 abort
+fallback metadata-first/payload-last 与 rollback failure
 raw activities/athlete console logging 移除
 ```
 
@@ -571,7 +629,7 @@ Task Brief 初始化提交本身仅新增本文档；若需要回滚，revert
 
 ## Independent review checklist
 
-- [ ] 状态为控制塔批准的 `Approved for implementation`；
+- [ ] 状态为 Implementation Gate 后的 `In progress`；
 - [ ] 调查报告给出精确函数、文件和调用路径证据；
 - [ ] diff 只包含 19 个 Allowed files 中本次实际需要的最小子集；
 - [ ] Legacy Cache 实现严格拆分为五个获批模块，职责没有跨界；
@@ -588,6 +646,12 @@ Task Brief 初始化提交本身仅新增本文档；若需要回滚，revert
 - [ ] Token、API key、AI chat history、Demo namespace 和其他 key 被排除；
 - [ ] 导出失败不会修改或删除源数据；
 - [ ] mixed provenance 导出含 `PROVENANCE_UNCERTAIN`，未经确认不得恢复；
+- [ ] provenance/source error/redaction evidence 位于 hashed payload，manifest
+      warning 与其一致；
+- [ ] forged、mutated 或与 verified bundle 不一致的 restore plan 零写入并返回
+      `RESTORE_PLAN_INVALID`；
+- [ ] 失败 restore 新建的 DB 被精确删除，预先存在的空 DB 只回滚 entry；
+- [ ] version > 1 或 plan/apply 间目标变化 fail closed；
 - [ ] restore 空目标、identical no-op、冲突 abort 和回滚均有 synthetic 测试；
 - [ ] Disconnect/Token expiry/refresh failure/401/403 不删除活动；
 - [ ] revoke 失败删除 Token、返回 `revocation-unconfirmed` 并保留 Local Library；
@@ -601,7 +665,8 @@ Task Brief 初始化提交本身仅新增本文档；若需要回滚，revert
 - [ ] 测试离线、确定性且不使用 credentials 或私人 fixture；
 - [ ] 日志、错误、PR 和 CI artifact 不泄露私人数据；
 - [ ] Service Worker 和多 worktree 人工验证版本已明确；
-- [ ] 回滚不清理 Legacy Cache、导出包或未来 V2 数据；
+- [ ] 回滚不清理预先存在的 Legacy Cache、导出包或未来 V2 数据；仅精确删除
+      失败 restore 本次创建的 Legacy DB；
 - [ ] 所有未执行验证明确标记，未伪装成 Pass；
 - [ ] staged paths、commit、base/head branch 和 Draft PR 目标正确。
 
@@ -615,9 +680,52 @@ Investigation Gate: Approved by control tower
 Implementation approval: Granted by control tower
 A3 scope-freeze commit: 66c92274b97c5e8328c8e1488fc04e1f4480abd8
 A3.1 governance correction: Task Brief boundary and Draft PR body only
-Implementation: Not started
-Investigation automated checks: A1 repository minimum passed; no implementation tests exist
+B1 implementation: Completed after B1 REVISE — Legacy Rescue Core only
+fake-indexeddb: 6.2.5 (devDependency only)
+B1 revision verification:
+  npm ci — Pass
+  npm run check:syntax — Pass (102 files)
+  npm run check:privacy — Pass
+  node --test tests/legacy/legacy-cache-rescue.test.js — Pass (46/46)
+  npm test — Pass (59/59)
+  git diff --check — Pass
+B1 directed reproductions:
+  provenance manifest removal — Pass
+  forged/mutated restore plan — Pass
+  localStorage restore failure removes newly created DB — Pass
+  empty Rescue Result build rejection — Pass
+B1.2 late-open cancellation: Implemented
+B1.2 focused tests:
+  node --test tests/legacy/legacy-cache-rescue.test.js — Pass (50/50)
+B1.2 independent late-event reproduction:
+  Pass — failed/RESTORE_WRITE_FAILED; createObjectStore=0; transaction.abort=1;
+  deleteDatabase=1; databases after late events=0; localStorage writes=0;
+  rolledBack=indexedDbDatabase
+B1.2 final automated checks:
+  npm ci — Pass
+  npm run check:syntax — Pass (102 files)
+  npm run check:privacy — Pass
+  npm test — Pass (63/63)
+  git diff --check — Pass
+B1.3 pre-existing database rollback isolation: Implemented
+B1.3 focused tests:
+  node --test tests/legacy/legacy-cache-rescue.test.js — Pass (53/53)
+B1.3 independent blocked-open reproduction:
+  Pass — failed/RESTORE_CONFLICT; rolledBack empty; restore write transaction
+  committed=false; concurrent entry preserved field-for-field; localStorage writes=0
+B1.3 final automated checks:
+  npm ci — Pass
+  npm run check:syntax — Pass (102 files)
+  npm run check:privacy — Pass
+  npm test — Pass (66/66)
+  git diff --check — Pass
+B1 final control-tower review: Approved for commit after B1.3
+Focused tests: Pass (53/53)
+Full tests: Pass (66/66)
+B2 auth/demo/UI: Not started
+Browser and real-data verification: Not run
+Investigation automated checks: A1 repository minimum passed
 Investigation manual verification: Not run; see Manual verification
 Real OAuth / real cache / Disconnect / export / restore / browser SW: Not run
-Independent review: Pending
+Independent review: B1 approved for commit after B1.3
 ```
