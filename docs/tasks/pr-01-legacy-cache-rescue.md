@@ -128,6 +128,10 @@ Investigation Gate 已通过。控制塔批准并冻结以下实现决策：
 - Legacy 导出使用单个 JSON bundle，bundle 内包含六个逻辑文件：
   `manifest.json`、`legacy-activities.json`、`legacy-athlete.json`、
   `legacy-zones.json`、`legacy-gears.json`、`legacy-settings.json`；
+- Legacy Cache 实现拆分为五个精确模块：`constants.js` 维护数据库常量和稳定
+  code，`reader.js` 负责严格只读发现，`bundle.js` 负责确定性 bundle 和 hash，
+  `restore.js` 负责恢复计划与回滚，`index.js` 只提供明确公共导出；
+- `exportedAt` 必须由调用方注入；
 - `applicationCommit` 由调用方注入；无法取得时写入 `null`，并加入稳定 warning；
 - mixed Demo/Legacy 允许导出，但必须产生 `PROVENANCE_UNCERTAIN`；未经用户明确
   确认不得恢复；
@@ -199,7 +203,11 @@ js/app/main.js
 js/services/activity-cache.js
 js/services/api.js
 js/services/index.js
-js/services/legacy-cache-rescue.js（新建）
+js/services/legacy-cache/constants.js（新建）
+js/services/legacy-cache/reader.js（新建）
+js/services/legacy-cache/bundle.js（新建）
+js/services/legacy-cache/restore.js（新建）
+js/services/legacy-cache/index.js（新建）
 js/demo/index.js
 package.json
 package-lock.json
@@ -209,7 +217,15 @@ tests/legacy/demo-isolation.test.js
 ```
 
 测试使用文件内 deterministic synthetic fixture，不新增 fixture 文件。除以上
-15 个精确路径外，其他所有路径均不允许修改。
+19 个精确路径外，其他所有路径均不允许修改。
+
+五个 Legacy Cache 模块的职责冻结为：
+
+- `constants.js`：Legacy DB、store、key 与稳定 warning/error code；
+- `reader.js`：严格只读发现和来源诊断；
+- `bundle.js`：稳定序列化、bundle 构建、SHA-256 与验证；
+- `restore.js`：restore plan、空目标写入、no-op、abort 和回滚；
+- `index.js`：只做明确的公共导出，不承载读取、bundle 或 restore 实现。
 
 ## Prohibited files and operations
 
@@ -319,6 +335,7 @@ applicationCommit
 
 每个非 manifest 逻辑文件必须使用最终 UTF-8 bytes 计算 SHA-256，并在 manifest
 记录 filename、media type、byte length 和 lowercase hex digest。
+`exportedAt` 必须由调用方注入。
 `applicationCommit` 由调用方注入；缺失时为 `null` 并产生
 `APPLICATION_COMMIT_UNAVAILABLE` warning。
 
@@ -328,12 +345,37 @@ applicationCommit
 legacy-athlete.json  ← strava_athlete_data
 legacy-zones.json    ← strava_training_zones
 legacy-gears.json    ← strava_gears
-legacy-settings.json ← dashboard_filters、dashboard_readiness_hrv
+legacy-settings.json ← dashboard_filters
+                       dashboard_readiness_hrv
+                       dashboard_settings
+                       training_goals
+                       run_plus_capacity_inputs_v1
+                       run_plus_nsm_settings_v1
+                       run_plus_nsm_activity_tags_v1
+                       run_plus_nsm_session_inputs_v1
+                       run_plus_nsm_tests_v1
+                       run_plus_nsm_interval_analysis_v1
+                       gear-custom-*（只允许此严格前缀）
 ```
 
-Token、Authorization、Gemini key、Demo namespace 和其他未列出的 key 永远
-排除。mixed Demo/Legacy 允许导出，但 manifest 必须包含
+必须明确排除 `strava_tokens`、所有 Authorization/refresh/access Token、
+Gemini/API key、AI chat history、Demo namespace 和其他未列出的 localStorage
+key。mixed Demo/Legacy 允许导出，但 manifest 必须包含
 `PROVENANCE_UNCERTAIN`。
+
+确定性序列化规则冻结为：
+
+- `exportedAt` 必须由调用方注入；
+- `applicationCommit` 必须由调用方注入；缺失时序列化为 `null` 并产生
+  `APPLICATION_COMMIT_UNAVAILABLE` warning；
+- 对象 key 必须递归按字典序排序；
+- 数组必须保持原始顺序；
+- logical filename 必须按字典序排序；
+- 所有逻辑文件使用 UTF-8；
+- 用于 hash 的 JSON bytes 不带尾随换行；
+- manifest 不对自身做递归 hash；
+- 相同输入、`exportedAt` 和 `applicationCommit` 必须产生完全相同的 bytes 和
+  SHA-256。
 
 ### Restore
 
@@ -373,7 +415,12 @@ Demo 必须使用独立 namespace，不调用真实 Legacy activities 或 metada
 - [ ] Rescue Reader 不触发网络请求或清理；
 - [ ] 单 JSON bundle 包含六个规定逻辑文件、manifest 和逐文件 SHA-256；
 - [ ] manifest 可解析，hash、活动数量和时间范围可校验；
+- [ ] `exportedAt` 由调用方注入；
 - [ ] `applicationCommit` 缺失时为 `null` 且有稳定 warning；
+- [ ] 对象 key、logical filename、UTF-8、无尾随换行和 manifest 自身不 hash
+      的规则产生确定性 bytes 与 SHA-256；
+- [ ] `legacy-settings.json` 只包含精确 allowlist 和 `gear-custom-*` 严格前缀；
+- [ ] Token、API key、AI chat history、Demo namespace 和未列出 key 均被排除；
 - [ ] export 失败不修改源数据；
 - [ ] mixed Demo/Legacy 导出产生 `PROVENANCE_UNCERTAIN`；
 - [ ] 未确认 `PROVENANCE_UNCERTAIN` 时 restore 零写入；
@@ -417,6 +464,9 @@ IndexedDB 打开失败
 空缓存与读取错误区分
 export manifest
 SHA-256 校验
+确定性序列化 bytes 与 SHA-256
+settings 精确 allowlist 与 gear-custom-* 严格前缀
+敏感和未列出 localStorage key 排除
 export 失败不修改源数据
 Disconnect Strava 保留活动
 Token 过期保留活动
@@ -523,12 +573,19 @@ Task Brief 初始化提交本身仅新增本文档；若需要回滚，revert
 
 - [ ] 状态为控制塔批准的 `Approved for implementation`；
 - [ ] 调查报告给出精确函数、文件和调用路径证据；
-- [ ] diff 只包含 15 个 Allowed files 中本次实际需要的最小子集；
+- [ ] diff 只包含 19 个 Allowed files 中本次实际需要的最小子集；
+- [ ] Legacy Cache 实现严格拆分为五个获批模块，职责没有跨界；
 - [ ] 没有混入 Canonical、IndexedDB v2、页面或分析重构；
 - [ ] Rescue Reader 只读、无 TTL/version 阻断、无网络和无写回；
 - [ ] IndexedDB、localStorage、Demo、空缓存与错误状态可区分；
 - [ ] 单 JSON bundle、六个逻辑文件、manifest 和 SHA-256 验证完整；
+- [ ] `exportedAt` 和 `applicationCommit` 均由调用方注入；
 - [ ] `applicationCommit` 缺失时为 `null` 并产生 warning；
+- [ ] 稳定序列化遵守递归对象 key 排序、数组原序、filename 排序、UTF-8、
+      无尾随换行和 manifest 不自 hash；
+- [ ] 相同输入、`exportedAt` 和 `applicationCommit` 产生完全相同 bytes/hash；
+- [ ] settings 导出只使用精确 allowlist 和 `gear-custom-*` 严格前缀；
+- [ ] Token、API key、AI chat history、Demo namespace 和其他 key 被排除；
 - [ ] 导出失败不会修改或删除源数据；
 - [ ] mixed provenance 导出含 `PROVENANCE_UNCERTAIN`，未经确认不得恢复；
 - [ ] restore 空目标、identical no-op、冲突 abort 和回滚均有 synthetic 测试；
@@ -556,6 +613,8 @@ Draft PR: #5 — https://github.com/XiChuan9/StravaStats/pull/5
 Read-only investigation: Completed 2026-07-28
 Investigation Gate: Approved by control tower
 Implementation approval: Granted by control tower
+A3 scope-freeze commit: 66c92274b97c5e8328c8e1488fc04e1f4480abd8
+A3.1 governance correction: Task Brief boundary and Draft PR body only
 Implementation: Not started
 Investigation automated checks: A1 repository minimum passed; no implementation tests exist
 Investigation manual verification: Not run; see Manual verification
