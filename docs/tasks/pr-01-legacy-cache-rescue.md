@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Ready for investigation |
+| Status | Approved for implementation |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/legacy-rescue` |
 | Worktree | `/Users/wangchuanliang/Documents/StravaStats-worktrees/legacy-rescue` |
@@ -14,7 +14,7 @@
 | Related plan | Sprint 0 / PR 01 |
 | Related ADRs | ADR-0003（Proposed，仅作后续边界背景；本 PR 不冻结其未决契约） |
 | Dependencies | PR-00 已合并；V1 baseline、`maintenance/v1`、`integration/v2` 和本任务 worktree 已建立 |
-| Pull request | Pending |
+| Pull request | [#5](https://github.com/XiChuan9/StravaStats/pull/5) |
 
 ## Goal
 
@@ -26,7 +26,7 @@
 
 - Rescue Reader 可以绕过 TTL 和 `cacheVersion` 限制读取旧缓存；
 - 导出包可校验、可用于隔离环境恢复；
-- logout、disconnect、Token 过期、刷新失败、401 和 403 不自动删除活动；
+- Disconnect Strava、Token 过期、刷新失败、401 和 403 不自动删除活动；
 - 断开 Strava 与删除本地数据保持为两个独立动作；
 - Legacy 默认页面行为继续可回退。
 
@@ -41,7 +41,7 @@ IndexedDB v2、Canonical 或导入开发，唯一的浏览器数据副本可能�
 
 ## Investigation questions
 
-调查阶段只读回答：
+调查阶段已只读回答以下问题，确认事实和控制塔决策见后续章节：
 
 1. `js/app/auth.js` 中 logout、disconnect、Token 检查和鉴权状态转换的精确调用图是什么？
 2. 401、403、Token 过期和刷新失败分别从哪些文件、函数和 UI 路径进入？
@@ -68,64 +68,105 @@ IndexedDB v2、Canonical 或导入开发，唯一的浏览器数据副本可能�
 
 ## Confirmed current-state facts
 
-以下事实仅来自已批准或已验证的仓库文档；调查必须与代码重新核对：
+以下事实已由 PR-01 只读代码调查确认：
 
-- V1 baseline 状态为 `Verified with limitations`；
-- baseline 已确认 Legacy IndexedDB 是缓存，不是长期资料库；
-- baseline 已确认 logout/disconnect 与活动缓存清理耦合；
-- baseline 未执行 Disconnect/Logout，因为没有 Legacy 私有备份；
-- baseline 尚未完成 Legacy Cache 的导出和私下保存；
-- baseline 指出 localhost Service Worker 可能影响多 worktree 验证；
-- PR-00 已建立 `npm ci`、syntax、privacy 和 `node:test` 最低检查；
-- Migration 文档列出的待核对 Legacy IndexedDB 为
-  `strava-dashboard-cache` version 1、store `entries`、key
-  `strava_activities`；
-- Migration 文档列出了 IndexedDB 值中的 `activities`、`timestamp`、
-  `cacheVersion`，以及若干 localStorage fallback/metadata key；
-- Development Plan 将 Rescue Reader、旧缓存导出、鉴权解耦、Demo 隔离和
-  恢复测试列为 PR-01；
-- Canonical Schema、IndexedDB v2、Repository 长期契约和完整 Canonical
-  Backup/Restore 属于后续任务。
-
-以上条目不代表相关函数、键名、错误分支或调用路径已完成代码级确认。
+- Legacy IndexedDB 仅由 `js/services/activity-cache.js` 打开，数据库名为
+  `strava-dashboard-cache`、version `1`、store `entries`、key
+  `strava_activities`，entry 包含 `activities`、`timestamp` 和
+  `cacheVersion`；
+- 仓库中没有 `indexedDB.deleteDatabase()` 或 `objectStore.clear()`；活动删除
+  使用 `objectStore.delete('strava_activities')`；
+- `getCachedActivities()` 的默认参数是 `cacheVersion = null` 和
+  `maxAgeMs = Infinity`，因此默认调用不阻断 TTL 或 `cacheVersion`；
+- 现有 `getCachedActivities()` 不是合格的 Rescue Reader：它用固定 version
+  打开数据库，缺库时可能创建数据库和 store；它不返回来源、warning、实际
+  database version 或时间范围，并把空缓存、损坏 fallback 和部分读取错误收敛
+  为 `null`；
+- `getCachedActivities()` 的调用者只有 `js/app/main.js` 和
+  `js/pages/gear/gear-analysis.js`；后者使用默认参数；
+- `saveCachedActivities()` 的两个调用者均在 `js/app/main.js`，分别位于首次
+  网络加载和手工 refresh；它通过 `put` 覆盖同一个 Legacy entry；
+- localStorage fallback 写入发生 quota/error 时，
+  `saveCachedActivities()` 会删除已有 fallback payload 和 timestamp；
+- `clearCachedActivities()` 先删除 localStorage fallback，再删除 IndexedDB
+  entry；它的三个调用者全部位于 `js/app/auth.js`；
+- 当前 `logout()` 同时尝试 Strava deauthorization、删除 Token、清除 Legacy
+  activities、athlete、zones、gears、filters、HRV 和 Demo 数据，并且远端
+  revoke 网络失败后仍继续本地清理；
+- OAuth code exchange 成功后会立即调用 `clearCachedActivities()`；
+- `handleAuth()` 在 Token 过期或字段不完整时删除 Token、Legacy activities 和
+  多项 metadata；它在到达后端 refresh 路径前已执行该清理；
+- 前端对 401/403 只抛出普通 API error，没有通用 retry 或 auth state
+  framework，也不会直接清理活动；`strava-activities` 后端会把 Strava 错误
+  转换为 500，其余多个 endpoint 会透传 401/403；
+- 当前运行时没有独立 `disconnect` 函数或 Delete Local Data 入口；唯一顶栏
+  动作为 `Log out`，Settings 只包含显示和单位相关设置；
+- 应用只有 Token 存在且未过期时才调用 `initializeApp()`，因此保留 Legacy
+  cache 不等于已经实现无 Token 的完整 Legacy 页面浏览；
+- Demo activities 使用 `strava_demo_activities`，但 Demo athlete、zones、
+  gears 和 Token 使用真实模式共享的 key；Demo 启动仍先读取 Legacy
+  IndexedDB，cache miss 时还会把 Demo activities 写入真实 Legacy entry；
+- `clearDemoData()` 当前没有调用者，且会删除与真实模式共享的 metadata key；
+- 当前 activity CSV 导出使用预处理后的页面数组，不是 raw、可校验、可恢复的
+  Legacy backup；
+- `js/app/main.js` 会记录 raw/preprocessed activities，
+  `js/services/api.js` 会记录 athlete 标识信息；
+- localhost Service Worker policy 在 window `load` 后执行，首次加载仍可能已
+  使用旧资源；生产 `sw.js` 可能缓存同源 `/api/strava-*` GET response；
+- 当前测试使用内置 `node:test`；调查环境中 `indexedDB` 为 `undefined`，
+  `fake-indexeddb` 未安装，Web Crypto `crypto.subtle` 可用；
+- V1 baseline 未执行真实 Disconnect/Logout，也未完成真实 Legacy 导出；
+  PR-01 调查没有运行真实账号、真实缓存、浏览器恢复或 Service Worker 演练；
+- Canonical Schema、IndexedDB v2、通用 Repository、通用 auth retry framework
+  和完整 Canonical Backup/Restore 仍属于后续任务。
 
 ## Decisions required before implementation
 
-只读调查完成后，由项目负责人确认：
+Investigation Gate 已通过。控制塔批准并冻结以下实现决策：
 
-- 最小允许文件集合和热点文件 Owner；
-- Rescue Reader 的公开接口、返回类型、错误与 warning 语义；
-- 导出容器形式、文件编码、稳定序列化规则和下载入口；
-- SHA-256 使用的运行时 API 和不支持场景；
-- 第一版恢复目标是 Legacy 原位恢复、隔离 Legacy 恢复，还是其他明确目标；
-- 恢复冲突、重复 entry、部分 metadata 和事务失败的处理规则；
-- logout 与 disconnect 是否为同一用户动作，及其目标状态机和文案；
-- 远端撤销失败时本地 Token/Source Connection 的最终状态和可重试行为；
-- “删除本地数据”入口是否进入 PR-01；若进入，其二次确认和精确删除范围；
-- Demo 数据从真实 Legacy 导出中排除的判定方式；
-- 是否引入 `fake-indexeddb`，以及对应的 `package.json` /
-  `package-lock.json` 修改；
-- Service Worker 人工验证所需的版本识别和隔离步骤；
-- Required automated checks 中 PR-01 专项测试的最终命令。
+- 批准增加 `fake-indexeddb` devDependency；
+- Legacy 导出使用单个 JSON bundle，bundle 内包含六个逻辑文件：
+  `manifest.json`、`legacy-activities.json`、`legacy-athlete.json`、
+  `legacy-zones.json`、`legacy-gears.json`、`legacy-settings.json`；
+- `applicationCommit` 由调用方注入；无法取得时写入 `null`，并加入稳定 warning；
+- mixed Demo/Legacy 允许导出，但必须产生 `PROVENANCE_UNCERTAIN`；未经用户明确
+  确认不得恢复；
+- restore 只允许空目标；目标内容与导出相同时为 no-op，非空且冲突时 abort；
+- 现有 `Log out` 改为 `Disconnect Strava`；
+- disconnect 删除本地 Token，但保留全部 Local Library；
+- 远端 revoke 失败返回 `revocation-unconfirmed`，本地仍不保留 Token；
+- PR-01 不新增 Delete Local Data 入口；
+- PR-01 不建设通用 401/403 retry framework，只保证 401、403、Token expiry
+  和 refresh failure 不删除活动；
+- OAuth 新账号与旧 cache 的账号不同或无法确认时 fail closed：不得读取或覆盖
+  旧 cache；
+- Demo 使用独立 namespace，不得读写真实 Legacy activities 或 metadata；
+- 移除 raw activities 和 athlete identity console logging；
+- Service Worker API cache 记录为后续任务，PR-01 不修改 `sw.js`。
 
-Task Brief 在负责人批准前不得改为 `Approved for implementation`。
+以上决定与下方 Allowed files 共同构成 Implementation Gate。实施中若需要任何
+额外路径、接口扩大或行为变化，必须停止并重新提交控制塔批准。
 
 ## In scope
 
-调查确认并批准后，PR-01 可包含：
+PR-01 实施范围冻结为：
 
 1. 对 Legacy IndexedDB 和 localStorage fallback 的非破坏性 Rescue Reader；
 2. 不检查 TTL、允许 `cacheVersion` 不匹配且不写回的旧缓存读取；
 3. 明确区分 IndexedDB、localStorage、Demo、空缓存和读取错误；
-4. Legacy 私有导出包、manifest、逐文件 SHA-256 和导出后校验；
+4. 单 JSON bundle、六个逻辑文件、manifest、逐逻辑文件 SHA-256 和导出后校验；
 5. 导出失败不修改或清理任何源数据；
-6. 可验证的 Legacy 恢复路径及成功、失败和事务回滚测试；
-7. logout、disconnect、Token 过期、刷新失败、401、403 与活动清理解耦；
-8. “断开 Strava”和“删除本地数据”的生命周期边界；
-9. 防止 Demo activities 混入真实 Legacy 导出；
-10. 仅使用 deterministic synthetic 数据的自动测试；
-11. 无真实账号条件下的隔离人工验证说明；
-12. 与上述行为直接相关的最小文档更新。
+6. 仅空目标、identical no-op、conflict abort 的 Legacy 恢复路径，以及成功、
+   失败和事务回滚测试；
+7. `Disconnect Strava`、Token 过期、刷新失败、401、403 与活动清理解耦；
+8. disconnect revoke 失败的 `revocation-unconfirmed` 状态；
+9. OAuth 不同或未知账号时 fail closed；
+10. Demo activities 和 metadata 使用独立 namespace；
+11. mixed provenance 导出 warning 和恢复确认；
+12. 移除 raw activities 与 athlete identity console logging；
+13. 仅使用 deterministic synthetic 数据的自动测试；
+14. 无真实账号条件下的隔离人工验证说明；
+15. 与上述行为直接相关的 Task Brief 状态和完成证据更新。
 
 ## Out of scope
 
@@ -137,46 +178,59 @@ Task Brief 在负责人批准前不得改为 `Approved for implementation`。
 - 页面、导航、Settings、Source Manager 或视觉的顺便重构；
 - Dashboard、Run、Bike、Swim、Run Plus、NSM 或分析算法修改；
 - 通用 Repository 迁移；
+- 通用 401/403 retry/auth state framework；
+- 新增 Delete Local Data 入口或本地资料库删除能力；
 - Service Worker 策略重构；
+- Service Worker API response cache 修复；
 - 真实 Strava OAuth 集成验证；
 - 真实运动数据 fixture、截图或导出进入仓库；
 - 删除、覆盖或原地迁移现有 Legacy Cache。
 
 ## Allowed files
 
-调查前的初步候选范围：
+控制塔批准的精确文件范围：
 
 ```text
 docs/tasks/pr-01-legacy-cache-rescue.md
+index.html
 js/app/auth.js
+js/app/auth-lifecycle.js（新建）
+js/app/main.js
 js/services/activity-cache.js
-js/services/api.js（仅调查证明鉴权错误路径需要时）
-js/demo/**（仅 Demo/真实 Legacy 生命周期隔离所需的最小文件）
-tests/legacy/**
-tests/fixtures/synthetic/**（仅最小、确定性的 synthetic fixture 与 manifest）
-package.json（仅负责人批准 fake-indexeddb 或等价测试依赖时）
-package-lock.json（仅与获批测试依赖配套）
+js/services/api.js
+js/services/index.js
+js/services/legacy-cache-rescue.js（新建）
+js/demo/index.js
+package.json
+package-lock.json
+tests/legacy/legacy-cache-rescue.test.js
+tests/legacy/auth-lifecycle.test.js
+tests/legacy/demo-isolation.test.js
 ```
 
-若调查建议新增独立 Rescue/Export/Restore 模块，必须先列出精确路径、职责和
-依赖，并由项目负责人批准后加入允许范围。
-
-Settings 或其他 UI 的现有入口文件必须先在调查中确认；在批准精确路径前不允许
-修改。实施前必须把以上候选范围缩小为精确的最小集合。
+测试使用文件内 deterministic synthetic fixture，不新增 fixture 文件。除以上
+15 个精确路径外，其他所有路径均不允许修改。
 
 ## Prohibited files and operations
 
 禁止文件和领域：
 
 ```text
+AGENTS.md
+.github/**
+docs/**（除 docs/tasks/pr-01-legacy-cache-rescue.md）
 js/data/**
 docs/architecture/adr/**
 docs/migrations/indexeddb-v2.md
 js/analysis/**
 js/tabs/**
+js/pages/**
 styles/**
-api/**（除非后续调查证明远端 revoke 的最小修复不可避免并获得单独批准）
+api/**
 sw.js
+js/demo/generator.js
+js/demo/polylines.js
+tests/**（除三个获批 tests/legacy/*.test.js 精确路径）
 tests/fixtures/private/**
 仓库外私人资料、导出、备份和 baseline evidence
 ```
@@ -192,16 +246,20 @@ tests/fixtures/private/**
 - 在真实浏览器 profile 中运行可能清理用户缓存的 logout/disconnect；
 - 将 Token、Authorization header、Cookie、原始私人活动或精确位置写入日志；
 - 顺便重构页面、分析算法、样式或 Service Worker；
+- 新增 Delete Local Data 入口；
+- 建设通用 401/403 retry/auth state framework；
+- 修改或绕过 Service Worker API cache；
 - 直接提交或推送到 `main`、`maintenance/v1` 或 `integration/v2`；
 - 切换、删除、rebase、amend 或 force-push 分支；
 - 合并 PR 或删除 worktree；
 - 使用 `git add .`、`git add -A` 或隐式暂存任务外文件；
-- 在负责人批准前实施产品代码或把状态改为
-  `Approved for implementation`。
+- 修改任何未列入 Allowed files 的路径；
+- 在本 A3 范围冻结提交中实施任何产品代码、测试或依赖变更。
 
 ## Interfaces and expected outputs
 
-本节只记录已有迁移要求，不冻结调查前的函数名或模块边界。
+本节冻结可观察行为和返回语义。实现可在获批文件内选择内部函数名，但不得改变
+以下 source、warning、bundle、restore 和 auth lifecycle 约束。
 
 ### Rescue Reader
 
@@ -209,7 +267,10 @@ tests/fixtures/private/**
 
 ```text
 status
-source
+selectedSource
+sources.indexedDb
+sources.localStorage
+sources.demo
 activities
 activityCount
 earliestActivity
@@ -218,15 +279,18 @@ sourceDatabase
 sourceDatabaseVersion
 sourceCacheVersion
 warnings
-error
+errors
 ```
 
 它必须只读、不检查 TTL、允许旧 `cacheVersion`、不更新时间或版本、不触发
 Strava 网络请求，并区分 IndexedDB、localStorage、Demo、空缓存与读取错误。
+打开 IndexedDB 时不得传入固定 version；若 `onupgradeneeded` 表示数据库不存在，
+必须 abort，不得创建数据库或 store。IndexedDB 错误不得被 localStorage fallback
+隐藏。
 
 ### Legacy export
 
-第一版至少输出：
+第一版输出一个 JSON bundle。bundle 内的 `files` 对象包含六个逻辑文件：
 
 ```text
 manifest.json
@@ -253,13 +317,51 @@ warnings
 applicationCommit
 ```
 
-具体 JavaScript 接口、容器格式和文件缺失语义由调查报告建议、负责人批准。
+每个非 manifest 逻辑文件必须使用最终 UTF-8 bytes 计算 SHA-256，并在 manifest
+记录 filename、media type、byte length 和 lowercase hex digest。
+`applicationCommit` 由调用方注入；缺失时为 `null` 并产生
+`APPLICATION_COMMIT_UNAVAILABLE` warning。
+
+导出使用以下精确 localStorage allowlist：
+
+```text
+legacy-athlete.json  ← strava_athlete_data
+legacy-zones.json    ← strava_training_zones
+legacy-gears.json    ← strava_gears
+legacy-settings.json ← dashboard_filters、dashboard_readiness_hrv
+```
+
+Token、Authorization、Gemini key、Demo namespace 和其他未列出的 key 永远
+排除。mixed Demo/Legacy 允许导出，但 manifest 必须包含
+`PROVENANCE_UNCERTAIN`。
 
 ### Restore
 
 恢复必须先校验 manifest 和 hashes，在隔离环境解析并展示数量、时间范围和
-warning，用户确认后才写入明确目标。写入失败必须事务回滚，并产生
-`imported` / `skipped` / `failed` 报告；导出包不得因恢复被删除。
+warning：
+
+- 目标为空时允许恢复；
+- 目标与 bundle 内容相同时返回 no-op；
+- 非空且冲突时 abort；
+- bundle 含 `PROVENANCE_UNCERTAIN` 时必须再次明确确认，否则不得写入；
+- 写入失败必须事务或补偿回滚，并产生 `imported` / `skipped` / `failed` /
+  `rolledBack` 报告；
+- 导出 bundle 不得因恢复被删除。
+
+### Authentication lifecycle
+
+```text
+Disconnect Strava
+→ 尝试远端 revoke
+→ 删除本地 Token
+→ 保留 Local Library
+→ success 或 revocation-unconfirmed
+```
+
+Token expiry、refresh failure、401 和 403 不得调用活动清理。OAuth 新账号与旧
+cache 的账号不同或无法确认时必须 fail closed，不读取、不展示、不覆盖旧 cache。
+Demo 必须使用独立 namespace，不调用真实 Legacy activities 或 metadata 的读写
+路径。
 
 ## Acceptance criteria
 
@@ -269,20 +371,27 @@ warning，用户确认后才写入明确目标。写入失败必须事务回滚�
 - [ ] localStorage fallback 可识别并与 IndexedDB 来源区分；
 - [ ] malformed JSON、IndexedDB 打开失败、空缓存和读取错误可区分；
 - [ ] Rescue Reader 不触发网络请求或清理；
-- [ ] 导出包含规定文件、manifest 和逐文件 SHA-256；
+- [ ] 单 JSON bundle 包含六个规定逻辑文件、manifest 和逐文件 SHA-256；
 - [ ] manifest 可解析，hash、活动数量和时间范围可校验；
+- [ ] `applicationCommit` 缺失时为 `null` 且有稳定 warning；
 - [ ] export 失败不修改源数据；
-- [ ] Demo 数据不会混入真实 Legacy 导出；
-- [ ] logout 保留活动；
+- [ ] mixed Demo/Legacy 导出产生 `PROVENANCE_UNCERTAIN`；
+- [ ] 未确认 `PROVENANCE_UNCERTAIN` 时 restore 零写入；
+- [ ] Demo namespace 不读写真实 Legacy cache；
+- [ ] `Disconnect Strava` 删除 Token 并保留活动和 Local Library；
 - [ ] Token 过期、刷新失败、401 和 403 保留活动；
-- [ ] disconnect 的远端撤销成功或失败均保留活动；
-- [ ] 断开 Strava 与删除本地数据是独立动作；
+- [ ] disconnect revoke 失败返回 `revocation-unconfirmed`，不保留 Token；
+- [ ] PR-01 没有 Delete Local Data 入口；
+- [ ] OAuth 不同或未知账号 fail closed，不读取或覆盖旧 cache；
 - [ ] restore 成功、失败和事务回滚均有自动测试；
+- [ ] restore 仅空目标；identical 为 no-op；冲突目标 abort；
 - [ ] 恢复不删除导出包或未授权的源数据；
+- [ ] raw activities 和 athlete identity 不再写入 console；
 - [ ] Legacy 默认页面行为无变化；
 - [ ] 只使用 deterministic synthetic 测试数据；
 - [ ] 没有 Canonical Schema、IndexedDB v2、页面重构或分析改动；
-- [ ] Task Brief 仍保持负责人批准的状态，不由执行者自行越过 Implementation Gate。
+- [ ] 没有通用 401/403 retry framework 或 `sw.js` 修改；
+- [ ] Task Brief 状态保持 `Approved for implementation`。
 
 ## Required automated checks
 
@@ -309,15 +418,21 @@ IndexedDB 打开失败
 export manifest
 SHA-256 校验
 export 失败不修改源数据
-logout 保留活动
+Disconnect Strava 保留活动
 Token 过期保留活动
 disconnect 网络撤销失败仍保留活动
-Demo 数据不会混入真实 Legacy 导出
+disconnect revoke 失败删除 Token 并返回 revocation-unconfirmed
+OAuth 不同或未知账号 fail closed
+Demo 独立 namespace 不读写 Legacy
+mixed Demo/Legacy 导出 warning 与 restore 确认
 restore 成功、失败和回滚
+restore 空目标、identical no-op、冲突 abort
+raw activities/athlete console logging 移除
 ```
 
-专项测试的精确命令、IndexedDB mock 和测试文件路径由调查后批准。测试必须离线，
-不得需要 Strava credentials、浏览器 profile、私人 fixture 或系统当前时间。
+专项测试使用已批准的 `fake-indexeddb` 和三个精确 `tests/legacy/*.test.js`
+路径。测试必须离线，不得需要 Strava credentials、浏览器 profile、私人 fixture
+或系统当前时间。
 
 ## Manual verification
 
@@ -331,14 +446,30 @@ deterministic synthetic 数据：
 4. 导出后离线核对 manifest、活动数量、时间范围和全部 SHA-256；
 5. 导出前后比较源 entry，证明没有 timestamp、version 或活动内容写回；
 6. 在隔离环境清空显式测试目标后恢复，验证成功、失败和事务回滚；
-7. 使用 mock/fake auth 和 network failure 验证 logout、Token 过期、401、403
-   和 disconnect revoke 失败均保留 synthetic activities；
-8. 切换 Demo 并证明真实 Legacy 导出不包含 Demo activities；
-9. 验证现有 Legacy 页面仍能读取 synthetic cache，未发生视觉或导航重构。
+7. 使用 mock/fake auth 和 network failure 验证 Disconnect Strava、Token
+   过期、401、403 和 revoke 失败均保留 synthetic activities；
+8. 验证 revoke 失败删除 Token，并显示 `revocation-unconfirmed`；
+9. 切换 Demo 并证明 Demo namespace 不读写真实 Legacy cache；
+10. 构造 mixed Demo/Legacy，验证导出含 `PROVENANCE_UNCERTAIN`，未确认时
+    restore 零写入；
+11. 验证空目标恢复、identical no-op 和冲突目标 abort；
+12. 验证现有 Legacy 页面仍能读取 synthetic cache，未发生视觉或导航重构。
 
 不得在包含真实 Legacy 数据的浏览器 profile 中执行任何可能清理缓存的操作。
 真实 OAuth、真实 disconnect 和真实用户导出必须标记为未运行；如未来进行，只能
 在仓库外保存私人证据，并且必须先有可验证备份。
+
+调查阶段的未运行验证：
+
+- 未运行真实 Strava OAuth、真实账号 401/403 或 Token refresh；
+- 未运行真实用户 profile 的 Disconnect/Logout；
+- 未读取、导出或恢复任何真实 Legacy cache；
+- 未运行 Rescue Reader、JSON bundle、SHA-256 或 restore；实现尚不存在；
+- 未运行浏览器 IndexedDB、localStorage quota/error 或 transaction rollback；
+- 未运行 Service Worker 浏览器状态和多 worktree/多端口演练；
+- 未运行 migration、E2E、视觉回归或真实数据检查。
+
+以上项目均为 `Not run` / `Not implemented`，不得标记为 Pass。
 
 ## Privacy and security impact
 
@@ -349,7 +480,9 @@ Power、Token 或设备序列号。
 
 错误和 warning 只记录来源类别、计数、版本和非识别性状态；不得记录原始活动、
 Authorization header、Token、精确位置或私人导出内容。导出下载和恢复失败不得
-触发源数据清理。
+触发源数据清理。PR-01 必须移除当前 raw activities 和 athlete identity console
+logging。Service Worker 同源 API cache 风险保留为后续任务，不得在本 PR 修改
+`sw.js`。
 
 ## Migration impact
 
@@ -359,7 +492,8 @@ PR-01 不创建 IndexedDB v2，不修改 Canonical Schema，不把 Legacy 数据
 预期的数据影响仅限：
 
 - 对现有 Legacy 数据进行只读发现和导出；
-- 在用户明确选择、校验通过并确认目标后执行可回滚恢复；
+- 只向空目标恢复；identical 内容 no-op；冲突目标 abort；
+- mixed provenance 必须在用户明确确认后才允许恢复；
 - 鉴权状态变化不再驱动活动删除。
 
 所有写入路径必须明确目标、可观察、幂等或可安全重试，并证明失败不会损坏原缓存。
@@ -381,23 +515,32 @@ PR-01 不创建 IndexedDB v2，不修改 Canonical Schema，不把 Legacy 数据
 6. 使用 synthetic 隔离环境重新验证 Legacy 页面和缓存可读；
 7. 记录未回滚的数据状态和后续恢复步骤。
 
-Task Brief 初始化提交本身仅新增本文档；若该文档提交需要回滚，revert 对应 docs
-commit 即可，不影响运行时代码或浏览器数据。
+Task Brief 初始化提交本身仅新增本文档；若需要回滚，revert
+`a55d2fd7a55957d573f7fa0c59627ba58b49404a` 及后续 A3 docs commit 即可，
+不影响运行时代码或浏览器数据。
 
 ## Independent review checklist
 
-- [ ] 状态未在负责人批准前改为 `Approved for implementation`；
+- [ ] 状态为控制塔批准的 `Approved for implementation`；
 - [ ] 调查报告给出精确函数、文件和调用路径证据；
-- [ ] 最小修改集合没有混入 Canonical、IndexedDB v2、页面或分析重构；
+- [ ] diff 只包含 15 个 Allowed files 中本次实际需要的最小子集；
+- [ ] 没有混入 Canonical、IndexedDB v2、页面或分析重构；
 - [ ] Rescue Reader 只读、无 TTL/version 阻断、无网络和无写回；
 - [ ] IndexedDB、localStorage、Demo、空缓存与错误状态可区分；
-- [ ] 导出 manifest、稳定内容和 SHA-256 验证完整；
+- [ ] 单 JSON bundle、六个逻辑文件、manifest 和 SHA-256 验证完整；
+- [ ] `applicationCommit` 缺失时为 `null` 并产生 warning；
 - [ ] 导出失败不会修改或删除源数据；
-- [ ] restore 成功、失败和事务回滚均有 synthetic 测试；
-- [ ] logout/disconnect/Token expiry/401/403 不删除活动；
-- [ ] disconnect 远端撤销失败的目标状态明确且可重试；
-- [ ] “断开 Strava”和“删除本地数据”保持独立；
-- [ ] Demo activities 不会进入真实 Legacy 导出；
+- [ ] mixed provenance 导出含 `PROVENANCE_UNCERTAIN`，未经确认不得恢复；
+- [ ] restore 空目标、identical no-op、冲突 abort 和回滚均有 synthetic 测试；
+- [ ] Disconnect/Token expiry/refresh failure/401/403 不删除活动；
+- [ ] revoke 失败删除 Token、返回 `revocation-unconfirmed` 并保留 Local Library；
+- [ ] 没有新增 Delete Local Data 入口；
+- [ ] OAuth 不同或未知账号 fail closed；
+- [ ] Demo namespace 不读写真实 Legacy cache；
+- [ ] raw activities 和 athlete identity console logging 已移除；
+- [ ] 没有建设通用 401/403 retry framework；
+- [ ] `sw.js` 未修改，Service Worker API cache 作为后续任务；
+- [ ] `fake-indexeddb` 仅为 devDependency；
 - [ ] 测试离线、确定性且不使用 credentials 或私人 fixture；
 - [ ] 日志、错误、PR 和 CI artifact 不泄露私人数据；
 - [ ] Service Worker 和多 worktree 人工验证版本已明确；
@@ -408,12 +551,14 @@ commit 即可，不影响运行时代码或浏览器数据。
 ## Completion evidence
 
 ```text
-Task Brief commit: Pending
-Draft PR: Pending
-Read-only investigation: Pending
-Implementation approval: Not granted
+Task Brief initialization commit: a55d2fd7a55957d573f7fa0c59627ba58b49404a
+Draft PR: #5 — https://github.com/XiChuan9/StravaStats/pull/5
+Read-only investigation: Completed 2026-07-28
+Investigation Gate: Approved by control tower
+Implementation approval: Granted by control tower
 Implementation: Not started
-Automated checks: Not run for implementation
-Manual verification: Not run
+Investigation automated checks: A1 repository minimum passed; no implementation tests exist
+Investigation manual verification: Not run; see Manual verification
+Real OAuth / real cache / Disconnect / export / restore / browser SW: Not run
 Independent review: Pending
 ```
