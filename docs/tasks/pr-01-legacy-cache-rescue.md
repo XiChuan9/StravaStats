@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | In progress |
+| Status | In review |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/legacy-rescue` |
 | Worktree | `/Users/wangchuanliang/Documents/StravaStats-worktrees/legacy-rescue` |
@@ -211,6 +211,8 @@ js/services/legacy-cache/bundle.js（新建）
 js/services/legacy-cache/restore.js（新建）
 js/services/legacy-cache/index.js（新建）
 js/demo/index.js
+js/tabs/athlete.js
+js/tabs/run-plus.js
 package.json
 package-lock.json
 tests/legacy/legacy-cache-rescue.test.js
@@ -219,7 +221,7 @@ tests/legacy/demo-isolation.test.js
 ```
 
 测试使用文件内 deterministic synthetic fixture，不新增 fixture 文件。除以上
-19 个精确路径外，其他所有路径均不允许修改。
+21 个精确路径外，其他所有路径均不允许修改。
 
 五个 Legacy Cache 模块的职责冻结为：
 
@@ -241,7 +243,7 @@ js/data/**
 docs/architecture/adr/**
 docs/migrations/indexeddb-v2.md
 js/analysis/**
-js/tabs/**
+js/tabs/**（仅 `js/tabs/athlete.js` 和 `js/tabs/run-plus.js` 两个精确路径例外）
 js/pages/**
 styles/**
 api/**
@@ -498,48 +500,92 @@ B2-B Demo Namespace Isolation 实现边界：
 - B2-B 不修改 `auth-lifecycle.js`、Legacy Rescue、页面、Service Worker、
   Canonical Schema、IndexedDB v2 或依赖；B2-C 保持未开始。
 
+B2-C App Integration & Privacy Closure 精确实现边界：
+
+- A3.2 最小范围扩展后，只允许修改 Task Brief、`index.html`、
+  `js/app/main.js`、`js/tabs/athlete.js`、`js/tabs/run-plus.js` 和既有
+  `tests/legacy/demo-isolation.test.js`，不得新增文件或依赖；
+- `initializeApp` 和 `refreshActivities` 在每次操作开始时各读取一次 Demo mode，
+  冻结为稳定 `demo` / `real` session mode，并调用 `main.js` 内可注入的
+  `loadActivitiesForSession()`；
+- Demo initialize/refresh 只调用 `getDemoActivities()`，不得调用
+  `getCachedActivities()`、`fetchAllActivities()` 或
+  `saveCachedActivities()`，不得打开、创建、覆盖或清理真实 Legacy cache；
+- 真实 initialize cache hit 保持网络与写入为零；cache miss 保持一次网络和一次
+  cache 写入；真实 refresh 保持一次网络和一次 cache 写入，TTL 与
+  `CACHE_VERSION` 传递不变；
+- Demo metadata/gears 继续使用 B2-B 已隔离的 API/Demo namespace；Demo 提示不得
+  声称从 Strava 下载，也不得在 Demo 失败时 fallback 到真实 activities；
+- `main.js` 日志只允许非识别性计数或状态，不得输出 raw/preprocessed activities、
+  athlete identity、zones、gears、私人日期范围、Token、Authorization header 或
+  未净化 error 对象；
+- 现有 logout button 的 `aria-label` 和 `title` 均改为
+  `Disconnect Strava`，不新增 Delete Local Data、确认弹窗、页面或视觉重构；
+- 行为级 synthetic tests 必须覆盖 Demo initialize（真实 cache present/empty）、
+  Demo refresh，以及真实 cache hit/miss/refresh 的调用次数、返回来源和
+  byte-for-byte snapshot；最终 acceptance checkbox 留给控制塔独立复验。
+
+B2-C.1 Demo Production-Path Isolation 修正合同：
+
+- `main.js` 持有稳定 `activeSessionMode`、`sessionAthlete`、`sessionZones` 和
+  `sessionGears`；gear filters 只使用 session gears，禁止读取真实
+  `strava_gears` key，malformed/missing Demo gears 必须为空；
+- Trends 的 athlete/zones 由 main 显式注入；`athlete.js` 禁止读取真实 metadata
+  key、fallback 到 storage 或记录 athlete identity，null metadata 安全跳过；
+- Demo athlete 缺失或 malformed 时，main 向 preprocessing 传入不含真实 ID、
+  name 或 username 的 local-only Demo marker，以阻断 core 的 Legacy athlete
+  fallback；不得修改 preprocessing core；
+- `getRunPlusRenderOptions()` 由稳定 session mode 派生
+  `allowRemoteStrava`，未确定或 Demo 时为 false；
+- Run Plus production request boundary 必须在 Token read、Token 编码、fetch、
+  response body 和 Token write 之前 fail closed；Real 模式保持一次 Token read、
+  一次 fetch，并只在响应含 refreshed tokens 时写回；
+- B2-C.1 行为测试必须调用生产 metadata selector、preprocessing 与 Run Plus
+  request boundary，并用 spy 证明 Demo 真实 key read、fetch 和 Token write 为零；
+  两个最终 privacy/isolation acceptance checkbox继续留给控制塔复验。
+
 ## Acceptance criteria
 
-- [ ] Rescue Reader 可以只读打开 Legacy IndexedDB；
-- [ ] 未过期和已过期 IndexedDB cache 均可发现，且读取不更新时间；
-- [ ] `cacheVersion` 不匹配的 entry 可读取并产生可解释 warning；
-- [ ] localStorage fallback 可识别并与 IndexedDB 来源区分；
-- [ ] malformed JSON、IndexedDB 打开失败、空缓存和读取错误可区分；
-- [ ] Rescue Reader 不触发网络请求或清理；
-- [ ] 单 JSON bundle 包含六个规定逻辑文件、manifest 和逐文件 SHA-256；
-- [ ] manifest 可解析，hash、活动数量和时间范围可校验；
-- [ ] `exportedAt` 由调用方注入；
-- [ ] `applicationCommit` 缺失时为 `null` 且有稳定 warning；
-- [ ] 对象 key、logical filename、UTF-8、无尾随换行和 manifest 自身不 hash
+- [x] Rescue Reader 可以只读打开 Legacy IndexedDB；
+- [x] 未过期和已过期 IndexedDB cache 均可发现，且读取不更新时间；
+- [x] `cacheVersion` 不匹配的 entry 可读取并产生可解释 warning；
+- [x] localStorage fallback 可识别并与 IndexedDB 来源区分；
+- [x] malformed JSON、IndexedDB 打开失败、空缓存和读取错误可区分；
+- [x] Rescue Reader 不触发网络请求或清理；
+- [x] 单 JSON bundle 包含六个规定逻辑文件、manifest 和逐文件 SHA-256；
+- [x] manifest 可解析，hash、活动数量和时间范围可校验；
+- [x] `exportedAt` 由调用方注入；
+- [x] `applicationCommit` 缺失时为 `null` 且有稳定 warning；
+- [x] 对象 key、logical filename、UTF-8、无尾随换行和 manifest 自身不 hash
       的规则产生确定性 bytes 与 SHA-256；
-- [ ] `legacy-settings.json` 只包含精确 allowlist 和 `gear-custom-*` 严格前缀；
-- [ ] Token、API key、AI chat history、Demo namespace 和未列出 key 均被排除；
-- [ ] export 失败不修改源数据；
-- [ ] mixed Demo/Legacy 导出产生 `PROVENANCE_UNCERTAIN`；
-- [ ] hashed provenance 与 manifest warning 一致，删除或伪造 manifest warning
+- [x] `legacy-settings.json` 只包含精确 allowlist 和 `gear-custom-*` 严格前缀；
+- [x] Token、API key、AI chat history、Demo namespace 和未列出 key 均被排除；
+- [x] export 失败不修改源数据；
+- [x] mixed Demo/Legacy 导出产生 `PROVENANCE_UNCERTAIN`；
+- [x] hashed provenance 与 manifest warning 一致，删除或伪造 manifest warning
       无法绕过 restore confirmation；
-- [ ] partial selected source 记录稳定 `SOURCE_READ_ERROR`，empty/error source
+- [x] partial selected source 记录稳定 `SOURCE_READ_ERROR`，empty/error source
       返回 `RESCUE_SOURCE_NOT_EXPORTABLE`；
-- [ ] 敏感字段 redaction 可观察、被 hash 保护且不改变源数据；
-- [ ] 未确认 `PROVENANCE_UNCERTAIN` 时 restore 零写入；
-- [ ] Demo namespace 不读写真实 Legacy cache；
-- [ ] `Disconnect Strava` 删除 Token 并保留活动和 Local Library；
-- [ ] Token 过期、刷新失败、401 和 403 保留活动；
-- [ ] disconnect revoke 失败返回 `revocation-unconfirmed`，不保留 Token；
-- [ ] PR-01 没有 Delete Local Data 入口；
-- [ ] OAuth 不同或未知账号 fail closed，不读取或覆盖旧 cache；
-- [ ] restore 成功、失败和事务回滚均有自动测试；
-- [ ] restore 仅空目标；identical 为 no-op；冲突目标 abort；
-- [ ] restore plan 由模块签发、递归冻结并与 verified bundle 绑定；
-- [ ] 失败 apply 新建的 DB 被删除；预先存在的空 DB 不被删除；
-- [ ] version > 1、incompatible store 和 plan/apply TOCTOU 均 fail closed；
-- [ ] 恢复不删除导出包或未授权的源数据；
-- [ ] raw activities 和 athlete identity 不再写入 console；
-- [ ] Legacy 默认页面行为无变化；
-- [ ] 只使用 deterministic synthetic 测试数据；
-- [ ] 没有 Canonical Schema、IndexedDB v2、页面重构或分析改动；
-- [ ] 没有通用 401/403 retry framework 或 `sw.js` 修改；
-- [ ] B1 实施期间 Task Brief 状态保持 `In progress`。
+- [x] 敏感字段 redaction 可观察、被 hash 保护且不改变源数据；
+- [x] 未确认 `PROVENANCE_UNCERTAIN` 时 restore 零写入；
+- [x] Demo namespace 不读写真实 Legacy cache；
+- [x] `Disconnect Strava` 删除 Token 并保留活动和 Local Library；
+- [x] Token 过期、刷新失败、401 和 403 保留活动；
+- [x] disconnect revoke 失败返回 `revocation-unconfirmed`，不保留 Token；
+- [x] PR-01 没有 Delete Local Data 入口；
+- [x] OAuth 不同或未知账号 fail closed，不读取或覆盖旧 cache；
+- [x] restore 成功、失败和事务回滚均有自动测试；
+- [x] restore 仅空目标；identical 为 no-op；冲突目标 abort；
+- [x] restore plan 由模块签发、递归冻结并与 verified bundle 绑定；
+- [x] 失败 apply 新建的 DB 被删除；预先存在的空 DB 不被删除；
+- [x] version > 1、incompatible store 和 plan/apply TOCTOU 均 fail closed；
+- [x] 恢复不删除导出包或未授权的源数据；
+- [x] raw activities 和 athlete identity 不再写入 console；
+- [x] Legacy 默认页面行为无变化；
+- [x] 只使用 deterministic synthetic 测试数据；
+- [x] 没有 Canonical Schema、IndexedDB v2、页面重构或分析改动；
+- [x] 没有通用 401/403 retry framework 或 `sw.js` 修改；
+- [x] B1 实施期间 Task Brief 状态保持 `In progress`。
 
 ## Required automated checks
 
@@ -627,7 +673,9 @@ deterministic synthetic 数据：
 - 未运行真实 Strava OAuth、真实账号 401/403 或 Token refresh；
 - 未运行真实用户 profile 的 Disconnect/Logout；
 - 未读取、导出或恢复任何真实 Legacy cache；
-- 未运行 Rescue Reader、JSON bundle、SHA-256 或 restore；实现尚不存在；
+- 调查基线时尚未运行 Rescue Reader、JSON bundle、SHA-256 或 restore，且当时
+  实现尚不存在；当前 B1 core 已实现并通过自动测试，但浏览器与真实数据验证仍为
+  `Not run`；
 - 未运行浏览器 IndexedDB、localStorage quota/error 或 transaction rollback；
 - 未运行 Service Worker 浏览器状态和多 worktree/多端口演练；
 - 未运行 migration、E2E、视觉回归或真实数据检查。
@@ -684,45 +732,45 @@ Task Brief 初始化提交本身仅新增本文档；若需要回滚，revert
 
 ## Independent review checklist
 
-- [ ] 状态为 Implementation Gate 后的 `In progress`；
-- [ ] 调查报告给出精确函数、文件和调用路径证据；
-- [ ] diff 只包含 19 个 Allowed files 中本次实际需要的最小子集；
-- [ ] Legacy Cache 实现严格拆分为五个获批模块，职责没有跨界；
-- [ ] 没有混入 Canonical、IndexedDB v2、页面或分析重构；
-- [ ] Rescue Reader 只读、无 TTL/version 阻断、无网络和无写回；
-- [ ] IndexedDB、localStorage、Demo、空缓存与错误状态可区分；
-- [ ] 单 JSON bundle、六个逻辑文件、manifest 和 SHA-256 验证完整；
-- [ ] `exportedAt` 和 `applicationCommit` 均由调用方注入；
-- [ ] `applicationCommit` 缺失时为 `null` 并产生 warning；
-- [ ] 稳定序列化遵守递归对象 key 排序、数组原序、filename 排序、UTF-8、
+- [x] 状态在控制塔最终复验后为 `In review`；
+- [x] 调查报告给出精确函数、文件和调用路径证据；
+- [x] diff 只包含 21 个 Allowed files 中本次实际需要的最小子集；
+- [x] Legacy Cache 实现严格拆分为五个获批模块，职责没有跨界；
+- [x] 没有混入 Canonical、IndexedDB v2、页面或分析重构；
+- [x] Rescue Reader 只读、无 TTL/version 阻断、无网络和无写回；
+- [x] IndexedDB、localStorage、Demo、空缓存与错误状态可区分；
+- [x] 单 JSON bundle、六个逻辑文件、manifest 和 SHA-256 验证完整；
+- [x] `exportedAt` 和 `applicationCommit` 均由调用方注入；
+- [x] `applicationCommit` 缺失时为 `null` 并产生 warning；
+- [x] 稳定序列化遵守递归对象 key 排序、数组原序、filename 排序、UTF-8、
       无尾随换行和 manifest 不自 hash；
-- [ ] 相同输入、`exportedAt` 和 `applicationCommit` 产生完全相同 bytes/hash；
-- [ ] settings 导出只使用精确 allowlist 和 `gear-custom-*` 严格前缀；
-- [ ] Token、API key、AI chat history、Demo namespace 和其他 key 被排除；
-- [ ] 导出失败不会修改或删除源数据；
-- [ ] mixed provenance 导出含 `PROVENANCE_UNCERTAIN`，未经确认不得恢复；
-- [ ] provenance/source error/redaction evidence 位于 hashed payload，manifest
+- [x] 相同输入、`exportedAt` 和 `applicationCommit` 产生完全相同 bytes/hash；
+- [x] settings 导出只使用精确 allowlist 和 `gear-custom-*` 严格前缀；
+- [x] Token、API key、AI chat history、Demo namespace 和其他 key 被排除；
+- [x] 导出失败不会修改或删除源数据；
+- [x] mixed provenance 导出含 `PROVENANCE_UNCERTAIN`，未经确认不得恢复；
+- [x] provenance/source error/redaction evidence 位于 hashed payload，manifest
       warning 与其一致；
-- [ ] forged、mutated 或与 verified bundle 不一致的 restore plan 零写入并返回
+- [x] forged、mutated 或与 verified bundle 不一致的 restore plan 零写入并返回
       `RESTORE_PLAN_INVALID`；
-- [ ] 失败 restore 新建的 DB 被精确删除，预先存在的空 DB 只回滚 entry；
-- [ ] version > 1 或 plan/apply 间目标变化 fail closed；
-- [ ] restore 空目标、identical no-op、冲突 abort 和回滚均有 synthetic 测试；
-- [ ] Disconnect/Token expiry/refresh failure/401/403 不删除活动；
-- [ ] revoke 失败删除 Token、返回 `revocation-unconfirmed` 并保留 Local Library；
-- [ ] 没有新增 Delete Local Data 入口；
-- [ ] OAuth 不同或未知账号 fail closed；
-- [ ] Demo namespace 不读写真实 Legacy cache；
-- [ ] raw activities 和 athlete identity console logging 已移除；
-- [ ] 没有建设通用 401/403 retry framework；
-- [ ] `sw.js` 未修改，Service Worker API cache 作为后续任务；
-- [ ] `fake-indexeddb` 仅为 devDependency；
-- [ ] 测试离线、确定性且不使用 credentials 或私人 fixture；
-- [ ] 日志、错误、PR 和 CI artifact 不泄露私人数据；
-- [ ] Service Worker 和多 worktree 人工验证版本已明确；
-- [ ] 回滚不清理预先存在的 Legacy Cache、导出包或未来 V2 数据；仅精确删除
+- [x] 失败 restore 新建的 DB 被精确删除，预先存在的空 DB 只回滚 entry；
+- [x] version > 1 或 plan/apply 间目标变化 fail closed；
+- [x] restore 空目标、identical no-op、冲突 abort 和回滚均有 synthetic 测试；
+- [x] Disconnect/Token expiry/refresh failure/401/403 不删除活动；
+- [x] revoke 失败删除 Token、返回 `revocation-unconfirmed` 并保留 Local Library；
+- [x] 没有新增 Delete Local Data 入口；
+- [x] OAuth 不同或未知账号 fail closed；
+- [x] Demo namespace 不读写真实 Legacy cache；
+- [x] raw activities 和 athlete identity console logging 已移除；
+- [x] 没有建设通用 401/403 retry framework；
+- [x] `sw.js` 未修改，Service Worker API cache 作为后续任务；
+- [x] `fake-indexeddb` 仅为 devDependency；
+- [x] 测试离线、确定性且不使用 credentials 或私人 fixture；
+- [x] 日志、错误、PR 和 CI artifact 不泄露私人数据；
+- [x] Service Worker 和多 worktree 人工验证版本已明确，浏览器验证为 `Not run`；
+- [x] 回滚不清理预先存在的 Legacy Cache、导出包或未来 V2 数据；仅精确删除
       失败 restore 本次创建的 Legacy DB；
-- [ ] 所有未执行验证明确标记，未伪装成 Pass；
+- [x] 所有未执行验证明确标记，未伪装成 Pass；
 - [ ] staged paths、commit、base/head branch 和 Draft PR 目标正确。
 
 ## Completion evidence
@@ -814,6 +862,8 @@ Legacy Rescue tests: Pass (53/53)
 Full tests: Pass (94/94)
 Browser/real OAuth verification: Not run
 B2-B Demo Namespace Isolation module boundary: Approved for commit by control tower
+B2-B commit: ce68edf40ab0c07827d37d3ff1e7dc0808a0898f
+B2-B CI Run 30421863457: Success
 B2-B focused tests:
   node --test tests/legacy/demo-isolation.test.js — Pass (15/15)
 B2-B directed evidence:
@@ -834,7 +884,88 @@ B2-B final automated checks:
   node --test tests/legacy/legacy-cache-rescue.test.js — Pass (53/53)
   npm test — Pass (109/109)
   git diff --check — Pass
-B2-C: Not started
+B2-C App Integration & Privacy Closure:
+  Approved by control tower after B2-C.2 final re-review
+B2-C focused tests:
+  node --test tests/legacy/demo-isolation.test.js — Pass (19/19)
+B2-C directed evidence:
+  Demo initialize with real cache present/empty and Demo refresh each report
+  getCachedActivities=0, fetchAllActivities/network=0, saveCachedActivities=0,
+  return Demo activities and preserve the complete real snapshot byte-for-byte;
+  real cache hit reports cache/network/save=1/0/0, real miss=1/1/1 and real
+  refresh=0/1/1
+B2-C privacy and UI evidence:
+  main.js raw/preprocessed activities, athlete, zones, gears, date-range summary
+  and unfiltered error-object logs removed or reduced to non-identifying counts;
+  logout button aria-label/title are both Disconnect Strava; no Delete Local Data
+  entry added
+B2-C final automated checks:
+  npm ci — Pass
+  npm run check:syntax — Pass (105 files)
+  npm run check:privacy — Pass
+  node --test tests/legacy/demo-isolation.test.js — Pass (19/19)
+  node --test tests/legacy/auth-lifecycle.test.js — Pass (28/28)
+  node --test tests/legacy/legacy-cache-rescue.test.js — Pass (53/53)
+  npm test — Pass (113/113)
+  git diff --check — Pass
+B2-C first control-tower review: REVISE
+B2-C omitted production-path facts:
+  main gear filters still read real strava_gears; Trends read and logged real
+  athlete/zones; Run Plus Demo remote actions read real Token and could fetch;
+  missing/malformed Demo athlete could trigger preprocessing Legacy fallback
+A3.2 minimum scope expansion: Approved by control tower
+B2-C.1 Demo Production-Path Isolation:
+  Approved by control tower after B2-C.2 final re-review
+B2-C.1 focused tests:
+  node --test tests/legacy/demo-isolation.test.js — Pass (24/24)
+B2-C.1 directed evidence:
+  main Demo gear real-key reads=0; Trends athlete/zones real-key reads=0 and
+  identity logs=0; missing/malformed Demo athlete preprocessing fallback reads=0;
+  Demo Run Plus Token reads/fetch/Token writes=0/0/0; Real Run Plus without
+  refreshed tokens=1/1/0 and with refreshed tokens=1/1/1
+B2-C.1 final automated checks:
+  npm ci — Pass
+  npm run check:syntax — Pass (105 files)
+  npm run check:privacy — Pass
+  node --test tests/legacy/demo-isolation.test.js — Pass (24/24)
+  node --test tests/legacy/auth-lifecycle.test.js — Pass (28/28)
+  node --test tests/legacy/legacy-cache-rescue.test.js — Pass (53/53)
+  npm test — Pass (118/118)
+  git diff --check — Pass
+B2-C.2 preprocessing test-evidence correction:
+  Approved by control tower after final re-review
+B2-C.2 correction reason:
+  The B2-C.1 preprocessing isolation test passed an empty activities array, so
+  preprocessActivities returned before applyIndoorSwimPool20mCorrection and
+  isTargetAthleteAlexGascon could evaluate the Demo marker or attempt the Legacy
+  athlete fallback
+B2-C.2 corrected evidence:
+  null, array, empty-object and ID-only Demo athlete inputs each use a fresh,
+  deterministic non-empty indoor-swim activity; all four production
+  preprocessing calls complete with one returned activity, and forbidden
+  strava_athlete_data reads remain exactly zero
+B2-C.2 scope:
+  Test and Task Brief evidence only; no B2-C product implementation changed
+B2-C.2 final automated checks:
+  npm run check:syntax — Pass (105 files)
+  npm run check:privacy — Pass
+  node --test tests/legacy/demo-isolation.test.js — Pass (24/24)
+  node --test tests/legacy/auth-lifecycle.test.js — Pass (28/28)
+  node --test tests/legacy/legacy-cache-rescue.test.js — Pass (53/53)
+  npm test — Pass (118/118)
+  git diff --check — Pass
+B2-C final control-tower review:
+  Approved after B2-C.2
+B2-C independent control-tower verification:
+  npm run check:syntax — Pass (105 files)
+  npm run check:privacy — Pass
+  node --test tests/legacy/demo-isolation.test.js — Pass (24/24)
+  node --test tests/legacy/auth-lifecycle.test.js — Pass (28/28)
+  node --test tests/legacy/legacy-cache-rescue.test.js — Pass (53/53)
+  npm test — Pass (118/118)
+  git diff --check — Pass
+End-to-end Demo activity-cache acceptance:
+  Approved by control tower after B2-C.2
 Browser and real-data verification: Not run
 Investigation automated checks: A1 repository minimum passed
 Investigation manual verification: Not run; see Manual verification

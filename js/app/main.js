@@ -29,14 +29,115 @@ import {
     saveCachedActivities,
 } from '../services/index.js';
 import { preprocessActivities } from '../shared/preprocessing/index.js';
-import { isDemoMode } from '../demo/index.js';
+import { getDemoActivities, isDemoMode } from '../demo/index.js';
 import { applyServiceWorkerPolicy } from './service-worker-policy.js';
 
 const CACHE_VERSION = 'v2-efficiency-moving-ratio';
+const ACTIVITY_CACHE_MAX_AGE_MS = 60 * 60 * 1000;
+
+export const APP_SESSION_MODE = Object.freeze({
+    DEMO: 'demo',
+    REAL: 'real'
+});
+
+// B2_C_ACTIVITY_LOADER_START
+export async function loadActivitiesForSession({
+    sessionMode,
+    operation = 'initialize',
+    getDemoActivities,
+    getCachedActivities,
+    fetchAllActivities,
+    saveCachedActivities,
+    cacheVersion,
+    maxAgeMs
+}) {
+    if (sessionMode === 'demo') {
+        return Object.freeze({
+            activities: await getDemoActivities(),
+            source: 'demo'
+        });
+    }
+    if (sessionMode !== 'real') {
+        throw new TypeError('A stable session mode is required.');
+    }
+
+    if (operation !== 'refresh') {
+        const cached = await getCachedActivities({
+            cacheVersion,
+            maxAgeMs
+        });
+        if (cached?.activities?.length) {
+            return Object.freeze({
+                activities: cached.activities,
+                source: 'cache'
+            });
+        }
+    }
+
+    const activities = await fetchAllActivities();
+    await saveCachedActivities(activities, cacheVersion);
+    return Object.freeze({
+        activities,
+        source: 'network'
+    });
+}
+// B2_C_ACTIVITY_LOADER_END
+
+// B2_C_SESSION_GEAR_MAP_START
+export function buildSessionGearNameMap(sessionGears) {
+    const gears = Array.isArray(sessionGears) ? sessionGears : [];
+    return new Map(gears.map(gear => {
+        const label = gear?.name
+            || [gear?.brand_name, gear?.model_name].filter(Boolean).join(' ')
+            || gear?.id;
+        return [gear?.id, label];
+    }).filter(([gearId]) => gearId));
+}
+// B2_C_SESSION_GEAR_MAP_END
+
+// B2_C_PREPROCESSING_CONTEXT_START
+export function selectPreprocessingAthlete(sessionMode, athlete) {
+    if (sessionMode !== 'demo') {
+        return athlete ?? null;
+    }
+    const hasDemoDisplayIdentity = (
+        athlete
+        && typeof athlete === 'object'
+        && !Array.isArray(athlete)
+        && ['firstname', 'lastname', 'username'].some(key => (
+            typeof athlete[key] === 'string' && athlete[key].trim().length > 0
+        ))
+    );
+    if (hasDemoDisplayIdentity) {
+        return athlete;
+    }
+
+    // This local-only marker blocks preprocessing's Legacy athlete fallback.
+    // It is not a real identity and is never rendered or persisted.
+    return Object.freeze({
+        firstname: 'Demo',
+        demoPreprocessingContext: true
+    });
+}
+// B2_C_PREPROCESSING_CONTEXT_END
+
+function logOperationalWarning(context) {
+    console.warn(context);
+}
+
+function safeOperationalError() {
+    const error = new Error('Operation failed.');
+    error.name = 'OperationalError';
+    return error;
+}
 
 document.addEventListener('DOMContentLoaded', () => {
     // --- STATE ---
     let allActivities = [];
+    let activeSessionMode = null;
+    let sessionAthlete = null;
+    let sessionZones = null;
+    let sessionGears = [];
     let dateFilterFrom = null;
     let dateFilterTo = null;
     let trendsSportFilter = 'all';
@@ -54,7 +155,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'run-plus-tab': { render: () => renderRunPlusTab(allActivities, dateFilterFrom, dateFilterTo, runGearFilter, getRunPlusRenderOptions()), usesFilters: true },
         'bike-tab': { render: () => renderBikeAnalysisTab(allActivities, dateFilterFrom, dateFilterTo, bikeGearFilter, bikeRollingWindow), usesFilters: true },
         'swim-tab': { render: () => renderSwimAnalysisTab(allActivities, dateFilterFrom, dateFilterTo, swimRollingWindow), usesFilters: true },
-        'trends-tab': { render: () => renderTrendsTab(allActivities, dateFilterFrom, dateFilterTo, trendsSportFilter, trendsDataType), usesFilters: true },
+        'trends-tab': { render: () => renderTrendsTab(allActivities, dateFilterFrom, dateFilterTo, trendsSportFilter, trendsDataType, getTrendsMetadataContext()), usesFilters: true },
         'planner-tab': { render: () => renderPlannerTab(allActivities) },
         'gear-tab': { render: () => renderGearTab(allActivities) },
         'activities-tab': { render: () => renderActivitiesTab(allActivities) },
@@ -247,11 +348,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getGearNameMap() {
-        const gears = JSON.parse(localStorage.getItem('strava_gears') || '[]');
-        return new Map(gears.map(gear => {
-            const label = gear.name || [gear.brand_name, gear.model_name].filter(Boolean).join(' ') || gear.id;
-            return [gear.id, label];
-        }));
+        return buildSessionGearNameMap(sessionGears);
     }
 
     function populateGearFilters() {
@@ -300,8 +397,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let activeTabId = null;
 
+    function getTrendsMetadataContext() {
+        return {
+            athleteData: sessionAthlete,
+            zonesData: sessionZones
+        };
+    }
+
     function getRunPlusRenderOptions() {
         return {
+            allowRemoteStrava: activeSessionMode === APP_SESSION_MODE.REAL,
             onFiltersChange: handleRunPlusFiltersChange
         };
     }
@@ -533,6 +638,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- INITIALIZATION ---
     async function initializeApp(tokenData) {
+        activeSessionMode = isDemoMode()
+            ? APP_SESSION_MODE.DEMO
+            : APP_SESSION_MODE.REAL;
+        const sessionMode = activeSessionMode;
+        sessionAthlete = null;
+        sessionZones = null;
+        sessionGears = [];
         const t0 = Date.now();
         const elapsed = () => `${((Date.now() - t0) / 1000).toFixed(1)}s elapsed`;
         showLoading('Preparing dashboard...', 2, elapsed());
@@ -541,32 +653,33 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             // Phase 1: Load activities (0% -> 40%)
             progress = 8;
-            showLoading('Checking local cache...', progress, elapsed());
+            showLoading(
+                sessionMode === APP_SESSION_MODE.DEMO
+                    ? 'Loading Demo activities...'
+                    : 'Checking local cache...',
+                progress,
+                elapsed()
+            );
 
-            const cachedActivities = await getCachedActivities({
+            const activityLoad = await loadActivitiesForSession({
+                sessionMode,
+                operation: 'initialize',
+                getDemoActivities,
+                getCachedActivities,
+                fetchAllActivities,
+                saveCachedActivities,
                 cacheVersion: CACHE_VERSION,
-                maxAgeMs: 60 * 60 * 1000
+                maxAgeMs: ACTIVITY_CACHE_MAX_AGE_MS
             });
-
-            let activities;
-            if (cachedActivities?.activities?.length) {
-                activities = cachedActivities.activities;
-                progress = 40;
-                showLoading(`Activities loaded from cache (${activities.length})`, progress, elapsed());
-                if (!isDemoMode()) {
-                    console.log(`[Strava] Activities loaded from cache (${activities.length}):`, activities);
-                }
-            } else {
-                showLoading('Downloading activities from Strava...', 18, elapsed());
-                activities = await fetchAllActivities();
-                progress = 40;
-                showLoading(`Activities downloaded (${activities.length})`, progress, elapsed());
-                if (!isDemoMode()) {
-                    console.log(`[Strava] Activities downloaded from API (${activities.length}):`, activities);
-                }
-                // Cache the raw Strava payload. Preprocessing mutates activity objects and runs on every load.
-                await saveCachedActivities(activities, CACHE_VERSION);
-            }
+            const activities = activityLoad.activities;
+            progress = 40;
+            const activityMessages = {
+                demo: `Demo activities ready (${activities.length})`,
+                cache: `Activities loaded from cache (${activities.length})`,
+                network: `Activities downloaded (${activities.length})`
+            };
+            showLoading(activityMessages[activityLoad.source], progress, elapsed());
+            console.log(`Activities loaded (${activities.length})`);
 
             // Phase 2: Load athlete, zones, and gears (40% -> 90%)
             // These are optional - if they fail, continue without them
@@ -593,16 +706,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (results[0].status === 'fulfilled') {
                     athlete = results[0].value;
-                    if (!isDemoMode()) console.log('[Strava] Athlete data:', athlete);
+                    sessionAthlete = athlete;
+                    console.log('Athlete profile loaded');
                 } else {
-                    console.warn('Failed to load athlete data:', results[0].reason);
+                    sessionAthlete = null;
+                    logOperationalWarning(
+                        'Failed to load athlete data'
+                    );
                 }
 
                 if (results[1].status === 'fulfilled') {
                     zones = results[1].value;
-                    if (!isDemoMode()) console.log('[Strava] Training zones:', zones);
+                    sessionZones = zones;
+                    console.log('Training zones loaded');
                 } else {
-                    console.warn('Failed to load zones data:', results[1].reason);
+                    sessionZones = null;
+                    logOperationalWarning(
+                        'Failed to load zones data'
+                    );
                 }
 
                 if (athlete || zones) {
@@ -612,9 +733,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     showLoading('Athlete/zones unavailable (timeout or error), continuing...', 65, elapsed());
                 }
             } catch (error) {
-                console.warn('Failed to load athlete/zones data, continuing without:', error);
+                logOperationalWarning(
+                    'Failed to load athlete/zones data; continuing without metadata'
+                );
                 athlete = null;
                 zones = null;
+                sessionAthlete = null;
+                sessionZones = null;
                 showLoading('Athlete/zones unavailable, continuing...', 65, elapsed());
             }
 
@@ -623,13 +748,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (athlete) {
                     showLoading('Loading gear usage...', 72, elapsed());
                     gears = await fetchAllGears(athlete);
-                    if (!isDemoMode()) console.log(`[Strava] Gears (${gears.length}):`, gears);
+                    sessionGears = Array.isArray(gears) ? gears : [];
+                    console.log(`Gears loaded (${gears.length})`);
                     // Persist gears to cache with 24h TTL
                     setCachedGears(gears);
                 }
             } catch (error) {
-                console.warn('Failed to load gears, continuing without:', error);
+                logOperationalWarning(
+                    'Failed to load gears; continuing without gear metadata'
+                );
                 gears = [];
+                sessionGears = [];
                 showLoading('Gear unavailable, continuing...', 76, elapsed());
             }
 
@@ -637,18 +766,18 @@ document.addEventListener('DOMContentLoaded', () => {
             showLoading('Processing and enriching activities...', progress, elapsed());
 
             // Phase 3: Preprocess activities (90% -> 100%)
-            const preprocessed = await preprocessActivities(activities, athlete, zones, gears);
+            const preprocessingAthlete = selectPreprocessingAthlete(
+                sessionMode,
+                athlete
+            );
+            const preprocessed = await preprocessActivities(
+                activities,
+                preprocessingAthlete,
+                zones,
+                gears
+            );
             allActivities = preprocessed;
-            if (!isDemoMode()) {
-                console.log(`[Strava] Preprocessed activities (${allActivities.length}):`, allActivities);
-                console.log('[Strava] Summary:', {
-                    total: allActivities.length,
-                    byType: allActivities.reduce((acc, a) => { acc[a.type] = (acc[a.type] || 0) + 1; return acc; }, {}),
-                    dateRange: allActivities.length ? `${allActivities[allActivities.length - 1].start_date_local?.slice(0, 10)} → ${allActivities[0].start_date_local?.slice(0, 10)}` : 'N/A',
-                    withHR: allActivities.filter(a => a.average_heartrate).length,
-                    withTSS: allActivities.filter(a => a.tss).length,
-                });
-            }
+            console.log(`Activities prepared (${allActivities.length})`);
 
             progress = 100;
             showLoading('Finalizing UI...', progress, elapsed());
@@ -666,35 +795,71 @@ document.addEventListener('DOMContentLoaded', () => {
             const initialTabId = getTabIdFromPath(window.location.pathname);
             activateTab(initialTabId, { updateUrl: true, replaceUrl: true });
         } catch (error) {
-            handleError('Could not initialize the app', error);
+            handleError('Could not initialize the app', safeOperationalError());
         } finally {
             hideLoading();
         }
     }
 
     async function refreshActivities() {
+        activeSessionMode = isDemoMode()
+            ? APP_SESSION_MODE.DEMO
+            : APP_SESSION_MODE.REAL;
+        const sessionMode = activeSessionMode;
+        sessionAthlete = null;
+        sessionZones = null;
+        sessionGears = [];
         const t0 = Date.now();
         const elapsed = () => `${((Date.now() - t0) / 1000).toFixed(1)}s elapsed`;
-        showLoading('Refreshing activities from Strava...', 20, elapsed());
+        showLoading(
+            sessionMode === APP_SESSION_MODE.DEMO
+                ? 'Refreshing Demo activities...'
+                : 'Refreshing activities from Strava...',
+            20,
+            elapsed()
+        );
         try {
-            const activities = await fetchAllActivities();
+            const activityLoad = await loadActivitiesForSession({
+                sessionMode,
+                operation: 'refresh',
+                getDemoActivities,
+                getCachedActivities,
+                fetchAllActivities,
+                saveCachedActivities,
+                cacheVersion: CACHE_VERSION,
+                maxAgeMs: ACTIVITY_CACHE_MAX_AGE_MS
+            });
+            const activities = activityLoad.activities;
             const athlete = await fetchAthleteData();
             const zones = await fetchTrainingZones();
+            sessionAthlete = athlete;
+            sessionZones = zones;
             let gears = [];
 
             try {
                 gears = athlete ? await fetchAllGears(athlete) : [];
+                sessionGears = Array.isArray(gears) ? gears : [];
                 setCachedGears(gears);
             } catch (error) {
-                console.warn('Failed to load gears during refresh, continuing without:', error);
+                logOperationalWarning(
+                    'Failed to load gears during refresh; continuing without gear metadata'
+                );
                 gears = [];
+                sessionGears = [];
             }
 
-            // Cache the raw Strava payload before preprocessing mutates activity objects.
-            await saveCachedActivities(activities, CACHE_VERSION);
-
             // Keep refresh aligned with initial load: preprocessing is rebuilt from raw activities.
-            allActivities = await preprocessActivities(activities, athlete, zones, gears);
+            const preprocessingAthlete = selectPreprocessingAthlete(
+                sessionMode,
+                athlete
+            );
+            allActivities = await preprocessActivities(
+                activities,
+                preprocessingAthlete,
+                zones,
+                gears
+            );
+            console.log(`Activities refreshed (${allActivities.length})`);
             showLoading(`Rebuilding views (${allActivities.length} activities)...`, 80, elapsed());
 
             // Reset rendered state so tabs re-render with fresh data
@@ -707,7 +872,7 @@ document.addEventListener('DOMContentLoaded', () => {
             activateTab(getTabIdFromPath(window.location.pathname));
             showLoading('Refresh completed', 100, elapsed());
         } catch (error) {
-            handleError('Error refreshing activities', error);
+            handleError('Error refreshing activities', safeOperationalError());
         } finally {
             hideLoading();
         }
@@ -728,7 +893,9 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('load', () => {
         applyServiceWorkerPolicy()
             .catch(error => {
-                console.warn('Unable to apply Service Worker policy:', error);
+                logOperationalWarning(
+                    'Unable to apply Service Worker policy'
+                );
             });
     });
 
@@ -740,7 +907,14 @@ document.addEventListener('DOMContentLoaded', () => {
         dateFilterFrom = newFrom;
         dateFilterTo = newTo;
         saveFilterState();
-        renderTrendsTab(activities, dateFilterFrom, dateFilterTo, trendsSportFilter, trendsDataType);
+        renderTrendsTab(
+            activities,
+            dateFilterFrom,
+            dateFilterTo,
+            trendsSportFilter,
+            trendsDataType,
+            getTrendsMetadataContext()
+        );
     });
 
     if (applyFilterButton) {
@@ -865,7 +1039,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- APP ENTRY POINT ---
     handleAuth(initializeApp).catch(error => {
-        console.error('App failed to start:', error);
+        logOperationalWarning('App failed to start');
         hideLoading();
     });
 });

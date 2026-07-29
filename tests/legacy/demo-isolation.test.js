@@ -155,6 +155,25 @@ function realSnapshot(storage) {
     );
 }
 
+const REAL_LOCAL_LIBRARY_READ_KEYS = Object.freeze([
+    'strava_tokens',
+    'strava_activities',
+    'strava_activities_timestamp',
+    'strava_cache_version',
+    'strava_athlete_data',
+    'strava_training_zones',
+    'strava_gears'
+]);
+
+function assertNoRealLocalLibraryReads(storage) {
+    assert.deepEqual(
+        storage.getItemCalls.filter(key => (
+            REAL_LOCAL_LIBRARY_READ_KEYS.includes(key)
+        )),
+        []
+    );
+}
+
 function assertDemoCleared(storage) {
     for (const key of DEMO_STORAGE_KEYS) {
         assert.equal(storage.values.has(key), false, `${key} should be removed`);
@@ -186,6 +205,7 @@ function jsonResponse(data) {
 const savedGlobals = {
     alert: globalThis.alert,
     document: globalThis.document,
+    fetch: globalThis.fetch,
     localStorage: globalThis.localStorage,
     window: globalThis.window
 };
@@ -212,6 +232,107 @@ const {
     loginWithDemo,
     logout
 } = await import('../../js/app/auth.js?demo-isolation-test');
+const {
+    selectTrendsMetadataContext
+} = await import('../../js/tabs/athlete.js?demo-isolation-test');
+const {
+    RUN_PLUS_REMOTE_ERROR,
+    requestRunPlusRemote
+} = await import('../../js/tabs/run-plus.js?demo-isolation-test');
+const {
+    preprocessActivities
+} = await import('../../js/shared/preprocessing/index.js?demo-isolation-test');
+
+const projectRoot = new URL('../../', import.meta.url);
+const mainSource = await readFile(
+    new URL('js/app/main.js', projectRoot),
+    'utf8'
+);
+
+function compileMarkedMainFunction(
+    source,
+    startMarker,
+    endMarker,
+    functionName
+) {
+    const start = source.indexOf(startMarker);
+    const end = source.indexOf(endMarker);
+    assert.notEqual(start, -1, `${startMarker} is required`);
+    assert.notEqual(end, -1, `${endMarker} is required`);
+
+    const functionSource = source
+        .slice(start + startMarker.length, end)
+        .replace(/export\s+(async\s+)?function/, '$1function');
+    return Function(
+        `"use strict";${functionSource};return ${functionName};`
+    )();
+}
+
+const loadActivitiesForSession = compileMarkedMainFunction(
+    mainSource,
+    '// B2_C_ACTIVITY_LOADER_START',
+    '// B2_C_ACTIVITY_LOADER_END',
+    'loadActivitiesForSession'
+);
+const buildSessionGearNameMap = compileMarkedMainFunction(
+    mainSource,
+    '// B2_C_SESSION_GEAR_MAP_START',
+    '// B2_C_SESSION_GEAR_MAP_END',
+    'buildSessionGearNameMap'
+);
+const selectPreprocessingAthlete = compileMarkedMainFunction(
+    mainSource,
+    '// B2_C_PREPROCESSING_CONTEXT_START',
+    '// B2_C_PREPROCESSING_CONTEXT_END',
+    'selectPreprocessingAthlete'
+);
+
+function activityLoaderHarness({
+    storage,
+    cachedActivities = null,
+    networkActivities = [{
+        id: 'synthetic-network-activity-001',
+        sport_type: 'Run'
+    }]
+}) {
+    const calls = {
+        demo: 0,
+        cache: 0,
+        network: 0,
+        save: 0
+    };
+    const observations = {
+        cacheOptions: null,
+        savedActivities: null,
+        savedVersion: null
+    };
+    return {
+        calls,
+        observations,
+        dependencies: {
+            getDemoActivities: () => {
+                calls.demo += 1;
+                return getDemoActivities(storage);
+            },
+            getCachedActivities: async options => {
+                calls.cache += 1;
+                observations.cacheOptions = options;
+                return cachedActivities === null
+                    ? null
+                    : { activities: cachedActivities };
+            },
+            fetchAllActivities: async () => {
+                calls.network += 1;
+                return networkActivities;
+            },
+            saveCachedActivities: async (activities, cacheVersion) => {
+                calls.save += 1;
+                observations.savedActivities = activities;
+                observations.savedVersion = cacheVersion;
+            }
+        }
+    };
+}
 
 test.after(() => {
     for (const [key, value] of Object.entries(savedGlobals)) {
@@ -235,6 +356,477 @@ test('Demo namespace is frozen to the nine approved keys', () => {
         'strava_demo_gears_timestamp',
         'strava_tokens_demo'
     ]);
+});
+
+test('Main Demo initialization ignores a populated real activity cache', async () => {
+    const storage = new MemoryStorage({
+        ...realLibrary(),
+        ...demoNamespace()
+    });
+    const before = storage.snapshot();
+    const realActivities = [{
+        id: 'synthetic-real-cache-activity-should-not-load'
+    }];
+    const harness = activityLoaderHarness({
+        storage,
+        cachedActivities: realActivities
+    });
+
+    const result = await loadActivitiesForSession({
+        sessionMode: 'demo',
+        operation: 'initialize',
+        ...harness.dependencies,
+        cacheVersion: 'synthetic-cache-version',
+        maxAgeMs: 3600000
+    });
+
+    assert.equal(result.source, 'demo');
+    assert.equal(result.activities[0].id, 'synthetic-demo-activity-001');
+    assert.equal(
+        result.activities.some(activity => activity.id === realActivities[0].id),
+        false
+    );
+    assert.deepEqual(harness.calls, {
+        demo: 1,
+        cache: 0,
+        network: 0,
+        save: 0
+    });
+    assertNoRealLocalLibraryReads(storage);
+    assert.deepEqual(storage.snapshot(), before);
+});
+
+test('Main Demo initialization with no real cache never opens or creates it', async () => {
+    const emptyRealLibrary = realLibrary();
+    delete emptyRealLibrary.strava_activities;
+    delete emptyRealLibrary.strava_activities_timestamp;
+    delete emptyRealLibrary.strava_cache_version;
+    const storage = new MemoryStorage({
+        ...emptyRealLibrary,
+        ...demoNamespace()
+    });
+    const before = storage.snapshot();
+    const harness = activityLoaderHarness({
+        storage,
+        cachedActivities: null
+    });
+
+    const result = await loadActivitiesForSession({
+        sessionMode: 'demo',
+        operation: 'initialize',
+        ...harness.dependencies,
+        cacheVersion: 'synthetic-cache-version',
+        maxAgeMs: 3600000
+    });
+
+    assert.equal(result.source, 'demo');
+    assert.equal(result.activities[0].id, 'synthetic-demo-activity-001');
+    assert.deepEqual(harness.calls, {
+        demo: 1,
+        cache: 0,
+        network: 0,
+        save: 0
+    });
+    assertNoRealLocalLibraryReads(storage);
+    assert.deepEqual(storage.snapshot(), before);
+});
+
+test('Main Demo refresh remains offline and preserves the real cache byte-for-byte', async () => {
+    const storage = new MemoryStorage({
+        ...realLibrary(),
+        ...demoNamespace()
+    });
+    const before = storage.snapshot();
+    const harness = activityLoaderHarness({
+        storage,
+        cachedActivities: [{
+            id: 'synthetic-real-cache-refresh-activity'
+        }]
+    });
+
+    const result = await loadActivitiesForSession({
+        sessionMode: 'demo',
+        operation: 'refresh',
+        ...harness.dependencies,
+        cacheVersion: 'synthetic-cache-version',
+        maxAgeMs: 3600000
+    });
+
+    assert.equal(result.source, 'demo');
+    assert.equal(result.activities[0].id, 'synthetic-demo-activity-001');
+    assert.deepEqual(harness.calls, {
+        demo: 1,
+        cache: 0,
+        network: 0,
+        save: 0
+    });
+    assertNoRealLocalLibraryReads(storage);
+    assert.deepEqual(storage.snapshot(), before);
+});
+
+test('Main real-mode cache hit, miss, and refresh preserve Legacy behavior', async () => {
+    const storage = new MemoryStorage(realLibrary());
+    const cachedActivities = [{
+        id: 'synthetic-real-cache-hit-001'
+    }];
+    const networkActivities = [{
+        id: 'synthetic-real-network-001'
+    }];
+    const cacheVersion = 'synthetic-cache-version';
+    const maxAgeMs = 3600000;
+
+    const hit = activityLoaderHarness({
+        storage,
+        cachedActivities,
+        networkActivities
+    });
+    const hitResult = await loadActivitiesForSession({
+        sessionMode: 'real',
+        operation: 'initialize',
+        ...hit.dependencies,
+        cacheVersion,
+        maxAgeMs
+    });
+    assert.equal(hitResult.source, 'cache');
+    assert.deepEqual(hitResult.activities, cachedActivities);
+    assert.deepEqual(hit.calls, {
+        demo: 0,
+        cache: 1,
+        network: 0,
+        save: 0
+    });
+    assert.deepEqual(hit.observations.cacheOptions, {
+        cacheVersion,
+        maxAgeMs
+    });
+
+    const miss = activityLoaderHarness({
+        storage,
+        cachedActivities: null,
+        networkActivities
+    });
+    const missResult = await loadActivitiesForSession({
+        sessionMode: 'real',
+        operation: 'initialize',
+        ...miss.dependencies,
+        cacheVersion,
+        maxAgeMs
+    });
+    assert.equal(missResult.source, 'network');
+    assert.deepEqual(missResult.activities, networkActivities);
+    assert.deepEqual(miss.calls, {
+        demo: 0,
+        cache: 1,
+        network: 1,
+        save: 1
+    });
+    assert.deepEqual(miss.observations.savedActivities, networkActivities);
+    assert.equal(miss.observations.savedVersion, cacheVersion);
+
+    const refresh = activityLoaderHarness({
+        storage,
+        cachedActivities,
+        networkActivities
+    });
+    const refreshResult = await loadActivitiesForSession({
+        sessionMode: 'real',
+        operation: 'refresh',
+        ...refresh.dependencies,
+        cacheVersion,
+        maxAgeMs
+    });
+    assert.equal(refreshResult.source, 'network');
+    assert.deepEqual(refreshResult.activities, networkActivities);
+    assert.deepEqual(refresh.calls, {
+        demo: 0,
+        cache: 0,
+        network: 1,
+        save: 1
+    });
+    assert.deepEqual(refresh.observations.savedActivities, networkActivities);
+    assert.equal(refresh.observations.savedVersion, cacheVersion);
+});
+
+test('Main gear labels use only session gears with no real gear-key reads', () => {
+    const storage = new MemoryStorage({
+        ...realLibrary(),
+        ...demoNamespace()
+    });
+    storage.forbiddenReads.add('strava_gears');
+
+    const demoMap = buildSessionGearNameMap([{
+        id: 'synthetic-demo-session-gear',
+        name: 'Demo Session Shoes'
+    }]);
+    assert.equal(
+        demoMap.get('synthetic-demo-session-gear'),
+        'Demo Session Shoes'
+    );
+    assert.equal(buildSessionGearNameMap(null).size, 0);
+    assert.equal(buildSessionGearNameMap('{malformed').size, 0);
+
+    const realMap = buildSessionGearNameMap([{
+        id: 'synthetic-real-session-gear',
+        brand_name: 'Synthetic',
+        model_name: 'Trainer'
+    }]);
+    assert.equal(
+        realMap.get('synthetic-real-session-gear'),
+        'Synthetic Trainer'
+    );
+    assert.equal(
+        storage.getItemCalls.filter(key => key === 'strava_gears').length,
+        0
+    );
+});
+
+test('Trends metadata selection uses injected context without identity reads or logs', () => {
+    const storage = new MemoryStorage(realLibrary());
+    storage.forbiddenReads.add('strava_athlete_data');
+    storage.forbiddenReads.add('strava_training_zones');
+    globalThis.localStorage = storage;
+    const originalConsoleLog = console.log;
+    let identityLogCalls = 0;
+    console.log = () => {
+        identityLogCalls += 1;
+    };
+
+    try {
+        const demoAthlete = {
+            id: 66914681,
+            firstname: 'Demo'
+        };
+        const demoZones = {
+            heartrate: [{ min: 0, max: 142 }]
+        };
+        const demoSelection = selectTrendsMetadataContext({
+            athleteData: demoAthlete,
+            zonesData: demoZones
+        });
+        assert.equal(demoSelection.athleteData, demoAthlete);
+        assert.equal(demoSelection.zonesData, demoZones);
+
+        assert.deepEqual(selectTrendsMetadataContext({
+            athleteData: null,
+            zonesData: null
+        }), {
+            athleteData: null,
+            zonesData: null
+        });
+
+        const realAthlete = { id: ATHLETE_ID, firstname: 'Synthetic' };
+        const realZones = { heartrate: [{ min: 0, max: 150 }] };
+        const realSelection = selectTrendsMetadataContext({
+            athleteData: realAthlete,
+            zonesData: realZones
+        });
+        assert.equal(realSelection.athleteData, realAthlete);
+        assert.equal(realSelection.zonesData, realZones);
+    } finally {
+        console.log = originalConsoleLog;
+    }
+
+    assert.equal(
+        storage.getItemCalls.filter(key => (
+            key === 'strava_athlete_data'
+            || key === 'strava_training_zones'
+        )).length,
+        0
+    );
+    assert.equal(identityLogCalls, 0);
+});
+
+test('Demo preprocessing context blocks Legacy athlete fallback when metadata is absent', async () => {
+    const storage = new MemoryStorage({
+        ...realLibrary(),
+        [DEMO_MODE_KEY]: 'true'
+    });
+    storage.forbiddenReads.add('strava_athlete_data');
+    globalThis.localStorage = storage;
+
+    const malformedDemoAthletes = [null, [], {}, { id: 66914681 }];
+    for (const [index, malformedDemoAthlete] of malformedDemoAthletes.entries()) {
+        const context = selectPreprocessingAthlete(
+            'demo',
+            malformedDemoAthlete
+        );
+        assert.equal(context.firstname, 'Demo');
+        assert.equal(context.demoPreprocessingContext, true);
+        assert.equal('id' in context, false);
+        assert.equal('lastname' in context, false);
+        assert.equal('username' in context, false);
+
+        // A fresh non-empty indoor swim forces the production pipeline through
+        // applyIndoorSwimPool20mCorrection -> isTargetAthleteAlexGascon.
+        const syntheticActivity = {
+            id: `synthetic-demo-preprocessing-swim-${index + 1}`,
+            name: `Synthetic Demo Indoor Swim ${index + 1}`,
+            type: 'Swim',
+            sport_type: 'Swim',
+            start_date: '2025-07-01T06:00:00.000Z',
+            start_date_local: '2025-07-01T08:00:00.000Z',
+            distance: 1000,
+            moving_time: 1200,
+            elapsed_time: 1200,
+            average_speed: 1000 / 1200,
+            trainer: true
+        };
+        const processed = await preprocessActivities(
+            [syntheticActivity],
+            context,
+            null,
+            []
+        );
+        assert.equal(processed.length, 1);
+        assert.equal(processed[0], syntheticActivity);
+    }
+
+    assert.equal(
+        storage.getItemCalls.filter(key => key === 'strava_athlete_data').length,
+        0
+    );
+});
+
+test('Run Plus Demo remote gate blocks Token reads, fetch, and Token writes', async () => {
+    const syntheticActivityPayload = 'synthetic-private-activity-payload';
+    const storage = new MemoryStorage(realLibrary());
+    storage.operations = [];
+    let fetchCalls = 0;
+    let btoaCalls = 0;
+    let blockedError = null;
+
+    try {
+        await requestRunPlusRemote(
+            `/api/strava-streams?id=${syntheticActivityPayload}`,
+            {
+                allowRemoteStrava: false,
+                storage,
+                fetchImpl: async () => {
+                    fetchCalls += 1;
+                    throw new Error('Prohibited Demo fetch');
+                },
+                btoaImpl: () => {
+                    btoaCalls += 1;
+                    return 'prohibited-demo-auth';
+                }
+            }
+        );
+    } catch (error) {
+        blockedError = error;
+    }
+
+    assert.equal(blockedError?.code, RUN_PLUS_REMOTE_ERROR.DISABLED);
+    assert.equal(
+        storage.getItemCalls.filter(key => key === 'strava_tokens').length,
+        0
+    );
+    assert.equal(fetchCalls, 0);
+    assert.equal(btoaCalls, 0);
+    assert.equal(
+        storage.operations.filter(operation => (
+            operation.operation === 'set'
+            && operation.key === 'strava_tokens'
+        )).length,
+        0
+    );
+    const serializedError = JSON.stringify({
+        name: blockedError?.name,
+        code: blockedError?.code,
+        message: blockedError?.message
+    });
+    assert.equal(serializedError.includes(REAL_ACCESS_TOKEN), false);
+    assert.equal(serializedError.includes(syntheticActivityPayload), false);
+});
+
+test('Run Plus real remote requests preserve Token, fetch, and refresh behavior', async () => {
+    const makeResponse = body => ({
+        ok: true,
+        status: 200,
+        json: async () => body,
+        text: async () => {
+            throw new Error('Successful response text must not be read');
+        }
+    });
+    const storageWithoutRefresh = new MemoryStorage(realLibrary());
+    storageWithoutRefresh.operations = [];
+    let fetchCallsWithoutRefresh = 0;
+    let btoaCallsWithoutRefresh = 0;
+    const resultWithoutRefresh = await requestRunPlusRemote(
+        '/api/strava-streams?id=synthetic-real-activity',
+        {
+            allowRemoteStrava: true,
+            storage: storageWithoutRefresh,
+            btoaImpl: tokenString => {
+                btoaCallsWithoutRefresh += 1;
+                assert.equal(
+                    JSON.parse(tokenString).access_token,
+                    REAL_ACCESS_TOKEN
+                );
+                return 'synthetic-encoded-auth';
+            },
+            fetchImpl: async (_url, options) => {
+                fetchCallsWithoutRefresh += 1;
+                assert.equal(
+                    options.headers.Authorization,
+                    'Bearer synthetic-encoded-auth'
+                );
+                return makeResponse({ streams: [] });
+            }
+        }
+    );
+    assert.deepEqual(resultWithoutRefresh, { streams: [] });
+    assert.equal(
+        storageWithoutRefresh.getItemCalls
+            .filter(key => key === 'strava_tokens').length,
+        1
+    );
+    assert.equal(fetchCallsWithoutRefresh, 1);
+    assert.equal(btoaCallsWithoutRefresh, 1);
+    assert.equal(
+        storageWithoutRefresh.operations.filter(operation => (
+            operation.operation === 'set'
+            && operation.key === 'strava_tokens'
+        )).length,
+        0
+    );
+
+    const storageWithRefresh = new MemoryStorage(realLibrary());
+    storageWithRefresh.operations = [];
+    let fetchCallsWithRefresh = 0;
+    const refreshedTokens = {
+        access_token: 'synthetic-refreshed-access-token',
+        refresh_token: 'synthetic-refreshed-refresh-token',
+        expires_at: 2200000000
+    };
+    await requestRunPlusRemote('/api/strava-activity?id=synthetic-real-activity', {
+        allowRemoteStrava: true,
+        storage: storageWithRefresh,
+        btoaImpl: () => 'synthetic-encoded-auth',
+        fetchImpl: async () => {
+            fetchCallsWithRefresh += 1;
+            return makeResponse({
+                activity: { id: 'synthetic-real-activity' },
+                tokens: refreshedTokens
+            });
+        }
+    });
+    assert.equal(
+        storageWithRefresh.getItemCalls
+            .filter(key => key === 'strava_tokens').length,
+        1
+    );
+    assert.equal(fetchCallsWithRefresh, 1);
+    assert.equal(
+        storageWithRefresh.operations.filter(operation => (
+            operation.operation === 'set'
+            && operation.key === 'strava_tokens'
+        )).length,
+        1
+    );
+    assert.deepEqual(
+        JSON.parse(storageWithRefresh.getItem('strava_tokens')),
+        refreshedTokens
+    );
 });
 
 test('Entering Demo adds only Demo keys and preserves the real snapshot byte-for-byte', () => {
@@ -664,17 +1256,112 @@ test('A partial Demo write is compensated without touching the real library', ()
     );
 });
 
-test('Source boundaries prohibit real Demo storage mutations and cache clearing', async () => {
-    const root = new URL('../../', import.meta.url);
-    const [demoSource, authSource, apiSource] = await Promise.all([
-        readFile(new URL('js/demo/index.js', root), 'utf8'),
-        readFile(new URL('js/app/auth.js', root), 'utf8'),
-        readFile(new URL('js/services/api.js', root), 'utf8')
+test('Source and privacy boundaries enforce production-path isolation', async () => {
+    const [
+        demoSource,
+        authSource,
+        apiSource,
+        athleteSource,
+        runPlusSource,
+        indexSource
+    ] = await Promise.all([
+        readFile(new URL('js/demo/index.js', projectRoot), 'utf8'),
+        readFile(new URL('js/app/auth.js', projectRoot), 'utf8'),
+        readFile(new URL('js/services/api.js', projectRoot), 'utf8'),
+        readFile(new URL('js/tabs/athlete.js', projectRoot), 'utf8'),
+        readFile(new URL('js/tabs/run-plus.js', projectRoot), 'utf8'),
+        readFile(new URL('index.html', projectRoot), 'utf8')
     ]);
     const prohibitedMutation = /(?:setItem|removeItem)\(\s*['"](?:strava_tokens|strava_activities|strava_athlete_data|strava_training_zones|strava_gears|dashboard_settings)/;
+    const rawConsoleArgument = /console\.(?:log|info|debug|warn|error)\([^;]*,\s*(?:activities|allActivities|preprocessed|athlete|zones|gears|error|results\[)/s;
 
     assert.equal(prohibitedMutation.test(demoSource), false);
     assert.equal(demoSource.includes('indexedDB'), false);
     assert.equal(authSource.includes('clearCachedActivities'), false);
     assert.equal(apiSource.includes('clearCachedActivities'), false);
+    assert.equal(rawConsoleArgument.test(mainSource), false);
+    assert.equal(mainSource.includes('[Strava] Athlete data:'), false);
+    assert.equal(mainSource.includes('[Strava] Training zones:'), false);
+    assert.equal(mainSource.includes('[Strava] Summary:'), false);
+    assert.equal(mainSource.includes('dateRange:'), false);
+    assert.equal(mainSource.includes('console.error'), false);
+    assert.equal(
+        mainSource.includes("localStorage.getItem('strava_gears')"),
+        false
+    );
+    assert.doesNotMatch(
+        mainSource,
+        /handleError\([^;]*,\s*error\s*\)/
+    );
+    assert.equal(
+        (mainSource.match(/\bisDemoMode\(\)/g) || []).length,
+        2,
+        'initialize and refresh should each freeze session mode once'
+    );
+    assert.equal(
+        (mainSource.match(
+            /const activityLoad = await loadActivitiesForSession\(\{/g
+        ) || []).length,
+        2,
+        'initialize and refresh must call the production activity loader'
+    );
+    assert.match(
+        mainSource,
+        /allowRemoteStrava:\s*activeSessionMode\s*===\s*APP_SESSION_MODE\.REAL/
+    );
+    assert.match(
+        mainSource,
+        /return buildSessionGearNameMap\(sessionGears\)/
+    );
+    assert.equal(
+        (mainSource.match(
+            /const preprocessingAthlete = selectPreprocessingAthlete\(/g
+        ) || []).length,
+        2
+    );
+    assert.equal(athleteSource.includes('strava_athlete_data'), false);
+    assert.equal(athleteSource.includes('strava_training_zones'), false);
+    assert.equal(athleteSource.includes('active athlete'), false);
+
+    const remoteStart = runPlusSource.indexOf(
+        'export async function requestRunPlusRemote'
+    );
+    const remoteEnd = runPlusSource.indexOf(
+        'async function fetchNsmActivityDetails',
+        remoteStart
+    );
+    const remoteBoundary = runPlusSource.slice(remoteStart, remoteEnd);
+    const gateIndex = remoteBoundary.indexOf(
+        'if (allowRemoteStrava !== true)'
+    );
+    const tokenReadIndex = remoteBoundary.indexOf(
+        "storage.getItem('strava_tokens')"
+    );
+    const fetchIndex = remoteBoundary.indexOf(
+        'const response = await fetchImpl'
+    );
+    const tokenWriteIndex = remoteBoundary.indexOf(
+        "storage.setItem('strava_tokens'"
+    );
+    assert.equal(
+        gateIndex >= 0
+        && gateIndex < tokenReadIndex
+        && tokenReadIndex < fetchIndex
+        && fetchIndex < tokenWriteIndex,
+        true
+    );
+    assert.equal(remoteBoundary.includes('response.text'), false);
+    assert.equal(
+        runPlusSource.includes("console.error('NSM interval analysis failed:'"),
+        false
+    );
+    assert.match(
+        runPlusSource,
+        /allowRemoteStrava:\s*options\?\.allowRemoteStrava\s*===\s*true/
+    );
+    assert.match(
+        indexSource,
+        /id="logout-button"[\s\S]*?aria-label="Disconnect Strava"[\s\S]*?title="Disconnect Strava"/
+    );
+    assert.doesNotMatch(indexSource, /Delete Local Data/i);
 });

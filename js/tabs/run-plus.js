@@ -5215,37 +5215,74 @@ function downloadRunPlusText(filename, content, type) {
     URL.revokeObjectURL(url);
 }
 
-function getRunPlusAuthPayload() {
-    const tokenString = localStorage.getItem('strava_tokens');
-    return tokenString ? btoa(tokenString) : null;
+export const RUN_PLUS_REMOTE_ERROR = Object.freeze({
+    DISABLED: 'RUN_PLUS_REMOTE_DISABLED',
+    REQUEST_FAILED: 'RUN_PLUS_REMOTE_REQUEST_FAILED',
+    RESPONSE_INVALID: 'RUN_PLUS_REMOTE_RESPONSE_INVALID'
+});
+
+export class RunPlusRemoteError extends Error {
+    constructor(code, { httpStatus = null } = {}) {
+        super('Run Plus remote enrichment is unavailable.');
+        this.name = 'RunPlusRemoteError';
+        this.code = code;
+        this.httpStatus = httpStatus;
+    }
 }
 
-async function fetchRunPlusApi(url) {
-    const authPayload = getRunPlusAuthPayload();
-    const response = await fetch(url, {
+export async function requestRunPlusRemote(url, {
+    allowRemoteStrava = false,
+    storage = globalThis.localStorage,
+    fetchImpl = globalThis.fetch,
+    btoaImpl = globalThis.btoa
+} = {}) {
+    if (allowRemoteStrava !== true) {
+        throw new RunPlusRemoteError(RUN_PLUS_REMOTE_ERROR.DISABLED);
+    }
+
+    const tokenString = storage.getItem('strava_tokens');
+    const authPayload = tokenString ? btoaImpl(tokenString) : null;
+    const response = await fetchImpl(url, {
         headers: authPayload ? { Authorization: `Bearer ${authPayload}` } : {}
     });
     if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`API Error ${response.status}: ${errorText}`);
+        throw new RunPlusRemoteError(RUN_PLUS_REMOTE_ERROR.REQUEST_FAILED, {
+            httpStatus: response.status
+        });
     }
-    const result = await response.json();
-    if (result.tokens) localStorage.setItem('strava_tokens', JSON.stringify(result.tokens));
+
+    let result;
+    try {
+        result = await response.json();
+    } catch {
+        throw new RunPlusRemoteError(RUN_PLUS_REMOTE_ERROR.RESPONSE_INVALID, {
+            httpStatus: response.status
+        });
+    }
+    if (result.tokens) {
+        storage.setItem('strava_tokens', JSON.stringify(result.tokens));
+    }
     return result;
 }
 
-async function fetchNsmActivityDetails(activityId) {
-    const result = await fetchRunPlusApi(`/api/strava-activity?id=${encodeURIComponent(activityId)}`);
+async function fetchNsmActivityDetails(activityId, remoteOptions) {
+    const result = await requestRunPlusRemote(
+        `/api/strava-activity?id=${encodeURIComponent(activityId)}`,
+        remoteOptions
+    );
     return result.activity;
 }
 
-async function fetchNsmActivityStreams(activityId) {
+async function fetchNsmActivityStreams(activityId, remoteOptions) {
     const streamTypes = 'time,distance,velocity_smooth,heartrate,cadence,altitude';
-    const result = await fetchRunPlusApi(`/api/strava-streams?id=${encodeURIComponent(activityId)}&type=${encodeURIComponent(streamTypes)}`);
+    const result = await requestRunPlusRemote(
+        `/api/strava-streams?id=${encodeURIComponent(activityId)}&type=${encodeURIComponent(streamTypes)}`,
+        remoteOptions
+    );
     return result.streams;
 }
 
-async function analyzeNsmIntervals(row) {
+async function analyzeNsmIntervals(row, remoteOptions) {
     if (!row?.run?.id) throw new Error('Activity ID is required for interval analysis.');
     if (hasNsmManualWorkOverride(row.input)) return buildNsmManualIntervalAnalysis(row.run, row.input, row.tag);
 
@@ -5254,7 +5291,10 @@ async function analyzeNsmIntervals(row) {
 
     let detailError = null;
     try {
-        const activity = await fetchNsmActivityDetails(row.run.id);
+        const activity = await fetchNsmActivityDetails(
+            row.run.id,
+            remoteOptions
+        );
         const lapAnalysis = analyzeNsmLaps(activity, row.run, row.input);
         if (lapAnalysis) return lapAnalysis;
     } catch (err) {
@@ -5263,11 +5303,13 @@ async function analyzeNsmIntervals(row) {
 
     return {
         ...buildNsmActivityAverageAnalysis(row.run, row.input, row.tag),
-        warnings: [detailError ? `No usable laps detected (${detailError.message}); kept activity-average proxy.` : 'No usable laps detected; kept activity-average proxy. Use Deep HR analysis for streams.']
+        warnings: [detailError
+            ? 'Remote activity details unavailable; kept activity-average proxy.'
+            : 'No usable laps detected; kept activity-average proxy. Use Deep HR analysis for streams.']
     };
 }
 
-async function analyzeNsmDeepHr(row) {
+async function analyzeNsmDeepHr(row, remoteOptions) {
     if (!row?.run?.id) throw new Error('Activity ID is required for deep HR analysis.');
 
     const analyzeStreamsForRow = streams => analyzeNsmStreamsAgainstStructure(streams, row.run, row.input, row.intervalAnalysis)
@@ -5276,7 +5318,10 @@ async function analyzeNsmDeepHr(row) {
     const localStreamAnalysis = localStreams ? analyzeStreamsForRow(localStreams) : null;
     if (localStreamAnalysis) return mergeNsmHrOverlay(row.intervalAnalysis, localStreamAnalysis, row.run, row.input, row.tag);
 
-    const streams = await fetchNsmActivityStreams(row.run.id);
+    const streams = await fetchNsmActivityStreams(
+        row.run.id,
+        remoteOptions
+    );
     const streamAnalysis = analyzeStreamsForRow(streams);
     if (streamAnalysis) return mergeNsmHrOverlay(row.intervalAnalysis, streamAnalysis, row.run, row.input, row.tag);
     throw new Error('No usable stream HR points matched the interval structure. Keep the laps proxy or check Strava streams for this activity.');
@@ -5331,7 +5376,9 @@ function bindNsmRegistry(root, model, allActivities, dateFilterFrom, dateFilterT
         button.disabled = true;
         button.textContent = loadingLabel;
         try {
-            let analysis = await analyzer(row);
+            let analysis = await analyzer(row, {
+                allowRemoteStrava: options?.allowRemoteStrava === true
+            });
             if (button.dataset.nsmAnalyzeIntervals) {
                 if (analysis.source === 'activity_average' && row.intervalAnalysis?.source === 'streams') {
                     analysis = {
@@ -5344,11 +5391,11 @@ function bindNsmRegistry(root, model, allActivities, dateFilterFrom, dateFilterT
             }
             saveNsmIntervalAnalysis(activityId, row.run, analysis);
             renderRunPlusTab(allActivities, dateFilterFrom, dateFilterTo, gearFilter, options);
-        } catch (err) {
-            console.error('NSM interval analysis failed:', err);
+        } catch (_err) {
+            console.warn('NSM remote analysis unavailable');
             button.disabled = false;
             button.textContent = failedLabel;
-            button.title = err.message || 'Unable to analyze intervals';
+            button.title = 'Unable to analyze intervals';
         }
     };
 
