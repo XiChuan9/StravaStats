@@ -13,7 +13,27 @@ let athleteActivities = [];
 // -------------------------
 // Public API
 // -------------------------
-export function renderTrendsTab(allActivities, dateFilterFrom, dateFilterTo, sportFilter = 'all', dataType = 'time') {
+export function selectTrendsMetadataContext(context = {}) {
+    const athleteData = context?.athleteData;
+    const zonesData = context?.zonesData;
+    return Object.freeze({
+        athleteData: athleteData && typeof athleteData === 'object' && !Array.isArray(athleteData)
+            ? athleteData
+            : null,
+        zonesData: zonesData && typeof zonesData === 'object' && !Array.isArray(zonesData)
+            ? zonesData
+            : null
+    });
+}
+
+export function renderTrendsTab(
+    allActivities,
+    dateFilterFrom,
+    dateFilterTo,
+    sportFilter = 'all',
+    dataType = 'time',
+    metadataContext = {}
+) {
     // Public entry to render the Trends tab. Keeps signature used by `main.js`.
     currentDataType = dataType;
     athleteActivities = Array.isArray(allActivities) ? allActivities : [];
@@ -41,16 +61,8 @@ export function renderTrendsTab(allActivities, dateFilterFrom, dateFilterTo, spo
     // Apply filtering using the unified helper
     const filteredActivities = filterActivities(allActivities, dateFilterFrom, dateFilterTo, sportFilter);
 
-    const athleteData = JSON.parse(localStorage.getItem('strava_athlete_data'));
-    const zonesData = JSON.parse(localStorage.getItem('strava_training_zones'));
-
-    if (athleteData) {
-        console.log('[Athlete Tab] active athlete', {
-            id: athleteData?.id,
-            name: `${athleteData?.firstname || ''} ${athleteData?.lastname || ''}`.trim(),
-            username: athleteData?.username || null,
-        });
-    }
+    const { athleteData, zonesData } =
+        selectTrendsMetadataContext(metadataContext);
 
     if (athleteData) renderAthleteProfile(athleteData);
     if (zonesData) renderTrainingZones(zonesData);
