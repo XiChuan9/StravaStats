@@ -475,6 +475,29 @@ B2-A.1 控制塔纠偏：
   失败；除确认不存在或成功 revoke 外，删除本地 Token 后均返回
   `revocation-unconfirmed`。
 
+B2-B Demo Namespace Isolation 实现边界：
+
+- Demo namespace 冻结为
+  `strava_demo_mode`、`strava_demo_activities`、
+  `strava_demo_athlete_data`、`strava_demo_training_zones`、
+  `strava_demo_gears`、三个对应 metadata timestamp key 和
+  `strava_tokens_demo`，由 `js/demo/index.js` 集中导出；
+- `loadDemoData()` 使用注入的 `referenceDate` 和 `now` 确定性生成 Demo
+  activities、athlete、zones、gears 和唯一 Demo Token；写入失败只补偿本次尝试
+  的 Demo keys，不读取或修改真实 Local Library；
+- Demo getter 只读取对应 Demo key，malformed payload 返回安全空值，不 fallback
+  到真实 activities 或 metadata，也不触发网络；
+- Demo logout、malformed/expired Demo Token 和真实 OAuth 成功后的 Demo exit
+  只调用 `clearDemoData()`；不得进入 Authentication Lifecycle disconnect、
+  远端 revoke 或真实 cache 清理；
+- URL 包含 OAuth code 时真实 OAuth 优先，B2-A identity guard 保持生效；只有
+  OAuth 成功后才清理 Demo namespace 并使用真实 Token；
+- Demo API activities、athlete、zones、gears 和 gear-by-id 全部从 Demo
+  namespace 返回；Demo gear cache 更新只写 Demo gears/timestamp，所有 Demo API
+  路径 fetch 调用为零；
+- B2-B 不修改 `auth-lifecycle.js`、Legacy Rescue、页面、Service Worker、
+  Canonical Schema、IndexedDB v2 或依赖；B2-C 保持未开始。
+
 ## Acceptance criteria
 
 - [ ] Rescue Reader 可以只读打开 Legacy IndexedDB；
@@ -790,7 +813,28 @@ Authentication focused tests: Pass (28/28)
 Legacy Rescue tests: Pass (53/53)
 Full tests: Pass (94/94)
 Browser/real OAuth verification: Not run
-B2-B/B2-C: Not started
+B2-B Demo Namespace Isolation module boundary: Approved for commit by control tower
+B2-B focused tests:
+  node --test tests/legacy/demo-isolation.test.js — Pass (15/15)
+B2-B directed evidence:
+  entering and clearing Demo preserve the complete real Local Library snapshot
+  byte-for-byte; Demo API fetch calls=0; Demo logout revoke calls=0 and
+  Authentication Lifecycle disconnect calls=0; successful real OAuth clears only
+  Demo namespace and uses the guarded real Token; identity mismatch performs zero
+  storage writes and leaves Demo plus real data unchanged
+End-to-end Demo activity-cache isolation:
+  Not complete — `main.js` initialization and refresh paths remain a mandatory
+  B2-C item and are outside the B2-B module commit
+B2-B final automated checks:
+  npm ci — Pass
+  npm run check:syntax — Pass (105 files)
+  npm run check:privacy — Pass
+  node --test tests/legacy/demo-isolation.test.js — Pass (15/15)
+  node --test tests/legacy/auth-lifecycle.test.js — Pass (28/28)
+  node --test tests/legacy/legacy-cache-rescue.test.js — Pass (53/53)
+  npm test — Pass (109/109)
+  git diff --check — Pass
+B2-C: Not started
 Browser and real-data verification: Not run
 Investigation automated checks: A1 repository minimum passed
 Investigation manual verification: Not run; see Manual verification

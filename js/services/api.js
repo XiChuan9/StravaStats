@@ -3,7 +3,14 @@
 // ===================================================================
 // CACHE CONFIGURATION
 // ===================================================================
-import { isDemoMode, getDemoActivities, getDemoGears } from '../demo/index.js';
+import {
+    getDemoActivities,
+    getDemoAthlete,
+    getDemoGears,
+    getDemoTrainingZones,
+    isDemoMode,
+    setDemoGears
+} from '../demo/index.js';
 const CACHE_DURATIONS = {
     athlete: 24 * 60 * 60 * 1000,      // 24 hours
     zones: 24 * 60 * 60 * 1000,        // 24 hours
@@ -100,7 +107,7 @@ export async function handleApiResponse(response, options = {}) {
     }
 
     const result = await response.json();
-    if (result.tokens) {
+    if (result.tokens && !isDemoMode()) {
         localStorage.setItem('strava_tokens', JSON.stringify(result.tokens));
     }
     return result;
@@ -122,6 +129,10 @@ export async function fetchAllActivities() {
 }
 
 export async function fetchGearById(gearId) {
+    if (isDemoMode()) {
+        return getDemoGears().find(gear => gear?.id === gearId) || null;
+    }
+
     // Check cache first with 24h TTL
     const cacheKey = `strava_gear_${gearId}`;
     const cached = getFromCache(cacheKey, 'gear');
@@ -157,19 +168,15 @@ export function renderAthleteProfile(athlete) {
 }
 
 export async function fetchAthleteData() {
+    if (isDemoMode()) {
+        return getDemoAthlete();
+    }
+
     // Check cache first with 24h TTL
     const cacheKey = 'strava_athlete_data';
     const cached = getFromCache(cacheKey, 'athlete');
     if (cached) {
         return cached;
-    }
-
-    // If in demo mode, get from localStorage
-    if (isDemoMode()) {
-        const stored = localStorage.getItem('strava_athlete_data');
-        if (stored) {
-            return JSON.parse(stored);
-        }
     }
 
     const response = await fetch('/api/strava-athlete', {
@@ -183,19 +190,15 @@ export async function fetchAthleteData() {
 }
 
 export async function fetchTrainingZones() {
+    if (isDemoMode()) {
+        return getDemoTrainingZones();
+    }
+
     // Check cache first with 24h TTL
     const cacheKey = 'strava_training_zones';
     const cached = getFromCache(cacheKey, 'zones');
     if (cached) {
         return cached;
-    }
-
-    // If in demo mode, get from localStorage
-    if (isDemoMode()) {
-        const stored = localStorage.getItem('strava_training_zones');
-        if (stored) {
-            return JSON.parse(stored);
-        }
     }
 
     const response = await fetch('/api/strava-zones', {
@@ -210,7 +213,7 @@ export async function fetchTrainingZones() {
 
 export async function fetchAllGears(athlete) {
     if (isDemoMode()) {
-        return getDemoGears(athlete);
+        return getDemoGears();
     }
 
     const rawGearIds = [...(athlete.shoes || []), ...(athlete.bikes || [])];
@@ -232,6 +235,10 @@ export async function fetchAllGears(athlete) {
 }
 
 export function getCachedGears() {
+    if (isDemoMode()) {
+        return getDemoGears();
+    }
+
     // Try to read cached gears array with 24h TTL
     const cached = getFromCache('strava_gears', 'gear');
     if (cached) {
@@ -240,7 +247,12 @@ export function getCachedGears() {
     return null;
 }
 
-export function setCachedGears(gearsList) {
+export function setCachedGears(gearsList, options = {}) {
+    if (isDemoMode()) {
+        setDemoGears(gearsList, options);
+        return;
+    }
+
     // Save gears array to cache with 24h TTL
     saveToCache('strava_gears', gearsList);
 }
