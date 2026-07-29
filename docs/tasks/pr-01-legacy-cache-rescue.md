@@ -771,7 +771,7 @@ Task Brief 初始化提交本身仅新增本文档；若需要回滚，revert
 - [x] 回滚不清理预先存在的 Legacy Cache、导出包或未来 V2 数据；仅精确删除
       失败 restore 本次创建的 Legacy DB；
 - [x] 所有未执行验证明确标记，未伪装成 Pass；
-- [ ] staged paths、commit、base/head branch 和 Draft PR 目标正确。
+- [x] staged paths、commit、base/head branch 和 Draft PR 目标正确。
 
 ## Completion evidence
 
@@ -971,4 +971,12 @@ Investigation automated checks: A1 repository minimum passed
 Investigation manual verification: Not run; see Manual verification
 Real OAuth / real cache / Disconnect / export / restore / browser SW: Not run
 Independent review: B1 approved for commit after B1.3
+Final remote review: Approved for Ready for review
+Reviewed head: 3abdc66b5fbfdd324d0622183e407aebf9512956
+Remote PR state before Ready: OPEN / Draft / MERGEABLE / CLEAN
+Changed files: 21/21 approved paths
+Final B2-C commit scope: 6/6 approved paths
+CI Run 30425500420: Success
+Control-tower decision: Ready for review approved
+Browser/real-data verification: Not run; documented limitation, not represented as Pass
 ```
