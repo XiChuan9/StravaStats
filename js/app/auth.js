@@ -1,9 +1,39 @@
 // js/auth.js
 import { showLoading, handleError, hideLoading } from './ui.js';
 import { loadDemoData } from '../demo/index.js';
-import { clearCachedActivities } from '../services/activity-cache.js';
+import {
+    AUTH_FAILURE_KIND,
+    AUTH_LIFECYCLE_STATUS,
+    createAuthLifecycle,
+    inspectLegacyIndexedDbPresence
+} from './auth-lifecycle.js';
 
 const REDIRECT_URI = window.location.origin + window.location.pathname;
+
+function browserAuthLifecycle() {
+    return createAuthLifecycle({
+        storage: localStorage,
+        inspectIndexedDb: () => inspectLegacyIndexedDbPresence({
+            indexedDB: globalThis.indexedDB
+        }),
+        revokeAccessToken: async accessToken => {
+            // Preserve the existing Demo behavior until the separate Demo namespace phase.
+            if (accessToken.startsWith('demo_')) return { ok: true };
+            const response = await fetch('https://www.strava.com/oauth/deauthorize', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${accessToken}` }
+            });
+            return { ok: response.ok };
+        }
+    });
+}
+
+function authFlowError(status) {
+    const error = new Error(`Authentication blocked (${status}).`);
+    error.name = 'AuthenticationLifecycleError';
+    error.code = status;
+    return error;
+}
 
 async function getStravaClientId() {
     const response = await fetch('/api/config');
@@ -28,35 +58,9 @@ export async function redirectToStrava() {
 }
 
 export async function logout() {
-    const tokenDataRaw = localStorage.getItem('strava_tokens');
-    if (tokenDataRaw) {
-        const tokenData = JSON.parse(tokenDataRaw);
-        // Only try deauth if not a demo token
-        if (!tokenData.access_token?.startsWith('demo_')) {
-            try {
-                await fetch('https://www.strava.com/oauth/deauthorize', {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${tokenData.access_token}` }
-                });
-            } catch (error) {
-                console.warn('Failed to deauthorize token:', error);
-            }
-        }
-    }
-    localStorage.removeItem('strava_tokens');
-    await clearCachedActivities();
-    localStorage.removeItem('strava_athlete_data');
-    localStorage.removeItem('strava_athlete_data_timestamp');
-    localStorage.removeItem('strava_training_zones');
-    localStorage.removeItem('strava_training_zones_timestamp');
-    localStorage.removeItem('strava_gears');
-    localStorage.removeItem('strava_gears_timestamp');
-    localStorage.removeItem('dashboard_filters');
-    localStorage.removeItem('dashboard_readiness_hrv');
-    // Also clear demo data
-    localStorage.removeItem('strava_demo_mode');
-    localStorage.removeItem('strava_demo_activities');
+    const result = await browserAuthLifecycle().disconnect();
     window.location.reload();
+    return result;
 }
 
 async function getTokensFromCode(code) {
@@ -75,24 +79,21 @@ async function getTokensFromCode(code) {
         const contentType = response.headers.get('content-type') || '';
         if (!contentType.includes('application/json')) {
             // Endpoint returned HTML — likely a 404 (not running via vercel dev) or a Vercel error page
-            const text = await response.text().catch(() => '');
             const hint = response.status === 404
                 ? 'Endpoint not found — make sure you are running the app with "vercel dev".'
                 : `Server returned HTTP ${response.status}. Check that STRAVA_CLIENT_SECRET is set in your Vercel environment variables.`;
-            throw new Error(hint + (text ? `\n\nServer said: ${text.slice(0, 200)}` : ''));
+            throw new Error(hint);
         }
 
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Authentication failed');
+        if (!response.ok) throw new Error('Authentication failed');
 
-        localStorage.setItem('strava_tokens', JSON.stringify({
-            access_token: data.access_token,
-            refresh_token: data.refresh_token,
-            expires_at: data.expires_at
-        }));
-        await clearCachedActivities();
-
+        const result = await browserAuthLifecycle().acceptOAuthTokenResponse(data);
+        if (result.status !== AUTH_LIFECYCLE_STATUS.SUCCESS) {
+            throw authFlowError(result.status);
+        }
         window.history.replaceState({}, '', window.location.pathname);
+        return result;
     } catch (error) {
         handleError('Authentication failed', error);
         throw error;
@@ -130,25 +131,26 @@ export async function handleAuth(onAuthenticated) {
 
     const tokenDataRaw = localStorage.getItem('strava_tokens');
     if (tokenDataRaw) {
-        const tokenData = JSON.parse(tokenDataRaw);
+        let tokenData;
+        try {
+            tokenData = JSON.parse(tokenDataRaw);
+        } catch {
+            tokenData = null;
+        }
         const now = Math.floor(Date.now() / 1000);
 
-        if (tokenData.access_token && tokenData.expires_at > now) {
+        if (tokenData?.access_token && tokenData.expires_at > now) {
             await onAuthenticated(tokenData);
-            return;
-        } else {
-            localStorage.removeItem('strava_tokens');
-            await clearCachedActivities();
-            localStorage.removeItem('strava_athlete_data');
-            localStorage.removeItem('strava_athlete_data_timestamp');
-            localStorage.removeItem('strava_training_zones');
-            localStorage.removeItem('strava_training_zones_timestamp');
-            localStorage.removeItem('strava_gears');
-            localStorage.removeItem('strava_gears_timestamp');
-            localStorage.removeItem('dashboard_filters');
-            localStorage.removeItem('dashboard_readiness_hrv');
+            return { status: AUTH_LIFECYCLE_STATUS.SUCCESS };
         }
+
+        const result = browserAuthLifecycle().expireToken();
+        hideLoading();
+        return result;
     }
 
     hideLoading();
+    return browserAuthLifecycle().handleAuthFailure(
+        AUTH_FAILURE_KIND.UNAUTHORIZED
+    );
 }

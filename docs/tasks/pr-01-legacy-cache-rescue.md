@@ -443,6 +443,38 @@ cache 的账号不同或无法确认时必须 fail closed，不读取、不展�
 Demo 必须使用独立 namespace，不调用真实 Legacy activities 或 metadata 的读写
 路径。
 
+B2-A Authentication Lifecycle 实现边界：
+
+- `js/app/auth-lifecycle.js` 是无 DOM、无 reload、依赖注入的核心，公开
+  `disconnect`、`expireToken`、`handleAuthFailure` 和
+  `acceptOAuthTokenResponse`；
+- 稳定状态为 `success`、`revocation-unconfirmed`、`token-expired`、
+  `unauthenticated`、`refresh-failed`、`forbidden`、
+  `identity-mismatch`、`identity-unconfirmed`，并为本地 Token 读写失败保留
+  明确失败状态；
+- Disconnect 和 Token expiry 只允许删除 `strava_tokens`；Local Library、
+  Legacy Rescue/export marker 和 Demo namespace 均不得清理；
+- OAuth identity guard 只读取旧 athlete ID；IndexedDB 只用 `count(key)` 确认
+  activity entry 是否存在，不读取或展示旧活动；
+- 旧 Local Library 存在时，旧 ID 或新 OAuth athlete ID 任一未知均
+  `identity-unconfirmed`，不同则 `identity-mismatch`；blocked 路径零写入；
+- `js/services/api.js` 只为 refresh failure、401 和 403 提供稳定、可测试的错误
+  状态，不增加 retry、自动 refresh 或通用 auth-state framework。
+
+B2-A.1 控制塔纠偏：
+
+- LocalStorage presence 只能通过 `length` / `key(index)` 枚举 key 名；不得读取
+  activities、zones、gears、settings、Rescue 或 Demo 值，唯一允许读取和解析的
+  身份值是 `strava_athlete_data.id`；
+- `indexedDB.databases()` 仅为可选优化；缺失或调用失败时使用不带 version 的
+  `open(LEGACY_DB_NAME)`，missing upgrade 必须 abort，禁止创建 store，并等待
+  error/success 终态后再返回；
+- timeout/onblocked 后的迟到 upgrade 必须 abort；若 abort 失败并创建空探测 DB，
+  必须关闭连接并等待精确删除终态，不能在返回后留下未报告 mutation；
+- Disconnect 必须区分 Token 不存在、有效、malformed、缺少 access token 和读取
+  失败；除确认不存在或成功 revoke 外，删除本地 Token 后均返回
+  `revocation-unconfirmed`。
+
 ## Acceptance criteria
 
 - [ ] Rescue Reader 可以只读打开 Legacy IndexedDB；
@@ -722,7 +754,43 @@ B1.3 final automated checks:
 B1 final control-tower review: Approved for commit after B1.3
 Focused tests: Pass (53/53)
 Full tests: Pass (66/66)
-B2 auth/demo/UI: Not started
+B2-A Authentication Lifecycle: Approved by control tower after B2-A.1
+B2-A focused tests:
+  node --test tests/legacy/auth-lifecycle.test.js — Pass (17/17)
+B2-A Local Library preservation:
+  Disconnect success/network failure/HTTP failure and Token expiry preserve all
+  activity fallback, athlete, zones, gears, dashboard/settings, Rescue marker,
+  and Demo namespace values; refresh failure/401/403 perform zero storage writes
+B2-A OAuth identity guard:
+  same account updates only strava_tokens; mismatch and unknown identity perform
+  zero storage writes; IndexedDB presence uses count(key) without reading activities
+B2-A final automated checks:
+  npm ci — Pass
+  npm run check:syntax — Pass (104 files)
+  npm run check:privacy — Pass
+  node --test tests/legacy/legacy-cache-rescue.test.js — Pass (53/53)
+  npm test — Pass (83/83)
+  git diff --check — Pass
+B2-A.1 contract correction: Approved by control tower
+B2-A.1 focused tests:
+  node --test tests/legacy/auth-lifecycle.test.js — Pass (28/28)
+B2-A.1 directed evidence:
+  localStorage presence reads only strava_athlete_data value; activity fallback
+  getItem calls=0; no-databases first login succeeds without DB/store creation;
+  malformed/missing-access/read-error Token returns revocation-unconfirmed after removal
+B2-A.1 final automated checks:
+  npm ci — Pass
+  npm run check:syntax — Pass (104 files)
+  npm run check:privacy — Pass
+  node --test tests/legacy/auth-lifecycle.test.js — Pass (28/28)
+  node --test tests/legacy/legacy-cache-rescue.test.js — Pass (53/53)
+  npm test — Pass (94/94)
+  git diff --check — Pass
+Authentication focused tests: Pass (28/28)
+Legacy Rescue tests: Pass (53/53)
+Full tests: Pass (94/94)
+Browser/real OAuth verification: Not run
+B2-B/B2-C: Not started
 Browser and real-data verification: Not run
 Investigation automated checks: A1 repository minimum passed
 Investigation manual verification: Not run; see Manual verification

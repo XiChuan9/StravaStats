@@ -45,6 +45,33 @@ function saveToCache(key, data) {
 // ===================================================================
 // AUTH & HELPERS
 // ===================================================================
+export const API_AUTH_STATUS = Object.freeze({
+    UNAUTHENTICATED: 'unauthenticated',
+    FORBIDDEN: 'forbidden',
+    REFRESH_FAILED: 'refresh-failed'
+});
+
+export class ApiResponseError extends Error {
+    constructor(message, {
+        httpStatus = null,
+        authStatus = null
+    } = {}) {
+        super(message);
+        this.name = 'ApiResponseError';
+        this.httpStatus = httpStatus;
+        this.authStatus = authStatus;
+    }
+}
+
+export function classifyApiAuthFailure(httpStatus, {
+    refreshFailure = false
+} = {}) {
+    if (refreshFailure) return API_AUTH_STATUS.REFRESH_FAILED;
+    if (httpStatus === 401) return API_AUTH_STATUS.UNAUTHENTICATED;
+    if (httpStatus === 403) return API_AUTH_STATUS.FORBIDDEN;
+    return null;
+}
+
 function getAuthPayload() {
     const tokenData = localStorage.getItem('strava_tokens');
     if (!tokenData) throw new Error('User not authenticated');
@@ -58,14 +85,18 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
-async function handleApiResponse(response) {
+export async function handleApiResponse(response, options = {}) {
     if (!response.ok) {
-        const contentType = response.headers.get('content-type') || '';
-        if (contentType.includes('application/json')) {
-            const result = await response.json();
-            throw new Error(result.error || `API call failed (${response.status})`);
-        }
-        throw new Error(`API call failed (${response.status} ${response.statusText})`);
+        const authStatus = classifyApiAuthFailure(response.status, options);
+        throw new ApiResponseError(
+            authStatus
+                ? `Authentication request failed (${authStatus}).`
+                : `API call failed (${response.status}).`,
+            {
+                httpStatus: response.status,
+                authStatus
+            }
+        );
     }
 
     const result = await response.json();
@@ -130,13 +161,6 @@ export async function fetchAthleteData() {
     const cacheKey = 'strava_athlete_data';
     const cached = getFromCache(cacheKey, 'athlete');
     if (cached) {
-        if (!isDemoMode()) {
-            console.log('[Athlete] cached profile', {
-                id: cached?.id,
-                name: `${cached?.firstname || ''} ${cached?.lastname || ''}`.trim(),
-                username: cached?.username || null,
-            });
-        }
         return cached;
     }
 
@@ -153,12 +177,6 @@ export async function fetchAthleteData() {
     });
     const result = await handleApiResponse(response);
     const athlete = result.athlete;
-
-    console.log('[Athlete] fetched profile', {
-        id: athlete?.id,
-        name: `${athlete?.firstname || ''} ${athlete?.lastname || ''}`.trim(),
-        username: athlete?.username || null,
-    });
 
     saveToCache(cacheKey, athlete);
     return athlete;
