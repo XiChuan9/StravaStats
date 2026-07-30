@@ -2,94 +2,61 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| Status | Proposed |
+| Status | Accepted |
 | Date | 2026-07-28 |
+| Accepted date | 2026-07-30 |
 | Decision owners | XiChuan9 |
-| Target decision PR | PR-02 / PR-03 |
-| Related ADRs | [ADR-0001](./0001-canonical-activity.md)、[ADR-0002](./0002-stream-model.md) |
+| Decision scope | PR-02 接受的消费者边界原则；Repository 设计与实现留给 PR-03 |
+| Related documents | [PR-02 Task Brief](../../tasks/pr-02-canonical-contracts.md)、[ADR-0001](./0001-canonical-activity.md)、[ADR-0002](./0002-stream-model.md)、[ADR-0004](./0004-import-pipeline.md) |
+
+> Accepted decision does not mean downstream implementation is complete.
 
 ## Context
 
-当前 `js/services/api.js`、Activity Detail、Run、Bike、Swim、Advanced Analysis 和 Run Plus 中仍存在直接 `/api/strava-*` 请求。只增加文件解析器而不收口这些调用，会让本地数据无法复用现有页面，并导致每个页面自行处理来源差异。
+Legacy 页面和分析入口仍存在直接 Strava API 与缓存依赖。只增加 Decoder 而不建立
+消费者边界，会让来源、持久化和认证判断继续散落在 UI 与分析模块中。
 
-## Decision
+## Accepted decision
 
-1. UI、tab、详情页和分析入口只通过 Repository 或明确的 read projection 读取活动数据；
-2.页面不得直接：
-   -调用第三方 API；
-   -调用 `/api/strava-*`；
-   -打开具体 IndexedDB store；
-   -读取原始 FIT/TCX/GPX；
-3.定义最小 Repository Contract：
+本 ADR 只接受以下架构原则：
 
-```text
-listActivities / listSummaries
-getActivity / getSummary
-getDetail
-getActivityBundle
-getStreams
-getLaps
-getAthlete
-getZones
-getGears
-count
-```
+- 未来 UI、tab、详情页和 analysis consumer 只通过 Repository 或明确的 read
+  projection 读取活动数据；
+- consumer 不选择 provider、store 或 API，也不直接读取原始导入格式；
+- PR-02 的三个纯 validator 构成当前已实现的 canonical domain validation
+  boundary；
+- Connector 认证生命周期与本地 canonical read boundary 解耦；
+- Legacy 路径在 migration、shadow comparison 和 rollback 获批且验证前继续保留；
+- Repository 的实现不得让页面重新依赖 provider-specific DTO。
 
-4. Legacy Repository 封装当前 Strava API 和 Legacy Cache；
-5. Canonical Repository 读取 IndexedDB v2；
-6. Repository Factory 根据 `dataRepositoryMode` 选择 legacy/shadow/canonical；
-7. Shadow Mode 页面仍读取 Legacy，Canonical 仅双写和比较；
-8.一个详情页只获取一次 `ActivityBundle`，Advanced Analysis 复用同一数据；
-9. Legacy Projection 是 Consumer 迁移期的兼容层；
-10.认证属于 Connector 生命周期，不是 Repository 本地读取的前置条件。
+## Non-binding future candidates
+
+旧文档中的 `listActivities`、`getActivity`、`getStreams`、`getLaps`、
+`getActivityBundle` 等方法名只是未来候选，不是本 ADR 接受的接口清单。
+PR-03 必须根据消费者调查独立决定 Repository 的分层、方法、返回 shape 和错误语义。
+
+## Not implemented by PR-02
+
+PR-02 没有实现或冻结：
+
+- Repository class/interface、具体方法列表或 Factory；
+- Legacy/Canonical adapter、IndexedDB store 或缓存策略；
+- `dataRepositoryMode` feature flag、shadow writer 或 parity comparison；
+- consumer migration、Legacy Projection 或直接 API 调用移除；
+- Repository contract tests、offline read 流程或 auth fallback。
 
 ## Consequences
 
-### Positive
+- 后续消费者迁移有明确的依赖方向和回退约束；
+- Repository API 不会被 PR-02 的临时假设过早冻结；
+- Legacy 与 Canonical 并存期仍需承担 adapter 和 parity 成本。
 
-- 现有页面可复用多数据源；
-- 网络、缓存和 IndexedDB 实现细节集中；
-- 可用 Contract Tests 比较 Legacy/Canonical 返回；
-- Feature Flag 可以回退；
-- 避免 Demo 和 provider 判断散落页面。
+## Validation evidence
 
-### Negative
-
-- 初期增加 Adapter、Factory 和 Projection；
-- 消费者迁移会触及多个热点文件；
-- 接口过宽会形成新的 God Object，需要按 Summary/Detail/Streams 分层；
-- Legacy 返回差异必须显式记录。
-
-## Alternatives considered
-
-### 页面继续直接 fetch，本地模式再加 if/else
-
-拒绝。会快速产生 provider 分支和重复错误处理。
-
-### 页面直接读取 IndexedDB
-
-拒绝。会把 schema、事务和 migration 泄漏到 UI。
-
-### 一次性删除 Legacy 路径
-
-拒绝。失去 Shadow 比较和紧急回退。
-
-## Enforcement
-
-Consumer Migration 完成标准：
-
-```bash
-rg -n -F '/api/strava-' js/pages js/tabs
-```
-
-除 Connector/Provider 和认证边界外，消费者目录不得再有直接 Strava API 调用。
-
-后续可以增加静态检查，阻止新的直接调用进入页面。
-
-## Validation
-
-- Legacy Repository Contract 测试与当前 API 结果等价；
-- Demo、Legacy、Canonical 使用同一 consumer interface；
-- 无 Token 时 Canonical Repository 可工作；
-- 详情页没有重复请求；
-- Feature Flag 切换不要求页面改代码。
+- PR-02 boundary tests 证明 contracts 模块不导入 app、service、model、
+  analysis、provider、repository、storage、decoder 或 connector runtime；
+- 公共入口只暴露三个 validator，不暴露 Repository、Storage、Import、
+  Projection 或 Analysis API；
+- Node import/validation 是纯边界测试，不构成 Repository 实现证据；浏览器
+  dynamic import 保持 Not run；
+- PR-03 将负责 Repository 具体决策、实现与独立验收。

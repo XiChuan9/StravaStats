@@ -2,95 +2,81 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| Status | Proposed |
+| Status | Accepted |
 | Date | 2026-07-28 |
+| Accepted date | 2026-07-30 |
 | Decision owners | XiChuan9 |
-| Target decision PR | PR-02 Canonical Contracts |
-| Related ADR | [ADR-0001](./0001-canonical-activity.md) |
+| Decision scope | PR-02 已实现并验证的 CanonicalStreamSet 逻辑合同 |
+| Related documents | [PR-02 Task Brief](../../tasks/pr-02-canonical-contracts.md)、[ADR-0001](./0001-canonical-activity.md)、[ADR-0003](./0003-repository-boundary.md)、[ADR-0004](./0004-import-pipeline.md) |
+
+> Accepted decision does not mean downstream implementation is complete.
 
 ## Context
 
-Strava、FIT、TCX 和 GPX 对时间序列的组织方式不同：有的共享统一时间轴，有的每条 series 采样率不同，有的缺少时间、距离或部分传感器值。现有页面倾向直接消费 Strava streams，如果把这种结构直接固定为 V2 标准，会造成数据丢失、全零填充和重复解析。
+不同来源的采样率、时间轴和缺失点表达不同。把 Strava StreamSet 或统一一秒
+插值数组固定为 V2 标准会制造数据、丢失缺失语义，并把存储表示泄漏到逻辑合同。
 
-## Decision
+## Accepted decision
 
-目前冻结以下高层规则：
-
-1. Streams 与 Activity Summary 分开存储和按需加载；
-2.每条 `StreamSeries` 必须声明：
-   - `activityId`；
-   - `streamType`；
-   - `unit`；
-   -时间或 offset 数据；
-   -值数据；
-   - coverage/quality 元数据；
-3.支持的核心类型包括 time、distance、latlng、altitude、heartrate、cadence、watts、velocity 和 moving；
-4.缺失 stream 表示 unavailable，不创建全零数组；
-5.单点缺失必须保留缺失语义，不能当作真实 `0`；
-6. laps 和 events 是独立领域对象，不隐藏在 stream 数组中；
-7. pause/resume/start/stop 等保存为 event；
-8.原始 normalized stream 与面向图表的降采样结果分离；
-9.图表降采样不得覆盖可重新分析的 normalized 数据；
-10. Repository 支持按 activity 和 requested types 读取；
-11.大量 streams 不在应用启动时加载。
-
-## Proposed interface
+PR-02 接受以下已实现并验证的运行时逻辑模型：
 
 ```js
-class StreamRepository {
-  async getStreams(activityId, requestedTypes) {}
-  async hasStream(activityId, streamType) {}
+{
+  activityId,
+  series: [
+    {
+      streamType,
+      unit,
+      offsetsSeconds,
+      values,
+      quality
+    }
+  ]
 }
 ```
 
-## Deliberately unresolved
-
-以下决定必须通过样本、性能实验和 Contract 测试后在 PR-02/PR-05 冻结：
-
-- 所有 series 使用统一时间轴，还是允许独立时间轴；
-- IndexedDB 中使用普通数组、TypedArray、Blob 或 chunk；
-- GPS 的 lat/lng 组合或分离表达；
-- 采样空洞、插值和重复 timestamp 的表示；
-- 压缩、chunk size 和大 stream 查询策略；
-- 没有时间戳的 GPX/TCX 如何表达；
-- coverage 和 quality 指标的精确定义。
-
-这些问题未确认前，不应把某种底层表示标记为 `Accepted`。
+- `activityId` 只存在于 `CanonicalStreamSet`；`StreamSeries` 内没有
+  `activityId`；
+- 每条 series 拥有独立 timeline，不要求跨 series 等长或共享 offset；
+- PR-02 runtime 使用 plain arrays；这不是 IndexedDB 编码决定；
+- `offsetsSeconds` 与 `values` 等长、非空，offset finite、非负且
+  non-decreasing；
+- 重复 timestamp 合法，每个重复位置产生 `DUPLICATE_TIMESTAMP` warning；
+- 缺失点使用 `null`，真实 `0` 原样保留；
+- `moving` 使用 `boolean | null`，unit 为 `boolean`；
+- `position` 使用 WGS84 `[latitude, longitude] | null`，坐标 finite 且在范围内；
+- 其他开放 stream 使用 finite `number | null`，并应用已冻结的 HR 与非负约束；
+- summary-only/no-stream 使用 `series: []`；实际存在的 series 不得为空；
+- 同一 set 的 `streamType` 唯一，validator 不排序输入；
+- `quality` 可以 absent、`null` 或 plain JSON-safe object；
+- laps 和 events 是 bundle 中的独立领域对象，不隐藏在 stream 数组里。
 
 ## Consequences
 
-### Positive
+- 不同采样率和采样空洞可以被无损表达；
+- 缺失传感器不会被伪造为全零数组；
+- 逻辑合同不预先绑定持久化编码；
+- 后续读取、降采样和大数据性能仍需要独立设计。
 
-- 支持不同采样率和缺失传感器；
-- 避免页面加载全部 streams；
-- 保留未来重算和质量分析能力；
-- 图表性能优化不会破坏原始 normalized 数据。
+## Deferred downstream work
 
-### Negative
+PR-05 或其他获批后续 PR 决定：
 
-- 比 Strava 的简单数组结构更复杂；
-- 需要明确对齐和 projection 规则；
-- 存储格式会影响 IndexedDB 性能和备份格式；
-- Decoder 测试矩阵必须覆盖异常时间轴。
+- TypedArray、Blob、chunk、压缩、chunk size 和 IndexedDB encoding；
+- StreamRepository、lazy loading、requested-type 查询和 persistence；
+- 性能基准、大 stream 内存策略和图表 downsampling；
+- 插值、派生 stream、coverage/quality 的完整 vocabulary；
+- GPX/TCX/FIT decoder 对无时间戳或异常采样的策略。
 
-## Alternatives considered
+旧 `StreamRepository` 方法草案不属于本 ADR 的已接受实现，也不约束 PR-03/PR-05。
 
-### 永久使用 Strava StreamSet
+## Validation evidence
 
-拒绝。无法完整表达多格式采样和来源差异。
-
-### 将所有数据强制插值到统一一秒时间轴
-
-拒绝。会制造不存在的数据，扩大存储，并改变分析结果。
-
-### 只保存页面所需的降采样数据
-
-拒绝。无法支持未来算法、重新分析和精确导出。
-
-## Validation
-
-- 无 GPS/HR/Power 活动可以正常读取能力；
-- 暂停、重复 timestamp、不同采样率和 stream 空洞有 fixture；
-- 200,000 点活动不在启动阶段加载；
-- 降采样结果与 normalized 数据分开；
-- projection 能生成当前详情页所需 streams。
+- `validateCanonicalStreamSet(value)` 覆盖空 set、独立 timeline、长度与顺序、
+  duplicate timestamp、moving/position/numeric 类型、null/0、quality 和
+  unknown field；
+- accessor/Proxy fail-closed、frozen input、non-mutation、
+  structuredClone/JSON round-trip 和稳定排序已通过；
+- Node 原生 ESM import 与最小有效 StreamSet 已通过；浏览器 dynamic import
+  因获批 Browser 执行面不可用而保持 Not run，证据记录在
+  [Task Brief](../../tasks/pr-02-canonical-contracts.md)。

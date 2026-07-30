@@ -1,24 +1,27 @@
-# ADR-0006：来源身份、Provenance 与合并边界
+# ADR-0006：ActivitySource、DeviceReference 与 Provenance 边界
 
 | 字段 | 内容 |
 | --- | --- |
-| Status | Proposed |
+| Status | Accepted |
 | Date | 2026-07-28 |
+| Accepted date | 2026-07-30 |
 | Decision owners | XiChuan9 |
-| Target decision PR | PR-02 / PR-19 |
-| Related ADRs | [ADR-0001](./0001-canonical-activity.md)、[ADR-0004](./0004-import-pipeline.md) |
+| Decision scope | PR-02 已实现并验证的 P0 source/device 逻辑合同 |
+| Related documents | [PR-02 Task Brief](../../tasks/pr-02-canonical-contracts.md)、[ADR-0001](./0001-canonical-activity.md)、[ADR-0003](./0003-repository-boundary.md)、[ADR-0004](./0004-import-pipeline.md) |
+
+> Accepted decision does not mean downstream implementation is complete.
 
 ## Context
 
-同一次运动可能同时来自 Garmin FIT、Strava API、Strava Archive 和用户导入。直接把每个来源变成独立活动会产生重复；直接覆盖又会丢失来源、用户修正和更完整 streams。
+同一次活动可能来自多个 provider 或 artifact。CanonicalActivity 顶层不应承载
+provider 业务分支，但 bundle 必须能表达来源关系和最小设备引用，同时避免收集不必要
+的设备身份数据。
 
-V2.0 必须解决活动级身份和精确重复，但完整字段级来源选择属于后续增强。
+## Accepted decision
 
-## Decision
+PR-02 接受以下 P0 逻辑合同：
 
-### P0：活动级和来源级 provenance
-
-每个 `ActivitySource` 保存：
+`ActivitySource` 字段为：
 
 ```text
 id
@@ -31,84 +34,43 @@ deviceId
 importedAt
 ```
 
-每个 RawArtifact 保存 SHA-256、媒体类型、大小和获取方式。Canonical Activity 可以关联多个来源，但来源记录不可被合并操作删除。
+- `id` 与 `activityId` 是 non-empty opaque string，source ID 在 bundle 内唯一；
+- `activityId` 必须精确引用 bundle activity；
+- `provider` 与 `acquisitionMethod` 是 non-empty string，仅表达 provenance；
+- `externalId`、`rawArtifactId`、`deviceId` 可以 absent、`null` 或 opaque string；
+- `importedAt` 使用 fixed-millisecond UTC instant；
+- 非 null `deviceId` 必须引用 bundle 内的 `DeviceReference`；
+- 最小 `DeviceReference` 只有 `id`、optional/nullable `manufacturer` 和
+  optional/nullable `model`，device ID 在 bundle 内唯一；
+- 合同不包含序列号，测试、错误和日志不使用真实设备或活动信息；
+- 来源记录是审计关系；未来断开 provider 或合并决策不得以删除来源记录为捷径。
 
-### P0：自动精确身份
+## Deferred downstream work
 
-以下条件可以自动关联：
+PR-02 没有实现或冻结：
 
-1. 相同 provider + external ID；
-2. 相同 RawArtifact SHA-256；
-3. 相同且可信的 FIT session/file identity；
-4. 已存在的明确 Source Reference。
+- RawArtifact schema、内容保留、hash 和 identity；
+- exact duplicate matching、模糊候选、review UI 或 merge/unmerge；
+- `UserOverride`、字段级 provenance 和来源优先级；
+- provider preference、设备 identity 或序列号处理；
+- Connector disconnect retention policy 与 PR-19 workflow；
+- provenance/storage repository、migration 或真实来源导入。
 
-### P0：禁止模糊自动合并
-
-以下条件只能创建 `review_required`：
-
-- 开始时间接近；
-- 距离或时长相似；
-- 文件名相似；
-- 路线形状近似；
-- 来源之间存在高置信但非精确推断。
-
-用户必须可以选择 same activity、keep separate 或 reject candidate，决策保存审计记录。
-
-### UserOverride
-
-名称、运动类型、装备等用户修改保存在 `UserOverride`，不写回 RawArtifact 或来源原始值。
-
-### P1：字段级 provenance
-
-完整的字段级来源选择、可撤销 merge/unmerge、逐字段优先级属于 P1。V2.0 可以为未来能力保留结构，但不得把未实现的字段级 provenance 作为 P0 已完成能力。
-
-## Default preference guidance
-
-以下只是建议，具体优先级必须可审计并在 P1 冻结：
-
-1.用户明确 override；
-2.原始设备文件的 streams/laps/events；
-3.平台上的用户编辑名称、描述和装备；
-4.低保真 TCX/GPX 或摘要补充。
-
-系统不得因默认优先级删除未选中的来源。
+旧的 hash/external-ID/FIT identity 匹配规则与默认来源优先级只是未来候选，必须在
+后续 PR 以隐私、误合并和可回退证据重新决策。
 
 ## Consequences
 
-### Positive
+- CanonicalActivity 保持 provider-neutral，同时 bundle 可校验来源与设备引用；
+- 最小设备合同降低序列号和真实设备数据泄漏风险；
+- 去重、合并和断开策略仍需后续任务独立实现。
 
-- 重复活动有明确身份路径；
-- 保留所有原始来源；
-- 用户修改与原始事实分离；
-- 模糊情况不会静默误合并；
-- 为未来字段级合并留出空间。
+## Validation evidence
 
-### Negative
-
-- 同一活动需要维护多个来源关系；
-- Merge Candidate 和审计记录增加 UI/存储复杂度；
-- 不同平台的 external ID 稳定性需验证；
-- 字段级选择不能在 V2.0 自动完整解决。
-
-## Alternatives considered
-
-### 开始时间 + 距离自动合并
-
-拒绝。室内活动、重复训练和时区偏差会造成误合并。
-
-### 导入重复时直接跳过后来的文件
-
-拒绝。后来的 FIT 可能包含更完整 streams 和 laps。
-
-### 合并后删除次要来源
-
-拒绝。破坏审计、重新解析和 unmerge 能力。
-
-## Validation
-
-- 相同 hash 重复导入不产生第二活动；
-- 同一 external ID 能幂等更新来源；
-- 模糊匹配只能进入人工审查；
-- 用户 override 不覆盖 RawArtifact；
-- merge decision 可追踪；
-- 删除/断开 Connector 不删除已导入 Canonical Activity。
+- bundle tests 覆盖 source/device 必填与 optional 字段、固定 UTC、
+  唯一性、activity/device reference 和 unknown field；
+- 错误 message 不回显实际 provider、ID、设备或活动值；
+- inline deterministic synthetic tests、privacy guard 与 Node side-effect
+  检查均不使用真实数据或 credentials；浏览器 side-effect instrumentation
+  保持 Not run；
+- 完整证据记录在 [Task Brief](../../tasks/pr-02-canonical-contracts.md)。
