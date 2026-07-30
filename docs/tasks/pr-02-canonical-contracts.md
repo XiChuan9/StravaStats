@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Approved for implementation |
+| Status | In progress |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/contracts` |
 | Worktree | `/Users/wangchuanliang/Documents/StravaStats-worktrees/contracts` |
@@ -23,7 +23,13 @@
 - A2 read-only investigation completed；
 - Investigation Gate approved by control tower；
 - A3 decision package approved by project owner；
-- Implementation 尚未开始；
+- A3 accepted and B1 authorized by control tower；
+- B1 initial control-tower review: `REVISE`；
+- B1.1 accessor/Proxy safety revision completed locally；
+- B1.1 control-tower re-review: `Accepted`；
+- B1 local implementation gate: `Accepted`；
+- B1 remote commit/CI finalization pending；
+- B2、B3 尚未开始；
 - ADR-0001 至 ADR-0006 当前仍为 `Proposed`；
 - ADR 只会在对应合同实现及测试通过后转为 `Accepted`；
 - Accepted decision 不等于下游 Repository、Storage、Import、Projection 或
@@ -40,6 +46,12 @@
 - A1 diff: Task Brief only；
 - A2 Git/file modifications: None；
 - Investigation Gate: Approved；
+- A3 commit:
+  `a4ef3124790aa3fbef2d52af99963044bdb614ca`；
+- A3 CI Run:
+  https://github.com/XiChuan9/StravaStats/actions/runs/30510590380；
+- A3 CI result: Success；
+- A3 PR body: Updated，PR remains Draft；
 - Browser/real-data verification: Not run。
 
 ## Goal
@@ -67,8 +79,9 @@ PR-02 的合同范围是：
   bundler；
 - V1 现有 `ActivityTrack`、`AnalysisResult`、Strava DTO 与 Strava StreamSet
   是 Legacy/来源特定模型，不是来源中立的 Canonical Contract；
-- 仓库中尚不存在 PR-02 目标 runtime validator、`js/data/contracts/` 或
-  `tests/contracts/`；
+- A3 完成时仓库中尚不存在 PR-02 目标 runtime validator、
+  `js/data/contracts/` 或 `tests/contracts/`；B1 只创建获批的
+  CanonicalActivity validation core 与三份专项测试；
 - PRD 数据模型是产品语义示例，不是最终 runtime schema；
 - PR-00 已建立 syntax、privacy 与 `node:test` 最低检查；
 - PR-01 已建立 Legacy Cache 救援与鉴权生命周期解耦；
@@ -561,7 +574,7 @@ docs/migrations/**
 
 ## Implementation phases
 
-A3 只冻结以下阶段，不执行任何实施。
+A3 冻结以下阶段。B1 已获控制塔授权并进入本地实施；B2、B3 未获授权。
 
 ### B1：Validation Primitives and CanonicalActivity
 
@@ -592,6 +605,177 @@ A3 只冻结以下阶段，不执行任何实施。
 
 每一阶段都必须先实现，再运行专项与全量测试，然后返回控制塔验收。未获批准不得进入
 下一阶段，不提前提交后续阶段。PR 始终保持 Draft，直到最终独立审查通过。
+
+## B1 implementation record
+
+### Scope
+
+B1 只新增或修改以下 9 个路径：
+
+1. `docs/tasks/pr-02-canonical-contracts.md`
+2. `js/data/AGENTS.md`
+3. `js/data/contracts/errors.js`
+4. `js/data/contracts/primitives.js`
+5. `js/data/contracts/canonical-activity.js`
+6. `js/data/contracts/index.js`
+7. `tests/contracts/canonical-activity.test.js`
+8. `tests/contracts/validation-error-contract.test.js`
+9. `tests/contracts/data-boundaries.test.js`
+
+B2 的 stream/bundle 模块与测试尚未创建，六份 ADR 尚未修改。
+
+### Public API
+
+`js/data/contracts/index.js` 在 B1 只导出：
+
+```js
+validateCanonicalActivity(value)
+```
+
+普通非法输入返回 result，不 throw；成功与失败 result 始终只包含 `ok`、`errors`、
+`warnings`。每个 error/warning item 始终只包含 `code`、`path`、`message`。API 不返回
+输入、修复副本或 normalized value。
+
+实际稳定 error codes：
+
+- `ID_INVALID`
+- `JSON_UNSAFE`
+- `NUMBER_INVALID`
+- `RANGE_INVALID`
+- `RELATION_INVALID`
+- `REQUIRED_FIELD_MISSING`
+- `TIMESTAMP_INVALID`
+- `TYPE_INVALID`
+- `VALUE_INVALID`
+- `VERSION_INVALID`
+- `VERSION_UNSUPPORTED`
+
+实际稳定 warning code：
+
+- `UNKNOWN_FIELD`
+
+Item 按 `path`、`code`、`message` 的 code-unit 顺序确定性排序。path 使用 RFC 6901
+JSON Pointer，segment 中 `~` 转义为 `~0`，`/` 转义为 `~1`。message 只描述期待的
+合同，不回显 actual value 或敏感数据。
+
+### Implemented CanonicalActivity rules
+
+- `schemaVersion`、`id`、`sportCategory`、`sportVariant`、`startTimeUtc`、
+  `timeZone`、`capabilities` 全部必填；
+- 第一版只支持整数 `schemaVersion: 1`；
+- ID 必须是 trim 后非空的 string；不 trim、不 coerce，numeric-looking string
+  保持 string；
+- sport category 只允许冻结的十个值；
+- non-null sport variant 使用 lowercase ASCII alphanumeric segment，以单个
+  hyphen 分隔；
+- UTC instant 使用固定 `YYYY-MM-DDTHH:mm:ss.SSSZ`，以纯算术检查日历合法性，
+  不依赖宿主时区；
+- IANA name 只做稳定格式检查，不调用 `Intl` 或宿主 tzdb；
+- UTC offset 只接受 `null` 或 -840 至 840 的整数，合法 `0` 保留；
+- 五个 capability 全部必填且只能是 strict boolean；
+- optional summary 保持 absent、`null` 与 `0` 区别；
+- summary number 必须 finite，冻结为非负的字段拒绝负数；
+- heart rate 必须大于 0 且不超过 300 bpm；
+- moving time 不得大于 elapsed time；
+- extensions 必须是 `null` 或 plain JSON-safe object；
+- 顶层、`timeZone`、`capabilities` 的 unknown fields 保留并逐项 warning；
+- extensions 内部扩展 key 不产生普通 unknown-field warning；
+- 未冻结的极端 power、cadence、temperature warning 阈值未在 B1 擅自定义。
+
+JSON-safe 检查只允许 plain object、array、string、boolean、finite number 和 `null`，
+拒绝 `undefined`、non-finite number、bigint、symbol、function、`Date`、`Map`、
+`Set`、class instance、array hole/extra property、accessor/non-enumerable property 与
+cyclic reference。
+
+### B1 verification evidence
+
+- Focused B1 tests:
+  `node --test tests/contracts/canonical-activity.test.js
+  tests/contracts/validation-error-contract.test.js
+  tests/contracts/data-boundaries.test.js` — Pass (140/140)；
+- Node direct ESM import — Pass（由 data-boundaries test 验证）；
+- timezone determinism — Pass（UTC、Pacific/Kiritimati、
+  America/Los_Angeles 三个隔离子进程结果一致）；
+- frozen input、input deep equality、`structuredClone` 与 JSON round-trip — Pass；
+- zero network/storage/DOM side effect traps — Pass；
+- full repository checks — Pass。
+
+Initial B1 gate（superseded by control-tower `REVISE`）：
+
+- `npm ci` — Pass；
+- `npm run check:syntax` — Pass（112 files）；
+- `npm run check:privacy` — Pass；
+- focused B1 tests — Pass（140/140）；
+- `npm test` — Pass（258/258）；
+- `git diff --check` — Pass；
+- exact path audit — Pass（仅 9 个 B1 allowed paths）；
+- staged paths — Empty；
+- package files、六份 ADR — Unchanged；
+- B2 contract/test files — Not created。
+
+### B1.1 accessor and reflection safety revision
+
+控制塔 B1 初验结论为 `REVISE`。确认的缺陷是：初版
+`collectJsonSafetyErrors()` 能发现 accessor 或非法 descriptor，但后续语义校验仍通过
+点访问读取 `schemaVersion`、ID、sport、time、timezone、capabilities、summary、
+extensions 与 relation 字段。普通非法 getter 因而可能被执行、产生可观察副作用或把
+输入异常传播给调用者。
+
+B1.1 只允许修改：
+
+1. `docs/tasks/pr-02-canonical-contracts.md`
+2. `js/data/contracts/primitives.js`
+3. `js/data/contracts/canonical-activity.js`
+4. `tests/contracts/canonical-activity.test.js`
+5. `tests/contracts/validation-error-contract.test.js`
+
+修复策略：
+
+- 所有语义字段读取先使用 `Object.getOwnPropertyDescriptor()` 检查；
+- 只有 own、enumerable、data descriptor 且 descriptor 包含 `value` 时才读取
+  descriptor value；
+- accessor、non-enumerable、symbol key 与非法 descriptor 继续返回
+  `JSON_UNSAFE`，不执行 getter/setter；
+- `Reflect.ownKeys()`、`Object.getPrototypeOf()`、
+  `Object.getOwnPropertyDescriptor()` 与 `Array.isArray()` 的输入反射异常在对应
+  reflection boundary fail closed；
+- Proxy/revoked Proxy 返回现有稳定 result/code/message，不传播或回显原始异常；
+- 没有在整个 validator 外层增加吞掉正常 programmer bug 的 broad catch；
+- 既有 code、排序、unknown warning、NaN、frozen input、null/zero/absent 与公共
+  export 行为保持不变。
+
+新增 deterministic synthetic regression coverage：
+
+- optional `name` throwing getter；
+- required `id` getter；
+- 有计数副作用但不抛错的 getter；
+- setter-only property；
+- `timeZone.ianaName` accessor；
+- `capabilities.hasGps` accessor；
+- extensions nested accessor；
+- non-enumerable data/accessor property；
+- throwing `getPrototypeOf`、`ownKeys` 与 `getOwnPropertyDescriptor` Proxy；
+- revoked Proxy；
+- getter/setter call count 保持 0；
+- exception message/value 不进入 validation result；
+- repeatable Proxy case 结果确定。
+
+B1.1 local verification：
+
+- `npm run check:syntax` — Pass（112 files）；
+- `npm run check:privacy` — Pass；
+- focused B1 tests — Pass（157/157）；
+- `npm test` — Pass（275/275）；
+- `git diff --check` — Pass；
+- minimal getter reproducer — Pass（no throw、getter calls 0、`JSON_UNSAFE`、
+  no exception-message leak）；
+- directed nested accessor reproduction — Pass（precise `JSON_UNSAFE` path）；
+- revoked/reflection Proxy reproduction — Pass（fail closed、stable result、
+  no exception-message leak）；
+- original accessor/getter P1 defect — Closed；
+- control-tower B1.1 re-review — Accepted；
+- B1 local implementation gate — Accepted；
+- B1 remote commit/CI — Pending this finalization。
 
 ## Acceptance criteria
 
@@ -637,20 +821,42 @@ A3 只冻结以下阶段，不执行任何实施。
 - [x] ADR 状态策略与 B1/B2/B3 阶段已记录；
 - [x] A3 只修改本 Task Brief；
 - [x] A3 最低自动检查全部通过；
-- [ ] A3 commit 已推送且新 head CI 成功；
-- [ ] Draft PR body 已更新且 PR 仍为 Draft；
-- [x] B1 尚未开始并等待控制塔授权。
+- [x] A3 commit 已推送且新 head CI 成功；
+- [x] Draft PR body 已更新且 PR 仍为 Draft；
+- [x] A3 完成时 B1 尚未开始并等待控制塔授权（后已正式授权）。
+
+### B1 / Local implementation gate
+
+- [x] 只新增或修改 9 个 B1 allowed paths；
+- [x] `index.js` 只公开 `validateCanonicalActivity(value)`；
+- [x] 普通非法输入返回稳定 result，不 throw、不泄漏 actual value；
+- [x] CanonicalActivity v1、strict capabilities、UTC/timezone 与 summary hard
+      bounds 已实现；
+- [x] unknown-field warning、RFC 6901 path 与稳定排序已实现；
+- [x] input unchanged、frozen input、JSON-safe、`structuredClone` 与 JSON
+      round-trip 已验证；
+- [x] timezone 跨环境结果一致；
+- [x] Node direct ESM import、零网络与零 storage side effect 已验证；
+- [x] dependency、package script、ADR、B2 文件均未修改或提前创建；
+- [x] focused 140/140 与 full 258/258 tests 通过；
+- [x] B1 保持未暂存、未提交、未推送，PR 仍为 Draft；
+- [x] B2、B3 未开始。
+- [x] Control tower initial review completed with `REVISE`；
+- [x] B1.1 control-tower re-review accepted；
+- [x] Original accessor/getter P1 defect closed；
+- [x] B1 local implementation gate accepted；
+- [ ] B1 remote commit and CI finalization completed。
 
 ### Candidate implementation acceptance
 
 - [ ] Runtime validation 覆盖获批 Canonical contracts；
-- [ ] ID 是 non-empty opaque string，number 与空白 ID 被拒绝；
-- [ ] 缺失值不转换为 `0`，合法真实 `0` 可区分；
+- [x] ID 是 non-empty opaque string，number 与空白 ID 被拒绝；
+- [x] 缺失值不转换为 `0`，合法真实 `0` 可区分；
 - [ ] 非法单位、时间、版本与 cross-reference 被稳定 error contract 拒绝；
-- [ ] unknown sport 可以无损表达；
-- [ ] validator 不修改输入，适用对象可 `structuredClone`；
-- [ ] 测试在不同时区结果一致，不访问网络、IndexedDB 或 localStorage；
-- [ ] 不改变现有页面、Legacy Cache、Feature Flag 或分析行为。
+- [x] unknown sport 可以无损表达；
+- [x] validator 不修改输入，适用对象可 `structuredClone`；
+- [x] 测试在不同时区结果一致，不访问网络、IndexedDB 或 localStorage；
+- [x] 不改变现有页面、Legacy Cache、Feature Flag 或分析行为。
 
 以上 candidate implementation 项目必须由 B1/B2/B3 的实际代码和测试证明；A3 不勾选。
 
@@ -718,31 +924,32 @@ git diff --check
 
 ## Manual verification
 
-未来 implementation 执行：
+Implementation 执行：
 
-1. Node 直接 import `js/data/contracts/index.js`；
+1. Node 直接 import `js/data/contracts/index.js`（B1 automated test 已通过）；
 2. 本地静态服务中由浏览器动态 import；
-3. 离线状态无需 CDN；
-4. validator 前后 deep equality；
-5. 合法 `0` 保留，absent/`null` 不补零；
-6. DevTools 确认零网络、零 IndexedDB/localStorage 写入；
+3. 离线状态无需 CDN（B1 dependency/static boundary 已验证，浏览器未运行）；
+4. validator 前后 deep equality（B1 automated test 已通过）；
+5. 合法 `0` 保留，absent/`null` 不补零（B1 automated test 已通过）；
+6. DevTools 确认零网络、零 IndexedDB/localStorage 写入（浏览器未运行；
+   B1 Node global traps 已通过）；
 7. 不使用真实账号、真实运动资料或真实浏览器 profile。
 
-A3 是治理文档变更，不运行浏览器或真实数据验证。
+B1 不运行真实数据验证。浏览器动态 import 与 DevTools 检查留待获得相应验收环境后执行。
 
 ## Privacy and security impact
 
-A3 只更新治理文档，不读取、写入、上传或记录活动、位置、健康、设备或凭据数据。
-未来 contract tests 只使用小型 inline deterministic synthetic objects，不新增
-committed fixture。validator error、warning 和测试输出不得包含 token、
+B1 只新增来源中立的纯 validation 模块、领域规则和 inline synthetic tests，不读取、
+写入、上传或记录活动、位置、健康、设备或凭据数据，不新增 committed fixture。
+Validator error、warning 和测试输出不得包含 token、
 Authorization header、原始活动、GPS、完整 HR/Power stream、真实文件名或设备序列号。
 
 Dependency-free validator 避免新增供应链、CDN、CSP、离线和 PWA 依赖风险。
 
 ## Migration impact
 
-A3 没有数据 migration，不创建或修改 IndexedDB v2，不读取或修改 Legacy Cache，
-不写 localStorage，不生成 Canonical 数据，也不改变 Feature Flag。
+B1 没有数据 migration，不创建或修改 IndexedDB v2，不读取或修改 Legacy Cache，
+不写 localStorage，不持久化 Canonical 数据，也不改变 Feature Flag。
 
 PR-02 逻辑合同必须支持后续 additive、idempotent、observable、recoverable
 migration，但本 PR 不实现 migration、store、transaction 或编码。stream storage
@@ -750,13 +957,14 @@ migration，但本 PR 不实现 migration、store、transaction 或编码。stre
 
 ## Rollback procedure
 
-A3 仍是 Task Brief-only 文档更新：
+B1 是尚未提交的新增 validation/test 文件与 Task Brief 更新：
 
 1. 保持 Draft PR，不合并；
-2. 如需撤销，使用普通 revert 提交，不 amend、rebase 或 force-push；
-3. 不清理 Legacy Cache、IndexedDB、localStorage、Service Worker cache 或私人
-   export，因为 A3 未修改这些数据；
-4. 删除远端分支或 worktree 不属于本任务授权。
+2. B1 验收前可只放弃这 9 个允许路径中的本地改动；不得清理任务外文件；
+3. B1 提交后如需撤销，使用普通 revert 提交，不 amend、rebase 或 force-push；
+4. 不清理 Legacy Cache、IndexedDB、localStorage、Service Worker cache 或私人
+   export，因为 B1 未修改这些数据；
+5. 删除远端分支或 worktree 不属于本任务授权。
 
 未来 implementation 的回滚必须保持 Legacy 默认路径，不得以删除或覆盖 Legacy/V2
 数据作为捷径。
@@ -766,7 +974,7 @@ A3 仍是 Task Brief-only 文档更新：
 - [x] Worktree、branch、base、A1 HEAD 与 Metadata 一致；
 - [x] A0 基线证据完整，没有把未运行项标记为 Pass；
 - [x] A1 diff 只有 Task Brief，A2 无 Git/file 修改；
-- [x] 当前状态为 `Approved for implementation`；
+- [x] 当前状态为 `In progress`；
 - [x] 所有六份 ADR 当前仍为 Proposed；
 - [x] PRD 示例没有被当作 provider-specific runtime schema 直接复制；
 - [x] Dependency-free validator、稳定 result/error/warning 与 unknown-field policy
@@ -784,8 +992,8 @@ A3 仍是 Task Brief-only 文档更新：
 - [x] migration、privacy 与 rollback 影响已明确；
 - [x] A3 未修改 ADR、Schema、validator、test 或 runtime export；
 - [x] A3 diff/cached diff 仅包含 Task Brief；
-- [ ] A3 自动检查和新 head CI 成功；
-- [x] PR #6 保持 Draft，B1 未开始；
+- [x] A3 自动检查和新 head CI 成功；
+- [x] PR #6 保持 Draft，B1 已获授权且 B2/B3 未开始；
 - [x] Browser/real-data verification 明确为 Not run。
 
 ## Completion evidence
@@ -841,11 +1049,49 @@ A3 decision and scope freeze:
   git diff --check — Pass
   git diff --name-only — docs/tasks/pr-02-canonical-contracts.md only
   git diff --cached --name-only before staging — empty
-  A3 commit/push/new head CI — recorded in PR and completion report
+  A3 commit — a4ef3124790aa3fbef2d52af99963044bdb614ca
+  A3 push — Success
+  A3 CI Run — https://github.com/XiChuan9/StravaStats/actions/runs/30510590380
+  A3 CI result — Success
+  Draft PR body — Updated; PR remains Draft
+
+B1 local implementation:
+  Authorization — PR-02 / A3 Accepted / B1 Authorized
+  Public API — validateCanonicalActivity(value)
+  Focused contract tests — Pass (140/140)
+  npm ci — Pass
+  npm run check:syntax — Pass (112 files)
+  npm run check:privacy — Pass
+  npm test — Pass (258/258)
+  git diff --check — Pass
+  Exact path audit — Pass (9 B1 allowed paths only)
+  Staged paths — Empty
+  B2/B3 — Not started
+  ADR modifications — None
+  Commit/push/PR update — Not performed
+
+B1.1 local revision:
+  Initial control-tower status — B1 REVISE
+  Root cause — unsafe semantic property reads after JSON-safe scan
+  Fix — descriptor-gated reads and reflection-boundary fail closed
+  npm run check:syntax — Pass (112 files)
+  npm run check:privacy — Pass
+  Focused regression tests — Pass (157/157)
+  npm test — Pass (275/275)
+  git diff --check — Pass
+  Minimal getter reproducer — Pass
+  Nested accessor reproduction — Pass; JSON_UNSAFE
+  Revoked/reflection Proxy — Pass; fail closed
+  Original accessor/getter P1 defect — Closed
+  Control-tower re-review — Accepted
+  B1 local implementation gate — Accepted
+  B1 remote commit/CI — Pending this finalization
+  B2/B3 — Not started
+  Commit/push/PR update — Not performed
 ```
 
 ## Stop condition
 
-A3 完成后必须停止，不开始 B1。Implementation 尚未开始，ADR 尚未修改，
-Schema/validator/tests 尚未创建，PR 必须保持 Draft。当前等待控制塔在 A3 新 head CI
-成功后另行授权 B1。
+B1 local implementation gate 已获控制塔接受。本次只允许完成 B1 精确提交、推送、
+Draft PR body 更新与新 HEAD CI 验证；B1 remote commit/CI 完成后必须停止，不开始
+B2/B3。ADR 保持 Proposed，PR 保持 Draft，下一阶段必须等待控制塔独立授权。
