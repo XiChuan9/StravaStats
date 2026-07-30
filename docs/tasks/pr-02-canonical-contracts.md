@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | In progress |
+| Status | In review |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/contracts` |
 | Worktree | `/Users/wangchuanliang/Documents/StravaStats-worktrees/contracts` |
@@ -12,7 +12,7 @@
 | Reviewer | 独立 Codex 线程 + XiChuan9 |
 | Related PRD | Sections 4、5、6、8.4、9、15、17、19 |
 | Related plan | Sprint 1 / PR-02 |
-| Related ADRs | ADR-0001 至 ADR-0006（当前均为 Proposed） |
+| Related ADRs | ADR-0001 至 ADR-0006（均于 2026-07-30 Accepted） |
 | Dependencies | PR-00 与 PR-01 已合入 `integration/v2` |
 | Pull request | https://github.com/XiChuan9/StravaStats/pull/6 |
 
@@ -37,10 +37,21 @@
 - B2 local implementation completed；
 - B2 independent control-tower review: `Accepted`；
 - B2 Local Implementation Gate: `Accepted`；
-- B2 remote commit/CI finalization pending；
-- B3 尚未开始；
-- ADR-0001 至 ADR-0006 当前仍为 `Proposed`；
-- ADR 只会在对应合同实现及测试通过后转为 `Accepted`；
+- B2 commit:
+  `3e2f8df5a0bf50e51c462f16fefe8ce4a6d76a99`；
+- B2 CI Run:
+  https://github.com/XiChuan9/StravaStats/actions/runs/30520888393；
+- B2 remote finalization: `Accepted`，B2 formally closed；
+- B3 local implementation authorized by control tower；
+- B3 ADR closure and automatic local verification completed；
+- B3 browser limitation independently reproduced by control tower in both
+  in-app Browser and connected Chrome；
+- B3 Local Review Gate: `Accepted`；
+- B3 remote commit/CI finalization: Pending this finalization；
+- Browser dynamic import、storage/network instrumentation 与 Manual DevTools
+  已由控制塔批准延期，但继续保持 `Not run`，不视为 Pass；
+- ADR-0001 至 ADR-0006 已收窄到 PR-02 实际实现和测试的逻辑合同，并于
+  2026-07-30 转为 `Accepted`；
 - Accepted decision 不等于下游 Repository、Storage、Import、Projection 或
   Analysis 已实现。
 
@@ -67,9 +78,21 @@
   https://github.com/XiChuan9/StravaStats/actions/runs/30515429741；
 - B1 CI result: Success；
 - B1 finalization: Accepted and closed；
-- B2 local implementation gate: Accepted by independent control-tower review；
-- B2 remote commit/CI: Pending this finalization；
-- Browser/real-data verification: Not run。
+- B2 commit:
+  `3e2f8df5a0bf50e51c462f16fefe8ce4a6d76a99`；
+- B2 CI Run:
+  https://github.com/XiChuan9/StravaStats/actions/runs/30520888393；
+- B2 CI result: Success；
+- B2 finalization: Accepted and closed；
+- B3 exact local scope: Task Brief + ADR-0001 through ADR-0006；
+- Browser direct contract-module URL load: Pass（in-app Browser 与 Chrome）；
+- Browser dynamic import and automated side-effect smoke: Not run（两种受控
+  `playwright.evaluate` 执行面均不提供 module loading；未绕过）；
+- Browser deferral: Approved by control tower；由第一个实际从浏览器应用路径接入
+  contracts 的后续 PR 补齐，且必须在 Canonical 默认启用或进入 release candidate
+  前完成；
+- Manual DevTools panel inspection: Not run；
+- Real-data verification: Not run。
 
 ## Goal
 
@@ -503,9 +526,9 @@ PR-02 定义以下六个公共字段的名称、类型和职责：
 
 ## ADR status policy
 
-A3 不修改 ADR，ADR-0001 至 ADR-0006 当前继续保持 `Proposed`。后续 PR-02
-implementation 只有在对应合同实现及测试通过后，才将 ADR 收窄到实际已决定的逻辑
-范围并转为 `Accepted`：
+B3 在 B1/B2 实现、专项测试、全量测试和 B2 CI 成功后，将 ADR-0001 至
+ADR-0006 收窄到 PR-02 已实现且已验证的逻辑合同，并于 2026-07-30 转为
+`Accepted`：
 
 - ADR-0001：接受 Canonical Activity 逻辑合同；Projection 实现与 parity 验收推迟；
 - ADR-0002：接受逻辑 Stream/Lap/Event 模型；TypedArray/Blob/chunk/IndexedDB
@@ -591,7 +614,8 @@ docs/migrations/**
 
 ## Implementation phases
 
-A3 冻结以下阶段。B1 已完成并正式关闭；B2 已获控制塔本地实施授权；B3 未获授权。
+A3 冻结以下阶段。B1 与 B2 已完成、通过 CI 并正式关闭；控制塔已授权 B3
+ADR closure、浏览器合同冒烟验证与最终本地复验。
 
 ### B1：Validation Primitives and CanonicalActivity
 
@@ -625,7 +649,7 @@ A3 冻结的 19 路径总边界内；不得增加第 10 个 B2 路径。
 
 - ADR-0001 至 ADR-0006；
 - 本 Task Brief；
-- 已批准的 contract/test 文件，仅限修正审查发现。
+- 本次不修改 contract/test/runtime；如复验发现缺陷，停止并申请纠偏范围。
 
 每一阶段都必须先实现，再运行专项与全量测试，然后返回控制塔验收。未获批准不得进入
 下一阶段，不提前提交后续阶段。PR 始终保持 Draft，直到最终独立审查通过。
@@ -883,12 +907,77 @@ validateImportedActivityBundle(value)
 - Node direct ESM import and zero network/storage/DOM side effects — Pass；
 - package files、B1-only runtime/tests 与六份 ADR — Unchanged；
 - B2 exact path audit — 9 approved paths only；
-- staged paths — Empty；
-- commit/push/PR body update — Not performed；
+- B2 commit —
+  `3e2f8df5a0bf50e51c462f16fefe8ce4a6d76a99`
+  (`feat(v2): add stream and activity bundle contracts`)；
+- B2 CI —
+  https://github.com/XiChuan9/StravaStats/actions/runs/30520888393
+  (`Success`)；
+- staged paths after finalization — Empty；
 - independent control-tower review — Accepted；
 - B2 Local Implementation Gate — Accepted；
-- B2 remote commit/CI — Pending this finalization；
-- B3 — Not started。
+- B2 remote commit/CI — Completed；
+- B2 status — Formally closed。
+
+## B3 local implementation record
+
+### Authorization and exact scope
+
+控制塔在 B2 正式关闭后授权 B3 本地实施。B3 精确允许修改：
+
+1. `docs/tasks/pr-02-canonical-contracts.md`
+2. `docs/architecture/adr/0001-canonical-activity.md`
+3. `docs/architecture/adr/0002-stream-model.md`
+4. `docs/architecture/adr/0003-repository-boundary.md`
+5. `docs/architecture/adr/0004-import-pipeline.md`
+6. `docs/architecture/adr/0005-analysis-versioning.md`
+7. `docs/architecture/adr/0006-source-provenance.md`
+
+B3 不修改 runtime、tests、package、Legacy 或 storage 文件，不新增文件。发现
+runtime/test defect 时必须停止并申请纠偏，不能在本阶段直接修复。
+
+### ADR closure
+
+- 六份 ADR 的 `Status` 均为 `Accepted`，Accepted date 为 2026-07-30；
+- ADR-0001 收窄为已验证的 CanonicalActivity v1；
+- ADR-0002 收窄为 StreamSet/StreamSeries 逻辑模型，不冻结 storage encoding；
+- ADR-0003 只接受未来消费者 Repository boundary 原则，不冻结接口或实现；
+- ADR-0004 只接受统一 `ImportedActivityBundle` target 与 validation boundary；
+- ADR-0005 只接受六个 VersionMetadata 字段及一致性合同；
+- ADR-0006 只接受 P0 ActivitySource/DeviceReference 逻辑合同；
+- 每份 ADR 均明确：
+  `Accepted decision does not mean downstream implementation is complete.`；
+- Repository、Storage、Decoder、Import Job、Projection、Analysis、hash、
+  invalidation、merge/UserOverride 等下游实现继续留给后续独立 PR。
+
+### B3 local verification
+
+- `npm ci` — Pass；
+- `npm run check:syntax` — Pass（116 files）；
+- `npm run check:privacy` — Pass；
+- focused contract tests — Pass（280/280）；
+- `npm test` — Pass（398/398）；
+- `git diff --check` — Pass；
+- ADR status/date/disclaimer、相对链接及延后边界 audit — Pass；
+- browser direct URL
+  `http://127.0.0.1:3001/js/data/contracts/index.js` — in-app Browser 与
+  connected Chrome 均可打开；
+- browser native ESM dynamic import — Not run；控制塔独立复现确认两种受控
+  `playwright.evaluate` 执行面均返回精确错误：
+  `module loading is not available in playwright.evaluate`；
+- 未使用 script URL、DOM 注入、`javascript:` URL 或其他方式绕过受控执行面；
+- browser exact exports / three validator calls — Not run；
+- automated browser storage/cache/service-worker snapshots — Not run；
+- browser validator-time fetch/XHR/WebSocket instrumentation — Not run；
+- Node boundary tests for exact exports and zero network/storage/DOM access — Pass；
+- Manual DevTools panel inspection — Not run；
+- real-data/credentials/private browser profile validation — Not run；
+- browser limitation deferral — Approved by control tower；未运行项不视为 Pass；
+- mandatory follow-up — 第一个实际从浏览器应用路径接入 contracts 的后续 PR；
+  最迟在 Canonical 默认启用或进入 release candidate 前完成；
+- exact B3 path audit — 7 approved documentation paths only；
+- staged paths — Empty；
+- commit/push/PR body/Ready/merge — Not performed。
 
 ## Acceptance criteria
 
@@ -896,7 +985,7 @@ validateImportedActivityBundle(value)
 
 - [x] 只有本 Task Brief 一个文件发生变化；
 - [x] A1 时状态为 `Ready for investigation`；
-- [x] 六份 ADR 明确保持 Proposed；
+- [x] A1 completion-time evidence recorded six ADRs as Proposed；
 - [x] 合同目标、待决问题、范围、候选文件、A1 唯一允许文件与禁止操作完整；
 - [x] A1 未冻结具体 Schema、validator、字段全集或 storage encoding；
 - [x] A1 未声称 `js/data/`、`tests/contracts/` 或 Canonical 实现已经存在；
@@ -953,7 +1042,7 @@ validateImportedActivityBundle(value)
 - [x] dependency、package script、ADR、B2 文件均未修改或提前创建；
 - [x] focused 140/140 与 full 258/258 tests 通过；
 - [x] B1 保持未暂存、未提交、未推送，PR 仍为 Draft；
-- [x] B2、B3 未开始。
+- [x] B1 completion-time evidence recorded that B2/B3 had not yet started。
 - [x] Control tower initial review completed with `REVISE`；
 - [x] B1.1 control-tower re-review accepted；
 - [x] Original accessor/getter P1 defect closed；
@@ -978,8 +1067,30 @@ validateImportedActivityBundle(value)
 - [x] staged paths 为空，未 commit、未 push、未更新 PR body；
 - [x] independent control-tower review accepted；
 - [x] B2 Local Implementation Gate accepted；
-- [ ] B2 remote commit and CI finalization completed；
-- [x] B3 未开始，等待控制塔独立验收。
+- [x] B2 remote commit and CI finalization completed；
+- [x] B2 formally closed。
+
+### B3 / ADR closure and final local verification
+
+- [x] 控制塔授权 B3，且实际修改仅为 Task Brief 与六份 ADR；
+- [x] ADR-0001 至 ADR-0006 收窄到 PR-02 已实现/验证范围并转为 Accepted；
+- [x] 每份 ADR 记录 2026-07-30 Accepted date 和统一 downstream disclaimer；
+- [x] 每份 ADR 明确未实现的后续 PR 边界，未声称 downstream implementation 完成；
+- [x] npm ci、syntax、privacy、280/280 contracts、398/398 full tests 与 diff check 通过；
+- [ ] 浏览器动态 import、精确 exports、三个 valid validator result（Not run：
+      in-app Browser 与 Chrome 的受控 evaluate 均不提供 module loading）；
+- [ ] 自动浏览器 storage/network instrumentation（Not run）；
+- [x] 控制塔独立复现浏览器限制并批准延期；未运行项未改写为 Pass；
+- [x] 延期项已移交给第一个实际从浏览器应用路径接入 contracts 的后续 PR，且必须在
+      Canonical 默认启用或 release candidate 前完成；
+- [x] B3 七路径审计通过，runtime/tests/package 未修改，staged 为空；
+- [x] B3 Local Review Gate accepted；
+- [ ] B3 remote commit/CI finalization completed；
+- [ ] PR Ready / final project acceptance；
+- [ ] Manual DevTools panel and real-data verification。
+
+Browser 延期只解除 PR-02 B3 的本地阻断，不构成浏览器验证 Pass，也不解除后续接入
+PR 在 Canonical 默认启用或 release candidate 前补齐验证的强制门禁。
 
 ### Candidate implementation acceptance
 
@@ -996,27 +1107,7 @@ validateImportedActivityBundle(value)
 
 ## Required verification
 
-A3 文档更新后执行：
-
-```bash
-npm ci
-npm run check:syntax
-npm run check:privacy
-npm test
-git diff --check
-git diff --name-only
-git diff --cached --name-only
-```
-
-暂存前 cached paths 必须为空。只允许：
-
-```bash
-git add docs/tasks/pr-02-canonical-contracts.md
-```
-
-暂存后检查 cached diff，必须只有本 Task Brief。
-
-未来 implementation 的最低门禁：
+B3 文档更新后执行：
 
 ```bash
 npm ci
@@ -1025,9 +1116,13 @@ npm run check:privacy
 node --test tests/contracts/*.test.js
 npm test
 git diff --check
+git diff --name-only
+git diff --cached --name-only
 ```
 
-并执行精确路径审计。
+本地 B3 结束时 cached paths 必须为空，且 diff 精确为 Task Brief 与六份 ADR。
+同时执行 ADR metadata、统一 disclaimer、相对链接、deferred boundary 和浏览器
+dynamic import/side-effect 精确审计。
 
 自动测试必须使用 `node:test` 和 inline deterministic synthetic objects，至少覆盖：
 
@@ -1058,23 +1153,31 @@ git diff --check
 
 ## Manual verification
 
-Implementation 执行：
+B3 执行：
 
 1. Node 直接 import `js/data/contracts/index.js`（B1/B2 automated test 已通过）；
-2. 本地静态服务中由浏览器动态 import；
-3. 离线状态无需 CDN（B1/B2 dependency/static boundary 已验证，浏览器未运行）；
-4. validator 前后 deep equality（B1/B2 automated test 已通过）；
-5. 合法 `0` 保留，absent/`null` 不补零（B1/B2 automated test 已通过）；
-6. DevTools 确认零网络、零 IndexedDB/localStorage 写入（浏览器未运行；
-   B1/B2 Node global traps 已通过）；
-7. 不使用真实账号、真实运动资料或真实浏览器 profile。
+2. in-app Browser 与 connected Chrome 均可直接打开
+   `/js/data/contracts/index.js`（Pass）；
+3. 浏览器 dynamic import `/js/data/contracts/index.js?b3-browser-smoke=1`
+   （Not run：两种受控 evaluate 均返回
+   `module loading is not available in playwright.evaluate`）；
+4. 浏览器模块导出和三个 inline synthetic valid validator result（Not run）；
+5. 浏览器 local/session storage、IndexedDB database metadata、Cache Storage 与
+   Service Worker registration snapshot（Not run）；
+6. 浏览器 validator-time fetch/XHR/WebSocket instrumentation（Not run）；
+7. validator 前后 deep equality、合法 `0` 与 absent/`null` 语义由自动测试覆盖；
+8. Manual DevTools panel inspection（Not run）；
+9. 不使用真实账号、真实运动资料、credentials 或私人 fixture。
 
-B1/B2 不运行真实数据验证。浏览器动态 import 与 DevTools 检查留待获得相应验收环境后
-执行。
+B3 未使用真实数据。浏览器 dynamic import、自动 side-effect instrumentation、
+Manual DevTools 与真实数据验证均继续 Not run。控制塔已批准环境限制延期；该批准不把
+未运行项视为 Pass。第一个实际从浏览器应用路径接入 contracts 的后续 PR 必须补齐，
+且不得晚于 Canonical 默认启用或 release candidate。
 
 ## Privacy and security impact
 
-B1/B2 只新增来源中立的纯 validation 模块、领域规则和 inline synthetic tests，不读取、
+B1/B2 只新增来源中立的纯 validation 模块、领域规则和 inline synthetic tests；B3
+只收口文档并以 synthetic object 验证现有模块。各阶段均不读取、
 写入、上传或记录活动、位置、健康、设备或凭据数据，不新增 committed fixture。
 Validator error、warning 和测试输出不得包含 token、
 Authorization header、原始活动、GPS、完整 HR/Power stream、真实文件名或设备序列号。
@@ -1083,7 +1186,7 @@ Dependency-free validator 避免新增供应链、CDN、CSP、离线和 PWA 依�
 
 ## Migration impact
 
-B1/B2 没有数据 migration，不创建或修改 IndexedDB v2，不读取或修改 Legacy Cache，
+B1/B2/B3 没有数据 migration，不创建或修改 IndexedDB v2，不读取或修改 Legacy Cache，
 不写 localStorage，不持久化 Canonical 数据，也不改变 Feature Flag。
 
 PR-02 逻辑合同必须支持后续 additive、idempotent、observable、recoverable
@@ -1092,15 +1195,14 @@ migration，但本 PR 不实现 migration、store、transaction 或编码。stre
 
 ## Rollback procedure
 
-B1 已作为普通提交完成并通过 CI；B2 当前只是未暂存、未提交、未推送的本地
-validation/test 文件与 Task Brief 更新：
+B1/B2 已作为普通提交完成并通过 CI；B3 当前只是未暂存、未提交、未推送的七份
+documentation 更新：
 
 1. 保持 Draft PR，不合并；
-2. B2 验收前如需放弃，只能处理本阶段 9 个允许路径；不得清理任务外文件；
-3. B1 如需撤销，使用普通 revert 提交，不 amend、rebase 或 force-push；B2 尚无
-   commit 可撤销；
+2. B3 验收前如需放弃，只能处理本阶段 7 个允许路径；不得清理任务外文件；
+3. B1/B2 如需撤销，使用普通 revert 提交，不 amend、rebase 或 force-push；
 4. 不清理 Legacy Cache、IndexedDB、localStorage、Service Worker cache 或私人
-   export，因为 B1/B2 未修改这些数据；
+   export，因为 PR-02 未修改这些数据；
 5. 删除远端分支或 worktree 不属于本任务授权。
 
 未来 implementation 的回滚必须保持 Legacy 默认路径，不得以删除或覆盖 Legacy/V2
@@ -1111,8 +1213,8 @@ validation/test 文件与 Task Brief 更新：
 - [x] Worktree、branch、base、A1 HEAD 与 Metadata 一致；
 - [x] A0 基线证据完整，没有把未运行项标记为 Pass；
 - [x] A1 diff 只有 Task Brief，A2 无 Git/file 修改；
-- [x] 当前状态为 `In progress`；
-- [x] 所有六份 ADR 当前仍为 Proposed；
+- [x] 当前状态为 `In review`；
+- [x] 所有六份 ADR 已收窄并于 2026-07-30 Accepted；
 - [x] PRD 示例没有被当作 provider-specific runtime schema 直接复制；
 - [x] Dependency-free validator、稳定 result/error/warning 与 unknown-field policy
       已冻结；
@@ -1130,8 +1232,11 @@ validation/test 文件与 Task Brief 更新：
 - [x] A3 未修改 ADR、Schema、validator、test 或 runtime export；
 - [x] A3 diff/cached diff 仅包含 Task Brief；
 - [x] A3 自动检查和新 head CI 成功；
-- [x] PR #6 保持 Draft，B1 已关闭、B2 只在本地实施且 B3 未开始；
-- [x] Browser/real-data verification 明确为 Not run。
+- [x] PR #6 保持 Draft，B1/B2 已关闭，B3 仅本地文档变更；
+- [x] in-app Browser 与 Chrome direct contract-module URL load 通过；
+- [x] Browser dynamic import、自动 network/storage smoke、Manual DevTools panel
+      与 real-data verification 明确为 Not run，且未声明为 Pass；
+- [x] B3 Local Review Gate 获控制塔接受，环境限制延期与后续强制补验阶段已记录。
 
 ## Completion evidence
 
@@ -1255,18 +1360,53 @@ B2 local implementation:
   structuredClone/JSON round-trip — Pass
   Import/validation network/storage/DOM access — 0
   Exact path audit — Pass (9 B2 allowed paths only)
-  Staged paths — Empty
-  Package/B1-only/ADR modifications — None
-  Commit/push/PR body update — Not performed
   Independent control-tower review — Accepted
   B2 Local Implementation Gate — Accepted
-  B2 remote commit/CI — Pending this finalization
-  Browser dynamic import/DevTools/real-data verification — Not run
-  B3 — Not started
+  Commit — 3e2f8df5a0bf50e51c462f16fefe8ce4a6d76a99
+  Commit message — feat(v2): add stream and activity bundle contracts
+  Push — Success; origin/codex/v2/contracts synchronized 0/0
+  CI Run — https://github.com/XiChuan9/StravaStats/actions/runs/30520888393
+  CI result — Success
+  B2 status — Formally closed
+
+B3 local implementation:
+  Authorization — PR-02 / B2 Closed / B3 Local Implementation Authorized
+  Exact scope — Task Brief + ADR-0001 through ADR-0006
+  ADR status — Accepted (2026-07-30)
+  ADR scope — PR-02 implemented/tested logical contracts only
+  Downstream disclaimer — Present in all six ADRs
+  npm ci — Pass
+  npm run check:syntax — Pass (116 files)
+  npm run check:privacy — Pass
+  Focused contract tests — Pass (280/280)
+  npm test — Pass (398/398)
+  git diff --check — Pass
+  ADR metadata/link/deferred-boundary audit — Pass
+  Browser direct contract-module URL load — Pass in in-app Browser and Chrome
+  Browser native ESM dynamic import — Not run; both controlled evaluate
+    surfaces return "module loading is not available in playwright.evaluate"
+  Browser bypass attempts — None; no script URL, DOM injection, javascript URL,
+    or alternate execution path used
+  Browser exports/validator calls — Not run
+  Browser storage/cache/service-worker snapshots — Not run
+  Browser validator fetch/XHR/WebSocket instrumentation — Not run
+  Node exact-export and zero network/storage/DOM boundary tests — Pass
+  Manual DevTools panel inspection — Not run
+  Real-data/credentials/private-profile verification — Not run
+  Browser deferral — Approved by control tower; Not run items are not Pass
+  Mandatory follow-up — First downstream PR that connects contracts from a
+    browser application path, before Canonical becomes default or release candidate
+  Exact path audit — Pass (7 B3 approved documentation paths only)
+  Staged paths — Empty
+  Runtime/tests/package modifications — None
+  Commit/push/PR body/Ready/merge — Not performed
+  B3 Local Review Gate — Accepted
 ```
 
 ## Stop condition
 
-B1 已正式关闭，B2 Local Implementation Gate 已获控制塔独立验收。本次只允许完成
-B2 精确提交、推送、Draft PR body 更新与新 HEAD CI 验证；完成后必须停止，不开始
-B3。ADR 保持 Proposed，PR 保持 Draft，B3 必须等待控制塔独立授权。
+B1/B2 已正式关闭，B3 Local Review Gate 已获控制塔接受。本次只允许完成七份文档的
+精确提交、推送、Draft PR body 更新与新 HEAD CI 验证；如需记录 commit/CI，可再创建
+一个只修改本 Task Brief 的普通 docs commit，不 amend。收尾完成后立即停止，不标记
+Ready、不合并、不开始 PR-03 或 Repository、Storage、Import、Projection、Analysis
+等下游实现。PR #6 必须继续保持 Draft。
