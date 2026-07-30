@@ -28,8 +28,17 @@
 - B1.1 accessor/Proxy safety revision completed locally；
 - B1.1 control-tower re-review: `Accepted`；
 - B1 local implementation gate: `Accepted`；
-- B1 remote commit/CI finalization pending；
-- B2、B3 尚未开始；
+- B1 commit:
+  `b5b6c60b9f197ea540790cc30b61fc6e312b61e7`；
+- B1 CI Run:
+  https://github.com/XiChuan9/StravaStats/actions/runs/30515429741；
+- B1 remote finalization: `Accepted`，B1 formally closed；
+- B2 local implementation authorized by control tower；
+- B2 local implementation completed；
+- B2 independent control-tower review: `Accepted`；
+- B2 Local Implementation Gate: `Accepted`；
+- B2 remote commit/CI finalization pending；
+- B3 尚未开始；
 - ADR-0001 至 ADR-0006 当前仍为 `Proposed`；
 - ADR 只会在对应合同实现及测试通过后转为 `Accepted`；
 - Accepted decision 不等于下游 Repository、Storage、Import、Projection 或
@@ -52,6 +61,14 @@
   https://github.com/XiChuan9/StravaStats/actions/runs/30510590380；
 - A3 CI result: Success；
 - A3 PR body: Updated，PR remains Draft；
+- B1 commit:
+  `b5b6c60b9f197ea540790cc30b61fc6e312b61e7`；
+- B1 CI Run:
+  https://github.com/XiChuan9/StravaStats/actions/runs/30515429741；
+- B1 CI result: Success；
+- B1 finalization: Accepted and closed；
+- B2 local implementation gate: Accepted by independent control-tower review；
+- B2 remote commit/CI: Pending this finalization；
 - Browser/real-data verification: Not run。
 
 ## Goal
@@ -574,7 +591,7 @@ docs/migrations/**
 
 ## Implementation phases
 
-A3 冻结以下阶段。B1 已获控制塔授权并进入本地实施；B2、B3 未获授权。
+A3 冻结以下阶段。B1 已完成并正式关闭；B2 已获控制塔本地实施授权；B3 未获授权。
 
 ### B1：Validation Primitives and CanonicalActivity
 
@@ -590,12 +607,19 @@ A3 冻结以下阶段。B1 已获控制塔授权并进入本地实施；B2、B3 
 
 ### B2：Streams, Laps, Events, Source, Device, Version and Bundle
 
+- `js/data/contracts/errors.js`
 - `js/data/contracts/canonical-streams.js`
 - `js/data/contracts/imported-activity-bundle.js`
 - `js/data/contracts/index.js`
 - `tests/contracts/canonical-streams.test.js`
 - `tests/contracts/imported-activity-bundle.test.js`
+- `tests/contracts/validation-error-contract.test.js`
+- `tests/contracts/data-boundaries.test.js`
 - 本 Task Brief
+
+控制塔在 B2 授权时纠偏了原阶段清单：公共 API、稳定 B2 code 与 boundary/error
+contract tests 必须随本阶段维护，因此 B2 精确使用以上 9 个路径。九个路径均已包含在
+A3 冻结的 19 路径总边界内；不得增加第 10 个 B2 路径。
 
 ### B3：ADR closure and full verification
 
@@ -775,7 +799,96 @@ B1.1 local verification：
 - original accessor/getter P1 defect — Closed；
 - control-tower B1.1 re-review — Accepted；
 - B1 local implementation gate — Accepted；
-- B1 remote commit/CI — Pending this finalization。
+- B1 remote commit/CI — Completed and accepted；
+- B1 commit —
+  `b5b6c60b9f197ea540790cc30b61fc6e312b61e7`；
+- B1 CI —
+  https://github.com/XiChuan9/StravaStats/actions/runs/30515429741
+  (`Success`)；
+- B1 status — Formally closed。
+
+## B2 implementation record
+
+### Authorization and exact scope
+
+控制塔在 B1 正式关闭后批准 B2 本地实施，并将 B2 精确范围纠偏为：
+
+1. `docs/tasks/pr-02-canonical-contracts.md`
+2. `js/data/contracts/errors.js`
+3. `js/data/contracts/canonical-streams.js`
+4. `js/data/contracts/imported-activity-bundle.js`
+5. `js/data/contracts/index.js`
+6. `tests/contracts/canonical-streams.test.js`
+7. `tests/contracts/imported-activity-bundle.test.js`
+8. `tests/contracts/validation-error-contract.test.js`
+9. `tests/contracts/data-boundaries.test.js`
+
+纠偏原因是 B2 必须同步维护公共入口、稳定 B2 code 以及共享 validation/boundary
+contract tests。`primitives.js`、`canonical-activity.js`、对应 B1 test、
+`js/data/AGENTS.md`、package files 与六份 ADR 均不在 B2 修改范围。
+
+### Public API and stable codes
+
+`js/data/contracts/index.js` 在 B2 只公开：
+
+```js
+validateCanonicalActivity(value)
+validateCanonicalStreamSet(value)
+validateImportedActivityBundle(value)
+```
+
+三个 validator 均返回稳定 `{ ok, errors, warnings }`，item 只包含
+`{ code, path, message }`。B2 保留全部 B1 code，并新增：
+
+- error: `DUPLICATE_VALUE`、`LENGTH_MISMATCH`、`ORDER_INVALID`、
+  `REFERENCE_INVALID`、`STATE_INVALID`、`CAPABILITY_CONFLICT`；
+- warning: `DUPLICATE_TIMESTAMP`。
+
+### Implemented B2 contracts
+
+- `CanonicalStreamSet` 支持 summary-only 空 `series`、各 series 独立时间轴、
+  stream type 唯一、offset/value 等长、非负 non-decreasing offset 与重复 timestamp
+  warning，不排序或修改输入；
+- moving stream 使用 `boolean | null` 与 `unit: "boolean"`；position stream 使用
+  WGS84 二元 tuple 与经纬度 hard bounds；其他 stream 使用 finite number 或 null；
+- heart rate、distance、power、cadence hard bounds 已实现，altitude 与
+  temperature 允许负数，开放数值 stream 不增加未冻结 maximum；
+- Lap 实现 ID/index 唯一、reference、non-decreasing order、no overlap、
+  moving/elapsed relation 与 activity duration bound；
+- Event 实现 ID/index 唯一、reference、offset order/bound、same-offset、
+  unknown/sourceType 保留及 start/pause/resume/stop 状态机；
+- ActivitySource 实现 provenance-only string fields、optional opaque references、
+  fixed-millisecond `importedAt` 与 activity/device reference；
+- DeviceReference 实现唯一 ID 与 nullable/optional manufacturer/model，不包含序列号；
+- VersionMetadata 保留全部六字段，验证 version 类型、unsupported version 及
+  bundle/activity/version schema 一致性，不计算 hash；
+- ImportedActivityBundle 验证全部九个必填字段、array shape、至少一个 source、
+  warning item shape、cross-reference、capability conflicts、JSON safety 与
+  structuredClone/JSON round-trip；
+- 组合 validator 合并 activity/streams/bundle validation items，按稳定顺序返回并
+  删除完全相同的重复 item，不产生 normalized bundle；
+- descriptor-gated 读取贯穿新增 validator；accessor/non-enumerable/symbol/非法
+  descriptor 与 reflection Proxy failure 均 fail closed，不执行 getter 或回显异常。
+
+### B2 local verification
+
+- `npm run check:syntax` — Pass（116 files）；
+- focused contract tests:
+  `node --test tests/contracts/*.test.js` — Pass（280/280）；
+- `npm test` — Pass（398/398）；
+- duplicate timestamp、Lap overlap、invalid Event state、broken device reference、
+  false capability with detail、schema mismatch — Pass；
+- getter calls 0、revoked/reflection Proxy fail closed、deep-frozen input、
+  non-mutation、structuredClone/JSON round-trip — Pass；
+- Node direct ESM import and zero network/storage/DOM side effects — Pass；
+- package files、B1-only runtime/tests 与六份 ADR — Unchanged；
+- B2 exact path audit — 9 approved paths only；
+- staged paths — Empty；
+- commit/push/PR body update — Not performed；
+- independent control-tower review — Accepted；
+- B2 Local Implementation Gate — Accepted；
+- B2 remote commit/CI — Pending this finalization；
+- B3 — Not started。
 
 ## Acceptance criteria
 
@@ -845,14 +958,35 @@ B1.1 local verification：
 - [x] B1.1 control-tower re-review accepted；
 - [x] Original accessor/getter P1 defect closed；
 - [x] B1 local implementation gate accepted；
-- [ ] B1 remote commit and CI finalization completed。
+- [x] B1 remote commit and CI finalization completed。
+
+### B2 / Local implementation gate
+
+- [x] 只新增或修改控制塔纠偏后的 9 个 B2 allowed paths；
+- [x] `index.js` 只公开三个批准 validator；
+- [x] B1 codes 全部保留，B2 只增加七个批准 code；
+- [x] CanonicalStreamSet、StreamSeries 与空 summary-only streams 已实现；
+- [x] Lap/Event/ActivitySource/DeviceReference/VersionMetadata 合同已实现；
+- [x] ImportedActivityBundle、references、state、version 与 capability checks 已实现；
+- [x] validation items 合并、去重与稳定排序已实现；
+- [x] accessor/getter 不执行，reflection Proxy fail closed 且不泄漏异常；
+- [x] input unchanged、deep freeze、JSON-safe、structuredClone 与 JSON round-trip
+      已验证；
+- [x] Node direct import 与零 network/storage/DOM side effect 已验证；
+- [x] focused contract tests 280/280 与 full tests 398/398 通过；
+- [x] package、B1-only runtime/tests 与 ADR 未修改；
+- [x] staged paths 为空，未 commit、未 push、未更新 PR body；
+- [x] independent control-tower review accepted；
+- [x] B2 Local Implementation Gate accepted；
+- [ ] B2 remote commit and CI finalization completed；
+- [x] B3 未开始，等待控制塔独立验收。
 
 ### Candidate implementation acceptance
 
-- [ ] Runtime validation 覆盖获批 Canonical contracts；
+- [x] Runtime validation 覆盖获批 Canonical contracts；
 - [x] ID 是 non-empty opaque string，number 与空白 ID 被拒绝；
 - [x] 缺失值不转换为 `0`，合法真实 `0` 可区分；
-- [ ] 非法单位、时间、版本与 cross-reference 被稳定 error contract 拒绝；
+- [x] 非法单位、时间、版本与 cross-reference 被稳定 error contract 拒绝；
 - [x] unknown sport 可以无损表达；
 - [x] validator 不修改输入，适用对象可 `structuredClone`；
 - [x] 测试在不同时区结果一致，不访问网络、IndexedDB 或 localStorage；
@@ -926,20 +1060,21 @@ git diff --check
 
 Implementation 执行：
 
-1. Node 直接 import `js/data/contracts/index.js`（B1 automated test 已通过）；
+1. Node 直接 import `js/data/contracts/index.js`（B1/B2 automated test 已通过）；
 2. 本地静态服务中由浏览器动态 import；
-3. 离线状态无需 CDN（B1 dependency/static boundary 已验证，浏览器未运行）；
-4. validator 前后 deep equality（B1 automated test 已通过）；
-5. 合法 `0` 保留，absent/`null` 不补零（B1 automated test 已通过）；
+3. 离线状态无需 CDN（B1/B2 dependency/static boundary 已验证，浏览器未运行）；
+4. validator 前后 deep equality（B1/B2 automated test 已通过）；
+5. 合法 `0` 保留，absent/`null` 不补零（B1/B2 automated test 已通过）；
 6. DevTools 确认零网络、零 IndexedDB/localStorage 写入（浏览器未运行；
-   B1 Node global traps 已通过）；
+   B1/B2 Node global traps 已通过）；
 7. 不使用真实账号、真实运动资料或真实浏览器 profile。
 
-B1 不运行真实数据验证。浏览器动态 import 与 DevTools 检查留待获得相应验收环境后执行。
+B1/B2 不运行真实数据验证。浏览器动态 import 与 DevTools 检查留待获得相应验收环境后
+执行。
 
 ## Privacy and security impact
 
-B1 只新增来源中立的纯 validation 模块、领域规则和 inline synthetic tests，不读取、
+B1/B2 只新增来源中立的纯 validation 模块、领域规则和 inline synthetic tests，不读取、
 写入、上传或记录活动、位置、健康、设备或凭据数据，不新增 committed fixture。
 Validator error、warning 和测试输出不得包含 token、
 Authorization header、原始活动、GPS、完整 HR/Power stream、真实文件名或设备序列号。
@@ -948,7 +1083,7 @@ Dependency-free validator 避免新增供应链、CDN、CSP、离线和 PWA 依�
 
 ## Migration impact
 
-B1 没有数据 migration，不创建或修改 IndexedDB v2，不读取或修改 Legacy Cache，
+B1/B2 没有数据 migration，不创建或修改 IndexedDB v2，不读取或修改 Legacy Cache，
 不写 localStorage，不持久化 Canonical 数据，也不改变 Feature Flag。
 
 PR-02 逻辑合同必须支持后续 additive、idempotent、observable、recoverable
@@ -957,13 +1092,15 @@ migration，但本 PR 不实现 migration、store、transaction 或编码。stre
 
 ## Rollback procedure
 
-B1 是尚未提交的新增 validation/test 文件与 Task Brief 更新：
+B1 已作为普通提交完成并通过 CI；B2 当前只是未暂存、未提交、未推送的本地
+validation/test 文件与 Task Brief 更新：
 
 1. 保持 Draft PR，不合并；
-2. B1 验收前可只放弃这 9 个允许路径中的本地改动；不得清理任务外文件；
-3. B1 提交后如需撤销，使用普通 revert 提交，不 amend、rebase 或 force-push；
+2. B2 验收前如需放弃，只能处理本阶段 9 个允许路径；不得清理任务外文件；
+3. B1 如需撤销，使用普通 revert 提交，不 amend、rebase 或 force-push；B2 尚无
+   commit 可撤销；
 4. 不清理 Legacy Cache、IndexedDB、localStorage、Service Worker cache 或私人
-   export，因为 B1 未修改这些数据；
+   export，因为 B1/B2 未修改这些数据；
 5. 删除远端分支或 worktree 不属于本任务授权。
 
 未来 implementation 的回滚必须保持 Legacy 默认路径，不得以删除或覆盖 Legacy/V2
@@ -993,7 +1130,7 @@ B1 是尚未提交的新增 validation/test 文件与 Task Brief 更新：
 - [x] A3 未修改 ADR、Schema、validator、test 或 runtime export；
 - [x] A3 diff/cached diff 仅包含 Task Brief；
 - [x] A3 自动检查和新 head CI 成功；
-- [x] PR #6 保持 Draft，B1 已获授权且 B2/B3 未开始；
+- [x] PR #6 保持 Draft，B1 已关闭、B2 只在本地实施且 B3 未开始；
 - [x] Browser/real-data verification 明确为 Not run。
 
 ## Completion evidence
@@ -1085,13 +1222,51 @@ B1.1 local revision:
   Original accessor/getter P1 defect — Closed
   Control-tower re-review — Accepted
   B1 local implementation gate — Accepted
-  B1 remote commit/CI — Pending this finalization
+  B1 remote commit/CI — Completed
   B2/B3 — Not started
   Commit/push/PR update — Not performed
+
+B1 finalization:
+  Control-tower acceptance — Passed; B1 formally closed
+  Commit — b5b6c60b9f197ea540790cc30b61fc6e312b61e7
+  Commit message — feat(v2): add canonical activity contracts
+  Push — Success; origin/codex/v2/contracts synchronized 0/0
+  CI Run — https://github.com/XiChuan9/StravaStats/actions/runs/30515429741
+  CI result — Success
+  PR #6 — OPEN / Draft; integration/v2 <- codex/v2/contracts
+
+B2 local implementation:
+  Authorization — PR-02 / B1 Closed / B2 Local Implementation Authorized
+  Exact scope correction — 9 approved paths within A3 frozen boundary
+  Public API — validateCanonicalActivity(value),
+    validateCanonicalStreamSet(value), validateImportedActivityBundle(value)
+  New stable errors — DUPLICATE_VALUE, LENGTH_MISMATCH, ORDER_INVALID,
+    REFERENCE_INVALID, STATE_INVALID, CAPABILITY_CONFLICT
+  New stable warning — DUPLICATE_TIMESTAMP
+  npm ci — Pass
+  npm run check:syntax — Pass (116 files)
+  npm run check:privacy — Pass
+  Focused contract tests — Pass (280/280)
+  npm test — Pass (398/398)
+  git diff --check — Pass
+  Directed relationship/state/version/capability checks — Pass
+  Getter calls — 0
+  Revoked/reflection Proxy — Pass; fail closed
+  structuredClone/JSON round-trip — Pass
+  Import/validation network/storage/DOM access — 0
+  Exact path audit — Pass (9 B2 allowed paths only)
+  Staged paths — Empty
+  Package/B1-only/ADR modifications — None
+  Commit/push/PR body update — Not performed
+  Independent control-tower review — Accepted
+  B2 Local Implementation Gate — Accepted
+  B2 remote commit/CI — Pending this finalization
+  Browser dynamic import/DevTools/real-data verification — Not run
+  B3 — Not started
 ```
 
 ## Stop condition
 
-B1 local implementation gate 已获控制塔接受。本次只允许完成 B1 精确提交、推送、
-Draft PR body 更新与新 HEAD CI 验证；B1 remote commit/CI 完成后必须停止，不开始
-B2/B3。ADR 保持 Proposed，PR 保持 Draft，下一阶段必须等待控制塔独立授权。
+B1 已正式关闭，B2 Local Implementation Gate 已获控制塔独立验收。本次只允许完成
+B2 精确提交、推送、Draft PR body 更新与新 HEAD CI 验证；完成后必须停止，不开始
+B3。ADR 保持 Proposed，PR 保持 Draft，B3 必须等待控制塔独立授权。

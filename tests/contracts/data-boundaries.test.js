@@ -2,12 +2,18 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-import { validateCanonicalActivity } from '../../js/data/contracts/index.js';
+import {
+  validateCanonicalActivity,
+  validateCanonicalStreamSet,
+  validateImportedActivityBundle
+} from '../../js/data/contracts/index.js';
 
 const CONTRACT_FILES = [
   '../../js/data/contracts/errors.js',
   '../../js/data/contracts/primitives.js',
   '../../js/data/contracts/canonical-activity.js',
+  '../../js/data/contracts/canonical-streams.js',
+  '../../js/data/contracts/imported-activity-bundle.js',
   '../../js/data/contracts/index.js'
 ];
 
@@ -32,6 +38,33 @@ function minimalActivity() {
   };
 }
 
+function minimalBundle() {
+  return {
+    schemaVersion: 1,
+    activity: minimalActivity(),
+    streams: {
+      activityId: 'boundary-test',
+      series: []
+    },
+    laps: [],
+    events: [],
+    sources: [
+      {
+        id: 'boundary-source',
+        activityId: 'boundary-test',
+        provider: 'synthetic-provider',
+        acquisitionMethod: 'synthetic-test',
+        importedAt: '2026-01-02T03:04:05.006Z'
+      }
+    ],
+    devices: [],
+    warnings: [],
+    versionMetadata: {
+      schemaVersion: 1
+    }
+  };
+}
+
 async function contractSources() {
   return Promise.all(
     CONTRACT_FILES.map(async (relativePath) => ({
@@ -41,14 +74,37 @@ async function contractSources() {
   );
 }
 
-test('Node imports the B1 public ESM entry directly', async () => {
+test('Node imports the B2 public ESM entry directly', async () => {
   const module = await import('../../js/data/contracts/index.js');
-  assert.deepEqual(Object.keys(module), ['validateCanonicalActivity']);
+  assert.deepEqual(Object.keys(module), [
+    'validateCanonicalActivity',
+    'validateCanonicalStreamSet',
+    'validateImportedActivityBundle'
+  ]);
   assert.deepEqual(module.validateCanonicalActivity(minimalActivity()), {
     ok: true,
     errors: [],
     warnings: []
   });
+  assert.deepEqual(
+    module.validateCanonicalStreamSet({
+      activityId: 'boundary-test',
+      series: []
+    }),
+    {
+      ok: true,
+      errors: [],
+      warnings: []
+    }
+  );
+  assert.deepEqual(
+    module.validateImportedActivityBundle(minimalBundle()),
+    {
+      ok: true,
+      errors: [],
+      warnings: []
+    }
+  );
 });
 
 test('contract modules import no app, storage, analysis, or provider runtime', async () => {
@@ -136,11 +192,22 @@ test('import and validation perform zero network or storage side effects', async
     }
 
     const moduleUrl = new URL(
-      '../../js/data/contracts/index.js?boundary=b1',
+      '../../js/data/contracts/index.js?boundary=b2',
       import.meta.url
     );
     const module = await import(moduleUrl.href);
     assert.equal(module.validateCanonicalActivity(minimalActivity()).ok, true);
+    assert.equal(
+      module.validateCanonicalStreamSet({
+        activityId: 'boundary-test',
+        series: []
+      }).ok,
+      true
+    );
+    assert.equal(
+      module.validateImportedActivityBundle(minimalBundle()).ok,
+      true
+    );
     assert.equal(accesses, 0);
   } finally {
     for (const name of names) {
@@ -154,21 +221,47 @@ test('import and validation perform zero network or storage side effects', async
   }
 });
 
-test('B1 does not expose or create B2 stream and bundle modules', async () => {
+test('B2 exposes only contract validators, not downstream runtime APIs', async () => {
   const module = await import('../../js/data/contracts/index.js');
-  assert.equal('validateCanonicalStreamSet' in module, false);
-  assert.equal('validateImportedActivityBundle' in module, false);
+  assert.deepEqual(Object.keys(module), [
+    'validateCanonicalActivity',
+    'validateCanonicalStreamSet',
+    'validateImportedActivityBundle'
+  ]);
 
   const source = await readFile(
     new URL('../../js/data/contracts/index.js', import.meta.url),
     'utf8'
   );
-  assert.equal(source.includes('canonical-streams'), false);
-  assert.equal(source.includes('imported-activity-bundle'), false);
+  for (const forbiddenName of [
+    'Repository',
+    'Storage',
+    'Decoder',
+    'ImportJob',
+    'Projection',
+    'Analysis'
+  ]) {
+    assert.equal(
+      source.includes(forbiddenName),
+      false,
+      `public index exposes forbidden ${forbiddenName} API`
+    );
+  }
 });
 
 test('boundary tests use only inline synthetic data', () => {
   const activity = minimalActivity();
   assert.equal(activity.id, 'boundary-test');
   assert.equal(validateCanonicalActivity(activity).ok, true);
+  assert.equal(
+    validateCanonicalStreamSet({
+      activityId: 'boundary-test',
+      series: []
+    }).ok,
+    true
+  );
+  assert.equal(
+    validateImportedActivityBundle(minimalBundle()).ok,
+    true
+  );
 });

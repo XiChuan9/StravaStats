@@ -3,7 +3,11 @@ import test from 'node:test';
 
 import * as publicApi from '../../js/data/contracts/index.js';
 
-const { validateCanonicalActivity } = publicApi;
+const {
+  validateCanonicalActivity,
+  validateCanonicalStreamSet,
+  validateImportedActivityBundle
+} = publicApi;
 
 function validActivity(overrides = {}) {
   return {
@@ -27,6 +31,39 @@ function validActivity(overrides = {}) {
   };
 }
 
+function validStreamSet(overrides = {}) {
+  return {
+    activityId: 'validation-contract',
+    series: [],
+    ...overrides
+  };
+}
+
+function validBundle(overrides = {}) {
+  return {
+    schemaVersion: 1,
+    activity: validActivity({ elapsedTimeSeconds: 60 }),
+    streams: validStreamSet(),
+    laps: [],
+    events: [],
+    sources: [
+      {
+        id: 'validation-source',
+        activityId: 'validation-contract',
+        provider: 'synthetic-provider',
+        acquisitionMethod: 'synthetic-test',
+        importedAt: '2026-01-02T03:04:05.006Z'
+      }
+    ],
+    devices: [],
+    warnings: [],
+    versionMetadata: {
+      schemaVersion: 1
+    },
+    ...overrides
+  };
+}
+
 function compareItems(left, right) {
   if (left.path !== right.path) return left.path < right.path ? -1 : 1;
   if (left.code !== right.code) return left.code < right.code ? -1 : 1;
@@ -43,23 +80,33 @@ function assertStandardResult(result) {
   assert.ok(Array.isArray(result.warnings));
 }
 
-test('public index exports only validateCanonicalActivity in B1', () => {
-  assert.deepEqual(Object.keys(publicApi), ['validateCanonicalActivity']);
+test('public index exports exactly the three B2 validators', () => {
+  assert.deepEqual(Object.keys(publicApi), [
+    'validateCanonicalActivity',
+    'validateCanonicalStreamSet',
+    'validateImportedActivityBundle'
+  ]);
   assert.equal(typeof validateCanonicalActivity, 'function');
+  assert.equal(typeof validateCanonicalStreamSet, 'function');
+  assert.equal(typeof validateImportedActivityBundle, 'function');
 });
 
-test('result and item shapes are stable and minimal', () => {
-  const result = validateCanonicalActivity({
-    unknown: true
-  });
+test('all validator result and item shapes are stable and minimal', () => {
+  const results = [
+    validateCanonicalActivity({ unknown: true }),
+    validateCanonicalStreamSet({ unknown: true }),
+    validateImportedActivityBundle({ unknown: true })
+  ];
 
-  assertStandardResult(result);
+  for (const result of results) {
+    assertStandardResult(result);
 
-  for (const item of [...result.errors, ...result.warnings]) {
-    assert.deepEqual(Object.keys(item), ['code', 'path', 'message']);
-    assert.equal(typeof item.code, 'string');
-    assert.equal(typeof item.path, 'string');
-    assert.equal(typeof item.message, 'string');
+    for (const item of [...result.errors, ...result.warnings]) {
+      assert.deepEqual(Object.keys(item), ['code', 'path', 'message']);
+      assert.equal(typeof item.code, 'string');
+      assert.equal(typeof item.path, 'string');
+      assert.equal(typeof item.message, 'string');
+    }
   }
 });
 
@@ -140,6 +187,30 @@ test('validation messages never echo invalid actual values', () => {
   );
 
   assert.equal(JSON.stringify(result).includes(sensitiveMarker), false);
+
+  const streamsResult = validateCanonicalStreamSet({
+    activityId: sensitiveMarker,
+    series: [
+      {
+        streamType: sensitiveMarker,
+        unit: '',
+        offsetsSeconds: [0],
+        values: [sensitiveMarker]
+      }
+    ]
+  });
+  assert.equal(
+    JSON.stringify(streamsResult).includes(sensitiveMarker),
+    false
+  );
+
+  const value = validBundle();
+  value.sources[0].deviceId = sensitiveMarker;
+  const bundleResult = validateImportedActivityBundle(value);
+  assert.equal(
+    JSON.stringify(bundleResult).includes(sensitiveMarker),
+    false
+  );
 });
 
 test('stable codes cover unsupported versions, IDs, and unknown fields', () => {
@@ -158,6 +229,92 @@ test('stable codes cover unsupported versions, IDs, and unknown fields', () => {
   assert.ok(
     result.warnings.some((item) => item.code === 'UNKNOWN_FIELD')
   );
+});
+
+test('B2 stable codes are emitted with their approved severity', () => {
+  const streamResult = validateCanonicalStreamSet({
+    activityId: 'validation-contract',
+    series: [
+      {
+        streamType: 'distance',
+        unit: 'meters',
+        offsetsSeconds: [1, 1],
+        values: [1]
+      },
+      {
+        streamType: 'distance',
+        unit: 'meters',
+        offsetsSeconds: [0],
+        values: [1]
+      }
+    ]
+  });
+  assert.ok(
+    streamResult.errors.some(
+      (item) => item.code === 'DUPLICATE_VALUE'
+    )
+  );
+  assert.ok(
+    streamResult.errors.some(
+      (item) => item.code === 'LENGTH_MISMATCH'
+    )
+  );
+  assert.ok(
+    streamResult.warnings.some(
+      (item) => item.code === 'DUPLICATE_TIMESTAMP'
+    )
+  );
+
+  const value = validBundle({
+    schemaVersion: 2,
+    versionMetadata: { schemaVersion: 1 }
+  });
+  value.activity.schemaVersion = 2;
+  value.activity.capabilities.hasGps = false;
+  value.streams.series = [
+    {
+      streamType: 'position',
+      unit: 'wgs84',
+      offsetsSeconds: [0],
+      values: [[0, 0]]
+    }
+  ];
+  value.laps = [
+    {
+      id: 'lap',
+      activityId: 'validation-contract',
+      index: 0,
+      startOffsetSeconds: 10,
+      elapsedTimeSeconds: 20
+    },
+    {
+      id: 'lap',
+      activityId: 'other',
+      index: 0,
+      startOffsetSeconds: 5,
+      elapsedTimeSeconds: 10
+    }
+  ];
+  value.events = [
+    {
+      id: 'event',
+      activityId: 'validation-contract',
+      index: 0,
+      type: 'pause',
+      offsetSeconds: 0
+    }
+  ];
+  const bundleResult = validateImportedActivityBundle(value);
+  const codes = new Set(bundleResult.errors.map((item) => item.code));
+  for (const code of [
+    'CAPABILITY_CONFLICT',
+    'DUPLICATE_VALUE',
+    'ORDER_INVALID',
+    'REFERENCE_INVALID',
+    'STATE_INVALID'
+  ]) {
+    assert.ok(codes.has(code), code);
+  }
 });
 
 test('ordinary invalid inputs return results without throwing', async (t) => {
@@ -188,6 +345,33 @@ test('ordinary invalid inputs return results without throwing', async (t) => {
         assertStandardResult(result);
       }
     );
+  }
+});
+
+test('all three validators fail closed for ordinary invalid inputs', async (t) => {
+  const validators = [
+    validateCanonicalActivity,
+    validateCanonicalStreamSet,
+    validateImportedActivityBundle
+  ];
+  for (const validator of validators) {
+    await t.test(validator.name, () => {
+      for (const input of [
+        undefined,
+        null,
+        0,
+        '',
+        [],
+        new Date(0)
+      ]) {
+        let result;
+        assert.doesNotThrow(() => {
+          result = validator(input);
+        });
+        assertStandardResult(result);
+        assert.equal(result.ok, false);
+      }
+    });
   }
 });
 
