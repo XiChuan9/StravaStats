@@ -47,7 +47,11 @@
 - B3 browser limitation independently reproduced by control tower in both
   in-app Browser and connected Chrome；
 - B3 Local Review Gate: `Accepted`；
-- B3 remote commit/CI finalization: Pending this finalization；
+- B3 documentation commit:
+  `1240dcf0cdea5037037593364e3aac4f262b360a`；
+- B3 CI Run:
+  https://github.com/XiChuan9/StravaStats/actions/runs/30526989854；
+- B3 remote commit/CI finalization: `Completed`；
 - Browser dynamic import、storage/network instrumentation 与 Manual DevTools
   已由控制塔批准延期，但继续保持 `Not run`，不视为 Pass；
 - ADR-0001 至 ADR-0006 已收窄到 PR-02 实际实现和测试的逻辑合同，并于
@@ -85,6 +89,11 @@
 - B2 CI result: Success；
 - B2 finalization: Accepted and closed；
 - B3 exact local scope: Task Brief + ADR-0001 through ADR-0006；
+- B3 documentation commit:
+  `1240dcf0cdea5037037593364e3aac4f262b360a`；
+- B3 CI Run:
+  https://github.com/XiChuan9/StravaStats/actions/runs/30526989854；
+- B3 CI result: Success；
 - Browser direct contract-module URL load: Pass（in-app Browser 与 Chrome）；
 - Browser dynamic import and automated side-effect smoke: Not run（两种受控
   `playwright.evaluate` 执行面均不提供 module loading；未绕过）；
@@ -976,8 +985,13 @@ runtime/test defect 时必须停止并申请纠偏，不能在本阶段直接修
 - mandatory follow-up — 第一个实际从浏览器应用路径接入 contracts 的后续 PR；
   最迟在 Canonical 默认启用或进入 release candidate 前完成；
 - exact B3 path audit — 7 approved documentation paths only；
-- staged paths — Empty；
-- commit/push/PR body/Ready/merge — Not performed。
+- initial B3 documentation commit —
+  `1240dcf0cdea5037037593364e3aac4f262b360a`；
+- initial B3 CI —
+  https://github.com/XiChuan9/StravaStats/actions/runs/30526989854
+  (`Success`)；
+- PR body — Updated；PR remains Draft；
+- PR Ready / merge / PR-03 — Not performed。
 
 ## Acceptance criteria
 
@@ -1085,7 +1099,7 @@ runtime/test defect 时必须停止并申请纠偏，不能在本阶段直接修
       Canonical 默认启用或 release candidate 前完成；
 - [x] B3 七路径审计通过，runtime/tests/package 未修改，staged 为空；
 - [x] B3 Local Review Gate accepted；
-- [ ] B3 remote commit/CI finalization completed；
+- [x] B3 remote commit/CI finalization completed；
 - [ ] PR Ready / final project acceptance；
 - [ ] Manual DevTools panel and real-data verification。
 
@@ -1397,10 +1411,17 @@ B3 local implementation:
   Mandatory follow-up — First downstream PR that connects contracts from a
     browser application path, before Canonical becomes default or release candidate
   Exact path audit — Pass (7 B3 approved documentation paths only)
-  Staged paths — Empty
   Runtime/tests/package modifications — None
-  Commit/push/PR body/Ready/merge — Not performed
   B3 Local Review Gate — Accepted
+  Documentation commit — 1240dcf0cdea5037037593364e3aac4f262b360a
+  Commit message — docs(v2): accept canonical contract decisions
+  Push — Success
+  CI Run — https://github.com/XiChuan9/StravaStats/actions/runs/30526989854
+  CI Job — https://github.com/XiChuan9/StravaStats/actions/runs/30526989854/job/90820111031
+  CI result — Success
+  B3 remote commit/CI finalization — Completed
+  PR body — Updated; PR remains Draft
+  PR Ready/merge/PR-03 — Not performed
 ```
 
 ## Stop condition
