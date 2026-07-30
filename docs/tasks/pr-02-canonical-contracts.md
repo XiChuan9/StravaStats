@@ -1424,10 +1424,41 @@ B3 local implementation:
   PR Ready/merge/PR-03 — Not performed
 ```
 
+## PR-02 Final Review Closure
+
+- Final Independent Review: `Accepted`；
+- Control-tower decision: Ready for review approved；
+- Reviewed head:
+  `5ad15cc207cb9f1709eb167ae0a8979f2b00d862`；
+- Remote PR state before Ready: `OPEN / Draft / MERGEABLE`；
+- Merge state before Ready: `CLEAN`；
+- Base/head: `integration/v2` ← `codex/v2/contracts`；
+- Changed files: 19/19 approved paths；
+- Ahead/behind against `integration/v2`: 6/0；
+- Final reviewed CI:
+  https://github.com/XiChuan9/StravaStats/actions/runs/30527192861；
+- Final reviewed CI result: Success；
+- Syntax: 116 files；
+- Privacy: Pass；
+- Contract tests: 280/280；
+- Full tests: 398/398；
+- ADR Accepted/status/date/disclaimer audit: 6/6；
+- Browser dynamic import: Not run；
+- Browser exact exports / validator calls: Not run；
+- Browser storage/network/Service Worker instrumentation: Not run；
+- Manual DevTools: Not run；
+- Real-data verification: Not run；
+- Browser items are a control-tower-approved deferral and are not Pass；
+- Mandatory browser follow-up: the first downstream PR that connects contracts
+  from a browser application path；the checks must pass before Canonical becomes
+  the default or enters a release candidate；
+- Squash merge: Not authorized；
+- PR-03: Not started；
+- Project publication/merge: Not claimed。
+
 ## Stop condition
 
-B1/B2 已正式关闭，B3 Local Review Gate 已获控制塔接受。本次只允许完成七份文档的
-精确提交、推送、Draft PR body 更新与新 HEAD CI 验证；如需记录 commit/CI，可再创建
-一个只修改本 Task Brief 的普通 docs commit，不 amend。收尾完成后立即停止，不标记
-Ready、不合并、不开始 PR-03 或 Repository、Storage、Import、Projection、Analysis
-等下游实现。PR #6 必须继续保持 Draft。
+PR-02 Final Independent Review 已获控制塔接受。本次只允许提交并推送本 Task Brief
+的 Final Review Closure 记录、更新 PR body、等待新 HEAD CI，并仅在该 CI 成功后把
+PR #6 从 Draft 标记为 Ready for review。完成后立即停止；不合并、不修改
+`integration/v2`、不开始 PR-03 或其他下游实现，不删除分支或 worktree。
