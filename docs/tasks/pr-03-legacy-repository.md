@@ -24,8 +24,9 @@
 路径和 B1/B2/B3 分阶段范围。
 
 本状态表示 PR-03 的实施范围已经冻结。控制塔已完成 B1 与 B1.1 复验，两者结论均为
-`PASS`；当前只授权 B1 Finalization。B2 尚未开始并等待控制塔单独授权，B3 未授权。
-PR 必须继续保持 Draft，不得标记 Ready 或合并；PR-03 最终验收尚未完成。
+`PASS`。B2、B2.1 和 B2.2 均已通过控制塔复验，结论为 `PASS`；B2 finalization
+已获授权。B3 仍为 `Not authorized / Not started`。PR 必须继续保持 Draft，不得
+标记 Ready 或合并；PR-03 最终验收尚未完成。
 
 ## A3 approved decision record
 
@@ -538,10 +539,11 @@ Strava Connector、Feature Flag 接线或 consumer migration。
 
 ## Implementation authorization gate
 
-A3 只完成决策记录和范围冻结。B1 尚未开始，必须等待控制塔单独授权。
+A3 只完成决策记录和范围冻结。后续 B 阶段均须由控制塔逐阶段单独授权；
+当前 B1/B1.1 与 B2/B2.1/B2.2 已完成，B3 未授权。
 
 - B1 只能使用 B1 phase-specific Allowed files；
-- B2、B3 当前均未授权；
+- B2 finalization 已授权；B3 当前未授权且未开始；
 - 每阶段完成实现和本地验证后不得自行暂存、提交或推送；
 - 每阶段必须先返回控制塔验收，再等待独立 finalization 指令；
 - 不得用全阶段 17-file allowlist 绕过 phase-specific 限制；
@@ -659,7 +661,7 @@ PR 在 A3 后仍必须保持 Draft。只有 project owner 单独授权才能标�
 - PR base/head、Draft/Open 状态不正确；
 - 任一门禁或 CI 失败；
 - 发现 Token、Authorization、raw body、provider payload、GPS/健康数据泄漏；
-- B1/B2/B3 尚未获控制塔授权。
+- 当前阶段尚未获控制塔授权。
 
 ## B1 finalization record
 
@@ -678,7 +680,127 @@ PR 在 A3 后仍必须保持 Draft。只有 project owner 单独授权才能标�
   `git diff --check` 全部通过。
 - 真实网络与 browser verification 为 `Not run`；没有使用真实 Token、账号、活动、
   GPS 或健康数据。
-- B2/B3 implementation 尚未开始；B2 等待控制塔单独授权，B3 未授权。
+- B1 finalization 时 B2/B3 implementation 尚未开始；当前 B2 状态见下方本地实施记录，
+  B3 仍未授权。
+
+## B2 local implementation record
+
+- Public Repository entry 精确导出 `createRepository`、`RepositoryError`、
+  `REPOSITORY_ERROR_CODE`、`REPOSITORY_SOURCE` 和
+  `REPOSITORY_WARNING_CODE`；内部 implementation、Connector、cache/projection 与
+  DI helper 均未公开。
+- Factory 仅支持显式 `real` / `demo` session 和 `legacy` mode；Demo branch 不构造
+  Connector 或真实 cache，默认依赖保持 lazy，import/constructor 零 I/O。
+- LegacyRepository 与 DemoRepository 均实现冻结的七方法和精确
+  `{ data, source, warnings, partial }` success envelope；没有 `getLaps` 或第八方法。
+- Legacy projection 保留 Legacy DTO、拒绝敏感 transport key，并对 accessor、
+  Proxy、cycle、non-JSON value fail closed；输出 detached 且安全处理
+  `__proto__` / `constructor`。
+- Legacy metadata/gear cache adapter 仅访问冻结 key，使用 24h TTL、精确 key-pair
+  cleanup、snapshot/compensating rollback；activity cache 只通过注入调用现有
+  `getCachedActivities` / `saveCachedActivities`。
+- Connector errors 映射为公共 Repository errors；athlete snapshot/in-flight
+  coalescing、TTL expiry、gear shoes-before-bikes 顺序、duplicate ID、partial warning、
+  mixed source、aggregate/per-ID cache ownership均由确定性测试覆盖。
+- Demo 七方法保持 `source: demo`，不读取 Token、真实 cache 或真实 Local Library，
+  不构造 Connector，不联网；malformed payload 安全退化，不 fallback real。
+- B2 初验前本地门禁：B2 focused 82/82、B1 regression 101/101、full 581/581、
+  syntax 130 files、privacy 与 `git diff --check` 全部通过。
+- 真实网络与 browser verification 为 `Not run`；未使用真实 credentials、私人活动、
+  GPS、健康数据或 browser profile。
+- B2 初验前没有 staged path、commit、push、PR body 更新或远端 CI 记录；B3
+  implementation 尚未开始。
+
+## B2.1 contract correction record
+
+控制塔对 B2 初验结论为 `REVISE`，要求纠正以下两个合同根因：
+
+1. `getGears()` 错误地把 athlete source 无条件加入 gear source 集合，使
+   “athlete cache + 全部 gear network”和“athlete network + 全部 gear cache”
+   被误报为 `mixed`。
+2. Legacy cache 只检查 age，未拒绝 future timestamp 或
+   `timestamp + ttlMs` overflow；athlete memo 也直接信任 cache `expiresAt`，
+   可能形成超出一个 metadata TTL 的 snapshot 或非有限 expiry。
+
+B2.1 修正合同：
+
+- 非空或 partial 且存在成功 gear 时，source 只由成功 gear 的 cache/network
+  来源决定；只有完整空 gear 或 partial 且零成功 gear 时才使用 athlete source。
+  顺序、duplicate ID、warning、partial 和 aggregate write 合同保持不变。
+- Legacy cache timestamp 必须有限且不晚于 injected now，age 不得大于 TTL，
+  `timestamp + ttlMs` 必须有限；future、expired、overflow 和非法 timestamp
+  按原策略只清理对应 data/timestamp key pair，cleanup failure 继续返回
+  observable failed status。
+- Athlete cache expiry 必须有限且未过期，并 clamp 到本次
+  `now + metadataTtlMs`；invalid/expired expiry 产生 `CACHE_READ_FAILED` 后
+  fallback network。无法建立有限 expiry 上限时以稳定 `RepositoryError`
+  fail closed，network snapshot 也不能形成 Infinity 或永久 memo。
+- 定向测试新增六种 gear source 组合，以及 future timestamp、expiry overflow、
+  `timestamp === now`、exact TTL boundary、cleanup failure、极远 cache expiry
+  clamp、expired/non-finite cache fallback 和 network expiry overflow。
+- B2.1 本地门禁：B2 focused 94/94、B1 regression 101/101、full 593/593、
+  syntax 130 files、privacy 与 `git diff --check` 全部通过。
+- B2.1 仅修改 Task Brief、Legacy cache adapter、LegacyRepository 和 Legacy
+  Repository tests；B2.1 复验前没有 staged path、commit、push、PR body 更新或
+  远端 CI。B3 implementation 未开始。
+
+## B2.2 Cache Adapter fail-closed correction record
+
+控制塔复验确认 B2.1 的 gear source 与 TTL 上限两个原阻断项已正确修复，同时发现
+LegacyCacheAdapter 在类型验证前执行 `Number()`、`timestamp + ttlMs` 和
+`now - timestamp`，使 Symbol、BigInt 或非数字 clock 可能泄漏原生 `TypeError`。
+
+B2.2 修正合同：
+
+- Read/write 均先捕获 injected clock exception，再要求 clock value 为 primitive、
+  finite number；Symbol、BigInt、string、boxed Number、object、null、undefined、
+  `NaN` 和 `Infinity` 全部稳定返回 cache failed，不进入任何算术。
+- 非法 clock 不清理现有 cache；read/write 不传播原生异常。
+- Storage data value 仅接受 string/null；非字符串 data 返回 failed，且不调用
+  `JSON.parse`、`valueOf`、`toString` 或 Proxy trap。
+- Storage timestamp value 仅接受 string/null；只有确认 non-empty string 后才调用
+  `Number()`。非字符串 timestamp 不执行 coercion，并按冻结合同只清理当前
+  data/timestamp key pair；cleanup failure 继续返回 observable failed。
+- 定向测试覆盖 read/write clock throw、Symbol、BigInt、string、boxed Number、
+  observable object、null、undefined、`NaN`、`Infinity`；timestamp Symbol、
+  BigInt、observable object/Proxy；data Symbol、observable object/Proxy；
+  coercion/trap 调用均为 0，并验证 cleanup 精确范围与非法 clock 零 cleanup。
+- B2.2 本地门禁：B2 focused 115/115、B1 regression 101/101、full 614/614、
+  syntax 130 files、privacy 与 `git diff --check` 全部通过。
+- B2.2 仅修改 Task Brief、Legacy cache adapter 和 Legacy Repository tests；
+  B2.2 复验前没有 staged path、commit、push、PR body 更新或远端 CI。B3
+  implementation 未开始。
+
+## B2 finalization record
+
+- 控制塔复验结论：B2、B2.1 gear source / TTL correction、B2.2 Cache Adapter
+  fail-closed correction 均为 `PASS`。
+- 最终合同已通过：六种 gear source 组合、athlete memo 单 TTL 上限、future/overflow
+  timestamp 拒绝、primitive finite clock、storage 零 coercion、精确 key-pair cleanup、
+  stable source/warning/partial 与 Demo 零 Connector/Token/真实 cache I/O。
+- 最终本地门禁：B2 focused 115/115、B1 regression 101/101、full 614/614、
+  syntax 130 files、privacy 与 `git diff --check` 全部通过。
+- 最终 B2 实际路径精确为以下 12 个：
+
+```text
+docs/tasks/pr-03-legacy-repository.md
+js/repository/index.js
+js/repository/factory.js
+js/repository/legacy/legacy-projection.js
+js/repository/legacy/legacy-cache-adapter.js
+js/repository/legacy/legacy-repository.js
+js/repository/demo/demo-repository.js
+tests/repository/repository-contract.test.js
+tests/repository/legacy-repository.test.js
+tests/repository/demo-repository.test.js
+tests/repository/repository-factory.test.js
+tests/repository/dependency-boundaries.test.js
+```
+
+- 真实网络、真实 Token、真实账号和 browser/profile verification 继续为 `Not run`；
+  未使用私人活动、GPS、健康数据或 private fixture。
+- B3 保持 `Not authorized / Not started`；PR #7 必须保持 Draft，不得标记 Ready 或
+  合并。
 
 ## Phase ledger
 
@@ -691,5 +813,7 @@ PR 在 A3 后仍必须保持 Draft。只有 project owner 单独授权才能标�
 | A3 Decision and scope freeze | Completed | 公共合同、ownership、17-file allowlist 与 phase restrictions 已冻结 |
 | B1 | Completed / PASS | 公共 errors/constants、network-only Connector、六个方法和本地 101/101 focused、499/499 full、119-file syntax、privacy/diff 门禁均通过；控制塔已批准 Finalization |
 | B1.1 | Completed / PASS | immutable/redacted Error 与 strict `Retry-After` 安全纠偏已通过控制塔复验 |
-| B2 | Not started / awaiting control-tower authorization | 尚未开始；必须等待控制塔单独授权 |
-| B3 | Not authorized | 不得开始 |
+| B2 | Completed / PASS | 公共 entry、Factory、Legacy/Demo Repository、projection/cache 与共享合同测试完成；focused 115/115、B1 101/101、full 614/614、syntax 130 files、privacy/diff PASS |
+| B2.1 | Completed / PASS | 六种 gear source 与 TTL/future/overflow/memo 上限纠偏通过控制塔复验 |
+| B2.2 | Completed / PASS | primitive finite clock、storage 零 coercion 与精确 cleanup fail-closed 纠偏通过控制塔复验 |
+| B3 | Not authorized / Not started | 不得开始 |
