@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Ready for investigation |
+| Status | Approved for implementation |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/repository` |
 | Worktree | `/Users/wangchuanliang/Documents/StravaStats-worktrees/repository` |
@@ -15,15 +15,425 @@
 | Related ADRs | ADR-0003（Accepted，仅 Repository 消费者边界原则）及 ADR-0001、0002、0004、0005、0006 的下游边界 |
 | Dependencies | PR-00、PR-01、PR-02 已合入 `integration/v2` |
 | Starting baseline | `5137afeff2530a228c2be79af54bd04912a0c389` |
-| Pull request | Draft PR 待 A1 创建 |
+| Pull request | Draft PR [#7](https://github.com/XiChuan9/StravaStats/pull/7) |
 
 ## Status
 
-本任务当前只获准完成 A0、A1 和 A2。A2 是严格只读调查；A2 完成前没有产品实施
-权限。第一个实施阶段必须等待控制塔单独批准 A3 决策与范围冻结。
+控制塔已完成 A0、A1、A2、A2.1 和 A3 验收。A2 初次结论为 `REVISE`，经 A2.1
+只读合同纠偏后为 `PASS`；A3 已冻结公共合同、ownership、依赖边界、17 个最大允许
+路径和 B1/B2/B3 分阶段范围。
 
-Repository API、Connector API、Factory API、Legacy adapter、Feature Flag 接线、
-消费者迁移方式及 Allowed files 均尚未冻结。本文档的候选项不能解释为实施授权。
+本状态只表示 PR-03 的实施范围已经冻结，不授权立即开始实现。B1 仍为
+`Not started / awaiting authorization`，B2、B3 均未授权。PR 必须继续保持 Draft，
+不得标记 Ready 或合并。
+
+## A3 approved decision record
+
+### Public Repository API
+
+PR-03 冻结且只冻结以下七个公共方法：
+
+```text
+listActivities({ refresh = false } = {})
+getActivity(activityId)
+getStreams(activityId, { types })
+getAthlete()
+getZones()
+getGears()
+getGear(gearId)
+```
+
+明确不包含 `getLaps`。Laps 当前内嵌于 activity detail；PR-03 不增加重复网络请求，
+独立 lap query 留给 PR-04B 或后续 Canonical Repository。新增第八个公共方法必须
+重新申请控制塔批准。
+
+公共方法不得接收 raw Token、Authorization、raw provider response、DOM/UI 对象、
+raw athlete 作为 `getGears` 参数、storage implementation 或 page/tab state。
+
+### Public entry and factory
+
+唯一公共入口是：
+
+```text
+js/repository/index.js
+```
+
+精确 named exports：
+
+```text
+createRepository
+RepositoryError
+REPOSITORY_ERROR_CODE
+REPOSITORY_SOURCE
+REPOSITORY_WARNING_CODE
+```
+
+公共入口禁止导出 LegacyRepository、DemoRepository、StravaApiConnector、Connector
+internal errors、cache adapter、projection helpers、provider DTO helpers 或 testing-only
+dependency helpers。
+
+Public factory：
+
+```js
+createRepository({
+    sessionMode,
+    mode = 'legacy'
+})
+```
+
+- `sessionMode` 必须显式为 `real` 或 `demo`，未知值抛出 `INVALID_REQUEST`；
+- PR-03 唯一支持的 mode 是 `legacy`；
+- `v2`、`shadow`、`canonical` 和未知 mode 均抛出 `UNSUPPORTED_MODE`；
+- Demo 分支不得构造 Connector；
+- Factory construction 不读取 Token/cache、不联网、不访问 DOM；
+- dependency-injection helper 可从 `factory.js` 内部导出供测试使用，但不得由公共
+  `index.js` re-export。
+
+### Success result contract
+
+所有公共 Repository 方法成功时统一返回：
+
+```js
+{
+    data,
+    source,
+    warnings,
+    partial
+}
+```
+
+- 顶层必须且只能包含这四个字段；
+- failure 通过 throw `RepositoryError`，不使用 `{ ok: false, error }` 第二套协议；
+- `warnings` 永远为 array，`partial` 永远为 boolean；
+- 完整结果为 `partial: false`，成功空集合不是 partial；
+- 所有结果必须 JSON-safe；
+- 输入不得被修改；
+- 返回对象不得与 cache、Connector response 或内部 memo 共享可变引用；
+- 输出不强制 deep-freeze，以保持 Legacy preprocessing 兼容。
+
+方法 data shape：
+
+| Method | `data` |
+| --- | --- |
+| `listActivities` | array |
+| `getActivity` | object |
+| `getStreams` | object |
+| `getAthlete` | object 或合法 `null` |
+| `getZones` | object 或合法 `null` |
+| `getGears` | array |
+| `getGear` | object |
+
+Demo 中不存在的 activity 由 `getActivity` 抛出 `NOT_FOUND`。Demo 中存在的 activity
+没有 streams 时，`getStreams` 返回空 object，不伪造 stream；activity 不存在时仍
+抛出 `NOT_FOUND`。
+
+### Source and warning contract
+
+`REPOSITORY_SOURCE` 精确冻结为：
+
+```text
+cache
+network
+demo
+mixed
+```
+
+`mixed` 只能用于同一成功结果由 cache/network 混合组装。
+
+`REPOSITORY_WARNING_CODE` 精确冻结为：
+
+```text
+CACHE_READ_FAILED
+CACHE_WRITE_FAILED
+ITEM_FETCH_FAILED
+```
+
+Warning shape：
+
+```js
+{
+    code,
+    operation,
+    retryable,
+    itemIndex?
+}
+```
+
+- `operation` 必须是冻结的七个公共方法名之一；
+- `itemIndex` 只能用于 `ITEM_FETCH_FAILED`，且必须是原始 gear 顺序中的非负整数；
+- warning 禁止额外字段以及 provider ID、raw message、body、payload 或 cause；
+- warnings 必须确定性排序，gear item warnings 按 `itemIndex` 升序；
+- operation-level warning 顺序必须稳定；
+- cache write failure 不自动令 data partial；
+- 只有实际缺少部分数据时才使用 `partial: true`。
+
+### RepositoryError contract
+
+`RepositoryError` 稳定字段：
+
+```text
+code
+message
+operation
+retryable
+httpStatus
+retryAfterSeconds
+```
+
+除 `code`、`message`、`operation`、`retryable` 外，可选字段无值时使用 `null`。
+错误不得携带 raw cause 或 provider payload。
+
+`REPOSITORY_ERROR_CODE` 精确冻结为：
+
+```text
+UNAUTHENTICATED
+FORBIDDEN
+TOKEN_INVALID
+TOKEN_READ_FAILED
+TOKEN_ENCODING_FAILED
+TOKEN_WRITE_FAILED
+NETWORK_UNAVAILABLE
+PROVIDER_HTTP_ERROR
+RATE_LIMITED
+NOT_FOUND
+UNSUPPORTED_MODE
+INVALID_REQUEST
+RESPONSE_INVALID
+```
+
+当前明确不定义 `TOKEN_REFRESH_FAILED` 或 `TOKEN_EXPIRED`。`api/**` 没有结构化
+refresh-failure discriminator，浏览器不得匹配 raw response message 把普通 HTTP 500
+推断为 refresh failure。
+
+冻结映射：
+
+| Observable | Repository error |
+| --- | --- |
+| Token absent | `UNAUTHENTICATED` |
+| malformed Token | `TOKEN_INVALID` |
+| storage read throws | `TOKEN_READ_FAILED` |
+| encoder throws | `TOKEN_ENCODING_FAILED` |
+| fetch rejection | `NETWORK_UNAVAILABLE` |
+| HTTP 401 | `UNAUTHENTICATED` |
+| HTTP 403 | `FORBIDDEN` |
+| HTTP 429 | `RATE_LIMITED` |
+| invalid JSON/envelope | `RESPONSE_INVALID` |
+| token persistence failure | `TOKEN_WRITE_FAILED` |
+| HTTP 5xx | `PROVIDER_HTTP_ERROR` |
+
+HTTP 404 按 operation 解释：`getActivity`、`getGear` 等明确 ID resource query 映射为
+`NOT_FOUND`；`listActivities`、`getAthlete`、`getZones` 等非 ID query 映射为
+`PROVIDER_HTTP_ERROR`。参数错误必须在 fetch 前抛出 `INVALID_REQUEST`。
+
+`Retry-After` 只读取 header，支持整数秒或 HTTP date，使用注入 clock；无法解析时
+`retryAfterSeconds: null`。所有错误必须脱敏，不得包含 Token、Authorization、
+refresh Token、raw body、provider payload、GPS/健康/活动内容或原始 exception
+message。
+
+### Connector and provider pagination ownership
+
+`StravaApiConnector` 是 network-only，只允许负责 same-origin `/api/strava-*` 请求、
+query encoding、Authorization 构建、HTTP/JSON/envelope validation、refreshed Token
+验证和一次写回，以及脱敏错误映射。
+
+Connector 禁止负责 activity/metadata cache、provider pagination、Repository
+Factory、Demo session 选择、UI/DOM、Canonical conversion、analysis、migration 或
+Legacy Cache 清理。
+
+Activities list：
+
+- Connector 只发送一次 `/api/strava-activities` 请求；
+- 不发送 `page` 或 `per_page`，不循环、不合并 provider pages；
+- 不排序代理返回的聚合 activities；
+- provider pagination 仍只属于 `api/strava-activities.js`；
+- Connector internal errors 不由 Repository public index 导出。
+
+Server pagination hardening 记录为 Backlog：`Server Proxy Contract Hardening`。它不
+阻塞 PR-03，也不阻塞未修改 server proxy 的 PR-04A；首次修改
+`api/strava-activities.js` 时必须补齐，最迟在 release candidate 前完成。本 PR 不
+创建额外任务文件，也不修改开发计划。
+
+### Activity cache ownership
+
+PR-04A 前，`main.js` 继续拥有 activities cache read/write。
+`Connector.fetchActivities()` 是 network-only；`fetchAllActivities()` facade 的 real
+path 委托 Connector，不委托 LegacyRepository，也不读写 activities cache。
+
+必须保持：
+
+| Path | Cache read | Network | Cache write |
+| --- | ---: | ---: | ---: |
+| Initialize hit | 1 | 0 | 0 |
+| Initialize miss | 1 | 1 | 1 |
+| Refresh | 0 | 1 | 1 |
+
+`LegacyRepository.listActivities()` 是未来 cache-aware API，但 PR-03 不把
+`main.js` 接到它：
+
+- `refresh: false` 时，非空有效 cache hit 返回 `source: cache`；
+- empty array、expired、version mismatch 或 miss 只触发一次 network；
+- observable cache read failure 可 network fallback，并产生 warning；
+- network success 后最多一次 cache write；
+- write failure 返回 network data 和 `CACHE_WRITE_FAILED`，不得重复 read/write；
+- `refresh: true` 跳过 cache read，只进行一次 network 和最多一次 cache write。
+
+### Gear contract and partial-cache correction
+
+公共接口是 `getGears()` 和 `getGear(gearId)`；`getGears()` 不接收 athlete。
+
+Aggregate cache hit 时直接返回，不读取 athlete、per-ID cache，也不联网。
+
+Aggregate miss 时：
+
+- 获取或复用 athlete；
+- ID 顺序严格为 shoes 后 bikes，不擅自 deduplicate；
+- 每个 ID 经过 `getGear`；
+- per-ID cache miss 最多一次 network；
+- 成功项保持原始顺序；
+- 失败项按原始 index 产生 `ITEM_FETCH_FAILED`；
+- 存在 item failure 时使用 `partial: true`。
+
+完整 gear 结果可以写 aggregate cache；partial gear 结果不得写 aggregate cache。
+Partial 中已成功的 per-ID gear cache 可以保留，使下一次 `getGears` 能重试失败项。
+Aggregate cache write failure产生 warning，但不令完整 data partial。
+
+旧 `fetchAllGears(athlete)` 在 B3 保持原参数和 array 返回值，不委托公共
+`getGears`，不重复请求 athlete，继续使用 `Promise.allSettled` 和现有 partial array
+行为，也不向旧消费者增加 warnings。
+
+### TTL-aware athlete memo
+
+Legacy Repository instance 可以合并并发 athlete load，但必须：
+
+- 共享同一个 in-flight promise；
+- promise reject 后立即清除；
+- resolved snapshot 必须 TTL-aware，最长有效 24 小时；
+- 使用注入 clock；
+- TTL 到期后重新经过 cache/network 决策，不永久缓存 resolved promise；
+- aggregate gears cache hit 时不得触发 athlete load；
+- 并发 `getAthlete` / `getGears` 最多产生一次实际 athlete load；
+- failed load 后下一次调用必须能够重试。
+
+### Demo and dependency boundaries
+
+DemoRepository 只读取现有 Demo namespace，返回 `source: demo`。它不得构造
+Connector，Token read/fetch/Token write 均为 0；不得读取真实 activity cache、
+真实 athlete/zones/gears，不得修改真实 Local Library。
+
+PR-03 不修改 `js/demo/**` 或 `js/app/feature-flags.js`。Feature Flag 命名收敛留给
+后续 PR。
+
+依赖边界：
+
+- Repository implementation 不导入 `js/services/api.js`；
+- Connector 不导入 Repository implementation；
+- `api.js` 不被 Repository 反向导入；
+- `activity-cache.js` 不导入 Repository；
+- Demo branch 不构造 Connector；
+- `js/data/contracts/**` 不导入 Repository；
+- Repository 不修改或扩大 PR-02 contract exports；
+- 模块 import 不读取 Token/cache、不 fetch、不访问 DOM；
+- 不形成循环依赖。
+
+### Frozen 17-file allowlist
+
+PR-03 全阶段最多允许以下 17 个路径：
+
+```text
+docs/tasks/pr-03-legacy-repository.md
+js/connectors/strava/strava-api-connector.js
+js/repository/index.js
+js/repository/errors.js
+js/repository/factory.js
+js/repository/legacy/legacy-projection.js
+js/repository/legacy/legacy-cache-adapter.js
+js/repository/legacy/legacy-repository.js
+js/repository/demo/demo-repository.js
+js/services/api.js
+tests/repository/repository-contract.test.js
+tests/repository/strava-api-connector.test.js
+tests/repository/legacy-repository.test.js
+tests/repository/demo-repository.test.js
+tests/repository/repository-factory.test.js
+tests/repository/dependency-boundaries.test.js
+tests/repository/legacy-api-parity.test.js
+```
+
+第 18 个路径必须重新申请控制塔批准。
+
+Phase-specific restrictions：
+
+```text
+B1:
+  docs/tasks/pr-03-legacy-repository.md
+  js/connectors/strava/strava-api-connector.js
+  js/repository/errors.js
+  tests/repository/strava-api-connector.test.js
+
+B2:
+  docs/tasks/pr-03-legacy-repository.md
+  js/repository/index.js
+  js/repository/errors.js
+  js/repository/factory.js
+  js/repository/legacy/legacy-projection.js
+  js/repository/legacy/legacy-cache-adapter.js
+  js/repository/legacy/legacy-repository.js
+  js/repository/demo/demo-repository.js
+  tests/repository/repository-contract.test.js
+  tests/repository/legacy-repository.test.js
+  tests/repository/demo-repository.test.js
+  tests/repository/repository-factory.test.js
+  tests/repository/dependency-boundaries.test.js
+
+B3:
+  docs/tasks/pr-03-legacy-repository.md
+  js/services/api.js
+  tests/repository/legacy-api-parity.test.js
+```
+
+已有 B1/B2 文件可被 B3 测试引用，但不得在 B3 修改。需要修改时必须重新申请范围
+扩展。
+
+每个实施阶段完成后不得暂存、提交或推送；先返回控制塔验收。只有复验通过后，控制塔
+才下发该阶段 finalization 指令。
+
+### Frozen prohibited files and operations
+
+除当前 phase-specific Allowed files 外，所有文件均禁止修改，特别包括：
+
+```text
+AGENTS.md
+.github/**
+api/**
+html/**
+index.html
+sw.js
+package.json
+package-lock.json
+styles/**
+docs/architecture/**
+docs/engineering/**
+docs/migrations/**
+docs/product/**
+js/app/**
+js/analysis/**
+js/data/**
+js/demo/**
+js/models/**
+js/pages/**
+js/shared/**
+js/tabs/**
+js/services/activity-cache.js
+js/services/index.js
+js/services/legacy-cache/**
+tests/contracts/**
+tests/legacy/**
+tests/fixtures/**
+```
+
+PR-03 禁止真实 Token/账号/活动/私人 fixture、真实 Strava 网络测试、浏览器 profile
+修改、migration、Service Worker 修改、Feature Flag 接线、consumer migration、
+Canonical conversion、dependency changes 或 version bump。
 
 ## Background
 
@@ -34,24 +444,24 @@ PR-03 及后续 PR。
 
 PR-01 已建立 Legacy Cache 救援、Authentication Lifecycle 解耦和 Demo namespace
 隔离。PR-02 已建立 provider-neutral Canonical contracts，但没有实现 Repository、
-Connector、Projection、Storage 或 consumer migration。PR-03 必须先调查真实调用链
-和现有行为，再提出保持 Legacy 行为的最小边界。
+Connector、Projection、Storage 或 consumer migration。PR-03 已通过 A2/A2.1
+调查真实调用链和现有行为，并由 A3 冻结保持 Legacy 行为的最小边界。
 
 ## Goal
 
-调查并为后续控制塔决策准备一个最小、可测试、可回滚的 Legacy Repository 与
-Strava Connector 边界方案：
+在控制塔逐阶段授权下，实现一个最小、可测试、可回滚的 Legacy Repository 与
+Strava Connector 边界：
 
-- 识别所有当前 API、cache、storage、Demo、Token 和消费者调用链；
-- 记录现有输入、输出、错误、缓存、副作用和 UI-facing shape；
-- 建议 Connector、Legacy Repository 与 Factory 的职责分离；
-- 基于真实消费者提出非绑定的最小 Repository API、错误合同、文件布局和测试矩阵；
-- 保持 Legacy 默认行为，并明确哪些消费者迁移属于 PR-04A/PR-04B；
-- 为 A3 提供精确 Allowed/Prohibited files 候选和 B1/B2/B3 分阶段建议。
+- 只实现 A3 冻结的七个公共方法、公共入口、成功/错误/source/warning 合同；
+- 保持 Connector network-only、Legacy Repository cache-aware；
+- 保持 PR-04A 前 `main.js` 的 activities cache ownership；
+- 建立 Legacy/Demo Repository 与 fail-closed Factory；
+- 通过离线、确定性、无私人数据的 contract、Connector、Repository 和 parity 测试；
+- 保持 Legacy 默认行为，不提前进行 Canonical conversion 或 consumer migration。
 
 ## Non-goals
 
-本阶段以及未经 A3 批准的 PR-03 不做：
+PR-03 不做：
 
 - 将 Legacy 数据转换为 `CanonicalActivity` 或其他 Canonical contract；
 - IndexedDB v2、Canonical Repository、Shadow Writer、Parity Report 或 migration；
@@ -68,8 +478,9 @@ Strava Connector 边界方案：
 - PR-00 Repository Safety 已合入；
 - PR-01 Legacy Cache Rescue 与鉴权解耦已合入；
 - PR-02 Canonical Contracts 已合入，六份 ADR 已按实际逻辑合同收窄；
-- `integration/v2` 必须保持在已确认的最新远端基线；
-- A3 必须由控制塔在 A2 决策包之后单独批准。
+- `integration/v2` 基线已确认并保持为 `5137afeff2530a228c2be79af54bd04912a0c389`；
+- A2.1 已通过复验，A3 已由控制塔批准并完成范围冻结；
+- B1、B2、B3 仍必须分别取得控制塔授权。
 
 ## Accepted ADR constraints
 
@@ -85,19 +496,20 @@ ADR-0003 只冻结以下原则：
 ADR-0003 没有冻结方法名、参数、返回结构、错误合同、Factory、Legacy adapter、
 Strava Connector、Feature Flag 接线或 consumer migration。
 
-## Current-state assumptions
+## A2/A2.1 verified current state
 
-以下均为 A2 待验证的假设，不是已冻结事实：
+以下结论已由 A2/A2.1 只读调查验证：
 
-- `js/services/api.js` 是主要 Strava API 访问入口，但页面或 tabs 仍可能绕过它；
+- `js/services/api.js` 是主要 Strava API 访问入口，部分页面和 tabs 仍绕过它；
 - `activity-cache.js` 保存 Legacy activity list，并由 app/gear 路径读取；
 - Demo API 与真实 API 在 services 层存在分派；
-- `auth-lifecycle.js` 已提供部分稳定 auth 状态，但不一定可直接作为 Repository
-  error contract；
+- `auth-lifecycle.js` 已提供部分稳定 auth 状态，但 Repository 使用 A3 冻结的独立、
+  脱敏错误合同；
 - `feature-flags.js` 当前使用 `legacy` / `v2`，与架构文档的
   `legacy` / `shadow` / `canonical` 不一致；
 - Canonical contracts 尚未从浏览器应用路径实际接入；
-- PR-03 可以不触发 consumer migration，但必须由 A2 证据确认。
+- PR-03 不进行 consumer migration，也不触发 PR-02 延期的 browser dynamic import
+  门禁。
 
 ## A0 baseline evidence
 
@@ -124,81 +536,23 @@ Strava Connector、Feature Flag 接线或 consumer migration。
 远端事实。GitHub compare 证明预期 SHA 与 `integration/v2` identical；远端 branch
 搜索和全部近期 PR 检查未发现 PR-03 同名对象。
 
-## Investigation Gate
+## Implementation authorization gate
 
-A2 完成前：
+A3 只完成决策记录和范围冻结。B1 尚未开始，必须等待控制塔单独授权。
 
-- 不修改任何文件，包括本 Task Brief；
-- 不修改 PR body；
-- 不暂存、提交、推送或创建实现文件；
-- 不安装依赖；
-- 不修改 Git 状态；
-- 不实施 Repository、Connector、Factory、Feature Flag 或 consumer wiring；
-- 不运行真实网络、真实 Token、真实账号或真实私人活动测试。
+- B1 只能使用 B1 phase-specific Allowed files；
+- B2、B3 当前均未授权；
+- 每阶段完成实现和本地验证后不得自行暂存、提交或推送；
+- 每阶段必须先返回控制塔验收，再等待独立 finalization 指令；
+- 不得用全阶段 17-file allowlist 绕过 phase-specific 限制；
+- 不运行真实网络、真实 Token、真实账号或私人活动测试。
 
-A2 返回完整决策包后立即停止。只有控制塔批准 A3 并冻结接口、错误、文件和阶段范围
-后，才可能开始第一个实施阶段。
+## Investigation record
 
-## Investigation questions
-
-1. `js/services/api.js` 的完整 export 清单和每个静态调用方是什么？
-2. `activity-cache.js` 的全部调用方、副作用、TTL、hit/miss 和 fallback 行为是什么？
-3. `services/index.js` 如何 re-export，哪些消费者绕过公共入口？
-4. Demo API 与真实 API 在哪里分派，Demo 是否仍可触达 Token、fetch 或真实 storage？
-5. 全部 `/api/strava-*`、直接 Strava endpoint、Authorization 构建和 Token refresh
-   路径是什么？
-6. 页面、tabs、app、analysis 中有哪些数据访问绕过 services？
-7. activity、detail、streams、laps、athlete、zones、gears、gear detail、pagination、
-   refresh 的精确行为合同是什么？
-8. provider response、Legacy storage shape、UI-facing shape、preprocessing input 和
-   Canonical contract 如何区分？
-9. Connector、Legacy Repository 与 Factory 的最小职责边界是什么？
-10. 开发计划中的七个候选方法是否逐一需要，是否存在更小或额外候选？
-11. PR-03 应暂时返回 Legacy DTO、Legacy read projection，还是其他兼容 shape？
-12. summary/detail、requested streams、missing、empty、not-found 和 unavailable
-    应如何表达？
-13. 现有 API/auth errors 能否复用，如何避免敏感信息和重复状态？
-14. Demo 是否需要独立 Repository，Connector 在 Demo 中是否必须完全不可达？
-15. `legacy`/`v2` 与 `legacy`/`shadow`/`canonical` 的差异如何在 A3 决策？
-16. 最合适的 Repository、Connector、Factory 和 test 目录是什么？
-17. 后续是否需要新依赖；如何优先通过依赖注入避免新增依赖？
-18. 同一 Repository contract suite 能否复用于 Legacy、Demo/Synthetic 和未来
-    Canonical/IndexedDB v2 Repository？
-19. PR-03 是否会成为首个从浏览器应用路径导入 contracts 的 PR？
-20. P0/P1/P2 风险、migration、storage、privacy、rollback 和 PR-04 ownership
-    影响是什么？
-
-## Candidate scope
-
-以下只用于 A2 比较，不是 Allowed files，也不授权创建或修改：
-
-```text
-js/repository/**
-js/data/repository/**
-js/services/repository/**
-js/connectors/strava/**
-js/services/api.js
-js/services/index.js
-js/app/feature-flags.js
-js/demo/index.js
-tests/repository/**
-tests/connectors/**
-docs/tasks/pr-03-legacy-repository.md
-```
-
-开发计划中的候选方法也仅是调查输入：
-
-```text
-listActivities
-getActivity
-getStreams
-getLaps
-getAthlete
-getZones
-getGears
-```
-
-Allowed files 尚未冻结。A2 必须给出精确候选，A3 才能批准。
+A2 初次返回为 `REVISE`。A2.1 已完成 pagination ownership、activities cache/facade、
+error observability、public boundary、Gear contract、dependency graph、Allowed files
+和测试矩阵纠偏，并由控制塔复验为 `PASS`。冻结结论以本文件
+“A3 approved decision record”为准。
 
 ## Prohibited operations
 
@@ -213,9 +567,11 @@ Allowed files 尚未冻结。A2 必须给出精确候选，A3 才能批准。
 - 添加或更新依赖；
 - 使用真实 Token、账号、活动、GPS、健康、设备或私人导出；
 - 真实 Strava 或其他网络测试；
-- 实施未经 A3 冻结的接口、Factory、Connector、Feature Flag 或 consumer wiring；
+- 实施 A3 冻结范围之外的接口、Factory、Connector、Feature Flag 或 consumer wiring；
 - 为 Repository 修改 `js/data/contracts/**` 语义或扩大 exports；
-- 自行进入 A3、B1、B2 或 B3。
+- 未经控制塔授权自行进入 B1、B2 或 B3；
+- 在阶段验收前自行暂存、提交或推送实施变更；
+- 修改 phase-specific Allowed files 之外的任何路径。
 
 ## Privacy constraints
 
@@ -229,7 +585,7 @@ Allowed files 尚未冻结。A2 必须给出精确候选，A3 才能批准。
 
 ## Testing expectations
 
-A2 只提出测试策略，不实现测试。候选 B 阶段最低门禁：
+每个获批 B 阶段的最低门禁：
 
 ```text
 npm ci
@@ -239,23 +595,29 @@ npm test
 git diff --check
 ```
 
-专项测试候选必须离线、确定性、无真实 credentials，覆盖 Repository contract、
-Legacy parity、Connector HTTP/auth/pagination、Factory fail-closed、cache hit/miss/TTL、
-Demo 零网络/零 Token、error redaction、non-mutation、import side effects 和 no DOM。
+专项测试必须离线、确定性、无真实 credentials，按 phase-specific 范围覆盖
+Repository contract、Legacy parity、Connector HTTP/auth/JSON/envelope、Factory
+fail-closed、cache hit/miss/TTL、Demo 零网络/零 Token、error redaction、
+non-mutation、import side effects 和 no DOM。
+
+客户端 Connector 不测试 provider pagination、多页合并或中页失败。Connector 对
+activities 只断言一次代理请求、聚合 envelope、稳定顺序和 HTTP/error mapping。
+真正的 server pagination tests 属于 `Server Proxy Contract Hardening` backlog。
 
 ## Migration impact
 
-A0–A2 没有 migration，不读取或修改用户存储，不创建 IndexedDB v2，不清理或写回
+A0–A3 没有 migration，不读取或修改用户存储，不创建 IndexedDB v2，不清理或写回
 Legacy Cache。Canonical conversion 不属于 PR-03。
 
-Consumer migration 原则上属于 PR-04A/PR-04B/PR-04C；只有 A3 单独批准的最小兼容
-接线才可能进入 PR-03，且必须有明确回滚和 parity 证据。
+Consumer migration 属于 PR-04A/PR-04B/PR-04C。PR-03 只允许 B3 对现有
+`fetchAllActivities()` network facade 做冻结范围内的兼容委托，不接 main/pages/tabs。
 
 ## Rollback expectation
 
-A1 只有 Task Brief 普通提交，可用普通 revert 撤销，不影响产品代码或浏览器数据。
-未来获批实现也必须保留 Legacy 默认路径，通过普通 revert 恢复，不删除 Legacy 或
-Canonical 数据，不以 cache 清理作为回滚步骤。
+A1/A3 只有 Task Brief 普通提交，可用普通 revert 撤销，不影响产品代码或浏览器数据。
+未来获批实现必须保留 Legacy 默认路径，通过普通 revert 恢复，不删除 Legacy 或
+Canonical 数据，不以 cache 清理作为回滚步骤。B3 出现回归时可单独 revert facade
+委托，恢复旧 network 路径。
 
 ## Browser verification carry-over
 
@@ -263,51 +625,51 @@ PR-02 延期的 browser native ESM dynamic import、exact exports/validator call
 storage/network/Service Worker instrumentation 和 Manual DevTools 仍为
 `Not run`，不是 Pass。
 
-A2 必须明确判断：
-
-- 若 PR-03 不从浏览器应用路径导入 contracts，则不触发该门禁，并明确移交 PR-04A；
-- 若 A3 计划接入 contracts，则 B 阶段必须补齐真实浏览器 dynamic import、精确
-  exports、validator 调用及 storage/network side-effect 检查；
-- Node 测试不能替代浏览器验证。
+PR-03 不从浏览器应用路径导入 Canonical contracts，也不接 consumer，因此不触发该
+门禁。该门禁保持 `Not run` 并明确移交 PR-04A；Node 测试不能替代浏览器验证。
 
 ## Acceptance process
 
 ```text
 A0 baseline
 → A1 Task Brief + Draft PR + CI
-→ A2 read-only investigation
-→ control-tower A3 decision
-→ B1/B2/B3 separately authorized implementation phases
+→ A2 read-only investigation（REVISE）
+→ A2.1 read-only contract correction（PASS）
+→ A3 approved decision and scope freeze
+→ B1 separately authorized implementation
+→ B1 control-tower review and finalization
+→ B2/B3 separately authorized implementation and finalization
 → independent review
 → project-owner Ready approval
 → separate merge authorization
 ```
 
-PR 必须在整个 A0–A2 保持 Draft。A2 返回不更新本文档或 PR body。
+PR 在 A3 后仍必须保持 Draft。只有 project owner 单独授权才能标记 Ready；只有后续
+独立授权才能合并。
 
 ## Stop conditions
 
 以下任一发生立即停止并报告：
 
-- 同名 branch、worktree、PR 或 Task Brief 已存在；
-- `integration/v2` 远端基线无法确认或本地/远端不同步；
-- V2 worktree 不干净；
-- A0 任一门禁失败；
-- A1 diff 不只包含本 Task Brief；
-- A1 CI 未完成、失败或 head SHA 不匹配；
-- PR base/head、Draft/Open 状态或 diff 不正确；
-- A2 发现必须先改代码、测试、依赖、ADR、migration 或 Service Worker 才能继续；
-- 需要扩大权限到 A3/B 阶段；
-- 发现真实凭据或私人数据暴露风险。
+- 当前阶段需要第 18 个路径或 phase-specific Allowed files 之外的路径；
+- 需要新增公共方法、error/warning/source、success 字段或公共 export；
+- 需要修改 `api/**`、consumer、Feature Flag、Canonical contracts、dependency、
+  migration、Service Worker 或版本号；
+- 需要真实凭据、私人数据、真实网络或浏览器 profile；
+- PR base/head、Draft/Open 状态不正确；
+- 任一门禁或 CI 失败；
+- 发现 Token、Authorization、raw body、provider payload、GPS/健康数据泄漏；
+- B1/B2/B3 尚未获控制塔授权。
 
 ## Phase ledger
 
 | Phase | Status | Evidence / next gate |
 | --- | --- | --- |
 | A0 Environment, baseline, remote audit | Completed | Baseline `5137afe...`；116 syntax files；398/398 tests；all gates Pass |
-| A1 Worktree, branch, Task Brief, Draft PR | In progress | 只允许本 Task Brief；等待 commit、push、Draft PR 与 CI |
-| A2 Read-only investigation | Not started | 仅在 A1 CI 成功且 PR/diff/worktree 状态正确后开始 |
-| A3 Decision and scope freeze | Not authorized | 等待控制塔在 A2 后单独批准 |
-| B1 | Not authorized | 不得开始 |
+| A1 Worktree, branch, Task Brief, Draft PR | Completed | Commit `01a5ac2...`；Draft PR #7；CI run `30537098485` success |
+| A2 Read-only investigation | Completed with REVISE | 初次决策包需纠偏 pagination、cache/facade、error、public boundary、Gear 和 dependencies |
+| A2.1 Read-only contract correction | Completed / PASS | 控制塔复验通过；纠偏结论已纳入 A3 freeze |
+| A3 Decision and scope freeze | Completed | 公共合同、ownership、17-file allowlist 与 phase restrictions 已冻结 |
+| B1 | Not started / awaiting authorization | 不得开始；等待控制塔单独授权 |
 | B2 | Not authorized | 不得开始 |
 | B3 | Not authorized | 不得开始 |
