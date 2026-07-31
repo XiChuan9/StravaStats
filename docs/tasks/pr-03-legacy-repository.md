@@ -23,9 +23,9 @@
 只读合同纠偏后为 `PASS`；A3 已冻结公共合同、ownership、依赖边界、17 个最大允许
 路径和 B1/B2/B3 分阶段范围。
 
-本状态只表示 PR-03 的实施范围已经冻结，不授权立即开始实现。B1 仍为
-`Not started / awaiting authorization`，B2、B3 均未授权。PR 必须继续保持 Draft，
-不得标记 Ready 或合并。
+本状态表示 PR-03 的实施范围已经冻结。控制塔已完成 B1 与 B1.1 复验，两者结论均为
+`PASS`；当前只授权 B1 Finalization。B2 尚未开始并等待控制塔单独授权，B3 未授权。
+PR 必须继续保持 Draft，不得标记 Ready 或合并；PR-03 最终验收尚未完成。
 
 ## A3 approved decision record
 
@@ -661,6 +661,25 @@ PR 在 A3 后仍必须保持 Draft。只有 project owner 单独授权才能标�
 - 发现 Token、Authorization、raw body、provider payload、GPS/健康数据泄漏；
 - B1/B2/B3 尚未获控制塔授权。
 
+## B1 finalization record
+
+- 公共 Repository error constants 已冻结；`RepositoryError` 保持 immutable、redacted，
+  `toJSON()` 与 `JSON.stringify()` 不受事后 mutation 影响。
+- network-only `StravaApiConnector` 实现六个方法：`fetchActivities()`、
+  `fetchActivity()`、`fetchStreams()`、`fetchAthlete()`、`fetchZones()` 和
+  `fetchGear()`。
+- Activities 只发送一次 browser proxy request，不实现 client provider pagination、
+  page 合并或排序。
+- Token read/parse/encode/write、operation-sensitive 404、strict delta-seconds /
+  IMF-fixdate `Retry-After`、HTTP/JSON/envelope/redaction 合同均有确定性测试。
+- 成功响应只返回 JSON-safe detached data；accessor、reflection failure 与 Proxy 均
+  fail closed，不执行 getter，也不传播 raw exception。
+- 本地门禁：focused 101/101、full 499/499、syntax 119 files、privacy 与
+  `git diff --check` 全部通过。
+- 真实网络与 browser verification 为 `Not run`；没有使用真实 Token、账号、活动、
+  GPS 或健康数据。
+- B2/B3 implementation 尚未开始；B2 等待控制塔单独授权，B3 未授权。
+
 ## Phase ledger
 
 | Phase | Status | Evidence / next gate |
@@ -670,6 +689,7 @@ PR 在 A3 后仍必须保持 Draft。只有 project owner 单独授权才能标�
 | A2 Read-only investigation | Completed with REVISE | 初次决策包需纠偏 pagination、cache/facade、error、public boundary、Gear 和 dependencies |
 | A2.1 Read-only contract correction | Completed / PASS | 控制塔复验通过；纠偏结论已纳入 A3 freeze |
 | A3 Decision and scope freeze | Completed | 公共合同、ownership、17-file allowlist 与 phase restrictions 已冻结 |
-| B1 | Not started / awaiting authorization | 不得开始；等待控制塔单独授权 |
-| B2 | Not authorized | 不得开始 |
+| B1 | Completed / PASS | 公共 errors/constants、network-only Connector、六个方法和本地 101/101 focused、499/499 full、119-file syntax、privacy/diff 门禁均通过；控制塔已批准 Finalization |
+| B1.1 | Completed / PASS | immutable/redacted Error 与 strict `Retry-After` 安全纠偏已通过控制塔复验 |
+| B2 | Not started / awaiting control-tower authorization | 尚未开始；必须等待控制塔单独授权 |
 | B3 | Not authorized | 不得开始 |
