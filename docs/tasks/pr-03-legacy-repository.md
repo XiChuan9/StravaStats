@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | In review |
+| Status | Ready for review |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/repository` |
 | Worktree | `/Users/wangchuanliang/Documents/StravaStats-worktrees/repository` |
@@ -15,7 +15,7 @@
 | Related ADRs | ADR-0003（Accepted，仅 Repository 消费者边界原则）及 ADR-0001、0002、0004、0005、0006 的下游边界 |
 | Dependencies | PR-00、PR-01、PR-02 已合入 `integration/v2` |
 | Starting baseline | `5137afeff2530a228c2be79af54bd04912a0c389` |
-| Pull request | Draft PR [#7](https://github.com/XiChuan9/StravaStats/pull/7) |
+| Pull request | Ready PR [#7](https://github.com/XiChuan9/StravaStats/pull/7) |
 
 ## Status
 
@@ -23,13 +23,11 @@
 只读合同纠偏后为 `PASS`；A3 已冻结公共合同、ownership、依赖边界、17 个最大允许
 路径和 B1/B2/B3 分阶段范围。
 
-本状态表示 PR-03 的实施范围已经冻结。控制塔已完成 B1 与 B1.1 复验，两者结论均为
-`PASS`。B2、B2.1 和 B2.2 均已通过控制塔复验，结论为 `PASS`；B2 finalization
-commit 与 CI 已完成。控制塔已完成 B3 local implementation 复验，结论为 `PASS`，
-B3 状态为 `Completed / PASS`。PR-03 当前为 `In review`，但尚未取得 Final Review；
-Final Review Correction FR.1 已通过控制塔复验，状态为 `Completed / PASS`；当前等待
-`Final Review Closure`，不得写成 Closure 已通过。PR 必须继续保持 Draft，未授权
-标记 Ready 或合并，PR-04A 未开始。
+控制塔已完成 PR-03 Final Review，最终结论为 `Accepted`。A0–A3、B1/B1.1、
+B2/B2.1/B2.2、B3 与 Final Review Correction FR.1 均已完成并通过；FR.1 状态为
+`Completed / PASS`。PR-03 implementation 与 review 已完成，Metadata 状态为
+`Ready for review`，可以在本次 docs-only Closure commit 的 CI 成功后将 PR #7 标记
+Ready。Ready for review 不等于授权 merge；合并仍需控制塔单独批准，PR-04A 未开始。
 
 ## A3 approved decision record
 
@@ -543,8 +541,9 @@ Strava Connector、Feature Flag 接线或 consumer migration。
 ## Implementation authorization gate
 
 A3 只完成决策记录和范围冻结。后续 B 阶段均须由控制塔逐阶段单独授权；
-当前 B1/B1.1、B2/B2.1/B2.2 与 B3 均已完成并通过控制塔复验；B3 finalization
-已获授权，PR-03 在完成提交、推送与 CI 后等待 Final Review。
+当前 B1/B1.1、B2/B2.1/B2.2、B3 与 FR.1 均已完成并通过控制塔复验；PR-03
+Final Review 已完成且结论为 `Accepted`。当前只执行获批的 docs-only Closure；Ready
+只在 Closure commit CI 成功后执行，merge 与 PR-04A 仍未授权。
 
 - B1 只能使用 B1 phase-specific Allowed files；
 - B2 finalization 已完成；B3 只能使用本阶段获批的三个路径；
@@ -815,7 +814,7 @@ tests/repository/dependency-boundaries.test.js
 - B3 实际范围精确为 `docs/tasks/pr-03-legacy-repository.md`、
   `js/services/api.js` 和 `tests/repository/legacy-api-parity.test.js` 三个路径。
 - 控制塔已完成 B3 local implementation 复验，结论为 `PASS`；B3 finalization 已获
-  授权，PR-03 在 finalization 完成后等待单独 Final Review。
+  授权且已完成；后续 Final Review 已由控制塔以 `Accepted` 结论关闭审查。
 - Demo `fetchAllActivities()` 继续先检查 Demo session 并直接返回 Demo activities；
   Connector、Token read/write、`btoa`、network 和真实 activities cache I/O 均为 0。
 - Real `fetchAllActivities()` 直接委托临时构造、零 I/O 的 network-only
@@ -840,10 +839,10 @@ tests/repository/dependency-boundaries.test.js
 
 ## Final Review correction FR.1 local record
 
-- PR-03 总状态继续为 `In review`；B1、B1.1、B2、B2.1、B2.2 与 B3 均保持
+- FR.1 本地修订阶段 PR-03 状态为 `In review`；B1、B1.1、B2、B2.1、B2.2 与 B3 均保持
   `Completed / PASS`。控制塔已通过 FR.1 review，FR.1 状态为 `Completed / PASS`；
-  Final Review 当前为 `awaiting Final Review Closure`，不得写成 Closure 已通过，
-  未授权 Ready 或 merge，PR-04A 未开始。
+  Final Review 结论为 `Accepted`，PR-03 总状态由本次 Closure 更新为
+  `Ready for review`。merge 与 PR-04A 仍未授权。
 - FR.1 根因是 `LegacyRepository.#loadCacheBacked()` 在判断 `includeExpiry` 前无条件
   执行 `Number(cacheResult.expiresAt)`：这会接受 numeric string，并可能对 boxed
   Number、object 或 Proxy 触发隐式 coercion、`valueOf()`、`toString()` 或 trap；
@@ -871,8 +870,32 @@ tests/repository/dependency-boundaries.test.js
   `git diff --check` PASS。真实 Token、真实网络、私人数据和 browser profile 验证均为
   `Not run`。
 - FR.1 本地修订复验已由控制塔判定为 `PASS`，并已单独授权 Finalization；PR 必须继续
-  保持 Draft。Ready、merge 与 PR-04A 均未授权，Finalization 完成后等待
-  Final Review Closure。
+  保持 Draft 直到 Final Review Closure commit CI 成功。FR.1 Finalization 已完成，
+  Final Review 已 `Accepted`；merge 与 PR-04A 仍未授权。
+
+## Final Review Closure record
+
+- 控制塔已完成 PR-03 Final Review，最终结论为 `Accepted`；A0–A3、B1/B1.1、
+  B2/B2.1/B2.2、B3 与 FR.1 均已通过，PR-03 implementation 与 review 已完成。
+- 累计 changed files 继续精确为冻结的 17 个路径；Closure 只修改现有 Task Brief，
+  不增加或删除产品、测试、依赖、配置、migration、Feature Flag 或 Service Worker 路径。
+- 最终边界包括 network-only Strava Connector、五-export 公共 Repository entry、
+  Legacy/Demo Repository 七方法、fail-closed Factory、Legacy DTO projection/cache 合同、
+  Demo 零真实 I/O，以及 Legacy activities facade 的 Connector 委托与 401/403 parity。
+- FR.1 已冻结 athlete cache expiry 为 primitive finite number，并证明 observable object
+  `valueOf()`/`toString()` 与 Proxy traps 均为 0；invalid expiry 稳定产生
+  `CACHE_READ_FAILED` 后 fallback network，非 memo cache hit 完全忽略 expiry value。
+- 最终本地门禁：syntax 131 files、privacy PASS、Legacy Repository 95/95、B3 parity
+  22/22、Connector 101/101、Repository combined 252/252、full 650/650、
+  `git diff --check` PASS。
+- 远端 FR.1 CI Run
+  [30680664440](https://github.com/XiChuan9/StravaStats/actions/runs/30680664440) / Job
+  [91316881720](https://github.com/XiChuan9/StravaStats/actions/runs/30680664440/job/91316881720)
+  在 FR.1 commit `ae403e958907268f0c5307113de2690fdb17d412` 上 success。
+- 真实网络、真实 Token、真实账号、私人活动/GPS/健康数据与 browser/profile/storage
+  verification 继续为 `Not run`，不得写成 Pass。
+- Ready 只在本次 Closure commit 的 pull_request CI 成功后执行；Ready for review 不等于
+  授权 merge。未合并 PR，未开始 PR-04A。
 
 ## Phase ledger
 
@@ -888,5 +911,5 @@ tests/repository/dependency-boundaries.test.js
 | B2 | Completed / PASS | 公共 entry、Factory、Legacy/Demo Repository、projection/cache 与共享合同测试完成；focused 115/115、B1 101/101、full 614/614、syntax 130 files、privacy/diff PASS |
 | B2.1 | Completed / PASS | 六种 gear source 与 TTL/future/overflow/memo 上限纠偏通过控制塔复验 |
 | B2.2 | Completed / PASS | primitive finite clock、storage 零 coercion 与精确 cleanup fail-closed 纠偏通过控制塔复验 |
-| B3 | Completed / PASS | 控制塔已通过 Legacy activities facade 与 API parity 本地实施复验；focused 22/22、Repository 238/238、Legacy 52/52、full 636/636、syntax 131 files、privacy/diff PASS；等待 PR-03 Final Review |
-| Final Review | awaiting Final Review Closure | FR.1 Completed / PASS；primitive finite expiry、零 coercion、非 memo expiry 忽略与 fallback warning 合同通过控制塔复验；Closure 尚未通过 |
+| B3 | Completed / PASS | 控制塔已通过 Legacy activities facade 与 API parity 本地实施复验；focused 22/22、Repository 238/238、Legacy 52/52、full 636/636、syntax 131 files、privacy/diff PASS；最终审查 Accepted |
+| Final Review | Completed / Accepted | FR.1 Completed / PASS；650/650；FR.1 远端 CI 30680664440 success；Ready 仅在 Closure commit CI 成功后执行 |
