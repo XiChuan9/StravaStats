@@ -27,7 +27,9 @@
 `PASS`。B2、B2.1 和 B2.2 均已通过控制塔复验，结论为 `PASS`；B2 finalization
 commit 与 CI 已完成。控制塔已完成 B3 local implementation 复验，结论为 `PASS`，
 B3 状态为 `Completed / PASS`。PR-03 当前为 `In review`，但尚未取得 Final Review；
-PR 必须继续保持 Draft，未授权标记 Ready 或合并，PR-04A 未开始。
+Final Review Correction FR.1 已通过控制塔复验，状态为 `Completed / PASS`；当前等待
+`Final Review Closure`，不得写成 Closure 已通过。PR 必须继续保持 Draft，未授权
+标记 Ready 或合并，PR-04A 未开始。
 
 ## A3 approved decision record
 
@@ -836,6 +838,42 @@ tests/repository/dependency-boundaries.test.js
   finalization 仍要求 PR #7 保持 Draft。尚未取得 Final Review，未授权 Ready/merge，
   未开始 PR-04A 或 consumer migration。
 
+## Final Review correction FR.1 local record
+
+- PR-03 总状态继续为 `In review`；B1、B1.1、B2、B2.1、B2.2 与 B3 均保持
+  `Completed / PASS`。控制塔已通过 FR.1 review，FR.1 状态为 `Completed / PASS`；
+  Final Review 当前为 `awaiting Final Review Closure`，不得写成 Closure 已通过，
+  未授权 Ready 或 merge，PR-04A 未开始。
+- FR.1 根因是 `LegacyRepository.#loadCacheBacked()` 在判断 `includeExpiry` 前无条件
+  执行 `Number(cacheResult.expiresAt)`：这会接受 numeric string，并可能对 boxed
+  Number、object 或 Proxy 触发隐式 coercion、`valueOf()`、`toString()` 或 trap；
+  zones/getGear 等非 memo 路径也会无意义处理未使用的 expiry。
+- FR.1 实际允许路径精确为 `docs/tasks/pr-03-legacy-repository.md`、
+  `js/repository/legacy/legacy-repository.js` 和
+  `tests/repository/legacy-repository.test.js`，不得出现第 4 个路径。
+- 修正后只有 `includeExpiry === true` 才读取和验证 expiry；athlete expiry 必须为
+  primitive finite number 且严格大于本次 `now`，合法极远值继续 clamp 到
+  `maxExpiresAt`。非法、缺失、过期或 non-finite expiry 稳定产生一个
+  `CACHE_READ_FAILED` warning 并 fallback network，不传播原生异常或返回伪 cache hit。
+- 非 memo cache hit 不读取、转换或调用 expiry value；zones/getGear 既有 cache source、
+  network count 与返回合同保持不变。
+- 新增确定性矩阵覆盖 numeric string、boxed Number、BigInt、Symbol、null、undefined、
+  `NaN`、`Infinity`、带 observable `valueOf()`/`toString()` 的 object 与带
+  `get`/`getPrototypeOf`/reflection traps 的 Proxy value；逐项证明 coercion/trap 为 0、
+  network 恰好一次、source 为 network、warning 为 `CACHE_READ_FAILED` 且数据来自
+  network。
+- 合法 boundary 回归继续证明 `expiresAt > now` cache hit、`expiresAt === now`
+  fallback、极远 finite expiry clamp 到一个 metadata TTL，并在 clamp boundary 重新读取。
+  非 memo zones 的 observable object/Proxy expiry 均保持 0 coercion/trap、0 network 与
+  cache source。
+- FR.1 本地证据：Legacy Repository 95/95、B3 parity 22/22、B1 Connector 101/101、
+  Repository all 252/252、full 650/650、syntax 131 files、privacy 与
+  `git diff --check` PASS。真实 Token、真实网络、私人数据和 browser profile 验证均为
+  `Not run`。
+- FR.1 本地修订复验已由控制塔判定为 `PASS`，并已单独授权 Finalization；PR 必须继续
+  保持 Draft。Ready、merge 与 PR-04A 均未授权，Finalization 完成后等待
+  Final Review Closure。
+
 ## Phase ledger
 
 | Phase | Status | Evidence / next gate |
@@ -851,3 +889,4 @@ tests/repository/dependency-boundaries.test.js
 | B2.1 | Completed / PASS | 六种 gear source 与 TTL/future/overflow/memo 上限纠偏通过控制塔复验 |
 | B2.2 | Completed / PASS | primitive finite clock、storage 零 coercion 与精确 cleanup fail-closed 纠偏通过控制塔复验 |
 | B3 | Completed / PASS | 控制塔已通过 Legacy activities facade 与 API parity 本地实施复验；focused 22/22、Repository 238/238、Legacy 52/52、full 636/636、syntax 131 files、privacy/diff PASS；等待 PR-03 Final Review |
+| Final Review | awaiting Final Review Closure | FR.1 Completed / PASS；primitive finite expiry、零 coercion、非 memo expiry 忽略与 fallback warning 合同通过控制塔复验；Closure 尚未通过 |

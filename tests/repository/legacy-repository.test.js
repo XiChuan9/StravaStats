@@ -1274,6 +1274,231 @@ test('athlete cache expiry is capped to one injected metadata TTL', async () => 
     assert.equal(reads, 2);
 });
 
+test('athlete cache expiry rejects non-primitive numbers without coercion', async t => {
+    const cases = [
+        {
+            name: 'numeric string',
+            create: () => ({ value: '1100', coercions: () => 0, traps: () => 0 })
+        },
+        {
+            name: 'boxed Number',
+            create: () => ({
+                value: new Number(1100),
+                coercions: () => 0,
+                traps: () => 0
+            })
+        },
+        {
+            name: 'BigInt',
+            create: () => ({ value: 1100n, coercions: () => 0, traps: () => 0 })
+        },
+        {
+            name: 'Symbol',
+            create: () => ({
+                value: Symbol('synthetic-expiry'),
+                coercions: () => 0,
+                traps: () => 0
+            })
+        },
+        {
+            name: 'null',
+            create: () => ({ value: null, coercions: () => 0, traps: () => 0 })
+        },
+        {
+            name: 'undefined',
+            create: () => ({
+                value: undefined,
+                coercions: () => 0,
+                traps: () => 0
+            })
+        },
+        {
+            name: 'NaN',
+            create: () => ({ value: NaN, coercions: () => 0, traps: () => 0 })
+        },
+        {
+            name: 'Infinity',
+            create: () => ({
+                value: Infinity,
+                coercions: () => 0,
+                traps: () => 0
+            })
+        },
+        {
+            name: 'observable object',
+            create() {
+                let coercions = 0;
+                return {
+                    value: {
+                        valueOf() {
+                            coercions += 1;
+                            return 1100;
+                        },
+                        toString() {
+                            coercions += 1;
+                            return '1100';
+                        }
+                    },
+                    coercions: () => coercions,
+                    traps: () => 0
+                };
+            }
+        },
+        {
+            name: 'Proxy value',
+            create() {
+                let traps = 0;
+                const handler = {
+                    get() {
+                        traps += 1;
+                        return 1100;
+                    },
+                    getPrototypeOf() {
+                        traps += 1;
+                        return Object.prototype;
+                    },
+                    ownKeys() {
+                        traps += 1;
+                        return [];
+                    },
+                    getOwnPropertyDescriptor() {
+                        traps += 1;
+                        return undefined;
+                    }
+                };
+                return {
+                    value: new Proxy({}, handler),
+                    coercions: () => 0,
+                    traps: () => traps
+                };
+            }
+        }
+    ];
+
+    for (const scenario of cases) {
+        await t.test(scenario.name, async () => {
+            const expiry = scenario.create();
+            let network = 0;
+            const target = repository({
+                connector: connector({
+                    async fetchAthlete() {
+                        network += 1;
+                        return {
+                            id: 'network-athlete',
+                            shoes: [],
+                            bikes: []
+                        };
+                    }
+                }),
+                metadataCache: metadataCache({
+                    readAthlete: () => ({
+                        status: 'hit',
+                        data: {
+                            id: 'invalid-cache-athlete',
+                            shoes: [],
+                            bikes: []
+                        },
+                        expiresAt: expiry.value
+                    })
+                })
+            });
+
+            const value = await target.getAthlete();
+            assert.equal(expiry.coercions(), 0);
+            assert.equal(expiry.traps(), 0);
+            assert.equal(network, 1);
+            assert.equal(value.data.id, 'network-athlete');
+            assert.equal(value.source, REPOSITORY_SOURCE.NETWORK);
+            assert.equal(value.warnings.length, 1);
+            assertWarning(
+                value.warnings[0],
+                REPOSITORY_WARNING_CODE.CACHE_READ_FAILED,
+                'getAthlete'
+            );
+        });
+    }
+});
+
+test('non-memo cache paths ignore observable expiry values', async t => {
+    const cases = [
+        {
+            name: 'observable object',
+            create() {
+                let coercions = 0;
+                return {
+                    value: {
+                        valueOf() {
+                            coercions += 1;
+                            return 1100;
+                        },
+                        toString() {
+                            coercions += 1;
+                            return '1100';
+                        }
+                    },
+                    calls: () => coercions
+                };
+            }
+        },
+        {
+            name: 'Proxy value',
+            create() {
+                let traps = 0;
+                return {
+                    value: new Proxy({}, {
+                        get() {
+                            traps += 1;
+                            return 1100;
+                        },
+                        getPrototypeOf() {
+                            traps += 1;
+                            return Object.prototype;
+                        },
+                        ownKeys() {
+                            traps += 1;
+                            return [];
+                        },
+                        getOwnPropertyDescriptor() {
+                            traps += 1;
+                            return undefined;
+                        }
+                    }),
+                    calls: () => traps
+                };
+            }
+        }
+    ];
+
+    for (const scenario of cases) {
+        await t.test(scenario.name, async () => {
+            const expiry = scenario.create();
+            let network = 0;
+            const target = repository({
+                connector: connector({
+                    async fetchZones() {
+                        network += 1;
+                        return { id: 'network-zones' };
+                    }
+                }),
+                metadataCache: metadataCache({
+                    readZones: () => ({
+                        status: 'hit',
+                        data: { id: 'cached-zones' },
+                        expiresAt: expiry.value
+                    })
+                })
+            });
+
+            const value = await target.getZones();
+            assert.equal(expiry.calls(), 0);
+            assert.equal(network, 0);
+            assert.equal(value.data.id, 'cached-zones');
+            assert.equal(value.source, REPOSITORY_SOURCE.CACHE);
+            assert.deepEqual(value.warnings, []);
+        });
+    }
+});
+
 test('expired and non-finite athlete cache expiry fall back to network', async () => {
     for (const expiresAt of [999, 1000, Infinity, NaN]) {
         let network = 0;

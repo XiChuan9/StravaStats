@@ -926,7 +926,6 @@ export class LegacyRepository {
                     operation,
                     shape
                 );
-                const expiresAt = Number(cacheResult.expiresAt);
                 if (!includeExpiry) {
                     return {
                         data,
@@ -935,8 +934,10 @@ export class LegacyRepository {
                         expiresAt: null
                     };
                 }
+                const expiresAt = cacheResult.expiresAt;
                 if (
-                    Number.isFinite(expiresAt)
+                    typeof expiresAt === 'number'
+                    && Number.isFinite(expiresAt)
                     && expiresAt > expiryWindow.now
                 ) {
                     return {
