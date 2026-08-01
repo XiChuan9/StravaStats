@@ -11,6 +11,11 @@ import {
     isDemoMode,
     setDemoGears
 } from '../demo/index.js';
+import {
+    STRAVA_CONNECTOR_ERROR_CODE,
+    StravaApiConnector,
+    StravaConnectorError
+} from '../connectors/strava/strava-api-connector.js';
 const CACHE_DURATIONS = {
     athlete: 24 * 60 * 60 * 1000,      // 24 hours
     zones: 24 * 60 * 60 * 1000,        // 24 hours
@@ -119,13 +124,30 @@ export async function fetchAllActivities() {
         return getDemoActivities();
     }
 
-    const response = await fetch('/api/strava-activities', {
-        headers: {
-            Authorization: `Bearer ${getAuthPayload()}`
+    try {
+        return await new StravaApiConnector().fetchActivities();
+    } catch (error) {
+        if (error instanceof StravaConnectorError) {
+            const compatibility = {
+                [STRAVA_CONNECTOR_ERROR_CODE.HTTP_UNAUTHENTICATED]: {
+                    httpStatus: 401,
+                    authStatus: API_AUTH_STATUS.UNAUTHENTICATED
+                },
+                [STRAVA_CONNECTOR_ERROR_CODE.HTTP_FORBIDDEN]: {
+                    httpStatus: 403,
+                    authStatus: API_AUTH_STATUS.FORBIDDEN
+                }
+            }[error.code];
+
+            if (compatibility) {
+                throw new ApiResponseError(
+                    `Authentication request failed (${compatibility.authStatus}).`,
+                    compatibility
+                );
+            }
         }
-    });
-    const result = await handleApiResponse(response);
-    return result.activities;
+        throw error;
+    }
 }
 
 export async function fetchGearById(gearId) {
