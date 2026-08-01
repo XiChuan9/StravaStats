@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Approved for implementation |
+| Status | In review |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/repository` |
 | Worktree | `/Users/wangchuanliang/Documents/StravaStats-worktrees/repository` |
@@ -25,8 +25,9 @@
 
 本状态表示 PR-03 的实施范围已经冻结。控制塔已完成 B1 与 B1.1 复验，两者结论均为
 `PASS`。B2、B2.1 和 B2.2 均已通过控制塔复验，结论为 `PASS`；B2 finalization
-已获授权。B3 仍为 `Not authorized / Not started`。PR 必须继续保持 Draft，不得
-标记 Ready 或合并；PR-03 最终验收尚未完成。
+commit 与 CI 已完成。控制塔已完成 B3 local implementation 复验，结论为 `PASS`，
+B3 状态为 `Completed / PASS`。PR-03 当前为 `In review`，但尚未取得 Final Review；
+PR 必须继续保持 Draft，未授权标记 Ready 或合并，PR-04A 未开始。
 
 ## A3 approved decision record
 
@@ -540,10 +541,11 @@ Strava Connector、Feature Flag 接线或 consumer migration。
 ## Implementation authorization gate
 
 A3 只完成决策记录和范围冻结。后续 B 阶段均须由控制塔逐阶段单独授权；
-当前 B1/B1.1 与 B2/B2.1/B2.2 已完成，B3 未授权。
+当前 B1/B1.1、B2/B2.1/B2.2 与 B3 均已完成并通过控制塔复验；B3 finalization
+已获授权，PR-03 在完成提交、推送与 CI 后等待 Final Review。
 
 - B1 只能使用 B1 phase-specific Allowed files；
-- B2 finalization 已授权；B3 当前未授权且未开始；
+- B2 finalization 已完成；B3 只能使用本阶段获批的三个路径；
 - 每阶段完成实现和本地验证后不得自行暂存、提交或推送；
 - 每阶段必须先返回控制塔验收，再等待独立 finalization 指令；
 - 不得用全阶段 17-file allowlist 绕过 phase-specific 限制；
@@ -799,8 +801,40 @@ tests/repository/dependency-boundaries.test.js
 
 - 真实网络、真实 Token、真实账号和 browser/profile verification 继续为 `Not run`；
   未使用私人活动、GPS、健康数据或 private fixture。
-- B3 保持 `Not authorized / Not started`；PR #7 必须保持 Draft，不得标记 Ready 或
-  合并。
+- B2 finalization 时 B3 为 `Not authorized / Not started`；当前 B3 状态见下方本地
+  实施记录。PR #7 必须保持 Draft，不得标记 Ready 或合并。
+
+## B3 implementation and control-tower acceptance record
+
+- B2 finalization commit 为
+  `a31b4ddf6ed895f7456a17d3fe00d859d4b00ae6`；B2 CI run
+  [30629769024](https://github.com/XiChuan9/StravaStats/actions/runs/30629769024)
+  结论为 success。
+- B3 实际范围精确为 `docs/tasks/pr-03-legacy-repository.md`、
+  `js/services/api.js` 和 `tests/repository/legacy-api-parity.test.js` 三个路径。
+- 控制塔已完成 B3 local implementation 复验，结论为 `PASS`；B3 finalization 已获
+  授权，PR-03 在 finalization 完成后等待单独 Final Review。
+- Demo `fetchAllActivities()` 继续先检查 Demo session 并直接返回 Demo activities；
+  Connector、Token read/write、`btoa`、network 和真实 activities cache I/O 均为 0。
+- Real `fetchAllActivities()` 直接委托临时构造、零 I/O 的 network-only
+  `StravaApiConnector.fetchActivities()`；浏览器只请求一次
+  `/api/strava-activities`，不经过 Repository、activities cache、pagination、排序或
+  `handleApiResponse()` 二次处理，并保持 Legacy array 返回。
+- Connector `HTTP_UNAUTHENTICATED` / `HTTP_FORBIDDEN` 仅依据 immutable
+  `StravaConnectorError` 与稳定 code 映射回既有 `ApiResponseError` 401/403 语义；
+  500、network、JSON/envelope 与 Token read/parse/encode/write failure 均不伪装为
+  auth 或 refresh failure，错误输出不保存 raw message/body/payload/cause。
+- Legacy `fetchAllGears(athlete)` 保持原 facade：不重新获取 athlete，不调用
+  Repository，shoes-before-bikes、duplicate ID、`Promise.allSettled`、partial array、
+  null/rejected omission 和 Demo offline 行为均未改变。
+- 新增 22 个完全离线、确定性的 parity tests；B3 focused 22/22、B1 101/101、
+  B2 115/115、Repository combined 238/238、Legacy auth/Demo 52/52、full 636/636。
+  Syntax 为 131 files，privacy 与 `git diff --check` 通过。
+- 真实网络、真实 Token、真实账号、browser/profile/storage verification 继续为
+  `Not run`；未读取 private fixture 或私人活动、GPS、健康数据。
+- B3 local implementation 验收前未 staged、未 commit、未 push、未更新 PR body；
+  finalization 仍要求 PR #7 保持 Draft。尚未取得 Final Review，未授权 Ready/merge，
+  未开始 PR-04A 或 consumer migration。
 
 ## Phase ledger
 
@@ -816,4 +850,4 @@ tests/repository/dependency-boundaries.test.js
 | B2 | Completed / PASS | 公共 entry、Factory、Legacy/Demo Repository、projection/cache 与共享合同测试完成；focused 115/115、B1 101/101、full 614/614、syntax 130 files、privacy/diff PASS |
 | B2.1 | Completed / PASS | 六种 gear source 与 TTL/future/overflow/memo 上限纠偏通过控制塔复验 |
 | B2.2 | Completed / PASS | primitive finite clock、storage 零 coercion 与精确 cleanup fail-closed 纠偏通过控制塔复验 |
-| B3 | Not authorized / Not started | 不得开始 |
+| B3 | Completed / PASS | 控制塔已通过 Legacy activities facade 与 API parity 本地实施复验；focused 22/22、Repository 238/238、Legacy 52/52、full 636/636、syntax 131 files、privacy/diff PASS；等待 PR-03 Final Review |
