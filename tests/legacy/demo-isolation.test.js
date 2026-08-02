@@ -248,6 +248,13 @@ const {
     requestRunPlusRemote
 } = await import('../../js/tabs/run-plus.js?demo-isolation-test');
 const {
+    renderGearGanttChart: renderRunGearGanttChart,
+    setRunSessionGears
+} = await import('../../js/tabs/run-analysis.js');
+const {
+    renderGearTab
+} = await import('../../js/tabs/gear.js?demo-isolation-test');
+const {
     preprocessActivities
 } = await import('../../js/shared/preprocessing/index.js?demo-isolation-test');
 
@@ -280,6 +287,8 @@ function compileSummaryBoundary(source) {
             loadInitializeAthleteAndZones,
             loadRefreshAthleteAndZones,
             loadOptionalSessionGears,
+            resetSummarySessionGears,
+            applySummarySessionGearLoad,
             buildSessionGearNameMap,
             selectPreprocessingAthlete
         };`
@@ -300,6 +309,8 @@ const {
     loadInitializeAthleteAndZones,
     loadRefreshAthleteAndZones,
     loadOptionalSessionGears,
+    resetSummarySessionGears,
+    applySummarySessionGearLoad,
     buildSessionGearNameMap,
     selectPreprocessingAthlete
 } = compileSummaryBoundary(mainSource);
@@ -691,6 +702,339 @@ test('Main gear labels use only session gears with no real gear-key reads', () =
         storage.getItemCalls.filter(key => key === 'strava_gears').length,
         0
     );
+});
+
+test('Run session gear snapshot is detached, ordered, duplicate-safe, and used by Gantt labels', async () => {
+    const savedChart = globalThis.Chart;
+    const savedGetElementById = globalThis.document.getElementById;
+    const chartConfigs = [];
+    const canvas = { id: 'gear-gantt-chart' };
+    globalThis.document.getElementById = id => (
+        id === 'gear-gantt-chart' ? canvas : null
+    );
+    globalThis.Chart = class ChartStub {
+        constructor(_canvas, config) {
+            this.config = config;
+            chartConfigs.push(config);
+        }
+
+        destroy() {}
+    };
+
+    try {
+        const defaultRuns = [{
+            gear_id: 'fallback-gear-id',
+            start_date_local: '2026-01-02T06:00:00.000Z',
+            distance: 1000
+        }];
+        await renderRunGearGanttChart(defaultRuns);
+        assert.deepEqual(
+            chartConfigs.at(-1).data.datasets.map(dataset => dataset.label),
+            ['fallback-gear-id']
+        );
+
+        const input = [
+            { id: 'shoe-2', name: 'Second Shoe' },
+            { id: 'shoe-1', name: 'First Shoe' },
+            { id: 'shoe-2', name: 'Second Shoe Duplicate' }
+        ];
+        const snapshot = setRunSessionGears(input);
+        assert.notEqual(snapshot, input);
+        assert.equal(Object.isFrozen(snapshot), true);
+        assert.deepEqual(snapshot.map(gear => gear.id), [
+            'shoe-2',
+            'shoe-1',
+            'shoe-2'
+        ]);
+        input.length = 0;
+        input.push({ id: 'mutated-after-set', name: 'Must Not Appear' });
+
+        await renderRunGearGanttChart([
+            {
+                gear_id: 'shoe-2',
+                start_date_local: '2026-01-02T06:00:00.000Z',
+                distance: 2000
+            },
+            {
+                gear_id: 'shoe-1',
+                start_date_local: '2026-01-03T06:00:00.000Z',
+                distance: 3000
+            }
+        ]);
+        assert.deepEqual(
+            chartConfigs.at(-1).data.datasets.map(dataset => dataset.label),
+            ['Second Shoe Duplicate', 'First Shoe']
+        );
+
+        let getterCalls = 0;
+        let iteratorCalls = 0;
+        const accessorArray = [];
+        Object.defineProperty(accessorArray, '0', {
+            enumerable: true,
+            get() {
+                getterCalls += 1;
+                return { id: 'private-gear' };
+            }
+        });
+        assert.deepEqual(setRunSessionGears(accessorArray), []);
+        const customIterator = [];
+        Object.defineProperty(customIterator, Symbol.iterator, {
+            value() {
+                iteratorCalls += 1;
+                return [][Symbol.iterator]();
+            }
+        });
+        assert.deepEqual(setRunSessionGears(customIterator), []);
+        assert.deepEqual(setRunSessionGears(null), []);
+        assert.equal(getterCalls, 0);
+        assert.equal(iteratorCalls, 0);
+
+        const frozenInput = Object.freeze([{ id: 'frozen-gear' }]);
+        assert.deepEqual(
+            setRunSessionGears(frozenInput).map(gear => gear.id),
+            ['frozen-gear']
+        );
+    } finally {
+        setRunSessionGears([]);
+        globalThis.document.getElementById = savedGetElementById;
+        if (savedChart === undefined) delete globalThis.Chart;
+        else globalThis.Chart = savedChart;
+    }
+});
+
+test('Gear filter rerender keeps its injected snapshot and preserves UI-owned storage', () => {
+    const savedDocument = globalThis.document;
+    const savedStorage = globalThis.localStorage;
+    const savedChart = globalThis.Chart;
+    const savedSetTimeout = globalThis.setTimeout;
+    const storage = new MemoryStorage({
+        ...realLibrary(),
+        'gear-custom-shoe-1': JSON.stringify({ price: 140, durationKm: 800 }),
+        gearEditMode: 'false'
+    });
+    storage.forbiddenReads.add('strava_gears');
+
+    const registry = new Map();
+    const chartConfigs = [];
+    let filterDiv = null;
+    const classList = () => ({ add() {}, remove() {}, toggle() {} });
+
+    class FakeElement {
+        constructor(id = '') {
+            this._id = '';
+            this.id = id;
+            this.style = {};
+            this.dataset = {};
+            this.classList = classList();
+            this.listeners = new Map();
+            this.children = [];
+            this.checked = false;
+            this.firstChild = null;
+            this.nextSibling = null;
+            this.textContent = '';
+            this._innerHTML = '';
+            this.heading = null;
+        }
+
+        set id(value) {
+            this._id = value;
+            if (value) registry.set(value, this);
+            if (value === 'gear-filters') filterDiv = this;
+        }
+
+        get id() {
+            return this._id;
+        }
+
+        set innerHTML(value) {
+            this._innerHTML = value;
+        }
+
+        get innerHTML() {
+            return this._innerHTML;
+        }
+
+        addEventListener(type, callback) {
+            this.listeners.set(type, callback);
+        }
+
+        insertBefore(child) {
+            this.children.unshift(child);
+            child.parentElement = this;
+        }
+
+        appendChild(child) {
+            this.children.push(child);
+            child.parentElement = this;
+        }
+
+        remove() {
+            registry.delete(this.id);
+        }
+
+        querySelector(selector) {
+            if (selector === '#show-retired-check') return retiredCheck;
+            if (selector === 'h4') return this.heading;
+            return null;
+        }
+
+        querySelectorAll(selector) {
+            return selector === '.gear-filter-btn' ? filterButtons : [];
+        }
+
+        closest(selector) {
+            return selector === 'button.gear-filter-btn' ? this : null;
+        }
+
+        getContext() {
+            return {};
+        }
+    }
+
+    const retiredCheck = new FakeElement('show-retired-check');
+    const filterButtons = ['all', 'shoe', 'bike'].map(filter => {
+        const button = new FakeElement();
+        button.dataset.filter = filter;
+        return button;
+    });
+    const section = new FakeElement('gear-info-section');
+    const list = new FakeElement('gear-info-list');
+    const chartContainer = new FakeElement('gear-chart-container');
+    chartContainer.heading = new FakeElement();
+    const ganttContainer = new FakeElement('gear-gantt-chart-container');
+    ganttContainer.heading = new FakeElement();
+    new FakeElement('gear-tab');
+    new FakeElement('gearChart');
+    new FakeElement('gear-gantt-chart');
+    const toggleEdit = new FakeElement('toggle-gear-edit');
+    const saveButton = new FakeElement();
+    saveButton.getAttribute = name => (
+        name === 'data-gearid' ? 'shoe-1' : null
+    );
+    const priceInput = new FakeElement('price-shoe-1');
+    priceInput.value = '155';
+    const durationInput = new FakeElement('duration-shoe-1');
+    durationInput.value = '900';
+
+    globalThis.document = {
+        body: new FakeElement(),
+        getElementById: id => registry.get(id) ?? null,
+        createElement: () => new FakeElement(),
+        querySelector: selector => (
+            selector === '#gear-gantt-chart-container h4'
+                ? ganttContainer.heading
+                : null
+        ),
+        querySelectorAll: selector => (
+            selector === '.save-gear-btn' ? [saveButton] : []
+        )
+    };
+    globalThis.localStorage = storage;
+    globalThis.setTimeout = callback => {
+        callback();
+        return 0;
+    };
+    globalThis.Chart = class ChartStub {
+        constructor(_context, config) {
+            this.config = config;
+            chartConfigs.push(config);
+        }
+
+        destroy() {}
+    };
+
+    try {
+        const activities = [
+            {
+                type: 'Run',
+                sport_type: 'Run',
+                gear_id: 'bike-1',
+                start_date_local: '2026-01-01T06:00:00.000Z',
+                distance: 5000,
+                moving_time: 1500,
+                total_elevation_gain: 50
+            },
+            {
+                type: 'Run',
+                sport_type: 'Run',
+                gear_id: 'shoe-1',
+                start_date_local: '2026-01-02T06:00:00.000Z',
+                distance: 10000,
+                moving_time: 3000,
+                total_elevation_gain: 100
+            }
+        ];
+        const gears = [
+            { id: 'bike-1', name: 'Synthetic Bike', frame_type: 3 },
+            { id: 'shoe-1', name: 'Synthetic Shoe' },
+            { id: 'shoe-1', name: 'Synthetic Shoe Duplicate' }
+        ];
+        renderGearTab(activities, gears);
+        assert.ok(filterDiv);
+        assert.match(list.innerHTML, /Synthetic Shoe Duplicate/);
+        assert.equal(
+            storage.getItemCalls.filter(key => key === 'gear-custom-shoe-1').length > 0,
+            true
+        );
+        assert.equal(
+            storage.getItemCalls.filter(key => key === 'gearEditMode').length > 0,
+            true
+        );
+
+        gears.length = 0;
+        filterDiv.listeners.get('click')({
+            target: filterButtons[1]
+        });
+        const latestLine = [...chartConfigs]
+            .reverse()
+            .find(config => config.type === 'line');
+        assert.deepEqual(
+            latestLine.data.datasets.map(dataset => dataset.label),
+            ['Synthetic Shoe Duplicate']
+        );
+        assert.equal(
+            storage.getItemCalls.filter(key => key === 'strava_gears').length,
+            0
+        );
+
+        toggleEdit.listeners.get('click')({ stopPropagation() {} });
+        assert.equal(storage.getItem('gearEditMode'), 'true');
+        assert.equal(
+            storage.operations.some(operation => (
+                operation.operation === 'set'
+                && operation.key === 'gearEditMode'
+            )),
+            true
+        );
+
+        saveButton.listeners.get('click')({ stopPropagation() {} });
+        assert.deepEqual(
+            JSON.parse(storage.getItem('gear-custom-shoe-1')),
+            { price: 155, durationKm: 900 }
+        );
+        assert.equal(
+            storage.operations.some(operation => (
+                operation.operation === 'set'
+                && operation.key === 'gear-custom-shoe-1'
+            )),
+            true
+        );
+
+        for (const malformedGears of [[], null, {}, undefined]) {
+            renderGearTab(activities, malformedGears);
+            assert.match(list.innerHTML, /No gear loaded yet\./);
+        }
+        assert.equal(
+            storage.getItemCalls.filter(key => key === 'strava_gears').length,
+            0
+        );
+    } finally {
+        globalThis.document = savedDocument;
+        globalThis.localStorage = savedStorage;
+        globalThis.setTimeout = savedSetTimeout;
+        if (savedChart === undefined) delete globalThis.Chart;
+        else globalThis.Chart = savedChart;
+    }
 });
 
 test('Trends metadata selection uses injected context without identity reads or logs', () => {

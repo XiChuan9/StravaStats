@@ -23,6 +23,8 @@ const tabSources = new Map(await Promise.all(summaryTabs.map(async path => (
     [path, await source(path)]
 ))));
 const mainSource = await source('js/app/main.js');
+const tabsIndexSource = await source('js/tabs/index.js');
+const runPlusSource = await source('js/tabs/run-plus.js');
 
 test('main obtains provider-owned data only through the Repository public entry', () => {
     assert.match(
@@ -84,23 +86,18 @@ test('UI and user-owned storage stays on the explicit allowlist', () => {
     const gear = tabSources.get('js/tabs/gear.js');
     assert.match(gear, /gear-custom-\$\{gearId\}/);
     assert.match(gear, /gearEditMode/);
+    assert.equal((gear.match(/localStorage\./g) || []).length, 4);
+    assert.doesNotMatch(gear, /strava_gears|getCachedGears/);
 });
 
-test('B1 provider-gear-cache exceptions are limited to Run and Gear summary tabs', () => {
-    const exceptionPaths = [...tabSources]
-        .filter(([, value]) => (
-            value.includes('getCachedGears')
-            || value.includes('strava_gears')
-        ))
-        .map(([path]) => path)
-        .sort();
-    assert.deepEqual(exceptionPaths, [
-        'js/tabs/gear.js',
-        'js/tabs/run-analysis.js'
-    ]);
+test('B2 removes provider gear-cache access from every summary tab', () => {
+    for (const [path, value] of tabSources) {
+        assert.doesNotMatch(value, /getCachedGears|strava_gears/, path);
+        assert.doesNotMatch(value, /from\s*['"]\.\/api\.js['"]/, path);
+    }
 });
 
-test('tabs/api.js importers are exactly Run, Gear, and the PR-04C Run Plus exception', async () => {
+test('tabs/api.js importer is exactly the PR-04C Run Plus exception', async () => {
     const entries = await readdir(new URL('js/tabs/', projectRoot), {
         withFileTypes: true
     });
@@ -112,11 +109,7 @@ test('tabs/api.js importers are exactly Run, Gear, and the PR-04C Run Plus excep
             importers.push(entry.name);
         }
     }
-    assert.deepEqual(importers.sort(), [
-        'gear.js',
-        'run-analysis.js',
-        'run-plus.js'
-    ]);
+    assert.deepEqual(importers.sort(), ['run-plus.js']);
 });
 
 test('tabs governance file contains every frozen B1 boundary and parity rule', async () => {
@@ -145,9 +138,44 @@ test('tabs governance file contains every frozen B1 boundary and parity rule', a
     assert.match(rules, /add to the repository-root `AGENTS\.md`/);
 });
 
-test('B1 source keeps B2 and B3 implementation seams absent', () => {
-    assert.doesNotMatch(mainSource, /setRunSessionGears/);
+test('B2 wires the Run gear context through the existing tab public entry', () => {
+    assert.match(
+        mainSource,
+        /import\s*\{[\s\S]*?setRunSessionGears[\s\S]*?\}\s*from\s*['"]\.\.\/tabs\/index\.js['"]/
+    );
+    assert.match(
+        tabsIndexSource,
+        /export\s*\{\s*renderRunAnalysisTab\s*,\s*setRunSessionGears\s*\}\s*from\s*['"]\.\/run-analysis\.js['"]/
+    );
+    assert.equal(
+        (
+            mainSource.match(
+                /sessionGears = resetSummarySessionGears\(\);\s*setRunSessionGears\(sessionGears\);/g
+            ) || []
+        ).length,
+        2
+    );
+    assert.equal(
+        (
+            mainSource.match(
+                /sessionGears = applySummarySessionGearLoad\(gearLoad\);\s*setRunSessionGears\(sessionGears\);/g
+            ) || []
+        ).length,
+        2
+    );
+    assert.match(mainSource, /renderGearTab\(allActivities, sessionGears\)/);
+
+    const runAnalysis = tabSources.get('js/tabs/run-analysis.js');
+    assert.match(runAnalysis, /export function setRunSessionGears\(gears\)/);
+    assert.doesNotMatch(runAnalysis, /getCachedGears|strava_gears/);
+    assert.match(runPlusSource, /import\s*\{\s*renderRunAnalysisTab\s*\}\s*from\s*['"]\.\/run-analysis\.js['"]/);
+    assert.match(
+        runPlusSource,
+        /renderRunAnalysisTab\(\s*allActivities,[\s\S]*?\{\s*idPrefix:\s*RUN_PLUS_ID_PREFIX/
+    );
+});
+
+test('B2 leaves the PR-04C Run Plus provider exception and B3 seam unchanged', () => {
+    assert.match(runPlusSource, /from\s*['"]\.\/api\.js['"]/);
     assert.doesNotMatch(mainSource, /summary-browser-smoke/);
-    assert.equal(tabSources.get('js/tabs/run-analysis.js').includes('getCachedGears'), true);
-    assert.equal(tabSources.get('js/tabs/gear.js').includes('getCachedGears'), true);
 });

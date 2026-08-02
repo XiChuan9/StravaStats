@@ -18,12 +18,13 @@
 | Pull request | Draft [#8](https://github.com/XiChuan9/StravaStats/pull/8) |
 | Investigation Gate | Completed / PASS |
 | Implementation Gate | Approved by control tower |
-| Implementation | B1/B1.1 completed; B2/B3 not authorized |
+| Implementation | B1/B1.1 and B2 completed; B3 not authorized |
 | A3 | Completed |
+| A3.1 | Completed / Accepted |
 | B1 | Completed / PASS |
 | B1.1 | Completed / PASS |
-| B2 | Not authorized |
-| B3 | Not authorized |
+| B2 | Completed / PASS |
+| B3 | Not authorized / not started |
 
 ## Goal
 
@@ -72,7 +73,8 @@ also owns the browser application-path verification deferred by PR-02 and PR-03.
 - A3 records control-tower decisions and freezes the total and phase-specific scopes.
 - `Approved for implementation` did not itself authorize immediate B1 execution. B1 later
   received separate control-tower authorization for local implementation only.
-- B2 and B3 still require separate control-tower authorization before any phase work.
+- A3.1 and B2 passed control-tower review. B2 Finalization is authorized; B3 remains
+  unauthorized and not started.
 - After local implementation of each authorized phase, stop and return evidence for
   control-tower review before staging, committing, or pushing that phase implementation.
 - Ready, merge, PR-04B, PR-04C, and PR-05 remain unauthorized.
@@ -357,10 +359,11 @@ tests/consumers/summary-boundaries.test.js
 tests/legacy/demo-isolation.test.js
 ```
 
-B2 candidate scope, not authorized:
+B2 scope, completed and accepted by the control tower:
 
 ```text
 docs/tasks/pr-04a-summary-consumers.md
+js/app/main.js
 js/tabs/run-analysis.js
 js/tabs/gear.js
 js/tabs/index.js
@@ -381,6 +384,21 @@ local implementation. No implementation may be staged, committed, or pushed befo
 review authorizes publication. If B3 finds a product defect, stop and request a separate
 correction phase; do not reopen B1/B2 paths implicitly.
 
+### A3.1 B2 phase-allowlist correction — Completed / Accepted
+
+The control tower approved A3.1 before B2 implementation because the frozen B2 lifecycle
+contract requires the composition root to clear and set Run session gear context and inject
+`sessionGears` into Gear rendering. A3.1 adds `js/app/main.js` to the B2 phase allowlist. This is
+not a total-scope expansion: `main.js` was already one of the ten frozen PR-04A paths, the total
+allowlist remains exactly ten paths, B2 is limited to the eight paths above, and B3 remains
+unchanged and unauthorized.
+
+B2 implements `setRunSessionGears(gears)`, re-exports it only through `js/tabs/index.js`, clears
+both main and Run gear state before initialize/refresh loads, sets successful session gears
+before any Run/Run Plus/Gear render, and injects the same current session snapshot into
+`renderGearTab`. Control-tower code re-verification and an independent focused run of 71/71
+tests passed. B2 is `Completed / PASS`; this does not authorize B3, Ready, or merge.
+
 ## Acceptance criteria
 
 - A0 evidence includes exact SHAs, ahead/behind, object-existence audit, actual results from
@@ -392,7 +410,7 @@ correction phase; do not reopen B1/B2 paths implicitly.
 - A0-A2 passed control-tower review; no A2.1 is required.
 - Investigation Gate is `Completed / PASS`; Implementation Gate is `Approved by control tower`.
 - A3 is Completed; B1 and B1.1 are `Completed / PASS` after control-tower re-review.
-- B2 and B3 are not authorized.
+- A3.1 and B2 are Completed/PASS after control-tower review; B3 is not authorized.
 - The B1 change is limited to the exact six-path B1 allowlist.
 - Draft PR remains Draft and is neither marked Ready nor merged.
 
@@ -892,7 +910,7 @@ control-tower authorization for every phase.
   main Repository lifecycle/result adapter/cache ownership; add orchestration and boundary
   tests; update the existing Demo regression. The initial `REVISE` findings were corrected in
   B1.1 and the control-tower re-review passed.
-- **B2 — provider metadata isolation and parity:** update Run summary read context,
+- **B2 — provider metadata isolation and parity (Completed / PASS):** update Run summary read context,
   `tabs/index.js` export, and Gear injection; prove labels/order/duplicates/custom UI state and
   all unchanged summary inputs/outputs. Stop for review.
 - **B3 — browser application path and closure:** add the served synthetic module harness; run
@@ -1112,7 +1130,81 @@ migration, Legacy cleanup, IndexedDB v2 creation, or Service Worker change.
 
 Rollback is an ordinary revert of the single B1 six-path commit after control-tower direction;
 do not delete the branch/worktree or clear browser/Legacy storage. PR #8 remains Draft, and
-B2/B3 remain Not authorized/Not started.
+B2 is Completed/PASS and authorized for Finalization; B3 remains unauthorized/not started.
+
+## B2 finalization evidence — Completed / PASS
+
+B2 implements only the A3.1-corrected eight-path phase allowlist. Control-tower code
+re-verification passed, and the independent focused verification passed 71/71. Finalization is
+authorized to publish the exact eight-path B2 commit while keeping PR #8 Draft. The ten-path
+total allowlist and B3 scope remain unchanged.
+
+### Run, main, and Gear session boundary
+
+- `setRunSessionGears(gears)` stores a detached, frozen native-array container, preserves input
+  order, duplicate IDs, and record references, and fails closed to a shared empty array for
+  non-arrays or unsafe array shapes. Reflection does not execute an input iterator, `forEach`,
+  index accessor, or extra-key accessor. Caller mutation of the original container cannot alter
+  the session snapshot; gear records are not deep-frozen or modified.
+- `js/tabs/index.js` re-exports the setter without changing existing render exports. `main.js`
+  imports it only from that public entry. Initialize and refresh both reset main and Run gear
+  state before any asynchronous Repository load, then apply only a fulfilled safe gear result
+  before Run, Run Plus, or Gear can render. Rejected, skipped, malformed, and failed refresh
+  loads remain empty; no stale gear context survives.
+- `renderGearTab(allActivities, sessionGears)` creates one detached render snapshot. Initial
+  cards/charts/Gantt and every filter, retired-toggle, edit, and rerender callback close over that
+  snapshot. Empty or malformed gear input displays the established empty state and never falls
+  back to provider storage. `gear-custom-*` and `gearEditMode` remain the only Gear-tab storage
+  families and retain read/write behavior.
+- Run and Gear no longer import `tabs/api.js`, call `getCachedGears`, or read `strava_gears`.
+  Static enumeration proves the sole remaining `tabs/api.js` importer is prohibited PR-04C
+  `run-plus.js`. Run Plus still imports the same queryless `run-analysis.js` module used by the
+  public setter and invokes the unchanged `renderRunAnalysisTab` signature; no Run Plus code was
+  changed.
+
+### Directed B2 reproductions
+
+1. A stale Run context followed by refresh reset and rejected/malformed/skipped gear load ends
+   with the setter receiving `[]`; no stale item reaches a render event.
+2. Ordered synthetic duplicate gears produce Run Gantt labels
+   `Second Shoe Duplicate`, then `First Shoe`, preserving activity gear order and existing
+   last-duplicate label behavior.
+3. Gear filter click and rerender continue using the captured snapshot after the caller empties
+   its original array; forbidden `strava_gears` reads remain zero.
+4. Empty, null, object, and missing Demo gear inputs leave Run/Gear context empty and preserve
+   the existing Gear empty state; malformed Demo Repository payload regression and forbidden
+   real-gear storage reads both pass with zero fallback.
+5. Mutating the caller gear array after `setRunSessionGears` does not alter the frozen Run
+   snapshot or its labels.
+6. The Run Plus source imports and calls the unchanged Run renderer from the exact same
+   queryless module that owns the tested session snapshot; the actual module label test and
+   static import/call test jointly prove the shared live-module boundary without editing
+   `run-plus.js`.
+
+### B2 tests and actual local gates
+
+Final local verification on 2026-08-02 CST produced, without changing the accepted test counts:
+
+```text
+npm ci — initial sandboxed attempt: EPERM at node_modules/.package-lock.json;
+  approved exact rerun: PASS, 6 packages added, 0 vulnerabilities
+npm run check:syntax — PASS, 133 files
+npm run check:privacy — PASS
+node --test tests/consumers/summary-consumers.test.js — 34/34 PASS
+node --test tests/consumers/summary-boundaries.test.js — 9/9 PASS
+node --test tests/legacy/demo-isolation.test.js — 28/28 PASS
+node --test tests/repository/*.test.js — 252/252 PASS
+node --test tests/legacy/auth-lifecycle.test.js tests/legacy/demo-isolation.test.js — 56/56 PASS
+npm test — 697/697 PASS; skipped 0; cancelled 0; todo 0
+git diff --check — PASS
+```
+
+All new evidence is deterministic, offline, and synthetic. No real Token, provider network,
+account, activity/GPS/HR/Power data, private fixture, or browser profile was read. There is no
+migration, Legacy data cleanup, IndexedDB v2 creation, Service Worker change, dependency change,
+or public Repository/Connector/Factory/API change. Rollback after Finalization is an ordinary
+revert of the exact B2 commit on control-tower instruction. Never delete the worktree/branch or
+clear user/Legacy storage as rollback.
 
 ## Not run and known limitations
 
@@ -1127,7 +1219,7 @@ B2/B3 remain Not authorized/Not started.
 - No Safari/Firefox/mobile/production Service Worker verification ran.
 - Node boundary tests from the existing suite passed but do not satisfy browser gates.
 - A3 resolves the preprocessing identity fallback through main's explicit non-persistent
-  Repository-derived context; B1/B1.1 are complete, while browser proof and B2/B3 remain
+  Repository-derived context. B1/B1.1 and B2 are Completed/PASS, while B3 browser proof remains
   `Not run` / not started.
 
 ## Independent review checklist
@@ -1147,7 +1239,7 @@ B2/B3 remain Not authorized/Not started.
 - [x] Implementation Gate is Approved by control tower.
 - [x] A3 is complete; B1 and B1.1 passed control-tower review and are Completed / PASS.
 - [x] B1 finalization is limited to the exact six-path allowlist and PR remains Draft.
-- [x] B2/B3 are not authorized.
+- [x] A3.1 and B2 passed control-tower review and are Completed/PASS; B3 is not authorized.
 
 ## Completion evidence
 
@@ -1224,7 +1316,26 @@ B1 local:
   Syntax — 133 files Pass
   Full tests — 692/692 Pass
   Finalization — Authorized for one exact six-path commit, normal push, and Draft PR body update
-  B2/B3 — Not authorized / Not started
+  B2/B3 at B1 close — Not authorized / Not started
+
+B2 local:
+  Authorization — Separate control-tower local-implementation authorization received
+  A3.1 — Completed / Accepted; main.js added to B2 phase allowlist; total ten-path allowlist unchanged
+  Control-tower code re-verification — PASS
+  Independent focused verification — 71/71 PASS
+  Status — Completed / PASS; Finalization authorized
+  Paths — Exact eight-path B2 allowlist only
+  Consumer focused tests — 34/34 Pass
+  Boundary focused tests — 9/9 Pass
+  Demo isolation — 28/28 Pass
+  Repository regression — 252/252 Pass
+  Auth + Demo regression — 56/56 Pass
+  Syntax — 133 files Pass
+  Privacy — Pass
+  Full tests — 697/697 Pass
+  Diff check — Pass
+  Publication — Exact eight-path ordinary commit and normal push authorized; PR remains Draft
+  B3 — Not authorized / Not started
 ```
 
 ## Stop conditions

@@ -18,6 +18,7 @@ import {
     renderMapTab,
     renderAIChatTab,
     renderRunPlusTab,
+    setRunSessionGears,
 } from '../tabs/index.js';
 import {
     createRepository,
@@ -53,6 +54,11 @@ const SUMMARY_OPERATIONS = new Set([
     'getAthlete',
     'getZones',
     'getGears'
+]);
+const SUMMARY_GEAR_LOAD_KEYS = new Set([
+    'data',
+    'partial',
+    'status'
 ]);
 
 function safeOperationalError() {
@@ -457,6 +463,23 @@ export async function loadOptionalSessionGears(sessionRepository, athlete) {
     }
 }
 
+export function resetSummarySessionGears() {
+    return [];
+}
+
+export function applySummarySessionGearLoad(gearLoad) {
+    const values = readPlainDataRecord(gearLoad, SUMMARY_GEAR_LOAD_KEYS);
+    return (
+        values !== null
+        && Reflect.ownKeys(values).length === SUMMARY_GEAR_LOAD_KEYS.size
+        && values.status === 'fulfilled'
+        && typeof values.partial === 'boolean'
+        && isDenseDataArray(values.data)
+    )
+        ? values.data
+        : [];
+}
+
 export function activityLoadingMessage(source, count) {
     if (!SUMMARY_SOURCES.has(source) || !Number.isSafeInteger(count) || count < 0) {
         throw safeOperationalError();
@@ -542,7 +565,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'swim-tab': { render: () => renderSwimAnalysisTab(allActivities, dateFilterFrom, dateFilterTo, swimRollingWindow), usesFilters: true },
         'trends-tab': { render: () => renderTrendsTab(allActivities, dateFilterFrom, dateFilterTo, trendsSportFilter, trendsDataType, getTrendsMetadataContext()), usesFilters: true },
         'planner-tab': { render: () => renderPlannerTab(allActivities) },
-        'gear-tab': { render: () => renderGearTab(allActivities) },
+        'gear-tab': { render: () => renderGearTab(allActivities, sessionGears) },
         'activities-tab': { render: () => renderActivitiesTab(allActivities) },
         'calendar-tab': { render: () => renderCalendarTab(allActivities) },
         'weather-tab': { render: () => renderWeatherTab(allActivities) },
@@ -1025,7 +1048,8 @@ document.addEventListener('DOMContentLoaded', () => {
     async function initializeApp(tokenData) {
         sessionAthlete = null;
         sessionZones = null;
-        sessionGears = [];
+        sessionGears = resetSummarySessionGears();
+        setRunSessionGears(sessionGears);
         const requestedSessionMode = isDemoMode()
             ? APP_SESSION_MODE.DEMO
             : APP_SESSION_MODE.REAL;
@@ -1120,8 +1144,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 repository,
                 athlete
             );
-            gears = gearLoad.data;
-            sessionGears = gears;
+            sessionGears = applySummarySessionGearLoad(gearLoad);
+            setRunSessionGears(sessionGears);
+            gears = sessionGears;
             if (gearLoad.status === 'fulfilled') {
                 console.log(`Gears loaded (${gears.length})`);
             } else if (gearLoad.status === 'rejected') {
@@ -1174,7 +1199,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const sessionMode = activeSessionMode;
         sessionAthlete = null;
         sessionZones = null;
-        sessionGears = [];
+        sessionGears = resetSummarySessionGears();
+        setRunSessionGears(sessionGears);
         const t0 = Date.now();
         const elapsed = () => `${((Date.now() - t0) / 1000).toFixed(1)}s elapsed`;
         showLoading(
@@ -1203,8 +1229,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 repository,
                 athlete
             );
-            const gears = gearLoad.data;
-            sessionGears = gears;
+            sessionGears = applySummarySessionGearLoad(gearLoad);
+            setRunSessionGears(sessionGears);
+            const gears = sessionGears;
             if (gearLoad.status === 'rejected') {
                 logOperationalWarning(
                     'Failed to load gears during refresh; continuing without gear metadata'

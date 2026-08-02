@@ -43,6 +43,8 @@ function compileBoundary(source) {
             loadInitializeAthleteAndZones,
             loadRefreshAthleteAndZones,
             loadOptionalSessionGears,
+            resetSummarySessionGears,
+            applySummarySessionGearLoad,
             activityLoadingMessage,
             selectPreprocessingAthlete
         };`
@@ -425,6 +427,88 @@ test('Gear complete, empty, partial, error, and no-athlete paths preserve option
     assert.deepEqual(
         await boundary.loadOptionalSessionGears(errorSession, null),
         { data: [], partial: false, status: 'skipped' }
+    );
+});
+
+test('Main gear lifecycle resets stale context and sets successful gears before rendering', () => {
+    const events = [];
+    const setter = gears => {
+        events.push({ type: 'set', gears });
+    };
+    const staleGears = [{ id: 'stale-gear' }];
+    setter(boundary.applySummarySessionGearLoad({
+        data: staleGears,
+        partial: false,
+        status: 'fulfilled'
+    }));
+
+    const resetGears = boundary.resetSummarySessionGears();
+    setter(resetGears);
+    events.push({ type: 'load' });
+    const loadedGears = [
+        { id: 'synthetic-shoe-2', name: 'Second' },
+        { id: 'synthetic-shoe-1', name: 'First' },
+        { id: 'synthetic-shoe-2', name: 'Second duplicate' }
+    ];
+    const sessionGears = boundary.applySummarySessionGearLoad({
+        data: loadedGears,
+        partial: false,
+        status: 'fulfilled'
+    });
+    setter(sessionGears);
+    events.push({ type: 'run-render', gears: sessionGears });
+    events.push({ type: 'run-plus-render', gears: sessionGears });
+    events.push({ type: 'gear-render', gears: sessionGears });
+
+    assert.deepEqual(resetGears, []);
+    assert.equal(sessionGears, loadedGears);
+    assert.deepEqual(sessionGears.map(gear => gear.id), [
+        'synthetic-shoe-2',
+        'synthetic-shoe-1',
+        'synthetic-shoe-2'
+    ]);
+    assert.deepEqual(events.map(event => event.type), [
+        'set',
+        'set',
+        'load',
+        'set',
+        'run-render',
+        'run-plus-render',
+        'gear-render'
+    ]);
+    assert.deepEqual(events[1].gears, []);
+    assert.equal(events[3].gears, loadedGears);
+});
+
+test('Rejected, skipped, malformed, and failed-refresh gear loads keep context empty', () => {
+    const setterCalls = [];
+    const setter = gears => setterCalls.push(gears);
+    const stale = [{ id: 'stale-before-refresh' }];
+    setter(boundary.applySummarySessionGearLoad({
+        data: stale,
+        partial: false,
+        status: 'fulfilled'
+    }));
+
+    for (const value of [
+        { data: [], partial: false, status: 'rejected' },
+        { data: [], partial: false, status: 'skipped' },
+        { data: {}, partial: false, status: 'fulfilled' },
+        { data: [], partial: false },
+        null
+    ]) {
+        const reset = boundary.resetSummarySessionGears();
+        setter(reset);
+        const afterLoad = boundary.applySummarySessionGearLoad(value);
+        setter(afterLoad);
+        assert.deepEqual(reset, []);
+        assert.deepEqual(afterLoad, []);
+    }
+
+    assert.deepEqual(setterCalls.at(-1), []);
+    assert.equal(
+        setterCalls.some(gears => gears.some?.(gear => gear.id === 'stale-before-refresh')),
+        true
     );
 });
 

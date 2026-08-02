@@ -1,11 +1,63 @@
 // js/run-analysis.js
 import * as utils from './utils.js';
-import { getCachedGears } from './api.js';
 
-function getGears() {
-    const cached = getCachedGears();
-    if (cached) return cached;
-    return JSON.parse(localStorage.getItem('strava_gears') || '[]');
+const EMPTY_RUN_SESSION_GEARS = Object.freeze([]);
+let runSessionGears = EMPTY_RUN_SESSION_GEARS;
+
+function createRunSessionGearSnapshot(gears) {
+    try {
+        if (
+            !Array.isArray(gears)
+            || Object.getPrototypeOf(gears) !== Array.prototype
+        ) {
+            return EMPTY_RUN_SESSION_GEARS;
+        }
+
+        const keys = Reflect.ownKeys(gears);
+        const lengthDescriptor = Object.getOwnPropertyDescriptor(gears, 'length');
+        if (
+            !lengthDescriptor
+            || !Object.hasOwn(lengthDescriptor, 'value')
+            || !Number.isSafeInteger(lengthDescriptor.value)
+            || lengthDescriptor.value < 0
+            || lengthDescriptor.enumerable !== false
+            || lengthDescriptor.configurable !== false
+            || keys.length !== lengthDescriptor.value + 1
+            || keys.some(key => typeof key !== 'string')
+        ) {
+            return EMPTY_RUN_SESSION_GEARS;
+        }
+
+        const keySet = new Set(keys);
+        if (!keySet.has('length')) return EMPTY_RUN_SESSION_GEARS;
+
+        const snapshot = [];
+        for (let index = 0; index < lengthDescriptor.value; index += 1) {
+            const key = String(index);
+            if (!keySet.has(key)) return EMPTY_RUN_SESSION_GEARS;
+            const descriptor = Object.getOwnPropertyDescriptor(gears, key);
+            if (
+                !descriptor?.enumerable
+                || !Object.hasOwn(descriptor, 'value')
+            ) {
+                return EMPTY_RUN_SESSION_GEARS;
+            }
+            Object.defineProperty(snapshot, key, {
+                value: descriptor.value,
+                enumerable: true,
+                configurable: true,
+                writable: true
+            });
+        }
+        return Object.freeze(snapshot);
+    } catch {
+        return EMPTY_RUN_SESSION_GEARS;
+    }
+}
+
+export function setRunSessionGears(gears) {
+    runSessionGears = createRunSessionGearSnapshot(gears);
+    return runSessionGears;
 }
 
 // Calculate global HR max reference using 99th percentile of all hr_max values
@@ -801,7 +853,7 @@ export async function renderGearGanttChart(runs) {
     // 3. Traer info detallada de cada gear
     let gearIdToName = {};
     try {
-        const allGears = getGears();
+        const allGears = runSessionGears;
         allGears.forEach(gear => {
             gearIdToName[gear.id] = gear.name || [gear.brand_name, gear.model_name].filter(Boolean).join(' ');
         });
