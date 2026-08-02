@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Approved for implementation |
+| Status | In progress |
 | Base branch | `integration/v2` |
 | Base SHA | `2178858f29d6c8efe5cf45de5ff07443387d2577` |
 | Feature branch | `codex/v2/summary-consumers` |
@@ -18,9 +18,10 @@
 | Pull request | Draft [#8](https://github.com/XiChuan9/StravaStats/pull/8) |
 | Investigation Gate | Completed / PASS |
 | Implementation Gate | Approved by control tower |
-| Implementation | Not started |
+| Implementation | B1/B1.1 completed; B2/B3 not authorized |
 | A3 | Completed |
-| B1 | Pending separate control-tower authorization |
+| B1 | Completed / PASS |
+| B1.1 | Completed / PASS |
 | B2 | Not authorized |
 | B3 | Not authorized |
 
@@ -69,8 +70,9 @@ also owns the browser application-path verification deferred by PR-02 and PR-03.
 ## A3 authorization boundary
 
 - A3 records control-tower decisions and freezes the total and phase-specific scopes.
-- `Approved for implementation` does not authorize immediate B1 execution.
-- B1, B2, and B3 each require separate control-tower authorization before any phase work.
+- `Approved for implementation` did not itself authorize immediate B1 execution. B1 later
+  received separate control-tower authorization for local implementation only.
+- B2 and B3 still require separate control-tower authorization before any phase work.
 - After local implementation of each authorized phase, stop and return evidence for
   control-tower review before staging, committing, or pushing that phase implementation.
 - Ready, merge, PR-04B, PR-04C, and PR-05 remain unauthorized.
@@ -344,7 +346,7 @@ A3 allows only:
 docs/tasks/pr-04a-summary-consumers.md
 ```
 
-B1 candidate scope, pending separate authorization:
+B1 scope, completed and accepted by the control tower:
 
 ```text
 docs/tasks/pr-04a-summary-consumers.md
@@ -389,9 +391,9 @@ correction phase; do not reopen B1/B2 paths implicitly.
   prohibited files, phased proposal, decisions, and `Not run` items.
 - A0-A2 passed control-tower review; no A2.1 is required.
 - Investigation Gate is `Completed / PASS`; Implementation Gate is `Approved by control tower`.
-- A3 is Completed while Implementation remains `Not started`.
-- B1 awaits separate control-tower authorization; B2 and B3 are not authorized.
-- Only this Task Brief differs from the fixed base after A3.
+- A3 is Completed; B1 and B1.1 are `Completed / PASS` after control-tower re-review.
+- B2 and B3 are not authorized.
+- The B1 change is limited to the exact six-path B1 allowlist.
 - Draft PR remains Draft and is neither marked Ready nor merged.
 
 ## Required automated checks
@@ -730,7 +732,8 @@ identity fallback) is backlog evidence only and must not be fixed opportunistica
 
 ## Frozen candidate `js/tabs/AGENTS.md` rules for B1
 
-The rule design is frozen in A3; file creation remains pending separate B1 authorization:
+The rule design was frozen in A3 and the file is created locally under the separate B1
+authorization:
 
 - Tabs do not call `/api/strava-*` or read/write Token/Authorization.
 - Tabs do not select provider, Repository implementation, Connector, cache, IndexedDB, or
@@ -885,9 +888,10 @@ git diff --check
 The phase plan and candidate per-phase paths are frozen, but execution still requires separate
 control-tower authorization for every phase.
 
-- **B1 — governance and composition/loading boundary:** create `js/tabs/AGENTS.md`; update
+- **B1 — governance and composition/loading boundary (Completed / PASS):** create `js/tabs/AGENTS.md`; update
   main Repository lifecycle/result adapter/cache ownership; add orchestration and boundary
-  tests; update the existing Demo regression. Stop for control-tower review.
+  tests; update the existing Demo regression. The initial `REVISE` findings were corrected in
+  B1.1 and the control-tower re-review passed.
 - **B2 — provider metadata isolation and parity:** update Run summary read context,
   `tabs/index.js` export, and Gear injection; prove labels/order/duplicates/custom UI state and
   all unchanged summary inputs/outputs. Stop for review.
@@ -911,6 +915,205 @@ control-tower authorization for every phase.
     prohibited-path change is authorized.
 11. Confirmed: A0-A2 PASS; no A2.1; B1/B2/B3 require separate authorization.
 
+## B1/B1.1 finalization evidence — Completed / PASS
+
+B1 was separately authorized and implemented locally. The control tower's initial B1 review
+returned `REVISE`. The authorized B1.1 repair resolved all three findings, and control-tower
+re-review returned `PASS`. B1 and B1.1 are `Completed / PASS`; this does not authorize B2, B3,
+Ready, or merge. PR #8 must remain Draft.
+
+### B1.1 revision record
+
+B1.1 changes only these four paths within the existing six-path B1 worktree diff:
+
+```text
+docs/tasks/pr-04a-summary-consumers.md
+js/app/main.js
+tests/consumers/summary-consumers.test.js
+tests/legacy/demo-isolation.test.js
+```
+
+`js/tabs/AGENTS.md` and `tests/consumers/summary-boundaries.test.js` remain byte-for-byte
+unchanged during B1.1. B2/B3 paths remain untouched and unauthorized.
+
+The three review findings and repairs are:
+
+1. **Unsafe record copy:** ordinary assignment to an arbitrary own `__proto__` key invoked the
+   inherited legacy setter on the temporary result, allowing prototype data to masquerade as
+   display identity. `readPlainDataRecord` now creates every copied key with an explicit own
+   enumerable data-property descriptor. `__proto__` and `constructor` remain ordinary own data
+   keys; input accessors are not executed and reflection failures still fail closed.
+2. **Inconsistent array validation:** `readDenseDataArray` and `isDenseDataArray` checked dense
+   indexes independently but did not enforce the same prototype, exact own-key, symbol/extra-key,
+   or standard length-descriptor contract. Both now share one reflection validator. Only arrays
+   with exact `Array.prototype`, primitive safe non-negative length, standard length descriptor,
+   and own keys `0..length-1` plus `length` are accepted. Activities retain their original
+   Repository array reference/order; warning values alone are copied into a safe internal array.
+3. **Tautological Demo evidence:** the fake session harness initialized Connector, Token, fetch,
+   cache, and IndexedDB counters that no executed dependency could update. Those fields and their
+   assertions were deleted. The fake seam remains only for orchestration call evidence. A new
+   test uses the actual public `createRepository({ sessionMode:'demo', mode:'legacy' })` through
+   main's session facade with synthetic Demo and real namespaces plus storage/fetch/btoa/
+   IndexedDB traps. It proves Demo results, one Factory construction, initialize/refresh reuse,
+   zero real-library reads/writes/removes, zero fetch/btoa/IndexedDB access, and a byte-identical
+   real snapshot. Existing `repository-factory.test.js` remains the independent DI proof that the
+   Demo branch does not construct real Connector dependencies. This Node evidence does not claim
+   the B3 browser gate.
+
+Directed reproductions cover safe dense arrays, enumerable/non-enumerable/symbol extras, sparse
+arrays, custom prototypes, subclasses, accessor indexes/extras, non-standard length, revoked and
+throwing-reflection Proxies, and the same strict container rules for warnings. Custom `forEach`
+and iterator functions are never invoked. The `__proto__` case uses the exact JSON-parsed athlete,
+also covers an own `constructor` key, and enters the real non-empty indoor-swim preprocessing
+path. The temporary record and Real sentinel retain `Object.prototype`, injected prototype
+identity is not treated as display identity or emitted in logs/results, input/Object.prototype
+remain unchanged, and forbidden `strava_athlete_data` reads plus storage writes are both zero.
+
+### Actual B1 paths
+
+The local worktree changes are limited to the exact six-path B1 allowlist:
+
+```text
+docs/tasks/pr-04a-summary-consumers.md
+js/tabs/AGENTS.md
+js/app/main.js
+tests/consumers/summary-consumers.test.js
+tests/consumers/summary-boundaries.test.js
+tests/legacy/demo-isolation.test.js
+```
+
+No B2/B3, Repository, Connector, Factory, shared preprocessing, auth, package, configuration,
+HTML, CSS, Service Worker, migration, or other documentation path is changed.
+
+### Final main/session helper API
+
+`main.js` imports `createRepository`, `REPOSITORY_SOURCE`, and
+`REPOSITORY_WARNING_CODE` from the Repository public entry. The actual controlled seams are:
+
+```text
+adaptRepositoryResult
+createSummaryRepositorySession
+establishSummaryRepositorySession
+requireSummaryRepositorySession
+loadActivitiesForSession
+loadInitializeAthleteAndZones
+loadRefreshAthleteAndZones
+loadOptionalSessionGears
+activityLoadingMessage
+selectPreprocessingAthlete
+```
+
+`createSummaryRepositorySession` calls the Factory once with exact
+`{ sessionMode, mode: 'legacy' }` and closes over the Repository; no tab receives it.
+`establishSummaryRepositorySession` creates or reuses that session and fails closed on mode
+mismatch. `requireSummaryRepositorySession` makes refresh fail safely if initialize did not
+establish a matching session. `activeSessionMode`, `sessionRepository`, `sessionAthlete`,
+`sessionZones`, and `sessionGears` remain page-session state. B1 does not call or create
+`setRunSessionGears`; Run/Gear cache isolation remains B2 pending.
+
+### Repository call-count matrix
+
+| Path | Factory | listActivities | getAthlete | getZones | getGears | main cache/provider I/O |
+| --- | ---: | --- | ---: | ---: | --- | ---: |
+| Real/Demo initialize | 1 per page session | 1, `{ refresh:false }` | 1 optional/timeout | 1 optional/timeout | 1 only when athlete data is truthy; optional | 0 |
+| Same-session refresh | 0 new | 1, `{ refresh:true }` | 1 required | 1 required | 1 only when athlete data is truthy; optional | 0 |
+| Failed/missing session refresh | 0 | 0 | 0 | 0 | 0 | 0; safe failure |
+| Session-mode mismatch | 0 replacement | 0 | 0 | 0 | 0 | 0; safe failure |
+| Demo initialize/refresh | 1 total | same contracts | same contracts | same contracts | conditional | Connector/Token/fetch/real cache/real IndexedDB 0 |
+
+Refresh does not invoke `isDemoMode()` and never creates a second Repository. main no longer
+imports or calls `fetchAllActivities`, `fetchAthleteData`, `fetchTrainingZones`,
+`fetchAllGears`, `setCachedGears`, `getCachedActivities`, `saveCachedActivities`, or
+`getDemoActivities`. UI-owned `dashboard_settings` and `dashboard_filters` remain unchanged.
+
+### Envelope, warning, partial, and error behavior
+
+- The adapter accepts the exact `{ data, source, warnings, partial }` data-descriptor envelope,
+  approved Repository sources, operation-specific data shape, and strict standard dense arrays
+  with exact own keys and `Array.prototype`.
+- Activities preserve the Repository array identity/order; malformed or partial activity
+  results fail closed before preprocessing.
+- Athlete/zones use nullable plain data records. Initialize keeps independent timeout plus
+  `Promise.allSettled` optionality; refresh remains sequential and required.
+- Complete/empty gears are valid. Gear partial uses successful Repository items; gear failure
+  and no-athlete cases safely yield `[]` without storage fallback or cache write.
+- Warnings are reduced to the approved code/operation/retryable/itemIndex fields; malformed
+  warnings are ignored without executing accessors. Runtime observability receives only
+  operation plus aggregate count, never the raw warning.
+- Envelope/warning/data accessors are not executed. Revoked or throwing Proxy/reflection input
+  fails closed with deterministic `OperationalError` at the validation boundary.
+- Repository errors are not retried or logged raw. `TOKEN_WRITE_FAILED` cannot produce
+  activities; 401/403 do not trigger Local Library deletion or new auth lifecycle behavior.
+
+### Preprocessing context
+
+`selectPreprocessingAthlete` reads only plain own data descriptors and never mutates the input.
+Valid display identity is preserved. Demo null, array, empty, ID-only, accessor, or Proxy input
+uses an anonymous non-persistent Demo context. Real missing/invalid identity uses a new
+non-persistent sentinel object while retaining safe Repository fields such as `id` and
+`max_hr`. No context is rendered, persisted, or logged.
+
+Tests use a fresh non-empty deterministic indoor-swim activity for every Demo/Real `null`,
+`[]`, `{}`, and ID-only case and execute the real
+`preprocessActivities → applyIndoorSwimPool20mCorrection → isTargetAthleteAlexGascon` path.
+All cases return one activity with zero `strava_athlete_data` reads, zero context writes,
+unmodified athlete input, preserved Real ID/max_hr, and no real identity in Demo context.
+
+### Tests and actual local results
+
+B1 Finalization reran the complete gate set on 2026-08-02 CST and confirmed the frozen
+baseline without changing product or test code:
+
+```text
+node --test tests/consumers/summary-consumers.test.js — 32/32 PASS
+node --test tests/consumers/summary-boundaries.test.js — 8/8 PASS
+node --test tests/legacy/demo-isolation.test.js — 26/26 PASS
+node --test tests/repository/*.test.js — 252/252 PASS
+node --test tests/legacy/auth-lifecycle.test.js tests/legacy/demo-isolation.test.js — 54/54 PASS
+npm ci — B1.1 initial sandboxed attempt was blocked with EPERM at
+  node_modules/.package-lock.json; the exact approved rerun passed. B1 Finalization rerun:
+  6 packages, 0 vulnerabilities PASS
+npm run check:syntax — 133 files PASS
+npm run check:privacy — PASS
+npm test — 692/692 PASS
+git diff --check — PASS
+```
+
+The consumer suite covers lifecycle, exact Factory/options/calls, source mapping, order,
+envelope/accessor/Proxy behavior, warnings, errors, metadata parity, gear outcomes,
+preprocessing, no retry, no false success, and zero constructor/import I/O. Boundary tests
+record the approved B1 Run/Gear temporary exception rather than claiming B2 completion. Demo
+isolation retains the existing auth, namespace, Run Plus, Token, cache, and privacy regression.
+
+Scope/hash audit records exactly the six paths above and no staged paths. Current Git object
+hashes match `HEAD` for `package.json`, `package-lock.json`, `js/repository/index.js`,
+`js/repository/factory.js`, and `js/connectors/strava/strava-api-connector.js`:
+
+```text
+package.json — 6243c97f34b7bc9c6a2457cc43303709123ba8e0
+package-lock.json — 4763d5ae7ace98f6a64861dea435c1137c2d0c43
+repository/index.js — ab650a3fdaae36764b7b16282ab83d800e6b4b19
+repository/factory.js — c1fe06ef7a82425d73ca4216c33f56eb135b49ff
+strava-api-connector.js — 2557ab8ee7f6e643f9bcbef0036aa20aedfd9806
+```
+
+Protected Repository/Connector/Factory, package, B2/B3, shared, and auth path status is empty.
+Static scans find zero old services/cache symbols in main, zero direct Strava API/Token/
+Authorization/IndexedDB/fetch boundaries in main, and zero direct API/Token/Authorization/
+IndexedDB/Repository construction in the nine summary tabs. Only the approved B1 Run/Gear
+provider-gear-cache exception remains; diff secret-pattern scanning reports zero matches.
+
+### Privacy, migration, rollback, and current publication state
+
+B1 uses only offline deterministic synthetic data and existing `node:test`; it adds no
+dependency and does not enumerate or read `tests/fixtures/private/**`. It uses no real Token,
+account, provider network, activity, GPS, HR, Power, or browser profile. It performs no
+migration, Legacy cleanup, IndexedDB v2 creation, or Service Worker change.
+
+Rollback is an ordinary revert of the single B1 six-path commit after control-tower direction;
+do not delete the branch/worktree or clear browser/Legacy storage. PR #8 remains Draft, and
+B2/B3 remain Not authorized/Not started.
+
 ## Not run and known limitations
 
 - A2 did not run full application Demo or Real initialization in a browser.
@@ -924,7 +1127,8 @@ control-tower authorization for every phase.
 - No Safari/Firefox/mobile/production Service Worker verification ran.
 - Node boundary tests from the existing suite passed but do not satisfy browser gates.
 - A3 resolves the preprocessing identity fallback through main's explicit non-persistent
-  Repository-derived context; implementation and browser proof remain Not started.
+  Repository-derived context; B1/B1.1 are complete, while browser proof and B2/B3 remain
+  `Not run` / not started.
 
 ## Independent review checklist
 
@@ -941,8 +1145,9 @@ control-tower authorization for every phase.
 - [x] P0/P1/P2 risks, privacy, migration, rollback, and `Not run` evidence are complete.
 - [x] Investigation Gate is complete.
 - [x] Implementation Gate is Approved by control tower.
-- [x] A3 is complete; Implementation remains Not started.
-- [x] B1 awaits separate authorization; B2/B3 are not authorized.
+- [x] A3 is complete; B1 and B1.1 passed control-tower review and are Completed / PASS.
+- [x] B1 finalization is limited to the exact six-path allowlist and PR remains Draft.
+- [x] B2/B3 are not authorized.
 
 ## Completion evidence
 
@@ -1002,12 +1207,31 @@ A3:
   diff check — Pass
   Repository changes — Task Brief only
   PR state — Draft; Ready/merge not authorized
+
+B1 local:
+  Authorization — Separate control-tower local-implementation authorization received
+  Initial review — REVISE
+  Control-tower re-review — PASS
+  B1.1 status — Completed / PASS
+  B1 status — Completed / PASS
+  Paths — Exact six-path B1 allowlist only
+  B1.1 revision paths — Exact four-path B1.1 allowlist only
+  Consumer focused tests — 32/32 Pass
+  Boundary focused tests — 8/8 Pass
+  Demo isolation — 26/26 Pass
+  Repository regression — 252/252 Pass
+  Auth + Demo regression — 54/54 Pass
+  Syntax — 133 files Pass
+  Full tests — 692/692 Pass
+  Finalization — Authorized for one exact six-path commit, normal push, and Draft PR body update
+  B2/B3 — Not authorized / Not started
 ```
 
 ## Stop conditions
 
-Stop immediately if the fixed base differs, V2 is dirty, a same-name object/PR exists, a
-baseline or CI fails, any non-Task-Brief diff appears, real credentials/private data/profile
-access is needed, provider-vs-UI ownership cannot be determined, Repository public API or
-Repository/Connector/Factory changes are required, a dependency or prohibited path is needed,
-or PR base/head/Draft state is wrong. Preserve evidence; do not self-expand scope.
+For B1, stop immediately if the fixed head/branch/PR state differs, a check fails, a seventh
+path or other prohibited diff appears, real credentials/private data/profile access is needed,
+provider-vs-UI ownership cannot be determined, Repository public API or
+Repository/Connector/Factory/shared/auth changes are required, a dependency is needed, or PR
+base/head/Draft state is wrong. Preserve evidence; do not self-expand scope, stage, commit,
+push, update the PR, or begin B2/B3.
