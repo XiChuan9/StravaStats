@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Awaiting decision |
+| Status | Approved for implementation |
 | Base branch | `integration/v2` |
 | Base SHA | `2178858f29d6c8efe5cf45de5ff07443387d2577` |
 | Feature branch | `codex/v2/summary-consumers` |
@@ -16,10 +16,13 @@
 | Related ADRs | ADR-0003 (Accepted) |
 | Dependencies | PR-00, PR-01, PR-02, and PR-03 merged into `integration/v2` |
 | Pull request | Draft [#8](https://github.com/XiChuan9/StravaStats/pull/8) |
-| Investigation Gate | Completed |
-| Implementation Gate | Not approved |
+| Investigation Gate | Completed / PASS |
+| Implementation Gate | Approved by control tower |
 | Implementation | Not started |
-| A3 | Pending control-tower approval |
+| A3 | Completed |
+| B1 | Pending separate control-tower authorization |
+| B2 | Not authorized |
+| B3 | Not authorized |
 
 ## Goal
 
@@ -59,19 +62,20 @@ also owns the browser application-path verification deferred by PR-02 and PR-03.
   LegacyRepository is cache-aware and owns the future read/write path.
 - PR-02/PR-03 browser dynamic-import and application-path checks remain `Not run` and are
   explicitly carried into PR-04A.
-- A0 baseline evidence and the complete consumer investigation will be recorded in A2.
+- A0-A2 passed control-tower review. No A2.1 is required.
+- A3 freezes decisions and implementation scope only; it does not start implementation.
+- The pull request remains Draft. Ready, merge, PR-04B, PR-04C, and PR-05 are not authorized.
 
-## Decisions required before implementation
+## A3 authorization boundary
 
-- Repository lifecycle and the point at which `sessionMode` is frozen.
-- Whether main injects detached data/read context or tabs receive a Repository reference.
-- Exact success-envelope adaptation, safe observability, warning, partial, and error policy.
-- Exact initialize/refresh/Demo/auth call-count contracts.
-- Exact gear/metadata injection boundary and ownership of user custom gear metadata.
-- Exact browser verification execution surface and merge-blocking subset.
-- Exact Allowed files and B1/B2/B3 phase scope.
-- Whether any new public Repository capability is required. If so, stop for control-tower
-  decision; PR-04A must not implement it without separately frozen authorization.
+- A3 records control-tower decisions and freezes the total and phase-specific scopes.
+- `Approved for implementation` does not authorize immediate B1 execution.
+- B1, B2, and B3 each require separate control-tower authorization before any phase work.
+- After local implementation of each authorized phase, stop and return evidence for
+  control-tower review before staging, committing, or pushing that phase implementation.
+- Ready, merge, PR-04B, PR-04C, and PR-05 remain unauthorized.
+- If implementation requires a new Repository public capability, an eleventh total path, or a
+  path outside the authorized phase allowlist, stop and request a new control-tower decision.
 
 ## In scope
 
@@ -84,7 +88,7 @@ also owns the browser application-path verification deferred by PR-02 and PR-03.
 
 ## Out of scope
 
-- Product or test implementation before A3 and separately authorized B phases.
+- Product or test implementation before separately authorized B phases.
 - PR-04B detail pages under `js/pages/**`.
 - PR-04C `js/tabs/run-plus.js` and Run Plus / NSM.
 - Trends (`js/tabs/athlete.js`), Planner, Weather, AI Chat, analysis changes, visual changes,
@@ -93,10 +97,10 @@ also owns the browser application-path verification deferred by PR-02 and PR-03.
   parity framework, feature-mode expansion, server proxy hardening, version/dependency update.
 - Real Strava network, credentials, accounts, private fixtures, or browser-profile data.
 
-## Candidate allowed files
+## Frozen total Allowed files
 
-The following list is an A2 proposal, not implementation approval. A3 must freeze each path
-before any B phase starts:
+The control tower freezes the following as the complete PR-04A total allowlist. There is no
+eleventh path. This total allowlist does not override a narrower phase-specific allowlist:
 
 ```text
 docs/tasks/pr-04a-summary-consumers.md
@@ -113,7 +117,7 @@ tests/legacy/demo-isolation.test.js
 
 Per-file justification:
 
-| Candidate | Planned change | Why it cannot be completed elsewhere | Test mapping |
+| Allowed path | Planned change | Why it cannot be completed elsewhere | Test mapping |
 | --- | --- | --- | --- |
 | Task Brief | Record A3/B evidence and closure only | Durable execution contract | All evidence |
 | `js/tabs/AGENTS.md` | Add the A2-designed consumer boundary rules | Required nested governance belongs in this directory | Boundary source audit |
@@ -140,18 +144,15 @@ js/tabs/wrapped.js
 
 `js/tabs/api.js` is also excluded: after PR-04A it remains an intentional PR-04C carry-over
 used only by `run-plus.js`. Deleting or changing it would require modifying the prohibited
-PR-04C consumer. A3 must explicitly accept this scoped exception or stop PR-04A.
+PR-04C consumer. The control tower accepts only this scoped exception; no other tab may use it.
 
 ## Prohibited files and operations
 
-During A0-A2 every repository path except this Task Brief is prohibited. In particular:
+All paths outside the frozen ten-path total allowlist are prohibited. In A3, the only allowed
+path is this Task Brief. Prohibited paths include, without limitation:
 
 ```text
 AGENTS.md
-js/tabs/AGENTS.md
-js/app/main.js
-js/tabs/**
-tests/**
 package.json
 package-lock.json
 index.html
@@ -159,15 +160,24 @@ styles/**
 sw.js
 api/**
 .github/**
-js/repository/**
+js/app/auth.js
+js/app/auth-lifecycle.js
+js/app/feature-flags.js
 js/connectors/**
-js/data/**
+js/repository/**
 js/services/**
 js/demo/**
-js/pages/**
-js/analysis/**
-js/models/**
+js/data/**
 js/shared/**
+js/pages/**
+js/models/**
+js/analysis/**
+js/tabs/api.js
+js/tabs/run-plus.js
+js/tabs/athlete.js
+js/tabs/planner.js
+js/tabs/weather.js
+js/tabs/ai-chat.js
 docs/architecture/**
 docs/product/**
 docs/engineering/**
@@ -179,6 +189,18 @@ Also prohibited: rebase, amend, force-push, merge, Ready conversion, branch/work
 real tokens/network/accounts/private data, private fixture enumeration, existing browser-profile
 mutation, Legacy cache deletion, IndexedDB v2 creation, migration, dependency changes, and
 `git add .` / `git add -A`.
+
+The following investigated consumers need no product diff and remain explicitly excluded:
+
+```text
+js/tabs/dashboard.js
+js/tabs/activities.js
+js/tabs/calendar.js
+js/tabs/bike-analysis.js
+js/tabs/swim-analysis.js
+js/tabs/maps.js
+js/tabs/wrapped.js
+```
 
 ## Interfaces and expected outputs
 
@@ -192,6 +214,171 @@ mutation, Legacy cache deletion, IndexedDB v2 creation, migration, dependency ch
 - UI preferences and user overrides may remain in UI-owned storage only with an explicit,
   documented boundary; Demo must never fall back to real provider storage.
 
+## A3 frozen implementation contract
+
+This section is the authoritative implementation contract and supersedes any A2 wording such
+as “candidate”, “proposal”, or “recommendation”. It approves scope and decisions only; it does
+not authorize B1, B2, or B3 execution.
+
+### Repository lifecycle and composition boundary
+
+- Each authenticated or Demo page session creates exactly one Repository with:
+
+  ```js
+  createRepository({
+    sessionMode,
+    mode: 'legacy'
+  })
+  ```
+
+- `sessionMode` is frozen during initialize. Refresh reuses the same Repository and must not
+  call `isDemoMode()` to reselect the source or create a second Repository.
+- Login, logout, or Demo/Real switching continues to rely on the existing reload/new page
+  session to create a new Repository.
+- `main.js` is the only composition root:
+
+  ```text
+  auth/session
+  → freeze sessionMode
+  → create Repository
+  → Repository methods
+  → main result adapter
+  → preprocessing/session context
+  → summary renderers
+  ```
+
+- Activities, athlete, zones, and gears are provider-owned and come only from Repository.
+- Tabs receive detached data/read context from main. They neither construct nor retain a
+  Repository reference and cannot select Connector, provider, services API, Repository
+  implementation, activity/metadata cache, IndexedDB, or Token storage.
+
+### Cache ownership and frozen Repository contract
+
+- Activities cache reads/writes belong only to LegacyRepository.
+- Metadata and gear cache operations belong only to LegacyRepository/LegacyCacheAdapter.
+- main no longer calls `getCachedActivities`, `saveCachedActivities`, `fetchAllActivities`,
+  `fetchAthleteData`, `fetchTrainingZones`, `fetchAllGears`, or `setCachedGears`, and does not
+  repeat the aggregate gear write.
+- DemoRepository performs zero real Token, Connector, activity-cache, and metadata-cache I/O.
+- No Legacy data is deleted, cleaned, or migrated.
+- The PR-03 public API remains frozen: `createRepository`, `listActivities`, `getAthlete`,
+  `getZones`, and `getGears`, with `{ data, source, warnings, partial }`.
+- Do not add or change any public export/method, success field, `source`, warning/error code,
+  Factory mode, or Connector contract. A real need for expansion is a stop condition.
+
+### Main result adapter and error parity
+
+The control tower approves a private, testable application result adapter in `main.js`. It:
+
+- validates the envelope shape and fails closed for malformed envelopes;
+- does not sort, normalize, mutate, or reorder Repository data;
+- uses `source` only for approved generic loading copy;
+- observes warnings only through stable safe fields or counts, never payload, activity name,
+  ID, location, HR, Power, Token, raw error, or private data;
+- handles `partial` per operation; activity partial/malformed data cannot reach preprocessing,
+  while gear partial may use the successful Repository items without storage fallback;
+- does not retry Repository operations in main;
+- never turns `TOKEN_WRITE_FAILED` into false-success data;
+- does not delete Local Library or invent logout behavior for 401/403.
+
+Initialize retains the current athlete/zones timeout plus `Promise.allSettled` optionality;
+each may independently degrade to `null`, and gear remains optional. Refresh retains the
+current required athlete/zones behavior and optional gear behavior. Preprocessing failures
+continue to the existing generic top-level error. User-visible errors, loading copy, routes,
+and page structure remain unchanged except an approved safe source-copy substitution backed by
+exact parity evidence.
+
+### Preprocessing identity correction
+
+PR-04A does not modify `js/shared/preprocessing/**`, but main must always pass an explicit
+Repository-derived athlete context that prevents preprocessing from reading the real
+`strava_athlete_data` fallback.
+
+- Demo may use an explicit safe Demo display identity. Missing, malformed, empty, or ID-only
+  Demo athlete data receives an anonymous, non-persistent Demo preprocessing context containing
+  no real identity. It is not rendered, persisted, or logged.
+- Real mode preserves valid Repository `id`, `max_hr`, and all existing preprocessing fields.
+  A missing athlete receives a non-persistent local sentinel. An ID-only or identity-incomplete
+  athlete receives a new object preserving Repository fields plus a non-identity sentinel.
+- Repository return objects are never mutated. Sentinels are never rendered, stored, or logged.
+- Tests must send at least one non-empty synthetic activity through
+  `preprocessActivities → applyIndoorSwimPool20mCorrection → isTargetAthleteAlexGascon` and prove
+  for Demo and Real missing-identity cases: zero `strava_athlete_data` reads, normal activity
+  return, preserved Repository ID/max_hr, no persistence, and no identity leakage.
+- Open-Meteo and preprocessing weather algorithms remain unchanged. `strava_demo_mode` and
+  Open-Meteo behavior are a recorded Legacy enrichment carry-over, not Repository contract.
+  B3 must prove Demo external fetch, Token, Connector, and real-cache I/O are all zero. Any
+  Demo Open-Meteo or external request blocks PR-04A Final Review.
+
+### Run and Gear session context
+
+The internal Run boundary is frozen as `setRunSessionGears(gears)`.
+
+- It accepts only Repository session gears, stores a detached read-only array snapshot, and
+  fails closed to `[]` for non-array input.
+- It never reads `getCachedGears()` or `strava_gears` and never falls back to real storage.
+- Initialize and refresh clear it before loading. Failures leave it empty. Successful gears are
+  set before any Run or Run Plus render.
+- `js/tabs/index.js` only re-exports this internal boundary. `run-plus.js` remains unchanged,
+  while its embedded `renderRunAnalysisTab()` must retain identical gear labels.
+- Tests cover re-auth, refresh failure, empty/malformed gears, duplicate IDs, and stale-context
+  prevention.
+
+`renderGearTab` receives the current session gear snapshot. Its handlers and rerenders use only
+that snapshot and never provider cache. `gear-custom-*`, `gearEditMode`, price/durationKm,
+sort/filter, retired state, labels, charts, notifications, order, and duplicate behavior remain
+unchanged. Missing/malformed Demo gears become `[]` without real-storage fallback.
+
+### `tabs/api.js` PR-04C exception
+
+`js/tabs/api.js` is prohibited in PR-04A and temporarily remains solely for PR-04C
+`js/tabs/run-plus.js`. Static tests must prove Run, Gear, and every other PR-04A summary
+consumer no longer imports it and that `run-plus.js` is its only remaining importer. This
+exception authorizes no other provider-cache consumer.
+
+### Frozen phase-specific allowlists
+
+A3 allows only:
+
+```text
+docs/tasks/pr-04a-summary-consumers.md
+```
+
+B1 candidate scope, pending separate authorization:
+
+```text
+docs/tasks/pr-04a-summary-consumers.md
+js/tabs/AGENTS.md
+js/app/main.js
+tests/consumers/summary-consumers.test.js
+tests/consumers/summary-boundaries.test.js
+tests/legacy/demo-isolation.test.js
+```
+
+B2 candidate scope, not authorized:
+
+```text
+docs/tasks/pr-04a-summary-consumers.md
+js/tabs/run-analysis.js
+js/tabs/gear.js
+js/tabs/index.js
+tests/consumers/summary-consumers.test.js
+tests/consumers/summary-boundaries.test.js
+tests/legacy/demo-isolation.test.js
+```
+
+B3 candidate scope, not authorized:
+
+```text
+docs/tasks/pr-04a-summary-consumers.md
+tests/consumers/summary-browser-smoke.html
+```
+
+Each B phase requires separate authorization and must stop for control-tower review after its
+local implementation. No implementation may be staged, committed, or pushed before that
+review authorizes publication. If B3 finds a product defect, stop and request a separate
+correction phase; do not reopen B1/B2 paths implicitly.
+
 ## Acceptance criteria
 
 - A0 evidence includes exact SHAs, ahead/behind, object-existence audit, actual results from
@@ -200,10 +387,11 @@ mutation, Legacy cache deletion, IndexedDB v2 creation, migration, dependency ch
   classification, Repository lifecycle/envelope/error recommendation, call-count matrix,
   gear injection, output parity, browser plan, tests, risks, exact candidate Allowed files,
   prohibited files, phased proposal, decisions, and `Not run` items.
-- Investigation Gate is complete; status becomes `Awaiting decision`.
-- Implementation Gate remains unapproved; Implementation remains `Not started`; A3 remains
-  pending control-tower approval.
-- Only this Task Brief differs from the fixed base after A2.
+- A0-A2 passed control-tower review; no A2.1 is required.
+- Investigation Gate is `Completed / PASS`; Implementation Gate is `Approved by control tower`.
+- A3 is Completed while Implementation remains `Not started`.
+- B1 awaits separate control-tower authorization; B2 and B3 are not authorized.
+- Only this Task Brief differs from the fixed base after A3.
 - Draft PR remains Draft and is neither marked Ready nor merged.
 
 ## Required automated checks
@@ -219,30 +407,32 @@ git diff --check
 ```
 
 Also audit exact changed/staged/untracked paths and wait for GitHub Actions at each pushed
-head. Future implementation tests are to be decided in A2 and require A3 approval.
+head. Future B-phase tests must be offline, deterministic, synthetic, dependency-free, use
+existing `node:test`, and never enumerate or read `tests/fixtures/private/**`.
 
 ## Manual/browser verification
 
-A2 will produce an executable isolated synthetic/offline plan for native browser ESM imports,
-exact validator exports/calls, application-path module loading, network instrumentation,
-local/session storage, IndexedDB, Cache Storage and Service Worker snapshots, plus Manual
-DevTools evidence. Nothing not actually run may be reported as Pass.
+A3 approves the B3 served `<script type="module">` synthetic/offline plan for native browser
+ESM imports, exact validator exports/calls, application-path module loading, network
+instrumentation, local/session storage, IndexedDB, Cache Storage and Service Worker snapshots.
+Nothing not actually run may be reported as Pass; Node and direct module-URL loading are not
+substitutes for browser ESM execution.
 
 ## Privacy and security impact
 
-A0-A2 are documentation-only. They read no real Token, account, activity, GPS, heart-rate,
+A0-A3 are documentation-only. They read no real Token, account, activity, GPS, heart-rate,
 power, device, private fixture, or existing browser-profile data. No external activity data
 or payload is logged. Browser probing, if any, must use an isolated fresh profile and fully
 synthetic/offline inputs.
 
 ## Migration impact
 
-A0-A2 perform no migration, do not create IndexedDB v2, and do not read, modify, clean, or
+A0-A3 perform no migration, do not create IndexedDB v2, and do not read, modify, clean, or
 delete Legacy cache or any existing browser storage.
 
 ## Rollback procedure
 
-The only repository change in A0-A2 is this Task Brief in ordinary commits. Roll back with an
+The only repository change in A0-A3 is this Task Brief in ordinary commits. Roll back with an
 ordinary revert commit. Do not delete the branch or worktree as an investigation rollback and
 do not clear any browser or Legacy storage.
 
@@ -347,13 +537,14 @@ direct `/api/strava-*`, Authorization, Token, and metadata cache behavior, while
 `services/activity-cache.js` owns Legacy activity IndexedDB/localStorage. PR-03's Connector,
 LegacyRepository, and cache adapter already encapsulate these capabilities.
 
-Hidden dependency to freeze: `js/shared/preprocessing/core.js` reads
+Resolved preprocessing boundary: `js/shared/preprocessing/core.js` reads
 `strava_athlete_data` when the injected athlete lacks identity and reads
 `strava_demo_mode` to suppress direct Open-Meteo weather fetches. This is neither a summary
 tab nor Strava API call, but the Demo-mode read conflicts with a literal interpretation of
-“session mode only at composition root.” `js/shared/**` is prohibited in PR-04A. A3 must either
-accept this documented preprocessing-policy carry-over or stop and create a separately scoped
-task; PR-04A must not modify it silently.
+“session mode only at composition root.” `js/shared/**` remains prohibited. A3 requires main to
+pass the explicit non-persistent Repository-derived athlete/sentinel context described above,
+so identity fallback is never reached. The `strava_demo_mode`/Open-Meteo behavior remains the
+explicit Legacy enrichment carry-over and is guarded by the B3 zero-external-I/O blocker.
 
 ## Provider, UI, user, and Demo storage classification
 
@@ -410,7 +601,7 @@ Authentication/error behavior today:
 - Connector refresh Token write failure withholds data; 401/403 are generic app errors and do
   not clear Local Library.
 
-## Target call graph candidate
+## Frozen target call graph
 
 ```mermaid
 flowchart TD
@@ -431,7 +622,7 @@ flowchart TD
     Render --> Tabs[nine summary tabs]
 ```
 
-Decision recommendation:
+Frozen decisions:
 
 - Construct exactly one Repository per authenticated/Demo page session, not once per operation
   and not once per refresh. This preserves PR-03 athlete memo/coalescing and gives a stable
@@ -444,7 +635,7 @@ Decision recommendation:
 - No new public Repository method/export/source/warning/error is needed. Discovery of such a
   need is a stop condition.
 
-## Repository success envelope and error recommendation
+## Frozen Repository success envelope and error policy
 
 Add a private/testable application helper in `js/app/main.js`; do not add a Repository API.
 For every result it must:
@@ -458,7 +649,7 @@ For every result it must:
 
 Operation policy:
 
-| Result | Candidate handling |
+| Result | Frozen handling |
 | --- | --- |
 | Activities complete | Preserve array order and current loading count/message; preprocess |
 | Activities unexpected partial/shape | Fail closed into existing generic initialization/refresh error |
@@ -473,7 +664,7 @@ Operation policy:
 
 ## Initialize, refresh, Demo, and call-count matrix
 
-Candidate counts below are observable contracts. Metadata network/Token counts are conditional
+The counts below are frozen observable contracts. Metadata network/Token counts are conditional
 on cache state and gear cardinality, so the exact formula is recorded instead of a false fixed
 number.
 
@@ -498,7 +689,7 @@ tokens. `getGears()` aggregate hit causes zero gear-item network/cache reads; ag
 preserves shoes-before-bikes order, duplicate IDs, per-ID one-read/at-most-one-network/write,
 and safe item-index warnings. main performs no extra activity/metadata cache read or write.
 
-## Gear and metadata injection recommendation
+## Frozen Gear and metadata injection
 
 - main stores only the Repository-returned `sessionGears` array for the current page session.
 - main must remove `fetchAllGears` and `setCachedGears`; Repository owns aggregate/per-ID cache.
@@ -537,9 +728,9 @@ copy, routes, or navigation.
 Any discovered existing defect (including unrelated UI quirks or the preprocessing weather/
 identity fallback) is backlog evidence only and must not be fixed opportunistically.
 
-## Candidate `js/tabs/AGENTS.md` rules
+## Frozen candidate `js/tabs/AGENTS.md` rules for B1
 
-Design only in A2; A3 decides whether the file is allowed:
+The rule design is frozen in A3; file creation remains pending separate B1 authorization:
 
 - Tabs do not call `/api/strava-*` or read/write Token/Authorization.
 - Tabs do not select provider, Repository implementation, Connector, cache, IndexedDB, or
@@ -576,8 +767,8 @@ Design only in A2; A3 decides whether the file is allowed:
 2. Use a new disposable browser profile/context created specifically for the test; never attach
    to, inspect, mutate, or clear the user's existing profile. Delete nothing as part of the test.
 3. The served smoke HTML uses `<script type="module">` (not `evaluate import`) to import the
-   exact contract public entry, the approved application orchestration helper, and consumer
-   entry. It writes only synthetic pass/fail records to its own DOM.
+   exact contract public entry, actual served application/consumer modules, and any approved
+   application orchestration helper. It writes only synthetic pass/fail records to its own DOM.
 4. Inline synthetic activities contain no real names, GPS, HR, Power, device, or IDs. Demo data
    uses only the frozen Demo namespace. Real synthetic mode uses isolated seeded Legacy cache
    objects and a fake Repository/orchestration seam; no actual provider network is allowed.
@@ -587,7 +778,8 @@ Design only in A2; A3 decides whether the file is allowed:
    database names/versions, Cache Storage keys, and Service Worker scope/script/status. Because
    the profile is disposable and synthetic, snapshots contain no user data.
 7. Demo assertion: only approved Demo keys plus explicitly expected UI keys may change; real
-   Token/activity/athlete/zones/gears keys, IndexedDB, Connector, fetch/XHR/WS remain zero.
+   Token/activity/athlete/zones/gears keys, Connector, external fetch, XHR, WebSocket, and real
+   cache I/O remain zero; no real IndexedDB is created or modified.
 8. Real synthetic assertion: all provider-data calls are observed at the injected Repository
    seam; main/tab direct storage/API counts are zero; `listActivities({refresh:true})` is used on
    refresh; no actual network is permitted.
@@ -601,6 +793,10 @@ Design only in A2; A3 decides whether the file is allowed:
 11. If the controlled browser still cannot execute module loading, the served module harness is
     the required alternative execution surface. If that also cannot run, B3 is blocked; Node
     tests are not a substitute.
+12. A fake Repository seam is supplemental contract evidence only. It cannot by itself prove
+    actual application-path loading or replace the actual served app/consumer-module evidence.
+13. Navigate the synthetic Run and Gear paths and compare observable input order, labels,
+    duplicate behavior, empty/error states, DOM contracts, and visual/navigation output.
 
 Merge blockers: served native ESM imports, exact validator calls, application orchestration
 load, Demo zero real I/O, Real synthetic Repository-only boundary, before/after snapshots,
@@ -610,7 +806,7 @@ evidence. Real Strava account/network/private-data testing, user's existing prof
 Firefox matrix, and production Service Worker deployment remain `Not run` and are not required
 for PR-04A.
 
-## Testing matrix proposal
+## Frozen testing matrix for authorized B phases
 
 All tests remain offline, deterministic, synthetic, dependency-free, and use `node:test` plus
 existing tools.
@@ -623,14 +819,15 @@ existing tools.
 | Errors | 401/403, Token read/encode/write, network/rate/provider/response, metadata optionality, preprocessing failure; no Local Library deletion |
 | Metadata | athlete/zones injection; initialize timeout/allSettled parity; refresh parity; gear complete/empty/partial/error |
 | Gear consumers | Run/Gear do not read `strava_gears`; order, duplicate IDs, labels, custom data, edit mode, datasets unchanged |
+| Preprocessing identity | A non-empty synthetic activity reaches `preprocessActivities → applyIndoorSwimPool20mCorrection → isTargetAthleteAlexGascon`; Demo/Real missing identity reads real athlete cache zero times, preserves Repository ID/max_hr, and persists/logs no sentinel or identity |
 | Demo/Real Factory | exact branch selection at initialization, stable through refresh |
 | Demo isolation | Connector construction 0; Token/network/real activity and metadata cache I/O 0; no real fallback |
-| Static boundary | summary tabs contain no Token, Authorization, `/api/strava-*`, fetch, IndexedDB, provider cache, Repository creation; UI/user key allowlist remains explicit |
+| Static boundary | summary tabs contain no Token, Authorization, `/api/strava-*`, fetch, IndexedDB, provider cache, Repository creation; UI/user key allowlist remains explicit; `tabs/api.js` has only `run-plus.js` as importer |
 | Side effects | Repository/factory/consumer import and constructor zero I/O; no logging of payloads |
 | Browser | native ESM/validators/application path, network/storage/SW snapshots, Demo and Real synthetic smoke |
 | Regression | all PR-03 Repository/Connector tests; all PR-01 Demo/Auth tests; existing 650-test suite |
 
-Proposed focused commands after A3 implementation:
+Focused commands for separately authorized B-phase implementation:
 
 ```text
 node --test tests/consumers/summary-consumers.test.js
@@ -658,8 +855,8 @@ git diff --check
 - `run-analysis.js` is shared by Run Plus. A direct signature-only gear injection can silently
   remove embedded Run Plus gear labels; the proposed session read context and regression test
   are mandatory, while `run-plus.js` remains untouched.
-- The preprocessing Demo/storage/weather exception may make the literal source-freeze goal
-  impossible inside the allowed boundary; A3 must explicitly accept or stop.
+- A missing-identity preprocessing context can fall back to real athlete storage unless main's
+  explicit Repository-derived sentinel contract is tested through the real preprocessing path.
 
 ### P1
 
@@ -678,13 +875,15 @@ git diff --check
 
 - `tabs/api.js` and Run Plus provider cache remain an explicit PR-04C backlog; broad directory
   scans need a scoped exception until that PR.
-- Existing direct Open-Meteo preprocessing and special-athlete fallback remain backlog; do not
-  change algorithms in PR-04A.
+- Existing direct Open-Meteo preprocessing remains a recorded Legacy enrichment carry-over;
+  the internal special-athlete fallback remains unchanged but must be bypassed by main's frozen
+  explicit context. Do not change either algorithm in PR-04A.
 - Cross-browser and production Service Worker evidence remain later release work.
 
-## Suggested B1/B2/B3 phases
+## Frozen B1/B2/B3 phase plan
 
-This is a recommendation only; A3 must approve exact phase files.
+The phase plan and candidate per-phase paths are frozen, but execution still requires separate
+control-tower authorization for every phase.
 
 - **B1 — governance and composition/loading boundary:** create `js/tabs/AGENTS.md`; update
   main Repository lifecycle/result adapter/cache ownership; add orchestration and boundary
@@ -696,21 +895,21 @@ This is a recommendation only; A3 must approve exact phase files.
   native validator/application imports, Demo/Real instrumentation, storage/network/SW snapshots,
   Manual DevTools and visual/navigation parity; run full regression and record evidence.
 
-## Decisions required from the control tower for A3
+## A3 control-tower decision record
 
-1. Approve one Repository per page session and refresh reuse.
-2. Approve freezing Demo/Real in main at initialize and not re-reading it on refresh.
-3. Approve main-loaded detached read context rather than Repository references in tabs.
-4. Approve the private/testable main envelope helper and safe warning/partial policy.
-5. Approve exact call-count/error parity, including current refresh athlete/zones behavior.
-6. Approve the proposed Run summary session read context needed to avoid editing Run Plus.
-7. Accept `tabs/api.js`/Run Plus as an explicit PR-04C exception.
-8. Accept the preprocessing `strava_demo_mode`/athlete-cache/Open-Meteo carry-over, or stop and
-   create a separate authorized task; do not expand PR-04A silently.
-9. Approve the ten exact candidate Allowed files and all exclusions.
-10. Approve the served browser harness and the listed merge blockers/allowed `Not run` items.
-11. Confirm no Repository public API, Repository/Connector/Factory, dependency, or prohibited
-    path change is authorized.
+1. Approved: one Repository per page session, frozen mode, and refresh reuse.
+2. Approved: main-loaded detached context; tabs do not hold Repository references.
+3. Approved: private/testable envelope adapter and frozen warning/partial/error policy.
+4. Approved: initialize/refresh call-count and optional/required parity.
+5. Approved: explicit preprocessing athlete/sentinel correction in main; no shared-file change.
+6. Approved: `setRunSessionGears(gears)` and Gear session snapshot boundaries.
+7. Approved: `tabs/api.js`/Run Plus as the sole scoped PR-04C exception.
+8. Approved: ten-path total allowlist and exact phase-specific candidate allowlists.
+9. Approved: dependency-free served browser harness and the listed merge blockers/allowed
+   `Not run` items.
+10. Confirmed: no Repository public API, Repository/Connector/Factory, dependency, or
+    prohibited-path change is authorized.
+11. Confirmed: A0-A2 PASS; no A2.1; B1/B2/B3 require separate authorization.
 
 ## Not run and known limitations
 
@@ -724,24 +923,26 @@ This is a recommendation only; A3 must approve exact phase files.
   fixture, or existing browser profile was used.
 - No Safari/Firefox/mobile/production Service Worker verification ran.
 - Node boundary tests from the existing suite passed but do not satisfy browser gates.
-- A2 did not resolve the preprocessing source-selection exception; it is an A3 decision.
+- A3 resolves the preprocessing identity fallback through main's explicit non-persistent
+  Repository-derived context; implementation and browser proof remain Not started.
 
 ## Independent review checklist
 
 - [x] Fixed base/local/remote/worktree/branch/PR audit is complete.
 - [x] Five A0 baseline commands passed with actual evidence.
-- [x] Only this Task Brief changed in A0-A2.
+- [x] Only this Task Brief changed in A0-A3.
 - [x] Consumer inventory and current/target call graphs are evidence-backed.
 - [x] Provider, UI preference, user override, and Demo storage are distinctly classified.
 - [x] Repository lifecycle, success envelope, errors, and call counts are explicit.
 - [x] Gear and metadata injection preserves custom data and observable output.
 - [x] Browser carry-over plan is executable and does not use a real profile or private data.
 - [x] Test plan is deterministic, offline, dependency-free, and does not claim Node as browser.
-- [x] Exact candidate Allowed and Prohibited files are justified.
+- [x] Exact frozen Allowed and Prohibited files are justified.
 - [x] P0/P1/P2 risks, privacy, migration, rollback, and `Not run` evidence are complete.
 - [x] Investigation Gate is complete.
-- [ ] Implementation Gate is approved (pending control tower).
-- [x] Implementation remains Not started and no A3/B phase has started.
+- [x] Implementation Gate is Approved by control tower.
+- [x] A3 is complete; Implementation remains Not started.
+- [x] B1 awaits separate authorization; B2/B3 are not authorized.
 
 ## Completion evidence
 
@@ -784,6 +985,23 @@ A2:
   Controlled browser native dynamic import — Not run; module loading unavailable
   Exact browser exports/validators/application/storage/network/SW — Not run
   Private/user data/profile — Not read or modified
+
+A3:
+  Control-tower decision — A0-A2 PASS; no A2.1
+  Status — Approved for implementation
+  Investigation Gate — Completed / PASS
+  Implementation Gate — Approved by control tower
+  Implementation — Not started
+  B1 — Pending separate control-tower authorization
+  B2/B3 — Not authorized
+  Total Allowed files — Frozen at exactly ten paths
+  npm ci — Pass; 6 packages; 0 vulnerabilities
+  syntax — Pass; 131 files
+  privacy — Pass
+  full tests — Pass; 650/650
+  diff check — Pass
+  Repository changes — Task Brief only
+  PR state — Draft; Ready/merge not authorized
 ```
 
 ## Stop conditions
