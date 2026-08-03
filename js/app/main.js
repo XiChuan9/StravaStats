@@ -18,70 +18,479 @@ import {
     renderMapTab,
     renderAIChatTab,
     renderRunPlusTab,
+    setRunSessionGears,
 } from '../tabs/index.js';
 import {
-    fetchAllActivities,
-    fetchAthleteData,
-    fetchTrainingZones,
-    fetchAllGears,
-    setCachedGears,
-    getCachedActivities,
-    saveCachedActivities,
-} from '../services/index.js';
+    createRepository,
+    REPOSITORY_SOURCE,
+    REPOSITORY_WARNING_CODE,
+} from '../repository/index.js';
 import { preprocessActivities } from '../shared/preprocessing/index.js';
-import { getDemoActivities, isDemoMode } from '../demo/index.js';
+import { isDemoMode } from '../demo/index.js';
 import { applyServiceWorkerPolicy } from './service-worker-policy.js';
-
-const CACHE_VERSION = 'v2-efficiency-moving-ratio';
-const ACTIVITY_CACHE_MAX_AGE_MS = 60 * 60 * 1000;
 
 export const APP_SESSION_MODE = Object.freeze({
     DEMO: 'demo',
     REAL: 'real'
 });
 
-// B2_C_ACTIVITY_LOADER_START
-export async function loadActivitiesForSession({
-    sessionMode,
-    operation = 'initialize',
-    getDemoActivities,
-    getCachedActivities,
-    fetchAllActivities,
-    saveCachedActivities,
-    cacheVersion,
-    maxAgeMs
-}) {
-    if (sessionMode === 'demo') {
-        return Object.freeze({
-            activities: await getDemoActivities(),
-            source: 'demo'
-        });
-    }
-    if (sessionMode !== 'real') {
-        throw new TypeError('A stable session mode is required.');
-    }
+// PR04A_B1_SUMMARY_BOUNDARY_START
+const SUMMARY_ENVELOPE_KEYS = new Set([
+    'data',
+    'source',
+    'warnings',
+    'partial'
+]);
+const SUMMARY_WARNING_KEYS = new Set([
+    'code',
+    'operation',
+    'retryable',
+    'itemIndex'
+]);
+const SUMMARY_SOURCES = new Set(Object.values(REPOSITORY_SOURCE));
+const SUMMARY_WARNING_CODES = new Set(Object.values(REPOSITORY_WARNING_CODE));
+const SUMMARY_OPERATIONS = new Set([
+    'listActivities',
+    'getAthlete',
+    'getZones',
+    'getGears'
+]);
+const SUMMARY_GEAR_LOAD_KEYS = new Set([
+    'data',
+    'partial',
+    'status'
+]);
 
-    if (operation !== 'refresh') {
-        const cached = await getCachedActivities({
-            cacheVersion,
-            maxAgeMs
-        });
-        if (cached?.activities?.length) {
-            return Object.freeze({
-                activities: cached.activities,
-                source: 'cache'
+function safeOperationalError() {
+    const error = new Error('Operation failed.');
+    error.name = 'OperationalError';
+    return error;
+}
+
+function readPlainDataRecord(value, allowedKeys = null) {
+    try {
+        if (
+            value === null
+            || typeof value !== 'object'
+            || Array.isArray(value)
+            || Object.getPrototypeOf(value) !== Object.prototype
+        ) {
+            return null;
+        }
+
+        const keys = Reflect.ownKeys(value);
+        if (keys.some(key => (
+            typeof key !== 'string'
+            || (allowedKeys !== null && !allowedKeys.has(key))
+        ))) {
+            return null;
+        }
+
+        const result = {};
+        for (const key of keys) {
+            const descriptor = Object.getOwnPropertyDescriptor(value, key);
+            if (
+                !descriptor?.enumerable
+                || !Object.hasOwn(descriptor, 'value')
+            ) {
+                return null;
+            }
+            Object.defineProperty(result, key, {
+                value: descriptor.value,
+                enumerable: true,
+                configurable: true,
+                writable: true
             });
         }
+        return result;
+    } catch {
+        return null;
+    }
+}
+
+function inspectDenseDataArray(value, collectValues = false) {
+    try {
+        if (
+            !Array.isArray(value)
+            || Object.getPrototypeOf(value) !== Array.prototype
+        ) {
+            return null;
+        }
+
+        const keys = Reflect.ownKeys(value);
+        const lengthDescriptor = Object.getOwnPropertyDescriptor(value, 'length');
+        if (
+            !lengthDescriptor
+            || !Object.hasOwn(lengthDescriptor, 'value')
+            || !Number.isSafeInteger(lengthDescriptor.value)
+            || lengthDescriptor.value < 0
+            || lengthDescriptor.writable !== true
+            || lengthDescriptor.enumerable !== false
+            || lengthDescriptor.configurable !== false
+            || keys.length !== lengthDescriptor.value + 1
+            || keys.some(key => typeof key !== 'string')
+        ) {
+            return null;
+        }
+
+        const keySet = new Set(keys);
+        if (!keySet.has('length')) return null;
+
+        const result = collectValues ? [] : null;
+        for (let index = 0; index < lengthDescriptor.value; index += 1) {
+            const key = String(index);
+            if (!keySet.has(key)) return null;
+            const descriptor = Object.getOwnPropertyDescriptor(value, key);
+            if (
+                !descriptor?.enumerable
+                || !Object.hasOwn(descriptor, 'value')
+            ) {
+                return null;
+            }
+            if (collectValues) result.push(descriptor.value);
+        }
+        return Object.freeze({ values: result });
+    } catch {
+        return null;
+    }
+}
+
+function readDenseDataArray(value) {
+    return inspectDenseDataArray(value, true)?.values ?? null;
+}
+
+function isDenseDataArray(value) {
+    return inspectDenseDataArray(value) !== null;
+}
+
+function normalizeRepositoryWarning(value, expectedOperation) {
+    const warning = readPlainDataRecord(value, SUMMARY_WARNING_KEYS);
+    if (
+        warning === null
+        || !SUMMARY_WARNING_CODES.has(warning.code)
+        || warning.operation !== expectedOperation
+        || typeof warning.retryable !== 'boolean'
+    ) {
+        return null;
     }
 
-    const activities = await fetchAllActivities();
-    await saveCachedActivities(activities, cacheVersion);
+    const hasItemIndex = Object.hasOwn(warning, 'itemIndex');
+    if (
+        warning.code === REPOSITORY_WARNING_CODE.ITEM_FETCH_FAILED
+        ? !hasItemIndex
+            || !Number.isSafeInteger(warning.itemIndex)
+            || warning.itemIndex < 0
+        : hasItemIndex
+    ) {
+        return null;
+    }
+
+    return Object.freeze(hasItemIndex
+        ? {
+            code: warning.code,
+            operation: warning.operation,
+            retryable: warning.retryable,
+            itemIndex: warning.itemIndex
+        }
+        : {
+            code: warning.code,
+            operation: warning.operation,
+            retryable: warning.retryable
+        });
+}
+
+export function adaptRepositoryResult(value, {
+    operation,
+    dataShape,
+    allowPartial = false,
+    warningObserver = null
+} = {}) {
+    if (!SUMMARY_OPERATIONS.has(operation)) throw safeOperationalError();
+
+    const envelope = readPlainDataRecord(value, SUMMARY_ENVELOPE_KEYS);
+    if (
+        envelope === null
+        || Reflect.ownKeys(envelope).length !== SUMMARY_ENVELOPE_KEYS.size
+        || !SUMMARY_SOURCES.has(envelope.source)
+        || typeof envelope.partial !== 'boolean'
+        || (envelope.partial && !allowPartial)
+    ) {
+        throw safeOperationalError();
+    }
+
+    let dataIsValid = false;
+    try {
+        if (dataShape === 'array') {
+            dataIsValid = isDenseDataArray(envelope.data);
+        } else if (dataShape === 'nullable-object') {
+            dataIsValid = (
+                envelope.data === null
+                || readPlainDataRecord(envelope.data) !== null
+            );
+        }
+    } catch {
+        dataIsValid = false;
+    }
+    if (!dataIsValid) throw safeOperationalError();
+
+    const warningValues = readDenseDataArray(envelope.warnings);
+    if (warningValues === null) throw safeOperationalError();
+    const warnings = Object.freeze(warningValues
+        .map(warning => normalizeRepositoryWarning(warning, operation))
+        .filter(Boolean));
+
+    if (warnings.length > 0 && typeof warningObserver === 'function') {
+        warningObserver(Object.freeze({
+            operation,
+            count: warnings.length
+        }));
+    }
+
     return Object.freeze({
-        activities,
-        source: 'network'
+        data: envelope.data,
+        source: envelope.source,
+        warnings,
+        partial: envelope.partial
     });
 }
-// B2_C_ACTIVITY_LOADER_END
+
+export function createSummaryRepositorySession({
+    sessionMode,
+    repositoryFactory = createRepository,
+    warningObserver = null
+} = {}) {
+    if (
+        ![APP_SESSION_MODE.DEMO, APP_SESSION_MODE.REAL].includes(sessionMode)
+        || typeof repositoryFactory !== 'function'
+    ) {
+        throw safeOperationalError();
+    }
+
+    const repository = repositoryFactory({
+        sessionMode,
+        mode: 'legacy'
+    });
+
+    return Object.freeze({
+        sessionMode,
+        async listActivities({ refresh = false } = {}) {
+            if (typeof refresh !== 'boolean') throw safeOperationalError();
+            const value = await repository.listActivities({ refresh });
+            return adaptRepositoryResult(value, {
+                operation: 'listActivities',
+                dataShape: 'array',
+                allowPartial: false,
+                warningObserver
+            });
+        },
+        async getAthlete() {
+            return adaptRepositoryResult(await repository.getAthlete(), {
+                operation: 'getAthlete',
+                dataShape: 'nullable-object',
+                allowPartial: false,
+                warningObserver
+            });
+        },
+        async getZones() {
+            return adaptRepositoryResult(await repository.getZones(), {
+                operation: 'getZones',
+                dataShape: 'nullable-object',
+                allowPartial: false,
+                warningObserver
+            });
+        },
+        async getGears() {
+            return adaptRepositoryResult(await repository.getGears(), {
+                operation: 'getGears',
+                dataShape: 'array',
+                allowPartial: true,
+                warningObserver
+            });
+        }
+    });
+}
+
+export function establishSummaryRepositorySession({
+    activeSessionMode,
+    sessionRepository,
+    requestedSessionMode,
+    repositoryFactory = createRepository,
+    warningObserver = null
+} = {}) {
+    if (
+        ![APP_SESSION_MODE.DEMO, APP_SESSION_MODE.REAL].includes(requestedSessionMode)
+        || !(
+            activeSessionMode === null
+            || [APP_SESSION_MODE.DEMO, APP_SESSION_MODE.REAL].includes(activeSessionMode)
+        )
+    ) {
+        throw safeOperationalError();
+    }
+
+    if (sessionRepository !== null) {
+        if (activeSessionMode !== requestedSessionMode) {
+            throw safeOperationalError();
+        }
+        return Object.freeze({ activeSessionMode, sessionRepository });
+    }
+    if (activeSessionMode !== null && activeSessionMode !== requestedSessionMode) {
+        throw safeOperationalError();
+    }
+
+    return Object.freeze({
+        activeSessionMode: requestedSessionMode,
+        sessionRepository: createSummaryRepositorySession({
+            sessionMode: requestedSessionMode,
+            repositoryFactory,
+            warningObserver
+        })
+    });
+}
+
+export function requireSummaryRepositorySession(
+    activeSessionMode,
+    sessionRepository
+) {
+    if (
+        ![APP_SESSION_MODE.DEMO, APP_SESSION_MODE.REAL].includes(activeSessionMode)
+        || sessionRepository === null
+        || typeof sessionRepository !== 'object'
+        || sessionRepository.sessionMode !== activeSessionMode
+    ) {
+        throw safeOperationalError();
+    }
+    return sessionRepository;
+}
+
+export async function loadActivitiesForSession({
+    sessionRepository,
+    refresh = false
+} = {}) {
+    if (
+        sessionRepository === null
+        || typeof sessionRepository !== 'object'
+        || typeof sessionRepository.listActivities !== 'function'
+        || typeof refresh !== 'boolean'
+    ) {
+        throw safeOperationalError();
+    }
+    return sessionRepository.listActivities({ refresh });
+}
+
+async function withTimeout(task, timeoutMs) {
+    let timeoutId;
+    try {
+        return await Promise.race([
+            task,
+            new Promise((_, reject) => {
+                timeoutId = setTimeout(
+                    () => reject(safeOperationalError()),
+                    timeoutMs
+                );
+            })
+        ]);
+    } finally {
+        if (timeoutId !== undefined) clearTimeout(timeoutId);
+    }
+}
+
+export async function loadInitializeAthleteAndZones(
+    sessionRepository,
+    { timeoutMs = 8000 } = {}
+) {
+    if (
+        sessionRepository === null
+        || typeof sessionRepository !== 'object'
+        || typeof sessionRepository.getAthlete !== 'function'
+        || typeof sessionRepository.getZones !== 'function'
+        || !Number.isFinite(timeoutMs)
+        || timeoutMs < 0
+    ) {
+        throw safeOperationalError();
+    }
+
+    const results = await Promise.allSettled([
+        withTimeout(sessionRepository.getAthlete(), timeoutMs),
+        withTimeout(sessionRepository.getZones(), timeoutMs)
+    ]);
+    return Object.freeze({
+        athlete: results[0].status === 'fulfilled'
+            ? results[0].value.data
+            : null,
+        zones: results[1].status === 'fulfilled'
+            ? results[1].value.data
+            : null,
+        athleteStatus: results[0].status,
+        zonesStatus: results[1].status
+    });
+}
+
+export async function loadRefreshAthleteAndZones(sessionRepository) {
+    if (
+        sessionRepository === null
+        || typeof sessionRepository !== 'object'
+        || typeof sessionRepository.getAthlete !== 'function'
+        || typeof sessionRepository.getZones !== 'function'
+    ) {
+        throw safeOperationalError();
+    }
+    const athlete = (await sessionRepository.getAthlete()).data;
+    const zones = (await sessionRepository.getZones()).data;
+    return Object.freeze({ athlete, zones });
+}
+
+export async function loadOptionalSessionGears(sessionRepository, athlete) {
+    if (!athlete) {
+        return Object.freeze({
+            data: [],
+            partial: false,
+            status: 'skipped'
+        });
+    }
+    try {
+        const value = await sessionRepository.getGears();
+        return Object.freeze({
+            data: value.data,
+            partial: value.partial,
+            status: 'fulfilled'
+        });
+    } catch {
+        return Object.freeze({
+            data: [],
+            partial: false,
+            status: 'rejected'
+        });
+    }
+}
+
+export function resetSummarySessionGears() {
+    return [];
+}
+
+export function applySummarySessionGearLoad(gearLoad) {
+    const values = readPlainDataRecord(gearLoad, SUMMARY_GEAR_LOAD_KEYS);
+    return (
+        values !== null
+        && Reflect.ownKeys(values).length === SUMMARY_GEAR_LOAD_KEYS.size
+        && values.status === 'fulfilled'
+        && typeof values.partial === 'boolean'
+        && isDenseDataArray(values.data)
+    )
+        ? values.data
+        : [];
+}
+
+export function activityLoadingMessage(source, count) {
+    if (!SUMMARY_SOURCES.has(source) || !Number.isSafeInteger(count) || count < 0) {
+        throw safeOperationalError();
+    }
+    return Object.freeze({
+        [REPOSITORY_SOURCE.DEMO]: `Demo activities ready (${count})`,
+        [REPOSITORY_SOURCE.CACHE]: `Activities loaded from cache (${count})`,
+        [REPOSITORY_SOURCE.NETWORK]: `Activities downloaded (${count})`,
+        [REPOSITORY_SOURCE.MIXED]: `Activities ready (${count})`
+    })[source];
+}
 
 // B2_C_SESSION_GEAR_MAP_START
 export function buildSessionGearNameMap(sessionGears) {
@@ -97,44 +506,43 @@ export function buildSessionGearNameMap(sessionGears) {
 
 // B2_C_PREPROCESSING_CONTEXT_START
 export function selectPreprocessingAthlete(sessionMode, athlete) {
-    if (sessionMode !== 'demo') {
-        return athlete ?? null;
-    }
-    const hasDemoDisplayIdentity = (
-        athlete
-        && typeof athlete === 'object'
-        && !Array.isArray(athlete)
-        && ['firstname', 'lastname', 'username'].some(key => (
-            typeof athlete[key] === 'string' && athlete[key].trim().length > 0
-        ))
-    );
-    if (hasDemoDisplayIdentity) {
-        return athlete;
+    if (![APP_SESSION_MODE.DEMO, APP_SESSION_MODE.REAL].includes(sessionMode)) {
+        throw safeOperationalError();
     }
 
-    // This local-only marker blocks preprocessing's Legacy athlete fallback.
-    // It is not a real identity and is never rendered or persisted.
+    const values = readPlainDataRecord(athlete);
+    const hasDisplayIdentity = values !== null && [
+        values.firstname,
+        values.lastname,
+        values.username
+    ].some(value => typeof value === 'string' && value.trim().length > 0);
+    if (hasDisplayIdentity) return athlete;
+
+    if (sessionMode === APP_SESSION_MODE.DEMO) {
+        return Object.freeze({
+            firstname: 'Demo',
+            demoPreprocessingContext: true
+        });
+    }
+
     return Object.freeze({
-        firstname: 'Demo',
-        demoPreprocessingContext: true
+        ...(values ?? {}),
+        username: 'anonymous-session-context',
+        preprocessingIdentitySentinel: true
     });
 }
 // B2_C_PREPROCESSING_CONTEXT_END
+// PR04A_B1_SUMMARY_BOUNDARY_END
 
 function logOperationalWarning(context) {
     console.warn(context);
-}
-
-function safeOperationalError() {
-    const error = new Error('Operation failed.');
-    error.name = 'OperationalError';
-    return error;
 }
 
 document.addEventListener('DOMContentLoaded', () => {
     // --- STATE ---
     let allActivities = [];
     let activeSessionMode = null;
+    let sessionRepository = null;
     let sessionAthlete = null;
     let sessionZones = null;
     let sessionGears = [];
@@ -157,7 +565,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'swim-tab': { render: () => renderSwimAnalysisTab(allActivities, dateFilterFrom, dateFilterTo, swimRollingWindow), usesFilters: true },
         'trends-tab': { render: () => renderTrendsTab(allActivities, dateFilterFrom, dateFilterTo, trendsSportFilter, trendsDataType, getTrendsMetadataContext()), usesFilters: true },
         'planner-tab': { render: () => renderPlannerTab(allActivities) },
-        'gear-tab': { render: () => renderGearTab(allActivities) },
+        'gear-tab': { render: () => renderGearTab(allActivities, sessionGears) },
         'activities-tab': { render: () => renderActivitiesTab(allActivities) },
         'calendar-tab': { render: () => renderCalendarTab(allActivities) },
         'weather-tab': { render: () => renderWeatherTab(allActivities) },
@@ -638,19 +1046,38 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- INITIALIZATION ---
     async function initializeApp(tokenData) {
-        activeSessionMode = isDemoMode()
-            ? APP_SESSION_MODE.DEMO
-            : APP_SESSION_MODE.REAL;
-        const sessionMode = activeSessionMode;
         sessionAthlete = null;
         sessionZones = null;
-        sessionGears = [];
+        sessionGears = resetSummarySessionGears();
+        setRunSessionGears(sessionGears);
+        const requestedSessionMode = isDemoMode()
+            ? APP_SESSION_MODE.DEMO
+            : APP_SESSION_MODE.REAL;
         const t0 = Date.now();
         const elapsed = () => `${((Date.now() - t0) / 1000).toFixed(1)}s elapsed`;
         showLoading('Preparing dashboard...', 2, elapsed());
         let progress = 0;
 
         try {
+            const establishedSession = establishSummaryRepositorySession({
+                activeSessionMode,
+                sessionRepository,
+                requestedSessionMode,
+                repositoryFactory: createRepository,
+                warningObserver: ({ operation, count }) => {
+                    logOperationalWarning(
+                        `Repository warning (${operation}: ${count})`
+                    );
+                }
+            });
+            activeSessionMode = establishedSession.activeSessionMode;
+            sessionRepository = establishedSession.sessionRepository;
+            const repository = requireSummaryRepositorySession(
+                activeSessionMode,
+                sessionRepository
+            );
+            const sessionMode = activeSessionMode;
+
             // Phase 1: Load activities (0% -> 40%)
             progress = 8;
             showLoading(
@@ -662,23 +1089,16 @@ document.addEventListener('DOMContentLoaded', () => {
             );
 
             const activityLoad = await loadActivitiesForSession({
-                sessionMode,
-                operation: 'initialize',
-                getDemoActivities,
-                getCachedActivities,
-                fetchAllActivities,
-                saveCachedActivities,
-                cacheVersion: CACHE_VERSION,
-                maxAgeMs: ACTIVITY_CACHE_MAX_AGE_MS
+                sessionRepository: repository,
+                refresh: false
             });
-            const activities = activityLoad.activities;
+            const activities = activityLoad.data;
             progress = 40;
-            const activityMessages = {
-                demo: `Demo activities ready (${activities.length})`,
-                cache: `Activities loaded from cache (${activities.length})`,
-                network: `Activities downloaded (${activities.length})`
-            };
-            showLoading(activityMessages[activityLoad.source], progress, elapsed());
+            showLoading(
+                activityLoadingMessage(activityLoad.source, activities.length),
+                progress,
+                elapsed()
+            );
             console.log(`Activities loaded (${activities.length})`);
 
             // Phase 2: Load athlete, zones, and gears (40% -> 90%)
@@ -690,75 +1110,49 @@ document.addEventListener('DOMContentLoaded', () => {
             progress = 52;
             showLoading('Loading athlete profile and zones...', progress, elapsed());
 
-            try {
-                // Use Promise.allSettled with timeout to prevent hanging
-                const timeout = 8000; // 8 second timeout per request
-                const athletePromise = Promise.race([
-                    fetchAthleteData(),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('Athlete fetch timeout')), timeout))
-                ]);
-                const zonesPromise = Promise.race([
-                    fetchTrainingZones(),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('Zones fetch timeout')), timeout))
-                ]);
+            const metadata = await loadInitializeAthleteAndZones(repository);
+            athlete = metadata.athlete;
+            zones = metadata.zones;
+            sessionAthlete = athlete;
+            sessionZones = zones;
 
-                const results = await Promise.allSettled([athletePromise, zonesPromise]);
-
-                if (results[0].status === 'fulfilled') {
-                    athlete = results[0].value;
-                    sessionAthlete = athlete;
-                    console.log('Athlete profile loaded');
-                } else {
-                    sessionAthlete = null;
-                    logOperationalWarning(
-                        'Failed to load athlete data'
-                    );
-                }
-
-                if (results[1].status === 'fulfilled') {
-                    zones = results[1].value;
-                    sessionZones = zones;
-                    console.log('Training zones loaded');
-                } else {
-                    sessionZones = null;
-                    logOperationalWarning(
-                        'Failed to load zones data'
-                    );
-                }
-
-                if (athlete || zones) {
-                    progress = 65;
-                    showLoading('Athlete profile and zones ready', progress, elapsed());
-                } else {
-                    showLoading('Athlete/zones unavailable (timeout or error), continuing...', 65, elapsed());
-                }
-            } catch (error) {
-                logOperationalWarning(
-                    'Failed to load athlete/zones data; continuing without metadata'
-                );
-                athlete = null;
-                zones = null;
+            if (metadata.athleteStatus === 'fulfilled') {
+                console.log('Athlete profile loaded');
+            } else {
                 sessionAthlete = null;
+                logOperationalWarning('Failed to load athlete data');
+            }
+            if (metadata.zonesStatus === 'fulfilled') {
+                console.log('Training zones loaded');
+            } else {
                 sessionZones = null;
-                showLoading('Athlete/zones unavailable, continuing...', 65, elapsed());
+                logOperationalWarning('Failed to load zones data');
+            }
+
+            if (athlete || zones) {
+                progress = 65;
+                showLoading('Athlete profile and zones ready', progress, elapsed());
+            } else {
+                showLoading('Athlete/zones unavailable (timeout or error), continuing...', 65, elapsed());
             }
 
             // Try to load gears - also optional
-            try {
-                if (athlete) {
-                    showLoading('Loading gear usage...', 72, elapsed());
-                    gears = await fetchAllGears(athlete);
-                    sessionGears = Array.isArray(gears) ? gears : [];
-                    console.log(`Gears loaded (${gears.length})`);
-                    // Persist gears to cache with 24h TTL
-                    setCachedGears(gears);
-                }
-            } catch (error) {
+            if (athlete) {
+                showLoading('Loading gear usage...', 72, elapsed());
+            }
+            const gearLoad = await loadOptionalSessionGears(
+                repository,
+                athlete
+            );
+            sessionGears = applySummarySessionGearLoad(gearLoad);
+            setRunSessionGears(sessionGears);
+            gears = sessionGears;
+            if (gearLoad.status === 'fulfilled') {
+                console.log(`Gears loaded (${gears.length})`);
+            } else if (gearLoad.status === 'rejected') {
                 logOperationalWarning(
                     'Failed to load gears; continuing without gear metadata'
                 );
-                gears = [];
-                sessionGears = [];
                 showLoading('Gear unavailable, continuing...', 76, elapsed());
             }
 
@@ -802,13 +1196,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function refreshActivities() {
-        activeSessionMode = isDemoMode()
-            ? APP_SESSION_MODE.DEMO
-            : APP_SESSION_MODE.REAL;
         const sessionMode = activeSessionMode;
         sessionAthlete = null;
         sessionZones = null;
-        sessionGears = [];
+        sessionGears = resetSummarySessionGears();
+        setRunSessionGears(sessionGears);
         const t0 = Date.now();
         const elapsed = () => `${((Date.now() - t0) / 1000).toFixed(1)}s elapsed`;
         showLoading(
@@ -819,33 +1211,31 @@ document.addEventListener('DOMContentLoaded', () => {
             elapsed()
         );
         try {
+            const repository = requireSummaryRepositorySession(
+                activeSessionMode,
+                sessionRepository
+            );
             const activityLoad = await loadActivitiesForSession({
-                sessionMode,
-                operation: 'refresh',
-                getDemoActivities,
-                getCachedActivities,
-                fetchAllActivities,
-                saveCachedActivities,
-                cacheVersion: CACHE_VERSION,
-                maxAgeMs: ACTIVITY_CACHE_MAX_AGE_MS
+                sessionRepository: repository,
+                refresh: true
             });
-            const activities = activityLoad.activities;
-            const athlete = await fetchAthleteData();
-            const zones = await fetchTrainingZones();
+            const activities = activityLoad.data;
+            const metadata = await loadRefreshAthleteAndZones(repository);
+            const athlete = metadata.athlete;
+            const zones = metadata.zones;
             sessionAthlete = athlete;
             sessionZones = zones;
-            let gears = [];
-
-            try {
-                gears = athlete ? await fetchAllGears(athlete) : [];
-                sessionGears = Array.isArray(gears) ? gears : [];
-                setCachedGears(gears);
-            } catch (error) {
+            const gearLoad = await loadOptionalSessionGears(
+                repository,
+                athlete
+            );
+            sessionGears = applySummarySessionGearLoad(gearLoad);
+            setRunSessionGears(sessionGears);
+            const gears = sessionGears;
+            if (gearLoad.status === 'rejected') {
                 logOperationalWarning(
                     'Failed to load gears during refresh; continuing without gear metadata'
                 );
-                gears = [];
-                sessionGears = [];
             }
 
             // Keep refresh aligned with initial load: preprocessing is rebuilt from raw activities.

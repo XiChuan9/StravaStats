@@ -1,11 +1,63 @@
 // js/run-analysis.js
 import * as utils from './utils.js';
-import { getCachedGears } from './api.js';
 
-function getGears() {
-    const cached = getCachedGears();
-    if (cached) return cached;
-    return JSON.parse(localStorage.getItem('strava_gears') || '[]');
+const EMPTY_RUN_SESSION_GEARS = Object.freeze([]);
+let runSessionGears = EMPTY_RUN_SESSION_GEARS;
+
+function createRunSessionGearSnapshot(gears) {
+    try {
+        if (
+            !Array.isArray(gears)
+            || Object.getPrototypeOf(gears) !== Array.prototype
+        ) {
+            return EMPTY_RUN_SESSION_GEARS;
+        }
+
+        const keys = Reflect.ownKeys(gears);
+        const lengthDescriptor = Object.getOwnPropertyDescriptor(gears, 'length');
+        if (
+            !lengthDescriptor
+            || !Object.hasOwn(lengthDescriptor, 'value')
+            || !Number.isSafeInteger(lengthDescriptor.value)
+            || lengthDescriptor.value < 0
+            || lengthDescriptor.enumerable !== false
+            || lengthDescriptor.configurable !== false
+            || keys.length !== lengthDescriptor.value + 1
+            || keys.some(key => typeof key !== 'string')
+        ) {
+            return EMPTY_RUN_SESSION_GEARS;
+        }
+
+        const keySet = new Set(keys);
+        if (!keySet.has('length')) return EMPTY_RUN_SESSION_GEARS;
+
+        const snapshot = [];
+        for (let index = 0; index < lengthDescriptor.value; index += 1) {
+            const key = String(index);
+            if (!keySet.has(key)) return EMPTY_RUN_SESSION_GEARS;
+            const descriptor = Object.getOwnPropertyDescriptor(gears, key);
+            if (
+                !descriptor?.enumerable
+                || !Object.hasOwn(descriptor, 'value')
+            ) {
+                return EMPTY_RUN_SESSION_GEARS;
+            }
+            Object.defineProperty(snapshot, key, {
+                value: descriptor.value,
+                enumerable: true,
+                configurable: true,
+                writable: true
+            });
+        }
+        return Object.freeze(snapshot);
+    } catch {
+        return EMPTY_RUN_SESSION_GEARS;
+    }
+}
+
+export function setRunSessionGears(gears) {
+    runSessionGears = createRunSessionGearSnapshot(gears);
+    return runSessionGears;
 }
 
 // Calculate global HR max reference using 99th percentile of all hr_max values
@@ -801,7 +853,7 @@ export async function renderGearGanttChart(runs) {
     // 3. Traer info detallada de cada gear
     let gearIdToName = {};
     try {
-        const allGears = getGears();
+        const allGears = runSessionGears;
         allGears.forEach(gear => {
             gearIdToName[gear.id] = gear.name || [gear.brand_name, gear.model_name].filter(Boolean).join(' ');
         });
@@ -2474,54 +2526,71 @@ export function renderEfficiencyEvolutionChart(runs) {
 }
 
 export function renderDistanceEfficiencyChart(runs) {
-    const validRuns = runs.filter(r => r.average_heartrate && r.distance && r.moving_time);
-    if (validRuns.length === 0) return;
+    const data = runs
+        .filter(r => (
+            Number.isFinite(r?.distance)
+            && r.distance > 0
+            && Number.isFinite(r?.efficiency)
+        ))
+        .map(r => ({
+            x: r.distance / 1000,
+            y: r.efficiency,
+            date: r.start_date
+        }));
+    if (data.length === 0) return;
 
-    const calculateEfficiency = r => r.efficiency;
+    function calculateRegression(dataPoints) {
+        const n = dataPoints.length;
+        if (n < 2) return null;
+        const sumX = dataPoints.reduce((sum, d) => sum + d.x, 0);
+        const sumY = dataPoints.reduce((sum, d) => sum + d.y, 0);
+        const sumXY = dataPoints.reduce((sum, d) => sum + d.x * d.y, 0);
+        const sumXX = dataPoints.reduce((sum, d) => sum + d.x * d.x, 0);
+        const denominator = n * sumXX - sumX * sumX;
+        if (!Number.isFinite(denominator) || denominator === 0) return null;
 
-    const data = validRuns.map(r => ({
-        x: r.distance / 1000,
-        y: calculateEfficiency(r),
-        date: r.start_date
-    }));
+        const slope = (n * sumXY - sumX * sumY) / denominator;
+        const intercept = (sumY - slope * sumX) / n;
+        if (!Number.isFinite(slope) || !Number.isFinite(intercept)) return null;
 
-    // Simple linear regression
-    const n = data.length;
-    const sumX = data.reduce((sum, d) => sum + d.x, 0);
-    const sumY = data.reduce((sum, d) => sum + d.y, 0);
-    const sumXY = data.reduce((sum, d) => sum + d.x * d.y, 0);
-    const sumXX = data.reduce((sum, d) => sum + d.x * d.x, 0);
+        const minX = Math.min(...dataPoints.map(d => d.x));
+        const maxX = Math.max(...dataPoints.map(d => d.x));
+        if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return null;
 
-    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
-    const intercept = (sumY - slope * sumX) / n;
+        const line = [
+            { x: minX, y: slope * minX + intercept },
+            { x: maxX, y: slope * maxX + intercept }
+        ];
+        if (line.some(point => !Number.isFinite(point.x) || !Number.isFinite(point.y))) {
+            return null;
+        }
 
-    const minX = Math.min(...data.map(d => d.x));
-    const maxX = Math.max(...data.map(d => d.x));
-    const regressionLine = [
-        { x: minX, y: slope * minX + intercept },
-        { x: maxX, y: slope * maxX + intercept }
-    ];
+        return { slope, intercept, line };
+    }
+
+    const regression = calculateRegression(data);
+    const datasets = [{
+        label: 'Run Data',
+        data: data,
+        backgroundColor: 'rgba(252, 82, 0, 0.7)',
+        pointRadius: 4
+    }];
+    if (regression) {
+        datasets.push({
+            label: `Regression (slope: ${regression.slope.toFixed(4)})`,
+            data: regression.line,
+            borderColor: 'rgba(93, 22, 1, 1)',
+            backgroundColor: 'rgba(93, 22, 1, 0.1)',
+            type: 'line',
+            pointRadius: 0,
+            tension: 0
+        });
+    }
 
     createChart('distance-efficiency-chart', {
         type: 'scatter',
         data: {
-            datasets: [
-                {
-                    label: 'Run Data',
-                    data: data,
-                    backgroundColor: 'rgba(252, 82, 0, 0.7)',
-                    pointRadius: 4
-                },
-                {
-                    label: `Regression (slope: ${slope.toFixed(4)})`,
-                    data: regressionLine,
-                    borderColor: 'rgba(93, 22, 1, 1)',
-                    backgroundColor: 'rgba(93, 22, 1, 0.1)',
-                    type: 'line',
-                    pointRadius: 0,
-                    tension: 0
-                }
-            ]
+            datasets
         },
         options: {
             plugins: {
@@ -2589,17 +2658,29 @@ export function renderPaceHrEfficiencyChart(runs, mode = 'single') {
         const sumY = dataPoints.reduce((sum, d) => sum + d.y, 0);
         const sumXY = dataPoints.reduce((sum, d) => sum + d.x * d.y, 0);
         const sumXX = dataPoints.reduce((sum, d) => sum + d.x * d.x, 0);
-        const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+        const denominator = n * sumXX - sumX * sumX;
+        if (!Number.isFinite(denominator) || denominator === 0) return null;
+
+        const slope = (n * sumXY - sumX * sumY) / denominator;
         const intercept = (sumY - slope * sumX) / n;
+        if (!Number.isFinite(slope) || !Number.isFinite(intercept)) return null;
+
         const minX = Math.min(...dataPoints.map(d => d.x));
         const maxX = Math.max(...dataPoints.map(d => d.x));
+        if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return null;
+
+        const line = [
+            { x: minX, y: slope * minX + intercept },
+            { x: maxX, y: slope * maxX + intercept }
+        ];
+        if (line.some(point => !Number.isFinite(point.x) || !Number.isFinite(point.y))) {
+            return null;
+        }
+
         return {
             slope,
             intercept,
-            line: [
-                { x: minX, y: slope * minX + intercept },
-                { x: maxX, y: slope * maxX + intercept }
-            ]
+            line
         };
     }
 
@@ -2609,14 +2690,14 @@ export function renderPaceHrEfficiencyChart(runs, mode = 'single') {
 
     if (mode === 'single') {
         const regression = calculateRegression(data);
-        datasets = [
-            {
-                label: 'Run Data',
-                data: data,
-                backgroundColor: 'rgba(252, 82, 0, 0.7)',
-                pointRadius: 4
-            },
-            {
+        datasets = [{
+            label: 'Run Data',
+            data: data,
+            backgroundColor: 'rgba(252, 82, 0, 0.7)',
+            pointRadius: 4
+        }];
+        if (regression) {
+            datasets.push({
                 label: `Regression (slope: ${regression.slope.toFixed(4)} min/km per bpm)`,
                 data: regression.line,
                 borderColor: 'rgba(93, 22, 1, 1)',
@@ -2624,8 +2705,8 @@ export function renderPaceHrEfficiencyChart(runs, mode = 'single') {
                 type: 'line',
                 pointRadius: 0,
                 tension: 0
-            }
-        ];
+            });
+        }
         title = 'Pace vs Heart Rate';
         bodyHtml = `
         <button class="toggle-regression-btn" style="margin-bottom: 10px;">Show Progress Regressions</button><br>

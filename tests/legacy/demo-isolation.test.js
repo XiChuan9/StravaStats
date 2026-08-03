@@ -30,6 +30,11 @@ import {
     getCachedGears,
     setCachedGears
 } from '../../js/services/api.js';
+import {
+    createRepository,
+    REPOSITORY_SOURCE,
+    REPOSITORY_WARNING_CODE
+} from '../../js/repository/index.js';
 
 const FIXED_NOW = '2026-07-29T08:30:00.000Z';
 const FIXED_NOW_MS = Date.parse(FIXED_NOW);
@@ -161,8 +166,11 @@ const REAL_LOCAL_LIBRARY_READ_KEYS = Object.freeze([
     'strava_activities_timestamp',
     'strava_cache_version',
     'strava_athlete_data',
+    'strava_athlete_data_timestamp',
     'strava_training_zones',
-    'strava_gears'
+    'strava_training_zones_timestamp',
+    'strava_gears',
+    'strava_gears_timestamp'
 ]);
 
 function assertNoRealLocalLibraryReads(storage) {
@@ -240,6 +248,13 @@ const {
     requestRunPlusRemote
 } = await import('../../js/tabs/run-plus.js?demo-isolation-test');
 const {
+    renderGearGanttChart: renderRunGearGanttChart,
+    setRunSessionGears
+} = await import('../../js/tabs/run-analysis.js');
+const {
+    renderGearTab
+} = await import('../../js/tabs/gear.js?demo-isolation-test');
+const {
     preprocessActivities
 } = await import('../../js/shared/preprocessing/index.js?demo-isolation-test');
 
@@ -249,88 +264,129 @@ const mainSource = await readFile(
     'utf8'
 );
 
-function compileMarkedMainFunction(
-    source,
-    startMarker,
-    endMarker,
-    functionName
-) {
+function compileSummaryBoundary(source) {
+    const startMarker = '// PR04A_B1_SUMMARY_BOUNDARY_START';
+    const endMarker = '// PR04A_B1_SUMMARY_BOUNDARY_END';
     const start = source.indexOf(startMarker);
     const end = source.indexOf(endMarker);
     assert.notEqual(start, -1, `${startMarker} is required`);
     assert.notEqual(end, -1, `${endMarker} is required`);
 
-    const functionSource = source
+    const boundarySource = source
         .slice(start + startMarker.length, end)
-        .replace(/export\s+(async\s+)?function/, '$1function');
+        .replace(/export\s+(async\s+)?function/g, '$1function');
     return Function(
-        `"use strict";${functionSource};return ${functionName};`
-    )();
+        'createRepository',
+        'REPOSITORY_SOURCE',
+        'REPOSITORY_WARNING_CODE',
+        'APP_SESSION_MODE',
+        `"use strict";${boundarySource};return {
+            establishSummaryRepositorySession,
+            requireSummaryRepositorySession,
+            loadActivitiesForSession,
+            loadInitializeAthleteAndZones,
+            loadRefreshAthleteAndZones,
+            loadOptionalSessionGears,
+            resetSummarySessionGears,
+            applySummarySessionGearLoad,
+            buildSessionGearNameMap,
+            selectPreprocessingAthlete
+        };`
+    )(
+        () => {
+            throw new Error('Unexpected default Repository construction');
+        },
+        REPOSITORY_SOURCE,
+        REPOSITORY_WARNING_CODE,
+        Object.freeze({ DEMO: 'demo', REAL: 'real' })
+    );
 }
 
-const loadActivitiesForSession = compileMarkedMainFunction(
-    mainSource,
-    '// B2_C_ACTIVITY_LOADER_START',
-    '// B2_C_ACTIVITY_LOADER_END',
-    'loadActivitiesForSession'
-);
-const buildSessionGearNameMap = compileMarkedMainFunction(
-    mainSource,
-    '// B2_C_SESSION_GEAR_MAP_START',
-    '// B2_C_SESSION_GEAR_MAP_END',
-    'buildSessionGearNameMap'
-);
-const selectPreprocessingAthlete = compileMarkedMainFunction(
-    mainSource,
-    '// B2_C_PREPROCESSING_CONTEXT_START',
-    '// B2_C_PREPROCESSING_CONTEXT_END',
-    'selectPreprocessingAthlete'
-);
+const {
+    establishSummaryRepositorySession,
+    requireSummaryRepositorySession,
+    loadActivitiesForSession,
+    loadInitializeAthleteAndZones,
+    loadRefreshAthleteAndZones,
+    loadOptionalSessionGears,
+    resetSummarySessionGears,
+    applySummarySessionGearLoad,
+    buildSessionGearNameMap,
+    selectPreprocessingAthlete
+} = compileSummaryBoundary(mainSource);
 
-function activityLoaderHarness({
-    storage,
-    cachedActivities = null,
-    networkActivities = [{
-        id: 'synthetic-network-activity-001',
-        sport_type: 'Run'
-    }]
-}) {
-    const calls = {
-        demo: 0,
-        cache: 0,
-        network: 0,
-        save: 0
+function repositoryEnvelope(data, source = REPOSITORY_SOURCE.DEMO) {
+    return {
+        data,
+        source,
+        warnings: [],
+        partial: false
     };
-    const observations = {
-        cacheOptions: null,
-        savedActivities: null,
-        savedVersion: null
+}
+
+function repositorySessionHarness({ storage, sessionMode = 'demo' }) {
+    const calls = {
+        factory: 0,
+        listActivities: [],
+        getAthlete: 0,
+        getZones: 0,
+        getGears: 0
+    };
+    const repository = {
+        async listActivities(options) {
+            calls.listActivities.push(options);
+            return repositoryEnvelope(
+                sessionMode === 'demo'
+                    ? getDemoActivities(storage)
+                    : [{ id: 'synthetic-real-repository-activity' }],
+                sessionMode === 'demo'
+                    ? REPOSITORY_SOURCE.DEMO
+                    : REPOSITORY_SOURCE.CACHE
+            );
+        },
+        async getAthlete() {
+            calls.getAthlete += 1;
+            return repositoryEnvelope(
+                sessionMode === 'demo'
+                    ? getDemoAthlete(storage)
+                    : { id: ATHLETE_ID, firstname: 'Synthetic' },
+                sessionMode === 'demo'
+                    ? REPOSITORY_SOURCE.DEMO
+                    : REPOSITORY_SOURCE.CACHE
+            );
+        },
+        async getZones() {
+            calls.getZones += 1;
+            return repositoryEnvelope(
+                sessionMode === 'demo'
+                    ? getDemoTrainingZones(storage)
+                    : { heartrate: [] },
+                sessionMode === 'demo'
+                    ? REPOSITORY_SOURCE.DEMO
+                    : REPOSITORY_SOURCE.CACHE
+            );
+        },
+        async getGears() {
+            calls.getGears += 1;
+            return repositoryEnvelope(
+                sessionMode === 'demo'
+                    ? getDemoGears(storage)
+                    : [{ id: 'synthetic-real-repository-gear' }],
+                sessionMode === 'demo'
+                    ? REPOSITORY_SOURCE.DEMO
+                    : REPOSITORY_SOURCE.CACHE
+            );
+        }
+    };
+    const factory = options => {
+        calls.factory += 1;
+        assert.deepEqual(options, { sessionMode, mode: 'legacy' });
+        return repository;
     };
     return {
         calls,
-        observations,
-        dependencies: {
-            getDemoActivities: () => {
-                calls.demo += 1;
-                return getDemoActivities(storage);
-            },
-            getCachedActivities: async options => {
-                calls.cache += 1;
-                observations.cacheOptions = options;
-                return cachedActivities === null
-                    ? null
-                    : { activities: cachedActivities };
-            },
-            fetchAllActivities: async () => {
-                calls.network += 1;
-                return networkActivities;
-            },
-            saveCachedActivities: async (activities, cacheVersion) => {
-                calls.save += 1;
-                observations.savedActivities = activities;
-                observations.savedVersion = cacheVersion;
-            }
-        }
+        factory,
+        repository
     };
 }
 
@@ -364,34 +420,26 @@ test('Main Demo initialization ignores a populated real activity cache', async (
         ...demoNamespace()
     });
     const before = storage.snapshot();
-    const realActivities = [{
-        id: 'synthetic-real-cache-activity-should-not-load'
-    }];
-    const harness = activityLoaderHarness({
-        storage,
-        cachedActivities: realActivities
+    const harness = repositorySessionHarness({ storage, sessionMode: 'demo' });
+    const established = establishSummaryRepositorySession({
+        activeSessionMode: null,
+        sessionRepository: null,
+        requestedSessionMode: 'demo',
+        repositoryFactory: harness.factory
     });
-
     const result = await loadActivitiesForSession({
-        sessionMode: 'demo',
-        operation: 'initialize',
-        ...harness.dependencies,
-        cacheVersion: 'synthetic-cache-version',
-        maxAgeMs: 3600000
+        sessionRepository: established.sessionRepository,
+        refresh: false
     });
 
     assert.equal(result.source, 'demo');
-    assert.equal(result.activities[0].id, 'synthetic-demo-activity-001');
+    assert.equal(result.data[0].id, 'synthetic-demo-activity-001');
     assert.equal(
-        result.activities.some(activity => activity.id === realActivities[0].id),
+        result.data.some(activity => activity.id === 'synthetic-real-activity-001'),
         false
     );
-    assert.deepEqual(harness.calls, {
-        demo: 1,
-        cache: 0,
-        network: 0,
-        save: 0
-    });
+    assert.equal(harness.calls.factory, 1);
+    assert.deepEqual(harness.calls.listActivities, [{ refresh: false }]);
     assertNoRealLocalLibraryReads(storage);
     assert.deepEqual(storage.snapshot(), before);
 });
@@ -406,27 +454,20 @@ test('Main Demo initialization with no real cache never opens or creates it', as
         ...demoNamespace()
     });
     const before = storage.snapshot();
-    const harness = activityLoaderHarness({
-        storage,
-        cachedActivities: null
+    const harness = repositorySessionHarness({ storage, sessionMode: 'demo' });
+    const established = establishSummaryRepositorySession({
+        activeSessionMode: null,
+        sessionRepository: null,
+        requestedSessionMode: 'demo',
+        repositoryFactory: harness.factory
     });
-
     const result = await loadActivitiesForSession({
-        sessionMode: 'demo',
-        operation: 'initialize',
-        ...harness.dependencies,
-        cacheVersion: 'synthetic-cache-version',
-        maxAgeMs: 3600000
+        sessionRepository: established.sessionRepository,
+        refresh: false
     });
 
     assert.equal(result.source, 'demo');
-    assert.equal(result.activities[0].id, 'synthetic-demo-activity-001');
-    assert.deepEqual(harness.calls, {
-        demo: 1,
-        cache: 0,
-        network: 0,
-        save: 0
-    });
+    assert.equal(result.data[0].id, 'synthetic-demo-activity-001');
     assertNoRealLocalLibraryReads(storage);
     assert.deepEqual(storage.snapshot(), before);
 });
@@ -437,114 +478,197 @@ test('Main Demo refresh remains offline and preserves the real cache byte-for-by
         ...demoNamespace()
     });
     const before = storage.snapshot();
-    const harness = activityLoaderHarness({
-        storage,
-        cachedActivities: [{
-            id: 'synthetic-real-cache-refresh-activity'
-        }]
+    const harness = repositorySessionHarness({ storage, sessionMode: 'demo' });
+    const established = establishSummaryRepositorySession({
+        activeSessionMode: null,
+        sessionRepository: null,
+        requestedSessionMode: 'demo',
+        repositoryFactory: harness.factory
     });
-
+    const repository = requireSummaryRepositorySession(
+        established.activeSessionMode,
+        established.sessionRepository
+    );
+    const initial = await loadActivitiesForSession({
+        sessionRepository: repository,
+        refresh: false
+    });
     const result = await loadActivitiesForSession({
-        sessionMode: 'demo',
-        operation: 'refresh',
-        ...harness.dependencies,
-        cacheVersion: 'synthetic-cache-version',
-        maxAgeMs: 3600000
+        sessionRepository: repository,
+        refresh: true
     });
 
+    assert.equal(initial.source, 'demo');
     assert.equal(result.source, 'demo');
-    assert.equal(result.activities[0].id, 'synthetic-demo-activity-001');
-    assert.deepEqual(harness.calls, {
-        demo: 1,
-        cache: 0,
-        network: 0,
-        save: 0
-    });
+    assert.equal(result.data[0].id, 'synthetic-demo-activity-001');
+    assert.equal(harness.calls.factory, 1);
+    assert.deepEqual(harness.calls.listActivities, [
+        { refresh: false },
+        { refresh: true }
+    ]);
     assertNoRealLocalLibraryReads(storage);
     assert.deepEqual(storage.snapshot(), before);
 });
 
-test('Main real-mode cache hit, miss, and refresh preserve Legacy behavior', async () => {
+test('Main Demo metadata and gears stay inside the Demo Repository path', async () => {
+    const storage = new MemoryStorage({
+        ...realLibrary(),
+        ...demoNamespace()
+    });
+    const before = storage.snapshot();
+    const harness = repositorySessionHarness({ storage, sessionMode: 'demo' });
+    const established = establishSummaryRepositorySession({
+        activeSessionMode: null,
+        sessionRepository: null,
+        requestedSessionMode: 'demo',
+        repositoryFactory: harness.factory
+    });
+    const metadata = await loadInitializeAthleteAndZones(
+        established.sessionRepository,
+        { timeoutMs: 100 }
+    );
+    const gears = await loadOptionalSessionGears(
+        established.sessionRepository,
+        metadata.athlete
+    );
+
+    assert.equal(metadata.athlete.firstname, 'Demo');
+    assert.equal(metadata.zones.heartrate[0].max, 142);
+    assert.equal(gears.data[0].id, 'synthetic-demo-gear-001');
+    assert.equal(harness.calls.getAthlete, 1);
+    assert.equal(harness.calls.getZones, 1);
+    assert.equal(harness.calls.getGears, 1);
+    assertNoRealLocalLibraryReads(storage);
+    assert.deepEqual(storage.snapshot(), before);
+});
+
+test('Actual Demo Factory through the main session facade performs zero real I/O', async () => {
+    const storage = new MemoryStorage({
+        ...realLibrary(),
+        ...demoNamespace()
+    });
+    for (const key of REAL_LOCAL_LIBRARY_READ_KEYS) {
+        storage.forbiddenReads.add(key);
+    }
+    const beforeRealSnapshot = JSON.stringify(realSnapshot(storage));
+    const savedDescriptors = Object.fromEntries(
+        ['fetch', 'btoa', 'indexedDB', 'localStorage'].map(key => [
+            key,
+            Object.getOwnPropertyDescriptor(globalThis, key)
+        ])
+    );
+    const calls = {
+        factory: 0,
+        fetch: 0,
+        btoa: 0,
+        indexedDb: 0
+    };
+    Object.defineProperty(globalThis, 'localStorage', {
+        configurable: true,
+        writable: true,
+        value: storage
+    });
+    Object.defineProperty(globalThis, 'fetch', {
+        configurable: true,
+        writable: true,
+        value: async () => {
+            calls.fetch += 1;
+            throw new Error('Prohibited synthetic fetch');
+        }
+    });
+    Object.defineProperty(globalThis, 'btoa', {
+        configurable: true,
+        writable: true,
+        value: () => {
+            calls.btoa += 1;
+            throw new Error('Prohibited synthetic btoa');
+        }
+    });
+    Object.defineProperty(globalThis, 'indexedDB', {
+        configurable: true,
+        get() {
+            calls.indexedDb += 1;
+            throw new Error('Prohibited synthetic IndexedDB access');
+        }
+    });
+
+    try {
+        const established = establishSummaryRepositorySession({
+            activeSessionMode: null,
+            sessionRepository: null,
+            requestedSessionMode: 'demo',
+            repositoryFactory: options => {
+                calls.factory += 1;
+                return createRepository(options);
+            }
+        });
+        const repository = requireSummaryRepositorySession(
+            established.activeSessionMode,
+            established.sessionRepository
+        );
+        const initial = await repository.listActivities({ refresh: false });
+        const athlete = await repository.getAthlete();
+        const zones = await repository.getZones();
+        const gears = await repository.getGears();
+        const refreshed = await repository.listActivities({ refresh: true });
+
+        for (const result of [initial, athlete, zones, gears, refreshed]) {
+            assert.equal(result.source, REPOSITORY_SOURCE.DEMO);
+        }
+        assert.equal(initial.data[0].id, 'synthetic-demo-activity-001');
+        assert.equal(refreshed.data[0].id, 'synthetic-demo-activity-001');
+        assert.equal(athlete.data.firstname, 'Demo');
+        assert.equal(zones.data.heartrate[0].max, 142);
+        assert.equal(gears.data[0].id, 'synthetic-demo-gear-001');
+        assert.equal(calls.factory, 1);
+        assert.equal(calls.fetch, 0);
+        assert.equal(calls.btoa, 0);
+        assert.equal(calls.indexedDb, 0);
+        assertNoRealLocalLibraryReads(storage);
+        assert.deepEqual(
+            storage.operations.filter(({ key }) => (
+                REAL_LOCAL_LIBRARY_READ_KEYS.includes(key)
+            )),
+            []
+        );
+        assert.equal(JSON.stringify(realSnapshot(storage)), beforeRealSnapshot);
+    } finally {
+        for (const [key, descriptor] of Object.entries(savedDescriptors)) {
+            if (descriptor === undefined) delete globalThis[key];
+            else Object.defineProperty(globalThis, key, descriptor);
+        }
+    }
+});
+
+test('Main real-mode initialize and refresh delegate Legacy cache behavior to one Repository', async () => {
     const storage = new MemoryStorage(realLibrary());
-    const cachedActivities = [{
-        id: 'synthetic-real-cache-hit-001'
-    }];
-    const networkActivities = [{
-        id: 'synthetic-real-network-001'
-    }];
-    const cacheVersion = 'synthetic-cache-version';
-    const maxAgeMs = 3600000;
+    const harness = repositorySessionHarness({ storage, sessionMode: 'real' });
+    const established = establishSummaryRepositorySession({
+        activeSessionMode: null,
+        sessionRepository: null,
+        requestedSessionMode: 'real',
+        repositoryFactory: harness.factory
+    });
+    const initial = await loadActivitiesForSession({
+        sessionRepository: established.sessionRepository,
+        refresh: false
+    });
+    const refreshed = await loadActivitiesForSession({
+        sessionRepository: established.sessionRepository,
+        refresh: true
+    });
+    const metadata = await loadRefreshAthleteAndZones(
+        established.sessionRepository
+    );
 
-    const hit = activityLoaderHarness({
-        storage,
-        cachedActivities,
-        networkActivities
-    });
-    const hitResult = await loadActivitiesForSession({
-        sessionMode: 'real',
-        operation: 'initialize',
-        ...hit.dependencies,
-        cacheVersion,
-        maxAgeMs
-    });
-    assert.equal(hitResult.source, 'cache');
-    assert.deepEqual(hitResult.activities, cachedActivities);
-    assert.deepEqual(hit.calls, {
-        demo: 0,
-        cache: 1,
-        network: 0,
-        save: 0
-    });
-    assert.deepEqual(hit.observations.cacheOptions, {
-        cacheVersion,
-        maxAgeMs
-    });
-
-    const miss = activityLoaderHarness({
-        storage,
-        cachedActivities: null,
-        networkActivities
-    });
-    const missResult = await loadActivitiesForSession({
-        sessionMode: 'real',
-        operation: 'initialize',
-        ...miss.dependencies,
-        cacheVersion,
-        maxAgeMs
-    });
-    assert.equal(missResult.source, 'network');
-    assert.deepEqual(missResult.activities, networkActivities);
-    assert.deepEqual(miss.calls, {
-        demo: 0,
-        cache: 1,
-        network: 1,
-        save: 1
-    });
-    assert.deepEqual(miss.observations.savedActivities, networkActivities);
-    assert.equal(miss.observations.savedVersion, cacheVersion);
-
-    const refresh = activityLoaderHarness({
-        storage,
-        cachedActivities,
-        networkActivities
-    });
-    const refreshResult = await loadActivitiesForSession({
-        sessionMode: 'real',
-        operation: 'refresh',
-        ...refresh.dependencies,
-        cacheVersion,
-        maxAgeMs
-    });
-    assert.equal(refreshResult.source, 'network');
-    assert.deepEqual(refreshResult.activities, networkActivities);
-    assert.deepEqual(refresh.calls, {
-        demo: 0,
-        cache: 0,
-        network: 1,
-        save: 1
-    });
-    assert.deepEqual(refresh.observations.savedActivities, networkActivities);
-    assert.equal(refresh.observations.savedVersion, cacheVersion);
+    assert.equal(initial.source, REPOSITORY_SOURCE.CACHE);
+    assert.equal(refreshed.source, REPOSITORY_SOURCE.CACHE);
+    assert.equal(metadata.athlete.id, ATHLETE_ID);
+    assert.equal(harness.calls.factory, 1);
+    assert.deepEqual(harness.calls.listActivities, [
+        { refresh: false },
+        { refresh: true }
+    ]);
 });
 
 test('Main gear labels use only session gears with no real gear-key reads', () => {
@@ -578,6 +702,339 @@ test('Main gear labels use only session gears with no real gear-key reads', () =
         storage.getItemCalls.filter(key => key === 'strava_gears').length,
         0
     );
+});
+
+test('Run session gear snapshot is detached, ordered, duplicate-safe, and used by Gantt labels', async () => {
+    const savedChart = globalThis.Chart;
+    const savedGetElementById = globalThis.document.getElementById;
+    const chartConfigs = [];
+    const canvas = { id: 'gear-gantt-chart' };
+    globalThis.document.getElementById = id => (
+        id === 'gear-gantt-chart' ? canvas : null
+    );
+    globalThis.Chart = class ChartStub {
+        constructor(_canvas, config) {
+            this.config = config;
+            chartConfigs.push(config);
+        }
+
+        destroy() {}
+    };
+
+    try {
+        const defaultRuns = [{
+            gear_id: 'fallback-gear-id',
+            start_date_local: '2026-01-02T06:00:00.000Z',
+            distance: 1000
+        }];
+        await renderRunGearGanttChart(defaultRuns);
+        assert.deepEqual(
+            chartConfigs.at(-1).data.datasets.map(dataset => dataset.label),
+            ['fallback-gear-id']
+        );
+
+        const input = [
+            { id: 'shoe-2', name: 'Second Shoe' },
+            { id: 'shoe-1', name: 'First Shoe' },
+            { id: 'shoe-2', name: 'Second Shoe Duplicate' }
+        ];
+        const snapshot = setRunSessionGears(input);
+        assert.notEqual(snapshot, input);
+        assert.equal(Object.isFrozen(snapshot), true);
+        assert.deepEqual(snapshot.map(gear => gear.id), [
+            'shoe-2',
+            'shoe-1',
+            'shoe-2'
+        ]);
+        input.length = 0;
+        input.push({ id: 'mutated-after-set', name: 'Must Not Appear' });
+
+        await renderRunGearGanttChart([
+            {
+                gear_id: 'shoe-2',
+                start_date_local: '2026-01-02T06:00:00.000Z',
+                distance: 2000
+            },
+            {
+                gear_id: 'shoe-1',
+                start_date_local: '2026-01-03T06:00:00.000Z',
+                distance: 3000
+            }
+        ]);
+        assert.deepEqual(
+            chartConfigs.at(-1).data.datasets.map(dataset => dataset.label),
+            ['Second Shoe Duplicate', 'First Shoe']
+        );
+
+        let getterCalls = 0;
+        let iteratorCalls = 0;
+        const accessorArray = [];
+        Object.defineProperty(accessorArray, '0', {
+            enumerable: true,
+            get() {
+                getterCalls += 1;
+                return { id: 'private-gear' };
+            }
+        });
+        assert.deepEqual(setRunSessionGears(accessorArray), []);
+        const customIterator = [];
+        Object.defineProperty(customIterator, Symbol.iterator, {
+            value() {
+                iteratorCalls += 1;
+                return [][Symbol.iterator]();
+            }
+        });
+        assert.deepEqual(setRunSessionGears(customIterator), []);
+        assert.deepEqual(setRunSessionGears(null), []);
+        assert.equal(getterCalls, 0);
+        assert.equal(iteratorCalls, 0);
+
+        const frozenInput = Object.freeze([{ id: 'frozen-gear' }]);
+        assert.deepEqual(
+            setRunSessionGears(frozenInput).map(gear => gear.id),
+            ['frozen-gear']
+        );
+    } finally {
+        setRunSessionGears([]);
+        globalThis.document.getElementById = savedGetElementById;
+        if (savedChart === undefined) delete globalThis.Chart;
+        else globalThis.Chart = savedChart;
+    }
+});
+
+test('Gear filter rerender keeps its injected snapshot and preserves UI-owned storage', () => {
+    const savedDocument = globalThis.document;
+    const savedStorage = globalThis.localStorage;
+    const savedChart = globalThis.Chart;
+    const savedSetTimeout = globalThis.setTimeout;
+    const storage = new MemoryStorage({
+        ...realLibrary(),
+        'gear-custom-shoe-1': JSON.stringify({ price: 140, durationKm: 800 }),
+        gearEditMode: 'false'
+    });
+    storage.forbiddenReads.add('strava_gears');
+
+    const registry = new Map();
+    const chartConfigs = [];
+    let filterDiv = null;
+    const classList = () => ({ add() {}, remove() {}, toggle() {} });
+
+    class FakeElement {
+        constructor(id = '') {
+            this._id = '';
+            this.id = id;
+            this.style = {};
+            this.dataset = {};
+            this.classList = classList();
+            this.listeners = new Map();
+            this.children = [];
+            this.checked = false;
+            this.firstChild = null;
+            this.nextSibling = null;
+            this.textContent = '';
+            this._innerHTML = '';
+            this.heading = null;
+        }
+
+        set id(value) {
+            this._id = value;
+            if (value) registry.set(value, this);
+            if (value === 'gear-filters') filterDiv = this;
+        }
+
+        get id() {
+            return this._id;
+        }
+
+        set innerHTML(value) {
+            this._innerHTML = value;
+        }
+
+        get innerHTML() {
+            return this._innerHTML;
+        }
+
+        addEventListener(type, callback) {
+            this.listeners.set(type, callback);
+        }
+
+        insertBefore(child) {
+            this.children.unshift(child);
+            child.parentElement = this;
+        }
+
+        appendChild(child) {
+            this.children.push(child);
+            child.parentElement = this;
+        }
+
+        remove() {
+            registry.delete(this.id);
+        }
+
+        querySelector(selector) {
+            if (selector === '#show-retired-check') return retiredCheck;
+            if (selector === 'h4') return this.heading;
+            return null;
+        }
+
+        querySelectorAll(selector) {
+            return selector === '.gear-filter-btn' ? filterButtons : [];
+        }
+
+        closest(selector) {
+            return selector === 'button.gear-filter-btn' ? this : null;
+        }
+
+        getContext() {
+            return {};
+        }
+    }
+
+    const retiredCheck = new FakeElement('show-retired-check');
+    const filterButtons = ['all', 'shoe', 'bike'].map(filter => {
+        const button = new FakeElement();
+        button.dataset.filter = filter;
+        return button;
+    });
+    const section = new FakeElement('gear-info-section');
+    const list = new FakeElement('gear-info-list');
+    const chartContainer = new FakeElement('gear-chart-container');
+    chartContainer.heading = new FakeElement();
+    const ganttContainer = new FakeElement('gear-gantt-chart-container');
+    ganttContainer.heading = new FakeElement();
+    new FakeElement('gear-tab');
+    new FakeElement('gearChart');
+    new FakeElement('gear-gantt-chart');
+    const toggleEdit = new FakeElement('toggle-gear-edit');
+    const saveButton = new FakeElement();
+    saveButton.getAttribute = name => (
+        name === 'data-gearid' ? 'shoe-1' : null
+    );
+    const priceInput = new FakeElement('price-shoe-1');
+    priceInput.value = '155';
+    const durationInput = new FakeElement('duration-shoe-1');
+    durationInput.value = '900';
+
+    globalThis.document = {
+        body: new FakeElement(),
+        getElementById: id => registry.get(id) ?? null,
+        createElement: () => new FakeElement(),
+        querySelector: selector => (
+            selector === '#gear-gantt-chart-container h4'
+                ? ganttContainer.heading
+                : null
+        ),
+        querySelectorAll: selector => (
+            selector === '.save-gear-btn' ? [saveButton] : []
+        )
+    };
+    globalThis.localStorage = storage;
+    globalThis.setTimeout = callback => {
+        callback();
+        return 0;
+    };
+    globalThis.Chart = class ChartStub {
+        constructor(_context, config) {
+            this.config = config;
+            chartConfigs.push(config);
+        }
+
+        destroy() {}
+    };
+
+    try {
+        const activities = [
+            {
+                type: 'Run',
+                sport_type: 'Run',
+                gear_id: 'bike-1',
+                start_date_local: '2026-01-01T06:00:00.000Z',
+                distance: 5000,
+                moving_time: 1500,
+                total_elevation_gain: 50
+            },
+            {
+                type: 'Run',
+                sport_type: 'Run',
+                gear_id: 'shoe-1',
+                start_date_local: '2026-01-02T06:00:00.000Z',
+                distance: 10000,
+                moving_time: 3000,
+                total_elevation_gain: 100
+            }
+        ];
+        const gears = [
+            { id: 'bike-1', name: 'Synthetic Bike', frame_type: 3 },
+            { id: 'shoe-1', name: 'Synthetic Shoe' },
+            { id: 'shoe-1', name: 'Synthetic Shoe Duplicate' }
+        ];
+        renderGearTab(activities, gears);
+        assert.ok(filterDiv);
+        assert.match(list.innerHTML, /Synthetic Shoe Duplicate/);
+        assert.equal(
+            storage.getItemCalls.filter(key => key === 'gear-custom-shoe-1').length > 0,
+            true
+        );
+        assert.equal(
+            storage.getItemCalls.filter(key => key === 'gearEditMode').length > 0,
+            true
+        );
+
+        gears.length = 0;
+        filterDiv.listeners.get('click')({
+            target: filterButtons[1]
+        });
+        const latestLine = [...chartConfigs]
+            .reverse()
+            .find(config => config.type === 'line');
+        assert.deepEqual(
+            latestLine.data.datasets.map(dataset => dataset.label),
+            ['Synthetic Shoe Duplicate']
+        );
+        assert.equal(
+            storage.getItemCalls.filter(key => key === 'strava_gears').length,
+            0
+        );
+
+        toggleEdit.listeners.get('click')({ stopPropagation() {} });
+        assert.equal(storage.getItem('gearEditMode'), 'true');
+        assert.equal(
+            storage.operations.some(operation => (
+                operation.operation === 'set'
+                && operation.key === 'gearEditMode'
+            )),
+            true
+        );
+
+        saveButton.listeners.get('click')({ stopPropagation() {} });
+        assert.deepEqual(
+            JSON.parse(storage.getItem('gear-custom-shoe-1')),
+            { price: 155, durationKm: 900 }
+        );
+        assert.equal(
+            storage.operations.some(operation => (
+                operation.operation === 'set'
+                && operation.key === 'gear-custom-shoe-1'
+            )),
+            true
+        );
+
+        for (const malformedGears of [[], null, {}, undefined]) {
+            renderGearTab(activities, malformedGears);
+            assert.match(list.innerHTML, /No gear loaded yet\./);
+        }
+        assert.equal(
+            storage.getItemCalls.filter(key => key === 'strava_gears').length,
+            0
+        );
+    } finally {
+        globalThis.document = savedDocument;
+        globalThis.localStorage = savedStorage;
+        globalThis.setTimeout = savedSetTimeout;
+        if (savedChart === undefined) delete globalThis.Chart;
+        else globalThis.Chart = savedChart;
+    }
 });
 
 test('Trends metadata selection uses injected context without identity reads or logs', () => {
@@ -1295,8 +1752,8 @@ test('Source and privacy boundaries enforce production-path isolation', async ()
     );
     assert.equal(
         (mainSource.match(/\bisDemoMode\(\)/g) || []).length,
-        2,
-        'initialize and refresh should each freeze session mode once'
+        1,
+        'initialize freezes session mode once and refresh reuses it'
     );
     assert.equal(
         (mainSource.match(

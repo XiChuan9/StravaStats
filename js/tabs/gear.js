@@ -2,7 +2,6 @@
 // Individual gear detail page logic lives in gear-analysis.js
 
 import { formatDistance, formatPace, formatTime, formatDate } from './utils.js';
-import { getCachedGears } from './api.js';
 
 // ===================================================================
 // SHARED UTILITIES (exported for use by gear-analysis.js etc.)
@@ -44,10 +43,57 @@ let gearGanttChartInstance = null;
 // INTERNAL HELPERS
 // ===================================================================
 
-function getGears() {
-    const cached = getCachedGears();
-    if (cached) return cached;
-    return JSON.parse(localStorage.getItem('strava_gears') || '[]');
+const EMPTY_GEAR_RENDER_SNAPSHOT = Object.freeze([]);
+
+function createGearRenderSnapshot(gears) {
+    try {
+        if (
+            !Array.isArray(gears)
+            || Object.getPrototypeOf(gears) !== Array.prototype
+        ) {
+            return EMPTY_GEAR_RENDER_SNAPSHOT;
+        }
+
+        const keys = Reflect.ownKeys(gears);
+        const lengthDescriptor = Object.getOwnPropertyDescriptor(gears, 'length');
+        if (
+            !lengthDescriptor
+            || !Object.hasOwn(lengthDescriptor, 'value')
+            || !Number.isSafeInteger(lengthDescriptor.value)
+            || lengthDescriptor.value < 0
+            || lengthDescriptor.enumerable !== false
+            || lengthDescriptor.configurable !== false
+            || keys.length !== lengthDescriptor.value + 1
+            || keys.some(key => typeof key !== 'string')
+        ) {
+            return EMPTY_GEAR_RENDER_SNAPSHOT;
+        }
+
+        const keySet = new Set(keys);
+        if (!keySet.has('length')) return EMPTY_GEAR_RENDER_SNAPSHOT;
+
+        const snapshot = [];
+        for (let index = 0; index < lengthDescriptor.value; index += 1) {
+            const key = String(index);
+            if (!keySet.has(key)) return EMPTY_GEAR_RENDER_SNAPSHOT;
+            const descriptor = Object.getOwnPropertyDescriptor(gears, key);
+            if (
+                !descriptor?.enumerable
+                || !Object.hasOwn(descriptor, 'value')
+            ) {
+                return EMPTY_GEAR_RENDER_SNAPSHOT;
+            }
+            Object.defineProperty(snapshot, key, {
+                value: descriptor.value,
+                enumerable: true,
+                configurable: true,
+                writable: true
+            });
+        }
+        return Object.freeze(snapshot);
+    } catch {
+        return EMPTY_GEAR_RENDER_SNAPSHOT;
+    }
 }
 
 function bikeFrameTypeLabel(frameType) {
@@ -163,7 +209,8 @@ function showElements(elements) {
 // MAIN RENDER FUNCTION
 // ===================================================================
 
-export function renderGearTab(allActivities) {
+export function renderGearTab(allActivities, sessionGears = []) {
+    const gearSnapshot = createGearRenderSnapshot(sessionGears);
     const runs = allActivities.filter(a => a.type && a.gear_id && a.gear_id.trim() !== '');
 
     const elements = {
@@ -190,18 +237,18 @@ export function renderGearTab(allActivities) {
     document.getElementById('gear-filters')?.remove();
     document.getElementById('gear-summary-bar')?.remove();
 
-    addGearFilters(elements.section, runs);
+    addGearFilters(elements.section, runs, gearSnapshot);
     showElements(elements);
-    renderGearSection(runs, 'all', false);
-    renderGearChart(runs, 'all');
-    renderGearGanttChart(runs, 'all');
+    renderGearSection(runs, gearSnapshot, 'all', false);
+    renderGearChart(runs, gearSnapshot, 'all');
+    renderGearGanttChart(runs, 'all', gearSnapshot);
 }
 
 // ===================================================================
 // GEAR FILTERS
 // ===================================================================
 
-function addGearFilters(container, runs) {
+function addGearFilters(container, runs, gearSnapshot) {
     const filterDiv = document.createElement('div');
     filterDiv.id = 'gear-filters';
     filterDiv.innerHTML = `
@@ -225,30 +272,30 @@ function addGearFilters(container, runs) {
         filterDiv.querySelectorAll('.gear-filter-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         currentFilter = btn.dataset.filter;
-        updateGearDisplay(runs, currentFilter, retiredCheck.checked);
+        updateGearDisplay(runs, gearSnapshot, currentFilter, retiredCheck.checked);
     });
 
     retiredCheck.addEventListener('change', () => {
-        updateGearDisplay(runs, currentFilter, retiredCheck.checked);
+        updateGearDisplay(runs, gearSnapshot, currentFilter, retiredCheck.checked);
     });
 }
 
-function updateGearDisplay(runs, filter, showRetired) {
-    renderGearSection(runs, filter, showRetired);
-    renderGearChart(runs, filter);
-    renderGearGanttChart(runs, filter);
+function updateGearDisplay(runs, gearSnapshot, filter, showRetired) {
+    renderGearSection(runs, gearSnapshot, filter, showRetired);
+    renderGearChart(runs, gearSnapshot, filter);
+    renderGearGanttChart(runs, filter, gearSnapshot);
 }
 
 // ===================================================================
 // GEAR SECTION
 // ===================================================================
 
-async function renderGearSection(runs, filter = 'all', showRetired = false) {
+async function renderGearSection(runs, gearSnapshot, filter = 'all', showRetired = false) {
     const listContainer = document.getElementById('gear-info-list');
     if (!listContainer) return;
 
     const gearMetrics = calculateGearMetrics(runs);
-    const allGears = getGears();
+    const allGears = gearSnapshot;
 
     if (allGears.length === 0) {
         listContainer.innerHTML = '<p class="empty-state">No gear loaded yet.</p>';
@@ -569,14 +616,14 @@ function handleSaveGear(btn, combinedGearData) {
 // CHART: Cumulative Distance Over Time
 // ===================================================================
 
-async function renderGearChart(runs, filter = 'all') {
+async function renderGearChart(runs, gearSnapshot, filter = 'all') {
     const canvas = document.getElementById('gearChart');
     const container = document.getElementById('gear-chart-container');
     if (!canvas) return;
 
     let filteredRuns = runs;
     if (filter !== 'all') {
-        const allGears = getGears();
+        const allGears = gearSnapshot;
         const validGearIds = new Set(
             allGears
                 .map(g => ({ ...g, type: ('frame_type' in g || 'weight' in g) ? 'bike' : 'shoe' }))
@@ -614,7 +661,7 @@ async function renderGearChart(runs, filter = 'all') {
     }
 
     const uniqueGearIds = Array.from(new Set(filteredRuns.map(r => r.gear_id).filter(Boolean)));
-    const allGears = getGears();
+    const allGears = gearSnapshot;
     const gearIdToName = new Map(allGears.map(g => [g.id, g.name || [g.brand_name, g.model_name].filter(Boolean).join(' ')]));
 
     const hexToRgba = (hex, alpha) => {
@@ -669,13 +716,13 @@ async function renderGearChart(runs, filter = 'all') {
 // CHART: Gear Gantt (Monthly Distance per Gear)
 // ===================================================================
 
-export async function renderGearGanttChart(runs, filter = 'all') {
+export async function renderGearGanttChart(runs, filter = 'all', sessionGears = []) {
     const ctx = document.getElementById('gear-gantt-chart');
     if (!ctx) return;
 
     if (gearGanttChartInstance) { gearGanttChartInstance.destroy(); gearGanttChartInstance = null; }
 
-    const allGears = getGears();
+    const allGears = createGearRenderSnapshot(sessionGears);
     const processedGears = allGears.map(g => ({
         ...g,
         type: ('frame_type' in g || 'weight' in g) ? 'bike' : 'shoe'
