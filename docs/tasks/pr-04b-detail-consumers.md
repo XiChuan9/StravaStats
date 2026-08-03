@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Awaiting decision |
+| Status | Approved for implementation |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/detail-consumers` |
 | Worktree | `/Users/wangchuanliang/Documents/StravaStats-worktrees/detail-consumers` |
@@ -17,13 +17,25 @@
 | Starting baseline | `66cdc2c457457a93bec46fdf98c5a508c96770c9` |
 | Pull request | [Draft PR #9](https://github.com/XiChuan9/StravaStats/pull/9) |
 
+### Phase status
+
+| Phase | Status |
+| --- | --- |
+| A0 | Completed / PASS |
+| A1 | Completed / PASS |
+| A2 | Completed / PASS |
+| A3 | Completed / Accepted |
+| B1 | Not started / Not authorized until A3 review and separate B1 authorization |
+| B2 | Not started / Not authorized until B1 review and separate B2 authorization |
+| B3 | Not started / Not authorized until B2 review and separate B3 authorization |
+
 ## Goal
 
 - 查明 activity router、通用详情页、Run/Bike/Swim 详情页和 Advanced Analysis 的真实取数链。
 - 设计最小迁移，使详情 consumer 只通过 Repository 或明确的页面 read façade 获取数据。
 - 避免页面和 Advanced Analysis 重复获取同一活动数据。
 - 保持现有详情输出、算法、DOM、CSS、路由和视觉不变。
-- 不在 A0–A2 实施迁移。
+- A0–A3 只完成调查、决策冻结和记账；implementation has not started。
 
 ## Why now
 
@@ -63,16 +75,16 @@ storage、cache 或 API。PR-04B 必须先完成只读调查和控制塔决策�
 - server `api/**`。
 - 真实 Strava 网络、Token、账号、私人数据或用户 browser profile。
 
-## Allowed files during A0–A2
+## Allowed files during A0–A3
 
 ```text
 docs/tasks/pr-04b-detail-consumers.md
 ```
 
-产品源码、测试、长期文档和治理文件在 A0–A2 只能读取。候选实施路径将在 A2 中作为
-proposal 记录，不构成 allowlist，也不授权实现。
+产品源码、测试、长期文档和治理文件在 A0–A3 只能读取。A3 只冻结后续阶段范围，
+不授权开始 B1、B2 或 B3。
 
-## Prohibited files and operations during A0–A2
+## Prohibited files and operations during A0–A3
 
 - 不修改 HTML、JavaScript 产品代码、测试、Repository、Connector、Factory、公共 exports、
   package 文件、Service Worker、server `api/**` 或长期治理文档。
@@ -99,7 +111,7 @@ getGear(gearId)
 
 所有成功结果使用精确 `{ data, source, warnings, partial }` envelope；失败抛出脱敏的
 `RepositoryError`。Laps 当前内嵌于 activity detail。新增第八个公共方法必须重新获得
-控制塔批准；A2 不会自行新增或冻结该能力。
+控制塔批准；A3 已明确拒绝在 PR-04B 新增第八方法、`getActivityBundle` 或 `getLaps`。
 
 ## A0 baseline evidence
 
@@ -126,8 +138,6 @@ getGear(gearId)
 | `git diff --check` | PASS |
 
 ## Current-state investigation
-
-### Evidence boundary
 
 The findings below come from static, read-only inspection of the named HTML, page entry modules,
 detail consumers, Advanced Analysis, all links to `activity-router.html`, Repository/Connector
@@ -259,12 +269,11 @@ Generic page main()
   values.
 - A page-session bundle that requests the approved union once can be injected without changing the
   analyzer algorithm, exports, result UI, DOM, or copy. Repeated clicks can reuse the same settled
-  bundle/result promise. Whether PR-04B may expand the generic stream request to that union is an A3
-  control-tower decision.
+  bundle/result promise. A3 approves the exact Generic+Advanced union frozen below.
 
 `quick-start-example.js` also uses `parseInt()` and direct API fetches, but no production import or
-HTML reference was found. It remains prohibited unless control tower proves it is a supported entry
-point and adds an explicit acceptance test.
+HTML reference was found. It remains prohibited, and accepted tests must prove it is not a production
+entry point.
 
 ### Stream contract and degradation matrix
 
@@ -279,24 +288,24 @@ point and adds an explicit acceptance test.
 The public Repository method is `getStreams(id, { types })`. Current Legacy pages and server use
 query parameter `type=`, while `StravaApiConnector.fetchStreams()` emits `types=`. The server reads
 only `req.query.type`, so current real `Repository.getStreams()` reaches a `400` despite existing
-Connector tests freezing the mismatched `types=` URL. This must be decided before migration. The
-narrow proposal is an internal Connector query-name correction plus its existing test update; it
-does not change the seven-method Repository API or server `api/**`.
+Connector tests freezing the mismatched `types=` URL. A3 approves only the internal Connector
+query-name correction plus its existing test update; the seven-method Repository API and server
+`api/**` remain unchanged.
 
 ### Consumer/provider/storage dependency matrix
 
-| Data/state | Current owner/readers | Classification | Target boundary proposal |
+| Data/state | Current owner/readers | Classification | A3 accepted boundary |
 | --- | --- | --- | --- |
 | `strava_tokens` | Router + all four pages; Connector also owns it | Provider/auth owned | Connector only, reached through Repository; never page/read façade output |
 | `strava_activities`, timestamp, cache version | activity cache service / LegacyRepository; historical consumers | Provider cache | Repository only |
 | `strava_athlete_data`, timestamp | Legacy cache; Swim reads directly | Provider metadata | `getAthlete()` via read session only where parity requires it |
 | `strava_training_zones`, timestamp | Generic/Run/Bike direct read; Legacy cache | Provider metadata | `getZones()` via read session; normalize only the proven Legacy page projection |
-| `strava_zones` | Swim direct read; no active writer found | Historical inconsistent provider key | Explicit compatibility decision; do not silently keep direct access |
+| `strava_zones` | Swim direct read; no active writer found | Historical inconsistent provider key | Remove direct access; no fallback, adapter, migration, or backfill |
 | `strava_gears`, `strava_gear_<id>`, timestamps | Legacy cache/gear consumers | Provider metadata | Embedded activity gear remains; no extra detail-page query unless parity test proves required |
 | `strava_demo_mode` | Demo selector and summary composition | UI/source selection state | Allowlisted composition-root read once, converted to explicit `sessionMode` |
 | `strava_demo_*`, `strava_tokens_demo` | Demo provider namespace | Demo-owned compatibility data | DemoRepository/provider only; no detail consumer access |
 | map style, route color, weather toggle, chart selectors/sliders | Current detail DOM/in-memory state | Page UI/user state | Keep in memory; no new storage |
-| weather cache | module-local `Map` | Non-provider transient cache | Preserve behavior; decide separately whether Demo may call Open-Meteo |
+| weather cache | module-local `Map` | Non-provider transient cache | Gate by session context: Demo external weather 0; Real behavior preserved |
 
 Importing Repository, Factory, Connector, or DemoRepository performs no Token read, storage read,
 network call, or DOM access. Constructing the real Repository creates Connector/cache adapters but
@@ -318,13 +327,11 @@ across full navigation.
 | Stream richness | Provider-dependent | Only distance, time, altitude, velocity and HR; no lat/lng, cadence, watts, moving or grade | Advanced must fail closed/disabled for missing lat/lng |
 | Zones shape | Legacy page expects `heart_rate.zones` | Demo provider exposes `heartrate` array | Read-session compatibility projection or approved Demo change is needed |
 | Athlete | Repository/cache | Demo athlete available | Swim correction must use repository-provided athlete, never real storage in Demo |
-| External weather | Existing pages may call Open-Meteo | Synthetic map can also trigger Open-Meteo | Decide whether Demo must remain zero-external-I/O or preserve current weather behavior |
+| External weather | Existing pages may call Open-Meteo | Synthetic map can also trigger Open-Meteo | Demo external weather 0; Real behavior preserved and inventoried |
 
-A mode read once in the destination composition root is enough for page-session stability. To also
-guarantee the Router and destination use the identical mode, choices are: carry a validated
-`demo|real` query hint (URL change), use ephemeral storage (privacy/staleness cost), or accept two
-independent reads of the same UI source setting across the document boundary. This is not silently
-decided here.
+A3 freezes independent document-local mode: Router and destination each call `isDemoMode()` once and
+freeze their own result. No URL mode, `sessionStorage`, Router memory, or cross-document bundle is
+used.
 
 ### Error and authentication mapping
 
@@ -337,7 +344,7 @@ decided here.
 | 500/provider failure | Often generic/API error; Advanced auth omission becomes server error | `PROVIDER_HTTP_ERROR`; never report as authentication |
 | Network failure | Raw caught Error may reach console/UI | `NETWORK_UNAVAILABLE`; retryable, no raw cause |
 | Malformed JSON/envelope | Native JSON/shape failure | `RESPONSE_INVALID`; fail closed |
-| Missing/empty streams | HTTP failure aborts page; resolved `{}` yields conditional empty states | Preserve resolved-empty degradation; decide whether a streams `NOT_FOUND` is fatal or an empty partial bundle |
+| Missing/empty streams | HTTP failure aborts page; resolved `{}` yields conditional empty states | `getStreams` error is fatal; successful `{}` preserves current degraded UI |
 | Token absent/invalid | Redirect or page-specific message | `UNAUTHENTICATED` / `TOKEN_INVALID` |
 | Token read/encode/write failure | Storage/`btoa` error can leak raw message; parallel writes can race | `TOKEN_READ_FAILED`, `TOKEN_ENCODING_FAILED`, `TOKEN_WRITE_FAILED`; safe message only |
 
@@ -356,7 +363,7 @@ page copy/navigation should otherwise remain as close as possible.
 | Run | Existing hero/meta, summary, classifier/zones, map/weather, splits, dynamic chart, 12 canvases, laps/best efforts/segments | Same |
 | Bike | Existing hero/meta, classifier/zones/climbs, map/weather/profile, splits/dynamic charts, 15 canvases, power curve, laps/best efforts/segments | Same |
 | Swim | Existing hero/meta, zones, map/weather, strokes, laps, 4 canvases | Same; athlete correction must receive equivalent athlete data |
-| All HTML/CSS/copy | Detail HTML and CSS bytes, IDs, classes, static copy and control order remain unchanged | Router script loading may change only if separately approved; safe error detail may be redacted |
+| All HTML/CSS/copy | Detail HTML and CSS bytes, IDs, classes, static copy and control order remain unchanged | Approved Router module extraction and safe error redaction are the only boundary exceptions |
 | Charts/maps/tables | Same fixture yields same chart count, labels, dataset values/order, map polyline/controls, lap/split rows and visibility | Missing capability keeps current empty/hide behavior |
 | Navigation | Same destination page selection, Back behavior and opaque `id` round trip | Optional mode hint would be an approved query-only exception |
 | Loading/error/empty | Same visible placement and navigation; no stale partial DOM | Error source changes to safe Repository classification |
@@ -375,259 +382,258 @@ page copy/navigation should otherwise remain as close as possible.
 - Baseline Node suite is 702/702. Browser/CDP, visual/manual, real-data, Safari/Firefox/mobile and
   Service Worker validation are all `Not run` in A0-A2.
 
-## Candidate target designs
+## A3 accepted decisions
 
-All designs below are proposals. None expands the approved allowlist or authorizes implementation.
+A3 is **Completed / Accepted**. It approves the exact implementation scope below but does not start
+implementation. B1, B2, and B3 each require separate authorization after the preceding phase review.
+PR #9 must remain Draft; Ready, merge, PR-04C, and PR-05 are not authorized.
 
-### Target graph candidate (recommended shape, pending approval)
+### Approved architecture: Option A
+
+- Keep exactly the seven Repository public methods: `listActivities`, `getActivity`, `getStreams`,
+  `getAthlete`, `getZones`, `getGears`, and `getGear`.
+- Do not add an eighth public method, `getActivityBundle`, or `getLaps`; do not change Repository
+  public exports.
+- Each destination detail document creates exactly one Repository and one memoized
+  `DetailReadSession` bundle promise. Concurrent consumers share that promise.
+- Activity, streams, zones, athlete context, and Advanced Analysis share the document-local read
+  session. Repeated Advanced clicks may rerun local analysis but must not request activity or streams.
+- Do not pass a detail bundle through `sessionStorage`, a URL payload, or a cross-page global.
+
+“One ActivityBundle” is a destination-detail-document constraint. Router
+`listActivities({ refresh: false })` is a routing-summary lookup, not a detail bundle request. A cold
+Router cache may cause one list network request. Router must never call `getActivity` or `getStreams`,
+and the detail page must not depend on an activity payload from Router.
+
+### Router and document-local mode contract
+
+- Extract the inline Router script from `html/activity-router.html` into
+  `js/pages/activity-router.js`.
+- Treat the activity ID as an opaque string. Reject only a missing or blank ID; never use
+  `parseInt`, `parseFloat`, `Number`, or another numeric conversion. Construct the destination with
+  `encodeURIComponent(id)`.
+- Each Router document calls `isDemoMode()` once, creates one mode-appropriate Repository, and calls
+  `listActivities({ refresh: false })` once.
+- Route from summary `sport_type`/`type` using the current sport classification. If no matching
+  summary exists, route to Generic Activity.
+- Repository failure renders only a stable, safe error. It must not fall back to direct Strava API,
+  read Token/Authorization/provider cache, or call a provider endpoint.
+- Router and destination independently call `isDemoMode()` once and freeze their own document mode.
+  Do not pass mode through URL, `sessionStorage`, or Router memory.
+- A Demo document creates Demo Repository only. It must not construct a Real connector or read a
+  real Token, real cache, or provider API.
+
+### Connector compatibility and exact stream sets
+
+Approve only the internal `StravaApiConnector.fetchStreams()` query correction from `types=` to
+`type=`. Public `getStreams(id, { types })` remains unchanged. Do not modify `api/**`, emit both query
+names, or otherwise expand Connector behavior. Only these files are approved for that correction:
 
 ```text
-Router document
-  -> preserve/validate opaque string ID
-  -> freeze session mode for this document
-  -> createRepository({ sessionMode }) once
-  -> listActivities({ refresh: false }) for sport summary
-  -> navigate to existing detail URL
-
-Destination detail document
-  -> page index is composition root
-  -> freeze/validate sessionMode once
-  -> createRepository({ sessionMode }) once
-  -> create one memoized DetailReadSession / bundle promise
-     -> getActivity(id) exactly once
-     -> getStreams(id, { types: page-approved exact list }) exactly once
-     -> getZones() once where used
-     -> getAthlete() once for Swim compatibility only
-     -> aggregate safe warnings/partial semantics without exposing auth data
-  -> inject Legacy page-local detail bundle into existing renderer
-  -> inject same activity/streams into Advanced Analyzer
-  -> repeated Advanced clicks reuse bundle/result; zero provider requests
+js/connectors/strava/strava-api-connector.js
+tests/repository/strava-api-connector.test.js
 ```
 
-This is a Legacy compatibility composition, not an eighth Repository method and not a Canonical
-ImportedActivityBundle. Router uses only activity summaries; the destination owns the only detail
-bundle. On a warm activity-list cache the Router adds no provider request; on a cold cache it can add
-one list request, but it does not duplicate the activity-detail request.
+Frozen stream sets:
 
-### Design comparison
+| Consumer | Exact types |
+| --- | --- |
+| Generic Activity + Advanced | `distance,time,heartrate,altitude,cadence,watts,velocity_smooth,latlng,grade_smooth,moving` |
+| Run | `distance,time,heartrate,altitude,cadence,watts,velocity_smooth` |
+| Bike | `distance,time,heartrate,altitude,cadence,watts,velocity_smooth` |
+| Swim | `distance,time,heartrate,cadence` |
 
-| Option | One destination bundle | Router reuse / duplicate provider work | Demo/Real parity | Public API / Connector | Storage, partial semantics, test/rollback risk |
-| --- | --- | --- | --- | --- | --- |
-| A. Page-local read façade over seven methods; Router uses `listActivities` | Yes: memoized `getActivity` + exact `getStreams`, plus needed metadata | No cross-document object reuse; avoids duplicate detail fetch. Warm cache adds 0 Router provider calls, cold cache may add 1 list call | Natural through existing Factory; requires zones-shape and missing-capability compatibility | No eighth method. Internal Connector `types` -> `type` fix is a prerequisite. No Connector bundle method | No new storage. Façade must define fatal activity vs empty/partial streams and safe warning aggregation. Smallest rollback surface |
-| B. Add public `getActivityBundle` eighth method | Yes | Router still cannot reuse it through navigation without transport; calling it in both documents duplicates the whole bundle | Requires Legacy and Demo implementation/parity contract | Expands public Repository API and tests; may internally call existing Connector methods, so no network saving by itself | Must freeze requested-stream, metadata, laps, warning and partial contract. Highest governance and rollback cost; requires new control-tower approval |
-| C. Router fetches bundle and passes via `sessionStorage` nonce | Yes across Router and page if consume-once succeeds | True handoff can remove Router/page duplication | Requires strict Real/Demo namespace and mode binding | Can keep seven methods; Connector mismatch remains | Stores provider-owned activity/streams, adds size/TTL/stale/reload/crash/malformed cleanup semantics and privacy surface. High test/migration risk; not recommended |
-| D. Change every link producer to route directly by sport/type | Yes in destination; Router usually skipped | Zero Router request when producer has trustworthy type; deep links still need fallback | Works if every producer has equivalent Demo summaries | No eighth method; Connector mismatch remains | Broad producer allowlist, includes PR-04C `run-plus`, stale/missing-type risks and more rollback points. Violates minimal PR-04B scope |
-| E. Router direct `getActivity`, page fetches only streams using URL/storage payload | Not safely without transporting the activity | Activity can be reused only through query/storage/global state; query is too large/private and global dies on navigation | Requires serialization parity | Seven methods possible | Equivalent to C or unsafe URL disclosure; rejected |
+Do not add temperature, change algorithms or stream structure, or generate/normalize streams in a
+consumer.
 
-### Recommendation
+### Missing, metadata, Advanced, weather, and error semantics
 
-Recommend Option A, subject to A3 approval, with these explicit constraints:
+- `getActivity` and `getStreams` `RepositoryError` are fatal, preserving request-level
+  all-or-nothing behavior. A successful empty streams object uses the current empty/degraded UI;
+  absent optional streams use current capability degradation.
+- Zones and athlete failures are optional and produce null/empty context without blocking the page.
+  Never fabricate streams, laps, zones, or athlete. Laps remain embedded in Legacy activity detail.
+- Generic, Run, Bike, and Swim consume only injected `getZones()` results. Swim maps Repository zones
+  to its existing `heart_rate.zones` consumer shape. No page may read `strava_training_zones` or
+  historical `strava_zones`; do not add fallback, adapter, migration, or backfill for
+  `strava_zones`. The safe boundary behavior change from removing that stale read is accepted.
+- Swim athlete correction consumes injected `getAthlete()` result and must not read
+  `strava_athlete_data`.
+- Fix the two `advanced-analysis.js` relative imports to existing `js/analysis/**`, inject the
+  already-loaded activity/streams, and remove Advanced internal fetch. Do not change analysis
+  algorithm, exports, result DOM, or UI flow. Tests must prove `quick-start-example.js` is not a
+  production entry; that file remains prohibited.
+- Demo detail Open-Meteo and all external weather requests must be zero. Real mode keeps current
+  weather behavior. Gate weather through page session context without modifying
+  `weather-analysis.js`. Real external-weather privacy governance is deferred.
+- DOM, console, and public errors must not include Token, Authorization, response body, payload,
+  cause, raw provider message, raw underlying exception message, or private activity content. Stable
+  safe generic copy may replace leaking legacy copy while preserving the existing container, layout,
+  Back/navigation behavior, and non-sensitive DOM contract.
+- HTTP 500, network, and invalid response must not be classified as authentication failure. Errors
+  must never delete Local Library, Legacy cache, or user data.
 
-1. Keep the seven-method Repository public contract unchanged; do not add `getActivityBundle` or
-   `getLaps`.
-2. Treat the destination page index as composition root and create one Repository plus one memoized
-   page-local Legacy bundle/read session. The renderer and analyzer receive data; they do not choose
-   provider, Token, cache, mode, or storage.
-3. Route using a Repository activity summary rather than a discarded detail. Preserve the opaque ID
-   exactly and encode only when constructing the destination URL.
-4. Correct the internal Connector stream query name only if control tower approves the proven
-   compatibility fix; do not change server `api/**` or the public `{ types }` method.
-5. Continue using embedded Legacy laps. Preserve resolved-empty stream behavior; fail activity
-   absence closed. Do not fabricate Demo streams/laps.
-6. Request the existing per-page stream list unchanged, except the Generic+Advanced union requires a
-   specific approval. Without that union, Advanced cannot meet the no-repeat requirement because
-   `latlng` is absent from the current page request.
-7. Avoid sessionStorage and provider payload handoff. Decide separately whether an explicit validated
-   mode query hint is acceptable; otherwise freeze mode independently once per document.
+## Frozen final 19-file allowlist
 
-### Candidate allowed files (proposal only)
+This is the complete PR-04B allowlist. Encountering a twentieth path requires an immediate stop and
+new control-tower approval.
 
-| Candidate | Why it may be necessary / why not elsewhere | Acceptance evidence | Phase |
-| --- | --- | --- | --- |
-| `docs/tasks/pr-04b-detail-consumers.md` | Phase bookkeeping and evidence | Gates/CI and decision record | B1-B3 |
-| `js/pages/AGENTS.md` (new) | `js/pages/**` has no nested ownership rules; exact consumer/storage/import constraints cannot be safely scoped in a broader root rule | Privacy/boundary review | B1, only if governance file creation is approved |
-| `html/activity-router.html` | Existing inline script is the actual Router and only place to switch it to a module without changing DOM | Router destination/DOM snapshot | B1 |
-| `js/pages/activity-router.js` (new, optional extraction) | Pure exported ID/classification/routing helpers are unit-testable; inline code cannot be imported safely. If extraction is rejected, keep logic inline and use browser tests | Opaque-ID and sport-routing tests | B1 |
-| `js/pages/detail/detail-read-session.js` (new) | Single narrow composition façade provides promise memoization, safe errors and metadata projection without expanding Repository API | Call-count, mode, partial/warning, Demo/Real tests | B1 |
-| `js/pages/activity/index.js`, `js/pages/run/index.js`, `js/pages/bike/index.js`, `js/pages/swim/index.js` | These are the existing composition roots; only they can create/inject one page-session Repository without making renderers select providers | Import zero-I/O and one-construction tests | B1/B2 |
-| `js/pages/activity/activity.js`, `js/pages/run/run.js`, `js/pages/bike/bike.js`, `js/pages/swim/swim.js` | Each large module independently owns direct Token/fetch/storage/init behavior, so all four must remove it while retaining renderer logic | Per-page direct-I/O boundary and fixture parity tests | B2 |
-| `js/pages/activity/advanced-analysis.js` | Owns duplicate fetches and broken import paths; must accept injected activity/streams for no-repeat Advanced behavior | Repeated-click/network-zero and algorithm input tests | B2, import fix requires explicit scope approval |
-| `js/connectors/strava/strava-api-connector.js` | Only internal client location can correct `types=` to server-compatible `type=` without changing public API or prohibited server | Existing Connector URL test plus Repository Real test | B1 prerequisite, explicit approval required |
-| `tests/repository/strava-api-connector.test.js` | Existing test currently freezes the mismatched URL and must change with the approved compatibility correction | Exact URL/auth/error regression | B1 prerequisite |
-| `tests/consumers/detail-consumers.test.js` (new) | No current consumer test can prove bundle memoization, exact calls, per-page streams, Advanced reuse or Demo parity | Consumer acceptance suite | B1/B2 |
-| `tests/consumers/detail-boundaries.test.js` (new) | Separate static boundary test can forbid Token/storage/direct endpoint/import-time I/O without mixing behavior tests | Privacy and dependency assertions | B1/B2 |
-| `tests/browser/detail-consumers-smoke.html` (new, optional) | Native ESM/DOM/Chart/Leaflet behavior cannot be proven by Node alone; deterministic local harness avoids real data/profile | Browser smoke matrix | B3, only if browser harness is approved |
+```text
+docs/tasks/pr-04b-detail-consumers.md
+js/pages/AGENTS.md
+html/activity-router.html
+js/pages/activity-router.js
+js/pages/detail/detail-read-session.js
+js/pages/activity/index.js
+js/pages/run/index.js
+js/pages/bike/index.js
+js/pages/swim/index.js
+js/pages/activity/activity.js
+js/pages/run/run.js
+js/pages/bike/bike.js
+js/pages/swim/swim.js
+js/pages/activity/advanced-analysis.js
+js/connectors/strava/strava-api-connector.js
+tests/repository/strava-api-connector.test.js
+tests/consumers/detail-consumers.test.js
+tests/consumers/detail-boundaries.test.js
+tests/consumers/detail-browser-smoke.html
+```
 
-Extracting the Router is recommended for pure opaque-ID and routing tests, but not required for
-runtime architecture. The four index modules should change if composition-root injection is
-accepted. All four large page modules must change because direct provider/storage ownership is
-duplicated in each. The list above is deliberately file-specific; it is not `js/pages/**`.
-
-### Explicit prohibited files for implementation unless separately re-scoped
+## Frozen prohibited scope
 
 ```text
 html/activity.html
 html/run.html
 html/bike.html
 html/swim.html
-css/**
-js/pages/activity/quick-start-example.js
-js/pages/activity/analysis-ui-components.js
-js/analysis/**
-js/tabs/**
-js/tabs/run-plus.js
-js/repository/index.js
-js/repository/factory.js
-js/repository/errors.js
-js/repository/legacy/legacy-repository.js
-js/repository/demo/demo-repository.js
-js/data/contracts/**
-js/demo/**
-api/**
-service-worker.js
+styles/**
+sw.js
+.github/**
 package.json
 package-lock.json
-docs/tasks/README.md
-docs/engineering/**
+api/**
+js/app/**
+js/services/**
+js/demo/**
+js/data/**
+js/analysis/**
+js/tabs/**
+js/repository/**
+js/pages/activity/quick-start-example.js
+js/pages/activity/analysis-ui-components.js
 docs/architecture/**
+docs/engineering/**
 docs/product/**
+docs/tasks/README.md
+tests/legacy/**
+tests/contracts/**
+tests/repository/**
 ```
 
-Repository public files, Demo generator/Repository, server, detail HTML/CSS, algorithms, link
-producers, PR-04C, dependencies and long-lived governance remain prohibited under the recommended
-path. Any evidence that forces one of them must return to A3 rather than expand the allowlist during
-implementation.
+The sole `tests/repository/**` exception is
+`tests/repository/strava-api-connector.test.js`. Do not prohibit `js/pages/**` broadly because only
+the exact page paths in the 19-file allowlist are approved.
 
-### Proposed implementation phases (not authorized)
+## Frozen phase allowlists
 
-- **B1 - boundary and prerequisite:** approve/create page rules if required; resolve the Connector
-  query-name blocker; add Router/read-session pure composition, opaque-ID preservation, stable mode,
-  memoization and boundary tests. Do not migrate render algorithms.
-- **B2 - consumer migration:** inject the read session through all four indexes; remove direct
-  Token/fetch/provider-owned storage from the four renderers; inject Generic activity/streams into
-  Advanced; preserve exact output and missing-capability behavior. No algorithm/DOM/CSS change.
-- **B3 - closure evidence:** run full automated gates and approved deterministic browser/CDP smoke;
-  compare DOM/chart/map/laps/export/loading/error/empty/navigation parity; update only the Task Brief
-  with evidence. Real account/private data/production profile remain out of scope.
+### B1 — Not started / separately authorized after A3 review
 
-### Automated test plan
+```text
+docs/tasks/pr-04b-detail-consumers.md
+js/pages/AGENTS.md
+html/activity-router.html
+js/pages/activity-router.js
+js/pages/detail/detail-read-session.js
+js/connectors/strava/strava-api-connector.js
+tests/repository/strava-api-connector.test.js
+tests/consumers/detail-consumers.test.js
+tests/consumers/detail-boundaries.test.js
+```
 
-1. Pure Router tests: preserve opaque IDs (`abc-123`, `123abc`, unsafe-length digits), reject only
-   missing/blank IDs, encode destination, and preserve all current sport routing cases/fallback.
-2. Read-session tests: one Repository construction, exact `getActivity`/`getStreams`/metadata call
-   counts, one memoized promise under concurrency/retry policy, exact per-page stream arrays, safe
-   warning/partial aggregation, and no public eighth method.
-3. Advanced tests: injected required shape, missing `latlng` fail closed, repeated clicks create no
-   activity/streams calls, and analyzer/exports receive unchanged values.
-4. Demo/Real parity tests: explicit session mode, Demo zero Token/cache/network access, missing Demo
-   streams/laps empty-safe, zones/athlete compatibility, Real calls Connector only.
-5. Error tests: all Repository codes, missing activity/streams, malformed envelope, Token lifecycle
-   failures, 401/403/404/429/5xx/network; assert no Token/body/payload/raw cause in DOM/logs.
-6. Boundary/import tests: native Node ESM import with storage/fetch/DOM sentinels, no direct
-   `/api/strava-*`, Authorization, `strava_tokens`, provider-owned keys, or `parseInt(activityId)` in
-   migrated consumers; dependency graph remains acyclic.
-7. Connector regression: exact `type=` URL, encoded opaque ID/type list, Authorization, refreshed
-   Token and full error mapping.
-8. Fixture parity: snapshot current IDs/classes/visibility and chart datasets for Generic, Run, Bike,
-   Swim with full, missing-HR, missing-GPS, missing-power, missing-cadence, no-laps and empty-stream
-   fixtures.
-9. Always run `npm ci`, syntax, privacy, full tests and `git diff --check`; add no dependency.
+Goals: page governance, Connector `type=` fix, opaque Router ID, Router Repository boundary,
+`DetailReadSession`, document mode freeze, memoization, and foundational boundary tests.
 
-### Browser / CDP / manual plan
+### B2 — Not started / not authorized until B1 review
 
-Status in A0-A2: **Not run**.
+```text
+docs/tasks/pr-04b-detail-consumers.md
+js/pages/activity/index.js
+js/pages/run/index.js
+js/pages/bike/index.js
+js/pages/swim/index.js
+js/pages/activity/activity.js
+js/pages/run/run.js
+js/pages/bike/bike.js
+js/pages/swim/swim.js
+js/pages/activity/advanced-analysis.js
+tests/consumers/detail-consumers.test.js
+tests/consumers/detail-boundaries.test.js
+```
 
-If B3 is approved, use a disposable profile and local deterministic synthetic fixtures only. Block
-and count `fetch`, XHR, WebSocket, storage and navigation; stub Chart/Leaflet/Open-Meteo where the
-test targets detail acquisition. Load all four native ESM entry points and assert no module-resolution
-error, one bundle, zero direct provider calls from renderers, exact static DOM IDs/classes, 11/12/15/4
-canvas baselines, chart dataset parity, map/lap/split/zones/empty/error states, exports and repeated
-Advanced clicks. Exercise Router with opaque IDs and all sport fallbacks in Real and Demo session
-modes. Capture desktop/mobile screenshots only for review; do not claim pixel parity from Node.
+Goals: migrate all four detail consumers; remove consumer Token/fetch/provider storage; inject
+activity/streams/zones/athlete; reuse the bundle in Advanced; preserve algorithms, DOM, charts, maps,
+laps, and exports.
 
-Manual checklist remains `Not run`: keyboard/control behavior, Back links, URL/query round trip,
-loading/error copy placement, visual comparison, Safari, Firefox, mobile viewport, production Service
-Worker and real provider/account. Real Token/network/private activity and the user's existing browser
-profile remain prohibited, not merely pending.
+### B3 — Not started / not authorized until B2 review
 
-### Privacy, migration, rollback
+```text
+docs/tasks/pr-04b-detail-consumers.md
+tests/consumers/detail-browser-smoke.html
+```
 
-- **Privacy:** recommended design removes Token/Authorization/provider-owned storage from consumers,
-  passes only page data and safe Repository errors, adds no payload handoff/storage, redacts raw body
-  and cause, and uses synthetic fixtures. Demo and Real are explicitly separated. Open-Meteo behavior
-  and mode propagation require control-tower decisions.
-- **Migration:** no data/schema/IndexedDB/Canonical migration is required. Legacy Repository and
-  embedded laps remain. No storage key is created, renamed, cleared or backfilled. `strava_zones`
-  remains a documented compatibility question rather than an implicit migration.
-- **Rollback:** land phases as ordinary separable commits. Revert B2 to restore legacy consumers,
-  B1 Router/façade independently, and Connector correction independently if needed. Never reset,
-  rebase, force-push, clear Local Library or delete provider caches as rollback.
+Goals: complete Node gates, disposable-profile Browser/CDP gates, deterministic synthetic end-to-end
+evidence, and final privacy/migration/rollback/scope audit.
 
-### A2 risk register
+Every phase stops after local implementation and verification. Do not stage, commit, push, update the
+PR body, or enter the next phase until control-tower review and separate Finalization authorization.
 
-#### P0
+## Frozen automated and Browser/CDP acceptance
 
-- Opaque string IDs are currently corrupted by `parseInt()` in Router and all four pages.
-- Demo detail navigation currently bypasses DemoRepository and can read a real Token/call real APIs.
-- Real Repository streams are blocked by the Connector `types=` versus server `type=` mismatch.
-- Generic page static imports point to nonexistent Advanced Analysis module paths.
-- Advanced Analysis duplicates data requests, lacks Authorization and repeats work on every click.
-- An unapproved eighth Repository method or `getLaps` would violate the frozen PR-03 contract.
+Automated coverage must prove opaque Router IDs and all sport routing; one Repository and one
+memoized bundle promise per destination document; concurrent promise sharing; exact activity,
+streams, and metadata call counts; exact stream sets; Advanced repeated-click zero provider I/O;
+injected zones/athlete; all Repository error/privacy semantics; Demo/Real isolation; Connector
+`type=`; import zero-I/O and acyclic boundaries; current output parity; and that
+`quick-start-example.js` is not a production entry.
 
-#### P1
+B3 browser acceptance must:
 
-- Generic Advanced needs additional `latlng/grade_smooth/moving`; unapproved stream expansion or
-  missing lat/lng can change/fail analysis.
-- Parallel refreshed-Token writes, direct raw-body errors and error misclassification are security
-  and compatibility risks.
-- Real/Demo zones shapes and Swim's historical `strava_zones`/athlete correction can change outputs.
-- Cross-document mode/bundle reuse choices can add URL or storage semantics.
-- Weather can add external calls and may violate a strict Demo zero-I/O expectation.
-- Large renderer refactors can alter DOM/chart/map/laps behavior without browser coverage.
+- use a disposable Chrome profile and deterministic synthetic data only;
+- prohibit the user's browser profile, real Token, account, network data, and private data;
+- verify browser-native ESM, opaque Router IDs, and every current sport route;
+- verify Generic, Run, Bike, and Swim in Demo and a synthetic Real seam;
+- verify one Repository per document, exact activity/streams/metadata calls, and concurrent
+  memoization;
+- verify repeated Advanced clicks perform zero provider I/O and injected zones/athlete work;
+- cover missing HR/GPS/power/cadence/laps/streams;
+- verify DOM, canvas, chart, map, laps, exports, error, empty, and navigation parity;
+- verify Demo external/provider network, Token, real-cache, and storage I/O are all zero;
+- inspect console error/warning and uncaught exceptions; and
+- record before/after snapshots of Local Storage, Session Storage, IndexedDB, Cache Storage, and
+  Service Worker.
 
-#### P2
+Existing detail-page CDN requests and Real Open-Meteo requests are recorded as **Legacy External
+Resource Inventory**. An isolated smoke harness must not be used to claim that production detail
+pages are fully offline.
 
-- Link producers inconsistently encode IDs, though Router-side preservation can contain the issue.
-- Browser/visual harness and governance file expand candidate scope and need explicit approval.
-- `quick-start-example.js` is stale direct-fetch sample code but appears unreachable.
+Browser/CDP, visual/manual, real-data, Safari/Firefox/mobile, and production Service Worker checks
+remain `Not run` until an authorized B3 execution.
 
-### Decisions required from control tower before B1
+## A3 privacy, migration, and rollback decisions
 
-1. Approve Option A or choose another bundle boundary; define whether “one ActivityBundle” permits
-   the Router's separate summary-list lookup on cold cache.
-2. Confirm the seven-method Repository API remains frozen and reject/approve an eighth method.
-3. Confirm no `getLaps`; keep Legacy embedded laps.
-4. Approve the internal Connector `types=` -> `type=` compatibility change and exact test file, or
-   provide another server-compatible path without modifying `api/**`.
-5. Decide Router inline versus extracted module, and approve exact Router files.
-6. Decide cross-document mode propagation: validated URL hint, independent per-document freeze, or a
-   separately reviewed alternative; reject/approve any sessionStorage use.
-7. Approve exact Generic+Advanced stream union, especially `latlng`, `grade_smooth`, and `moving`.
-8. Define missing-stream semantics: fatal Repository error versus resolved empty/partial page bundle;
-   define warning aggregation shown/logged without sensitive detail.
-9. Decide Real/Demo zones compatibility and Swim athlete correction ownership; decide whether
-   historical `strava_zones` needs a read-only compatibility adapter.
-10. Decide whether Demo weather must be zero external I/O or preserve current Open-Meteo behavior.
-11. Decide whether fixing the pre-existing Advanced import paths is in PR-04B scope.
-12. Approve/reject `js/pages/AGENTS.md`, the two consumer test files, and optional browser harness.
-13. Freeze the exact candidate allowed-file list by phase; do not approve `js/pages/**` broadly.
-14. Confirm safe error redaction may intentionally differ from current raw-body text while visible
-    layout/copy/navigation otherwise stay stable.
-15. Approve B1/B2/B3 sequence and browser/manual acceptance surface. Until then, no phase begins.
-
-## Acceptance criteria for A0–A2
-
-- A0 exact branch/SHA/clean/sync/PR/absence checks are evidenced before worktree creation.
-- A1 and A2 diffs contain only this Task Brief.
-- A2 records current and candidate call graphs, request/side-effect matrices, Repository and laps
-  capability analysis, Demo/Real/error/output parity, candidate/prohibited paths, test plans,
-  privacy/migration/rollback, risks, and all control-tower decisions required.
-- Browser/manual/real-data checks not actually run are marked `Not run`.
-- Final A2 status is `Awaiting decision`; implementation remains unstarted and Draft PR remains open.
+- **Privacy:** consumers receive only page data and safe Repository errors. They do not receive Token
+  or Authorization, perform provider-owned storage reads, or expose body/payload/cause/private data.
+  Demo external weather/provider I/O is zero; Real weather is unchanged and inventoried for later
+  governance.
+- **Migration:** no IndexedDB, Canonical, cache, Token, or storage-schema migration; no new storage
+  key, fallback, adapter, backfill, or cleanup. Legacy embedded laps remain authoritative.
+- **Rollback:** B1, B2, B3 and the Connector correction remain separate ordinary revert units. Never
+  reset, rebase, force-push, clear Local Library, delete Legacy cache, or delete user data.
 
 ## Required automated checks
 
-At A0 and after each Task Brief update, record actual results for:
+At A0–A3 and after every authorized implementation-phase update, record actual results for:
 
 ```text
 npm ci
@@ -639,26 +645,25 @@ git diff --check
 
 ## Manual verification
 
-- Browser/CDP detail-page smoke: planned for a separately approved implementation phase; A0–A2
-  result is `Not run` unless explicitly executed with deterministic synthetic isolated state.
+- Browser/CDP detail-page smoke: frozen for separately authorized B3; A0–A3 result is `Not run`.
 - Visual parity, Safari/Firefox/mobile, production Service Worker, real Strava account/network,
-  private data, and the user's existing browser profile: `Not run` in A0–A2.
+  private data, and the user's existing browser profile: `Not run` in A0–A3.
 
 ## Privacy and security impact
 
-A0–A2 are documentation and read-only investigation only. They do not read or expose Token,
+A0–A3 are documentation, read-only investigation, and decision recording only. They do not read or expose Token,
 Authorization, account, activity, GPS, heart-rate, power, private fixture, raw body/payload/cause,
 or the user's browser profile. All future test design must use deterministic synthetic data and
 fail closed without deleting Local Library data.
 
 ## Migration impact
 
-None in A0–A2. No IndexedDB, cache, storage schema, Token lifecycle, Canonical data, Legacy data,
+None in A0–A3. No IndexedDB, cache, storage schema, Token lifecycle, Canonical data, Legacy data,
 or Local Library content is created, modified, migrated, cleared, or deleted.
 
 ## Rollback procedure
 
-A1/A2 change only this Task Brief in ordinary commits. Rollback requires control-tower direction
+A1/A2/A3 change only this Task Brief in ordinary commits. Rollback requires control-tower direction
 and an ordinary revert; do not reset/rebase/force-push, delete branches/worktrees, or clear browser
 or Legacy storage.
 
@@ -670,8 +675,11 @@ or Legacy storage.
 - [x] A2 required call graphs and matrices completed from read-only evidence.
 - [x] A2 diff remains Task Brief only and implementation remains unstarted.
 - [x] Final A2 local gates passed against the completed investigation.
-- [ ] A2 commit, push, Draft PR update, and exact-head CI verified after this document is committed.
-- [ ] Worktree clean, local/upstream `0/0`, PR diff Task Brief only.
+- [x] A2 commit, push, Draft PR update, and exact-head CI verified.
+- [x] A3 decisions and exact phase/file scopes frozen; implementation remains unstarted.
+- [x] A3 local gates passed against the completed decision record.
+- [ ] A3 Task Brief-only commit/push, PR update, and exact-head CI verified.
+- [ ] Final worktree clean, local/upstream `0/0`, PR diff Task Brief only.
 
 ## Completion evidence
 
@@ -692,12 +700,23 @@ or Legacy storage.
 
 ### A2
 
-- Read-only investigation and decision package completed. All interfaces, paths and phases above are
-  proposals only; the Repository eighth method has not been approved or added.
+- Read-only investigation and decision package completed; A3 resolved its proposals in the accepted
+  decisions above. No eighth Repository method was added.
 - Final local gates: `npm ci` PASS (6 packages, 0 vulnerabilities); syntax PASS (133 files);
   privacy PASS; tests PASS (702/702, skipped/cancelled/todo `0/0/0`); `git diff --check` PASS.
 - Browser/CDP/manual/visual/real-data checks: `Not run`.
-- This document is the sole A2 commit payload. Commit/push, PR body update and exact-head CI are
-  post-commit verification recorded in the Draft PR and final control-tower handoff.
-- Implementation has not started. The PR diff remains Task Brief only and awaits control-tower A2
-  acceptance and A3 decisions.
+- A2 commit `ad6b37b9cfd7478e0925c622b240cb9217ce3a11`, Draft PR update, and exact-head CI run
+  `30808477643` / job `91669274598` completed successfully.
+- Implementation had not started and the PR diff remained Task Brief only.
+
+### A3
+
+- Completed / Accepted. Option A, the 19-file total allowlist, prohibited scope, phase allowlists,
+  Browser/CDP acceptance, and privacy/migration/rollback decisions are frozen above.
+- Start precheck PASS at `ad6b37b9cfd7478e0925c622b240cb9217ce3a11`: clean worktree,
+  local/upstream `0/0`, remote base unchanged, and PR #9 OPEN/Draft with Task Brief-only diff.
+- Local gates PASS: `npm ci` added 6 packages with 0 vulnerabilities; syntax 133 files; privacy PASS;
+  tests 702/702 with skipped/cancelled/todo `0/0/0`; `git diff --check` PASS.
+- This Task Brief is the sole A3 change. Implementation has not started; B1 is not authorized.
+- A3 commit/push, PR body update, and exact-head CI are post-commit evidence recorded in PR #9 and
+  the final control-tower handoff.
