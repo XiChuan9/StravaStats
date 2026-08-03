@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | In progress |
+| Status | In review |
 | Base branch | `integration/v2` |
 | Base SHA | `2178858f29d6c8efe5cf45de5ff07443387d2577` |
 | Feature branch | `codex/v2/summary-consumers` |
@@ -18,13 +18,23 @@
 | Pull request | Draft [#8](https://github.com/XiChuan9/StravaStats/pull/8) |
 | Investigation Gate | Completed / PASS |
 | Implementation Gate | Approved by control tower |
-| Implementation | B1/B1.1 and B2 completed; B3 not authorized |
+| Implementation | B1/B1.1, B2, and B3/B3.1-B3.4 completed; Final Review pending |
 | A3 | Completed |
 | A3.1 | Completed / Accepted |
+| A3.2 | Completed / Accepted |
+| A3.3 | Completed / Accepted |
+| A3.4 | Completed / Accepted |
+| A3.5 | Completed / Accepted |
+| A3.6 | Completed / Accepted |
 | B1 | Completed / PASS |
 | B1.1 | Completed / PASS |
 | B2 | Completed / PASS |
-| B3 | Not authorized / not started |
+| B3.1 | Completed / PASS |
+| B3.2 | Completed / PASS |
+| B3.3 | Completed / PASS |
+| B3.4 | Completed / PASS |
+| B3 | Completed / PASS |
+| Final Review | Pending |
 
 ## Goal
 
@@ -73,12 +83,38 @@ also owns the browser application-path verification deferred by PR-02 and PR-03.
 - A3 records control-tower decisions and freezes the total and phase-specific scopes.
 - `Approved for implementation` did not itself authorize immediate B1 execution. B1 later
   received separate control-tower authorization for local implementation only.
-- A3.1 and B2 passed control-tower review. B2 Finalization is authorized; B3 remains
-  unauthorized and not started.
+- A3.1 and B2 passed control-tower review. B2 Finalization completed, and B3 later received
+  separate authorization for local browser evidence only.
+- The control tower accepted the first B3 `Blocked / correction required` evidence, confirmed
+  the Speed Insights remote-module root cause, and approved A3.2 plus the exact four-path B3.1
+  correction and full browser rerun.
+- A3.2 expands the total allowlist from ten to eleven paths only by adding
+  `js/shared/utils/speed-insights.js`. It also approves complete isolated CDP evidence as the
+  equivalent execution surface for the unavailable Manual DevTools UI.
+- The control tower independently accepted the A3.2 scope and B3.1 Speed Insights correction,
+  including its focused 12/12 and full 700/700 regressions. A3.3 is separately approved to
+  split browser evidence into a Legacy root-page inventory and a strict PR-04A smoke/application
+  surface. This decision does not add a twelfth total path or a fifth A3.3 path.
+- Under A3.3, `/` is not a fully-offline assertion. Existing root-page D3, Chart.js,
+  Cal-Heatmap, Leaflet, GTM/Analytics, VDOT, and local Analytics resources are recorded as a
+  `Legacy External Resource Inventory`; they do not contaminate or relax the separately
+  profiled smoke surface. The strict PR-04A browser gate remains zero-external on the served
+  smoke/application-module surface.
+- `External Runtime & Privacy Hardening` is a follow-up governance item covering CDN
+  localization and version pinning, GTM/Analytics, the VDOT iframe, privacy copy, a truly
+  offline root page, and root visual regression. It is outside PR-04A and no related product
+  file may be changed here.
+- The control tower accepted A3.4 and the B3.2 single-Run regression and Gear harness
+  corrections. It confirmed that the remaining missing Run Plus session label is a harness
+  contract defect, not a product defect: Run Plus does not embed Gear Gantt and its current
+  gear filter remains the sole frozen PR-04C `tabs/api.js/getCachedGears()` exception.
+- A3.5 authorizes B3.3 to correct only this Task Brief and the browser harness, then rerun the
+  full isolated smoke surface. Product code is prohibited. The total allowlist remains exactly
+  eleven paths, and B3.3 has exactly two authorized paths.
 - After local implementation of each authorized phase, stop and return evidence for
   control-tower review before staging, committing, or pushing that phase implementation.
 - Ready, merge, PR-04B, PR-04C, and PR-05 remain unauthorized.
-- If implementation requires a new Repository public capability, an eleventh total path, or a
+- If implementation requires a new Repository public capability, a twelfth total path, or a
   path outside the authorized phase allowlist, stop and request a new control-tower decision.
 
 ## In scope
@@ -103,8 +139,9 @@ also owns the browser application-path verification deferred by PR-02 and PR-03.
 
 ## Frozen total Allowed files
 
-The control tower freezes the following as the complete PR-04A total allowlist. There is no
-eleventh path. This total allowlist does not override a narrower phase-specific allowlist:
+Under A3.2, the control tower freezes the following as the complete PR-04A total allowlist.
+There is no twelfth path. This total allowlist does not override a narrower phase-specific
+allowlist:
 
 ```text
 docs/tasks/pr-04a-summary-consumers.md
@@ -113,6 +150,7 @@ js/app/main.js
 js/tabs/run-analysis.js
 js/tabs/gear.js
 js/tabs/index.js
+js/shared/utils/speed-insights.js
 tests/consumers/summary-consumers.test.js
 tests/consumers/summary-boundaries.test.js
 tests/consumers/summary-browser-smoke.html
@@ -129,6 +167,7 @@ Per-file justification:
 | `js/tabs/run-analysis.js` | Remove `getCachedGears` and `strava_gears`; consume the current session gear read context while keeping render inputs/outputs stable | Gear Gantt is implemented here; main alone cannot remove this tab-owned cache read | gear label/order and static-boundary tests |
 | `js/tabs/gear.js` | Remove provider cache reads; accept current session gears; retain `gear-custom-*` and `gearEditMode` | Gear cards/charts repeatedly call the local `getGears()` helper in this module | custom-data, order, empty, and boundary tests |
 | `js/tabs/index.js` | Re-export the explicit Run summary read-context setter without changing existing render exports | Keeps `main.js` on the established tab public entry while allowing the Run Plus shared renderer to see the same session gears without editing `run-plus.js` | exact export/import and Run Plus regression |
+| `js/shared/utils/speed-insights.js` | Remove the cross-origin module dependency; keep local development offline and production telemetry same-origin and idempotent | The first B3 run proved that this existing utility makes the actual `main.js` graph depend on `esm.sh`; neither the harness nor main can correct that boundary | Speed Insights static/runtime boundary and full browser network gates |
 | `summary-consumers.test.js` | Deterministic orchestration, envelope, call-count, error, injection, output-input parity tests | New PR-04A behavior has no focused test home | main and consumer matrix |
 | `summary-boundaries.test.js` | Static import/API/storage boundary allow/deny matrix | Prevents future provider/cache regression across exact consumer files | direct API/storage audit |
 | `summary-browser-smoke.html` | Served `<script type="module">` synthetic harness for native browser imports and DOM-reported probe results | Controlled `playwright.evaluate` cannot load modules; no dependency may be added | browser application-path gate |
@@ -152,8 +191,8 @@ PR-04C consumer. The control tower accepts only this scoped exception; no other 
 
 ## Prohibited files and operations
 
-All paths outside the frozen ten-path total allowlist are prohibited. In A3, the only allowed
-path is this Task Brief. Prohibited paths include, without limitation:
+All paths outside the frozen eleven-path total allowlist are prohibited. In A3, the only
+allowed path was this Task Brief. Prohibited paths include, without limitation:
 
 ```text
 AGENTS.md
@@ -172,7 +211,7 @@ js/repository/**
 js/services/**
 js/demo/**
 js/data/**
-js/shared/**
+js/shared/** except `js/shared/utils/speed-insights.js`
 js/pages/**
 js/models/**
 js/analysis/**
@@ -323,8 +362,13 @@ The internal Run boundary is frozen as `setRunSessionGears(gears)`.
 - It never reads `getCachedGears()` or `strava_gears` and never falls back to real storage.
 - Initialize and refresh clear it before loading. Failures leave it empty. Successful gears are
   set before any Run or Run Plus render.
-- `js/tabs/index.js` only re-exports this internal boundary. `run-plus.js` remains unchanged,
-  while its embedded `renderRunAnalysisTab()` must retain identical gear labels.
+- `js/tabs/index.js` only re-exports this internal boundary. The actual Run Gear Gantt verifies
+  the injected labels, activity gear order, duplicate last-write behavior, ID fallback, detached
+  snapshot, and zero `strava_gears` reads.
+- `run-plus.js` remains unchanged and imports the same queryless `run-analysis.js` module
+  instance. Its embedded `renderRunAnalysisTab()` must complete safely, including the one-Run
+  regression degradation, but Run Plus does not embed Gear Gantt and therefore is not required
+  to display the session-context gear label in its DOM or chart configs.
 - Tests cover re-auth, refresh failure, empty/malformed gears, duplicate IDs, and stale-context
   prevention.
 
@@ -338,7 +382,10 @@ unchanged. Missing/malformed Demo gears become `[]` without real-storage fallbac
 `js/tabs/api.js` is prohibited in PR-04A and temporarily remains solely for PR-04C
 `js/tabs/run-plus.js`. Static tests must prove Run, Gear, and every other PR-04A summary
 consumer no longer imports it and that `run-plus.js` is its only remaining importer. This
-exception authorizes no other provider-cache consumer.
+exception authorizes no other provider-cache consumer. Until PR-04C, the Run Plus gear filter
+may read only `strava_demo_mode` and `strava_demo_gears` on the Demo path; it must never read
+real `strava_gears`, Token, Connector, provider network, or a real provider-cache fallback.
+Migrating that filter to Repository/session context belongs to PR-04C, not PR-04A.
 
 ### Frozen phase-specific allowlists
 
@@ -372,12 +419,26 @@ tests/consumers/summary-boundaries.test.js
 tests/legacy/demo-isolation.test.js
 ```
 
-B3 candidate scope, not authorized:
+B3 initial scope, authorized and accepted as `Blocked / correction required`:
 
 ```text
 docs/tasks/pr-04a-summary-consumers.md
 tests/consumers/summary-browser-smoke.html
 ```
+
+A3.2/B3.1 correction and full-rerun scope, separately authorized:
+
+```text
+docs/tasks/pr-04a-summary-consumers.md
+js/shared/utils/speed-insights.js
+tests/consumers/summary-boundaries.test.js
+tests/consumers/summary-browser-smoke.html
+```
+
+The CDP equivalent-evidence exception is approved for this rerun. Manual DevTools UI is no
+longer a blocker, but Network, Runtime/Console, Page/DOM, Storage/Application, screenshot, and
+browser-isolation evidence must all be present in the isolated CDP record. B3.1 and the rerun
+are not yet Completed/PASS or accepted for Finalization.
 
 Each B phase requires separate authorization and must stop for control-tower review after its
 local implementation. No implementation may be staged, committed, or pushed before that
@@ -390,8 +451,8 @@ The control tower approved A3.1 before B2 implementation because the frozen B2 l
 contract requires the composition root to clear and set Run session gear context and inject
 `sessionGears` into Gear rendering. A3.1 adds `js/app/main.js` to the B2 phase allowlist. This is
 not a total-scope expansion: `main.js` was already one of the ten frozen PR-04A paths, the total
-allowlist remains exactly ten paths, B2 is limited to the eight paths above, and B3 remains
-unchanged and unauthorized.
+allowlist remained ten paths at A3.1, and B2 was limited to the eight paths above. A3.2 later
+expanded the total scope to eleven paths solely for the accepted B3 Speed Insights blocker.
 
 B2 implements `setRunSessionGears(gears)`, re-exports it only through `js/tabs/index.js`, clears
 both main and Run gear state before initialize/refresh loads, sets successful session gears
@@ -410,7 +471,8 @@ tests passed. B2 is `Completed / PASS`; this does not authorize B3, Ready, or me
 - A0-A2 passed control-tower review; no A2.1 is required.
 - Investigation Gate is `Completed / PASS`; Implementation Gate is `Approved by control tower`.
 - A3 is Completed; B1 and B1.1 are `Completed / PASS` after control-tower re-review.
-- A3.1 and B2 are Completed/PASS after control-tower review; B3 is not authorized.
+- A3.1 and B2 are Completed/PASS after control-tower review. The first B3 blocker is accepted;
+  A3.2/B3.1 and the complete rerun are authorized locally but not yet reviewed.
 - The B1 change is limited to the exact six-path B1 allowlist.
 - Draft PR remains Draft and is neither marked Ready nor merged.
 
@@ -873,9 +935,10 @@ git diff --check
   stale or conflicting data; remove all main activity and aggregate gear cache operations.
 - A required eighth Repository API or Repository/Connector/Factory modification is outside the
   frozen PR-03 contract and immediately blocks implementation.
-- `run-analysis.js` is shared by Run Plus. A direct signature-only gear injection can silently
-  remove embedded Run Plus gear labels; the proposed session read context and regression test
-  are mandatory, while `run-plus.js` remains untouched.
+- `run-analysis.js` is shared by Run Plus. The public setter and embedded renderer must use the
+  same queryless ESM module instance, and one-Run regression degradation must not break the
+  embedded render. Session gear labels are verified by the actual Run Gear Gantt; Run Plus does
+  not embed that chart and retains its separately bounded PR-04C Demo gear-filter exception.
 - A missing-identity preprocessing context can fall back to real athlete storage unless main's
   explicit Repository-derived sentinel contract is tested through the real preprocessing path.
 
@@ -1128,9 +1191,11 @@ dependency and does not enumerate or read `tests/fixtures/private/**`. It uses n
 account, provider network, activity, GPS, HR, Power, or browser profile. It performs no
 migration, Legacy cleanup, IndexedDB v2 creation, or Service Worker change.
 
-Rollback is an ordinary revert of the single B1 six-path commit after control-tower direction;
-do not delete the branch/worktree or clear browser/Legacy storage. PR #8 remains Draft, and
-B2 is Completed/PASS and authorized for Finalization; B3 remains unauthorized/not started.
+Rollback is an ordinary revert of the published B1/B2 commits plus removal of the uncommitted
+B3 harness/Task Brief changes only after control-tower direction; do not delete the
+branch/worktree, disposable browser profiles, or browser/Legacy storage. PR #8 remains Draft.
+B2 is Completed/PASS. B3 is blocked and is neither Completed/PASS nor authorized for
+Finalization.
 
 ## B2 finalization evidence — Completed / PASS
 
@@ -1177,9 +1242,11 @@ total allowlist and B3 scope remain unchanged.
 5. Mutating the caller gear array after `setRunSessionGears` does not alter the frozen Run
    snapshot or its labels.
 6. The Run Plus source imports and calls the unchanged Run renderer from the exact same
-   queryless module that owns the tested session snapshot; the actual module label test and
-   static import/call test jointly prove the shared live-module boundary without editing
-   `run-plus.js`.
+   queryless module that owns the setter. Its actual embedded one-Run render must create the
+   shell and charts without regression output or exceptions. Its gear filter is separately
+   verified to label `demo-shoe` from the synthetic Demo namespace, with only
+   `strava_demo_mode`/`strava_demo_gears` provider reads and zero real provider I/O; no embedded
+   session-label assertion is made because Run Plus does not contain Gear Gantt.
 
 ### B2 tests and actual local gates
 
@@ -1206,21 +1273,814 @@ or public Repository/Connector/Factory/API change. Rollback after Finalization i
 revert of the exact B2 commit on control-tower instruction. Never delete the worktree/branch or
 clear user/Legacy storage as rollback.
 
+## B3 browser evidence — Blocked / correction required
+
+B3 received separate control-tower authorization for the exact two-path local scope below.
+The served native-ESM run found an existing external module dependency in the actual
+`main.js` graph. Under the frozen failure rules, no product correction was attempted and the
+remaining application-path gates stopped.
+
+```text
+docs/tasks/pr-04a-summary-consumers.md
+tests/consumers/summary-browser-smoke.html
+```
+
+### Isolated execution surface
+
+- Date/environment: 2026-08-02 CST; Google Chrome `150.0.7871.187`; CDP protocol `1.3`.
+- Final disposable profile: `/private/tmp/pr04a-b3-profile-final.rXPd2l`.
+- Isolation: separate Chrome process with a new `--user-data-dir`, CDP bound to
+  `127.0.0.1:9335`, extensions/default apps/component extension background pages disabled,
+  and a resolver rule intended to exclude non-loopback hosts. The actual CDP log, rather than
+  that intended resolver policy, is authoritative: external requests still succeeded.
+- Browser debug identifier: `eed53295-673c-4e06-bec4-b88a33f1af25`; page target:
+  `1CA4B39005E4A1D65EC10E4B202338F9`.
+- The user default/in-app browser profile was not used as the test execution surface. During
+  the Manual DevTools attempt, the desktop-control lookup unexpectedly resolved to an existing
+  Chrome window rather than the isolated process. The attempt was aborted immediately without
+  clicks, typing, screenshot export, storage inspection, or use as evidence. No user cookies,
+  account state, browser storage, extensions, or private data were copied, changed, or cleared.
+- Two earlier disposable launch attempts were retained, not deleted:
+  `/private/tmp/pr04a-b3-profile.5qb0ZO` and
+  `/private/tmp/pr04a-b3-profile-clean.DKPZ4I`.
+- Synthetic evidence is outside the repository at
+  `/private/tmp/pr04a-b3-evidence.V4xIg2`; the CDP JSON is `cdp-smoke.json` and the page
+  screenshot is `smoke-page.png`. Nothing from this directory is staged or committed.
+
+### Served module, contract, Demo, and consumer results
+
+- `npm run dev` served `http://127.0.0.1:3001`; `/`, the contract entry, `main.js`, the tabs
+  entry, and the smoke HTML returned the expected `200` status and HTML/JavaScript content
+  types before the browser run.
+- The harness is a served `<script type="module">` page. It establishes fetch/XHR/WebSocket,
+  storage, console, IndexedDB, Cache Storage, and Service Worker observation before native
+  product-module imports. It contains no `eval`, `Function`, source compilation, import map,
+  Service Worker rewrite, product-module proxy, or copied product implementation.
+- Browser-native import of `/js/data/contracts/index.js` exposed exactly, in sorted order:
+  `validateCanonicalActivity`, `validateCanonicalStreamSet`, and
+  `validateImportedActivityBundle`.
+- All three validators returned exactly `{ ok: true, errors: [], warnings: [] }` for inline
+  deterministic synthetic valid input. Canonical Activity validation also passed after both
+  structured clone and JSON round-trip.
+- Native imports of the actual Repository, tabs entry, Run, and Gear modules passed.
+- The actual Demo Factory path used
+  `createRepository({ sessionMode: 'demo', mode: 'legacy' })` once, then called activities
+  initialize, athlete, zones, gears, and activities refresh on that instance. All five sources
+  were `demo`; page fetch/XHR/WebSocket attempts during the Demo operation were zero;
+  forbidden real-library storage accesses were zero; and the synthetic real sentinel byte
+  snapshot was unchanged.
+- Actual Run/Gear browser DOM checks passed before the blocker: Run labels remained
+  `Second Shoe Duplicate`, `First Shoe`; caller array mutation did not alter the Run snapshot;
+  Gear filter rerender retained its initial snapshot; malformed gears preserved the empty
+  state; `strava_gears` reads were zero; and the UI-owned keys remained
+  `gear-custom-shoe-1` and `gearEditMode`.
+- In-page fetch count being zero is not treated as total-network evidence. Browser/CDP Network
+  events are authoritative for native ESM loader requests.
+
+### Blocking reproduction
+
+Trigger:
+
+```text
+served smoke page
+→ native dynamic import /js/app/main.js
+→ /js/shared/utils/speed-insights.js
+→ external native ESM request
+```
+
+Expected: the complete actual `main.js` module graph uses only
+`http://127.0.0.1:3001` resources and produces no external request.
+
+Actual CDP Network evidence:
+
+```text
+GET https://esm.sh/@vercel/speed-insights@2.0.0
+  200 application/javascript
+GET https://esm.sh/@vercel/speed-insights@2.0.0/es2022/speed-insights.mjs
+  200 application/javascript
+GET http://127.0.0.1:3001/_vercel/speed-insights/script.js
+  404 text/plain; net::ERR_ABORTED
+```
+
+`main.js` itself imported, but the external `esm.sh` attempt violates the zero-external-network
+merge blocker regardless of success or failure. Source inspection identifies the existing
+static remote import in `js/shared/utils/speed-insights.js` as the stable cause. A separately
+authorized correction phase should decide whether to change that utility and/or the
+`main.js` composition entry; both are outside the B3 two-path allowlist and were not modified.
+
+The harness body therefore ended at `data-status="failed"`. CDP recorded no uncaught runtime
+exception and one safe string-only console log. No headers, bodies, Authorization, Tokens,
+activity payload, identity, location, HR, Power, raw error, or stack was recorded.
+
+### Storage, browser, and stopped-gate accounting
+
+- Synthetic seeded-before and after snapshots matched byte-for-byte for every real-library
+  sentinel. Session Storage, IndexedDB, Cache Storage, and application-origin Service Worker
+  lists were empty before and after the observed run.
+- Local Storage contained only the harness's deterministic Demo namespace, synthetic
+  real-library sentinels, and the synthetic UI keys. The CDP reload snapshot named
+  `profileInitial` already contained those synthetic seeds because the same new profile had
+  completed one initial harness load before the instrumented reload. No storage was cleared or
+  deleted; `seededBefore` versus `after` is the authoritative mutation comparison.
+- Manual DevTools in the same profile is `Blocked — Manual DevTools unavailable`: the initial
+  desktop-control lookup targeted a pre-existing Chrome window and was immediately abandoned;
+  after CDP brought the isolated target to the foreground, the approved desktop-control
+  execution surface rejected further Chrome control. The existing Chrome window was not used
+  as a substitute or as evidence.
+- The exact disposable Chrome process was closed after evidence capture without deleting any
+  profile. The development server was stopped, and final checks found no listener on ports
+  `9335` or `3001`.
+- The Real synthetic Repository seam, full Run Plus embedded-render gate, actual `/` root-page
+  navigation, and remaining visual/navigation inspection are `Not run` because the first
+  actual-application product blocker requires immediate stop. Node evidence is not used as a
+  substitute for any of these browser gates.
+- B3 is not Completed/PASS, not a PASS candidate, and not authorized for staging,
+  Finalization, Ready, or merge.
+
+### B3 local automated gates
+
+The browser blocker does not waive the required offline regression suite. The final local run
+after browser and server shutdown produced:
+
+```text
+npm ci — PASS; 6 packages added; 0 vulnerabilities
+npm run check:syntax — PASS; 133 files
+npm run check:privacy — PASS
+node --test tests/consumers/summary-consumers.test.js — 34/34 PASS
+node --test tests/consumers/summary-boundaries.test.js — 9/9 PASS
+node --test tests/legacy/demo-isolation.test.js — 28/28 PASS
+node --test tests/repository/*.test.js — 252/252 PASS
+node --test tests/legacy/auth-lifecycle.test.js tests/legacy/demo-isolation.test.js — 56/56 PASS
+npm test — 697/697 PASS; skipped 0; cancelled 0; todo 0
+git diff --check — PASS
+```
+
+These successful Node checks do not satisfy or override the blocked browser merge gate.
+
+## A3.4 / B3.2 single-Run degradation and harness correction — Authorized locally
+
+The control tower accepted the A3.3 evidence and froze the two B3 blockers as different
+classes of defect. The Gear failure is a browser-harness expectation defect: the existing UI
+correctly renders the synthetic €140 price over 10 km as `14.00 €/km`, not as the literal
+total `140`. Gear product code must not change. The Run Plus failure is a product defect:
+`renderPaceHrEfficiencyChart()` dereferenced a null regression for one valid Run. The
+single-Run fixture must remain one Run and cannot be expanded to hide that defect.
+
+A3.4/B3.2 authorizes local changes to exactly four paths:
+
+```text
+docs/tasks/pr-04a-summary-consumers.md
+js/tabs/run-analysis.js
+tests/consumers/summary-consumers.test.js
+tests/consumers/summary-browser-smoke.html
+```
+
+Together with the uncommitted A3.2-A3.3 changes, the cumulative worktree may contain exactly
+six paths. The total PR-04A allowlist remains eleven paths; there is no twelfth total path.
+`run-plus.js`, Gear product code, main, Repository, package files, root HTML/styles, Service
+Worker, and all other paths remain prohibited.
+
+The product correction is limited to regression construction. Fewer than two points, a zero
+or non-finite denominator, non-finite slope/intercept, or a regression line containing a
+non-finite coordinate must return no regression. Single mode always renders the original
+`Run Data` dataset and appends the existing regression dataset only when regression is valid.
+Multiple mode retains its existing null guards. No public signature, visual configuration,
+storage, network, Token, Repository, or dependency behavior may change.
+
+### B3.2 local correction and isolated rerun — Completed / PASS
+
+The approved regression and Gear-harness corrections are implemented locally:
+
+- `calculateRegression()` now returns null for fewer than two points, zero or non-finite
+  denominator, non-finite slope/intercept, non-finite x bounds, or any non-finite regression
+  line coordinate. Single mode always creates `Run Data` first and appends the existing
+  regression dataset only for a valid result. Multiple mode retains its existing null guards.
+- The Node regression invokes the actual exported `renderPaceHrEfficiencyChart()` and covers
+  no valid Run, one valid Run, two equal-HR Runs, and a valid distinct-HR regression. It proves
+  dataset order, finite output, and input/object immutability.
+- The Gear browser gate associates `.stat-value` `14.00` with `.stat-label` `€/km`, verifies
+  the `800 km` lifespan text, and continues through shoe filter, retired toggle, detached
+  snapshot after caller mutation, edit-mode storage/input values, bike filter, empty/malformed
+  gears, and zero `strava_gears` reads. The Gear product file was unchanged.
+
+The complete smoke surface was rerun from a blank target in a new disposable profile:
+
+```text
+Profile — /private/tmp/pr04a-b32-smoke-profile.e2nIGa
+Evidence — /private/tmp/pr04a-b32-evidence.uJ8ypO
+Chrome — Google Chrome 150.0.7871.187; CDP 1.3
+CDP port — 9343
+Target — EB639A10AFC3A964D96142381639CB9C
+```
+
+Canonical contracts, consumer module imports, actual main import, direct Demo Factory,
+Demo Factory through the main façade, Real synthetic seam, Run/Gear consumers, external
+module network, and real-sentinel parity all passed. The Run/Gear result preserved labels
+`Second Shoe Duplicate`, `First Shoe`, and `shoe-fallback`; all filter/toggle/snapshot/custom
+data/empty-state assertions passed and provider gear reads remained zero.
+
+The actual single-Run Run Plus render no longer throws. It uses the same queryless
+`run-analysis.js` setter instance, creates the Run Plus shell and 15 embedded charts, and the
+actual `run-plus-pace-hr-efficiency-chart` contains exactly one `Run Data` dataset with one
+point and no regression dataset. Real `strava_gears` reads and page-network attempts remain
+zero. The B3.2 harness nevertheless treated absence of `Injected Session Gear Label` from the
+embedded DOM/chart configs as a blocker. The control tower has superseded that assertion:
+
+```text
+runPlusEmbeddedConsumer
+sharedModuleInstance — true
+rootHasRunPlusShell — true
+embeddedChartCount — 15
+singleRunRegressionSafe — true
+injectedLabelVisible — false (informational only; superseded gate)
+providerGearReads — 0
+networkAttempts — 0
+```
+
+Actual product contract: `renderRunAnalysisTab()` does not call `renderGearGanttChart()` and
+Run Plus `SECTION_GROUPS` contains no Gear Gantt module, so no embedded session-label target
+exists. The actual Run Gear Gantt already proves the session-label/order/duplicate/fallback
+boundary. Run Plus retains its PR-04C gear-filter path through
+`tabs/api.js/getCachedGears()`. B3.3 corrects the harness to verify that filter against the
+synthetic Demo namespace without requiring a session label or modifying `run-plus.js`.
+
+The smoke recorded 56 CDP resources: 55 loopback HTTP/module resources and one inline
+`data:image/svg+xml` resource. External HTTP(S), `esm.sh`, Speed Insights, `/api/strava-*`,
+Strava, Open-Meteo, in-page fetch/XHR/WebSocket, console warnings/errors, and uncaught
+exceptions were all zero. Before navigation, Local/Session Storage, IndexedDB, Cache Storage,
+and Service Workers were empty. After execution, only the frozen synthetic Demo keys,
+synthetic forbidden-read real sentinels, `gear-custom-shoe-1`, and `gearEditMode` existed;
+the real sentinel was byte-for-byte unchanged and IndexedDB/Cache/SW remained empty.
+
+Evidence is stored outside the repository as `smoke-gate.json`, `smoke-final.png`,
+`smoke-run-gear.png`, and `smoke-run-plus.png` in the directory above. The root Legacy
+inventory was not rerun because A3.4 explicitly accepts the A3.3 root evidence. The protected
+root/package/style/Service Worker paths remain unchanged relative to `origin/integration/v2`.
+The reused collector retained an informational `remoteDebuggingPort: 9342` scalar in
+`smoke-gate.json`; its captured browser WebSocket and the launch command use the actual port
+9343. `execution-metadata.json` records that reconciliation without altering the raw result.
+
+Local automated results after browser shutdown:
+
+```text
+npm ci — PASS; 6 packages added; 0 vulnerabilities
+npm run check:syntax — PASS; 133 files
+npm run check:privacy — PASS
+node --test tests/consumers/summary-consumers.test.js — 35/35 PASS
+node --test tests/consumers/summary-boundaries.test.js — 12/12 PASS
+node --test tests/legacy/demo-isolation.test.js — 28/28 PASS
+node --test tests/repository/*.test.js — 252/252 PASS
+node --test tests/legacy/auth-lifecycle.test.js tests/legacy/demo-isolation.test.js — 56/56 PASS
+npm test — 701/701 PASS; skipped 0; cancelled 0; todo 0
+git diff --check — PASS
+```
+
+A3.4 and B3.2 are control-tower accepted. At that checkpoint B3 remained blocked until the
+separately authorized B3.3 harness correction and full smoke rerun; the current post-rerun
+status is recorded below and in Metadata.
+
+## A3.5 / B3.3 Run Plus embedded-gate contract correction — Completed / PASS
+
+The control tower confirmed that B3.2 rendered Run Plus successfully and that the missing
+session-context label was an incorrect browser-gate expectation rather than a product defect.
+`renderRunAnalysisTab()` does not render Gear Gantt, Run Plus `SECTION_GROUPS` contains no Gear
+Gantt module, and Run Plus's current gear filter remains the sole frozen PR-04C importer of
+`tabs/api.js/getCachedGears()`. PR-04A must not modify `run-plus.js`, add Gear Gantt, or migrate
+that filter early.
+
+A3.5 authorizes B3.3 local changes to exactly two paths:
+
+```text
+docs/tasks/pr-04a-summary-consumers.md
+tests/consumers/summary-browser-smoke.html
+```
+
+No product file is authorized. The total PR-04A allowlist remains exactly eleven paths.
+B3.3 preserves the direct Run Gear Gantt gate for injected labels, ordering, duplicate
+last-write behavior, fallback IDs, detached snapshot, and zero `strava_gears` reads. The Run
+Plus embedded gate instead verifies: identical queryless setter module identity; actual
+one-Run shell/chart render; one finite `Run Data` point and no regression dataset; gear-filter
+label from deterministic `strava_demo_gears`; provider-key reads limited exactly to
+`strava_demo_mode` and `strava_demo_gears`; and zero real provider storage, Token, or network
+operations. The distinct session-context label is intentionally not required in Run Plus.
+
+A fresh disposable-profile full smoke rerun was required before B3.3 could be returned for
+control-tower review. That rerun and the corrected contract were subsequently accepted; the
+historical local-phase evidence follows.
+
+### B3.3 fresh-profile smoke rerun — Completed / PASS
+
+The full smoke/application surface passed in a new profile that was not reused from A3.3 or
+B3.2:
+
+```text
+Profile — /private/tmp/pr04a-b33-smoke-profile.nVoiER
+Evidence — /private/tmp/pr04a-b33-evidence.G8w77m
+Chrome — Chrome/150.0.7871.187; CDP 1.3
+CDP endpoint — 127.0.0.1:9344
+Browser WebSocket — ws://127.0.0.1:9344/devtools/browser/62f706ab-7273-4e5c-a8aa-8a7089c3694e
+Target — 01C50694AAF6412273654083735851DA
+Final DOM — data-status="passed"
+Failed gates — none
+```
+
+Canonical browser-native ESM exposed exactly the three validators, and each inline synthetic
+valid input, structured clone, and JSON round-trip returned exact success. Actual consumer
+modules and `main.js` imported through the native served module graph. Direct Demo Factory and
+the main façade both returned Demo sources, constructed one Repository, reused it for refresh,
+performed zero real storage/network operations, and preserved the synthetic real sentinel.
+The Real synthetic seam constructed once, preserved initialize/refresh options and activity
+reference/order, exercised metadata optionality and gear complete/partial/empty/rejected
+results, failed malformed/partial activities closed, and recorded zero direct provider I/O.
+
+The direct Run Gear Gantt retained labels `Second Shoe Duplicate`, `First Shoe`, and
+`shoe-fallback`, detached caller mutation, and read `strava_gears` zero times. Gear DOM
+filter/toggle/rerender/custom data/empty-state evidence remained stable. The actual Run Plus
+embedded render shared the queryless setter module instance, created the shell and 15 charts,
+and its one-Run pace/HR chart contained one finite `Run Data` point with no regression dataset.
+Its actual gear-filter interaction labeled `demo-shoe` as `Synthetic Demo Shoe`; provider-key
+reads were exactly `strava_demo_mode` and `strava_demo_gears`, with zero provider writes/removes,
+zero real provider events, zero Token events, and zero page-network attempts. No Run Plus
+session-label assertion remains.
+
+CDP recorded 56 resources: 55 loopback HTTP/module resources and one inline
+`data:image/svg+xml` resource. External HTTP(S), `esm.sh`, Speed Insights loopback endpoint,
+`/api/strava-*`, Strava, Open-Meteo, and in-page fetch/XHR/WebSocket were all zero. Page console
+warnings/errors and uncaught exceptions were zero. Local/Session Storage, IndexedDB, Cache
+Storage, and Service Workers were empty before navigation. After execution, Local Storage
+contained only the frozen synthetic Demo namespace, forbidden-read synthetic real sentinels,
+and `gear-custom-shoe-1`/`gearEditMode`; the real sentinel remained byte-for-byte unchanged.
+Session Storage, IndexedDB, Cache Storage, and Service Workers remained empty.
+
+Evidence files are `smoke-gate.json`, `smoke-final.png`, `smoke-run-gear.png`, and
+`smoke-run-plus.png` in the directory above. The smoke JSON's launch port, browser WebSocket,
+execution port, profile, evidence directory, and target ID are internally consistent. The Root
+Legacy inventory was not rerun, as explicitly authorized by A3.5. Chrome and the dev server
+were stopped; ports 9344 and 3001 no longer listened. The profile and evidence were retained.
+
+Local automated gates after browser shutdown:
+
+```text
+npm ci — PASS; 6 packages added; 0 vulnerabilities
+npm run check:syntax — PASS; 133 files
+npm run check:privacy — PASS
+node --test tests/consumers/summary-consumers.test.js — 35/35 PASS
+node --test tests/consumers/summary-boundaries.test.js — 12/12 PASS
+node --test tests/legacy/demo-isolation.test.js — 28/28 PASS
+node --test tests/repository/*.test.js — 252/252 PASS
+node --test tests/legacy/auth-lifecycle.test.js tests/legacy/demo-isolation.test.js — 56/56 PASS
+npm test — 701/701 PASS; skipped 0; cancelled 0; todo 0
+git diff --check — PASS
+```
+
+A3.5 is Completed/Accepted, and the control tower later accepted the B3.3 contract correction
+as Completed/PASS. Its raw chart evidence nevertheless exposed the additional non-finite-data
+gap governed by A3.6/B3.4 below. The control tower accepted A3.6 and B3.4 and declared B3
+Completed/PASS. PR-04A is now In review and remains Draft; Final Review is pending.
+
+## A3.6 / B3.4 actual preprocessing and Distance Efficiency correction — Completed / PASS
+
+The control tower accepted A3.5 and the B3.3 Run Plus embedded-label contract correction as
+Completed/PASS. It then audited the raw CDP chart evidence and found that the B3.3 PASS
+predicate was incomplete: `run-plus-efficiency-evolution-chart` contained non-finite numeric
+data and `run-plus-distance-efficiency-chart` contained a `Regression (slope: NaN)` dataset.
+`data-status="passed"` cannot override those recorded values.
+
+Two separate causes are frozen. First, the B3.3 harness passed a raw synthetic Run directly to
+`renderRunPlusTab()`, bypassing the real application sequence that calls
+`main.selectPreprocessingAthlete()` and `preprocessActivities()` before rendering. The raw Run
+therefore lacked the finite `efficiency` and `efficiency_method` fields used by the efficiency
+charts. The corrected browser path must remain one deterministic Run and execute:
+
+```text
+raw synthetic Run
+→ main.selectPreprocessingAthlete('demo', synthetic Demo athlete)
+→ preprocessingModule.preprocessActivities(...)
+→ processed Run with finite efficiency / pace_per_hr
+→ renderRunPlusTab(...)
+```
+
+It must keep `strava_demo_mode=true`, prove zero real athlete fallback/Token/cache/network I/O,
+and may not hand-add an `efficiency` field. Second, even after real preprocessing,
+`renderDistanceEfficiencyChart()` unconditionally regressed one point or equal-distance points,
+making its denominator zero. It must admit only finite positive distance plus finite efficiency,
+always keep the existing `Run Data` dataset for valid points, and append the unchanged
+regression dataset only when at least two distinct x values produce finite slope, intercept,
+min/max, and line coordinates. Pace-HR B3.2 behavior is unchanged.
+
+B3.4 authorizes local changes to exactly four paths:
+
+```text
+docs/tasks/pr-04a-summary-consumers.md
+js/tabs/run-analysis.js
+tests/consumers/summary-consumers.test.js
+tests/consumers/summary-browser-smoke.html
+```
+
+There is no fifth B3.4 path and no twelfth total PR-04A path. Run Plus, Gear, main,
+preprocessing, Repository, Speed Insights, boundary tests, package/root files, and every other
+path remain prohibited. The local correction and fresh-profile rerun are recorded below.
+
+### B3.4 fresh-profile smoke rerun — Completed / PASS
+
+`renderDistanceEfficiencyChart()` now admits only finite positive numeric distance and finite
+numeric efficiency. It creates the existing `Run Data` dataset for every admitted point, but
+returns no regression for fewer than two points, zero/non-finite denominator, non-finite
+slope/intercept or x bounds, or non-finite line coordinates. A valid multi-distance regression
+retains the existing label, dataset order, line type, colors, axes, tooltip, and chart copy.
+Pace-HR code and behavior were not changed in B3.4.
+
+The new direct Node regression calls the actual exported Distance Efficiency renderer. It
+proves: no chart for undefined/null/NaN/Infinity efficiency and invalid distance; a one-point
+finite `Run Data` dataset without regression; equal-distance degradation without regression;
+a finite valid regression after `Run Data`; and unchanged input arrays, object order, and
+fields. Summary consumers increased from 35 to 36 tests; the B3.2 Pace-HR regression continues
+to pass.
+
+The full browser smoke passed in a fresh isolated profile:
+
+```text
+Profile — /private/tmp/pr04a-b34-smoke-profile.gD0BIi
+Evidence — /private/tmp/pr04a-b34-evidence.40o8ir
+Chrome — Chrome/150.0.7871.187; CDP 1.3
+CDP endpoint — 127.0.0.1:9345
+Browser WebSocket — ws://127.0.0.1:9345/devtools/browser/51b7e5ba-5cc1-4ff8-abef-004be507401b
+Target — 10E445FEEF5570D8A94E62E9E8F24269
+Final DOM — data-status="passed"
+Failed gates — none
+```
+
+The Run Plus gate kept one raw deterministic Run with distance 10,000 m, moving time 3,000 s,
+and average HR 150. It used the actual Demo application sequence
+`selectPreprocessingAthlete → preprocessActivities`, returned the same one activity, and
+computed finite efficiency `0.03333333333333333` with method `pace_per_hr`. Real
+`strava_athlete_data` reads, Token/real-cache events, and preprocessing network attempts were
+all zero. The processed activity—not the raw unprocessed fixture—was passed to Run Plus.
+
+The actual embedded render created 15 charts and the gear-filter interaction rerender created
+15 more. All 30 configs passed the unified audit: every numeric value was finite, no dataset
+data value was undefined, and no label contained NaN or Infinity. Specific results:
+
+```text
+Pace-HR — one Run Data dataset; one point; no regression; finite
+Distance Efficiency — one Run Data dataset; one point; no regression; finite
+Efficiency Evolution — Raw Efficiency + Smoothed Trend; one point each; finite
+Unsafe embedded charts — none
+```
+
+B3.3 contracts remain intact: identical queryless setter module instance, actual Run Plus
+shell/render, `Synthetic Demo Shoe` filter label, provider reads limited exactly to
+`strava_demo_mode` and `strava_demo_gears`, and zero provider writes/removes, real provider
+storage, Token, or page-network events. The direct Run Gear Gantt separately preserved
+`Second Shoe Duplicate`, `First Shoe`, and `shoe-fallback`, caller-mutation isolation, and zero
+`strava_gears` reads.
+
+Canonical browser ESM, actual main import, direct Demo Factory, main Demo façade, Real
+synthetic Repository seam, real-sentinel parity, Run/Gear, external-module, storage, and
+runtime gates all passed. CDP recorded 56 resources: 55 loopback HTTP/module resources plus
+one inline `data:image/svg+xml`; external HTTP(S), `esm.sh`, Speed Insights loopback,
+`/api/strava-*`, Strava, Open-Meteo, and in-page fetch/XHR/WebSocket were zero. Console
+warnings/errors and uncaught exceptions were zero. Local/Session Storage, IndexedDB, Cache
+Storage, and Service Workers were empty before navigation; afterwards only synthetic Demo
+keys, forbidden-read synthetic real sentinels, and approved synthetic UI keys existed, the
+real sentinel remained byte-for-byte unchanged, and Session/IndexedDB/Cache/SW remained empty.
+
+Evidence includes `smoke-gate.json`, `execution-metadata.json`, `smoke-final.png`,
+`smoke-run-gear.png`, and `smoke-run-plus.png`. Profile, evidence path, port, WebSocket, target,
+and execution metadata agree. Chrome and the dev server were stopped; ports 9345 and 3001 no
+longer listened. The profile/evidence were retained, and the accepted Root Legacy inventory
+was not rerun.
+
+Local automated results:
+
+```text
+npm ci — PASS; 6 packages added; 0 vulnerabilities
+npm run check:syntax — PASS; 133 files
+npm run check:privacy — PASS
+node --test tests/consumers/summary-consumers.test.js — 36/36 PASS
+node --test tests/consumers/summary-boundaries.test.js — 12/12 PASS
+node --test tests/legacy/demo-isolation.test.js — 28/28 PASS
+node --test tests/repository/*.test.js — 252/252 PASS
+node --test tests/legacy/auth-lifecycle.test.js tests/legacy/demo-isolation.test.js — 56/56 PASS
+npm test — 702/702 PASS; skipped 0; cancelled 0; todo 0
+git diff --check — PASS
+```
+
+A3.6 is Completed/Accepted, B3.4 is Completed/PASS, and B3 is Completed/PASS by control-tower
+decision. PR-04A is In review and remains Draft. Final Review is pending; Ready and merge are
+not authorized.
+
+### B3 final control-tower disposition and durable evidence summary
+
+The control tower accepted A3.2, A3.3, A3.4, A3.5, and A3.6 as Completed/Accepted and B3.1,
+B3.2, B3.3, and B3.4 as Completed/PASS. The approved CDP-equivalent evidence exception
+replaced unavailable Manual DevTools UI with complete isolated Network, Runtime/Console,
+Page/DOM, Storage/Application, process-state, and screenshot collection.
+
+Speed Insights no longer imports `esm.sh`: loopback/local development is a no-op, while a
+non-local production document may inject only the same-origin
+`/_vercel/speed-insights/script.js` endpoint. The root page's pre-existing D3, Chart.js,
+Leaflet, GTM, VDOT, and Analytics resources remain a `Legacy External Resource Inventory`;
+PR-04A does not claim that the Legacy root page is fully offline. The isolated PR-04A
+smoke/application surface did achieve zero external HTTP(S), provider API, Strava,
+Open-Meteo, fetch, XHR, and WebSocket activity.
+
+Browser-native Canonical contract imports and all three validators passed. The actual main
+module graph, public Demo Factory and main Demo façade, Real synthetic Repository seam,
+Run/Gear consumers, and Run Plus embedded render all passed. Run Plus consumed the output of
+the actual `selectPreprocessingAthlete → preprocessActivities` application path; athlete
+fallback reads were zero. Sparse Pace-HR and Distance Efficiency regressions safely degraded,
+and all 30 initial/rerender Run Plus chart configs contained only finite defined numeric data
+with no NaN/Infinity labels. Final DOM status was `passed`, failed gates were empty, and
+console warnings/errors and uncaught exceptions were zero.
+
+The disposable profile contained only synthetic Demo data, forbidden-read sentinels, and the
+approved synthetic UI keys. No real Token, account, activity, identity, private fixture, or
+existing user browser profile was used. Session Storage, IndexedDB, Cache Storage, and Service
+Worker registrations remained empty. The session-local evidence directory
+`/private/tmp/pr04a-b34-evidence.40o8ir/` is non-versioned, temporary execution evidence and
+was not copied into the repository. Durable evidence consists of this redacted summary, the
+deterministic tests, and the matching local/remote CI results.
+
+Final accepted evidence summary:
+
+```text
+npm ci — PASS; 6 packages; 0 vulnerabilities
+npm run check:syntax — PASS; 133 files
+npm run check:privacy — PASS
+Summary consumers — 36/36 PASS
+Summary boundaries — 12/12 PASS
+Demo isolation — 28/28 PASS
+Repository — 252/252 PASS
+Auth + Demo — 56/56 PASS
+Full suite — 702/702 PASS; skipped/cancelled/todo 0/0/0
+git diff --check — PASS
+```
+
+## A3.3 browser evidence correction — Approved / rerun in progress
+
+The control tower accepted A3.2 and the B3.1 Speed Insights correction as
+`Completed / Accepted` and `Completed / PASS`, respectively. It also independently reran the
+focused 12/12 boundary suite and the full 700/700 suite. A3.3 does not alter the eleven-path
+total allowlist and retains the exact four-path local scope:
+
+```text
+docs/tasks/pr-04a-summary-consumers.md
+js/shared/utils/speed-insights.js
+tests/consumers/summary-boundaries.test.js
+tests/consumers/summary-browser-smoke.html
+```
+
+A3.3 replaces the earlier combined root/smoke interpretation with two isolated execution
+planes using different disposable browser profiles:
+
+1. `/` is a `Legacy External Resource Inventory`. Existing root resources from `d3js.org`,
+   `cdn.jsdelivr.net`, `unpkg.com`, `googletagmanager.com`, `vdoto2.com`, and the local
+   `/_vercel/insights/script.js` development 404 are recorded without claiming a fully
+   offline root-page Pass. The inventory must still prove that PR-04A introduced no new root
+   dependency and that no `esm.sh`, loopback Speed Insights endpoint, Strava provider API,
+   Open-Meteo request, Token, Authorization, identity, or activity data appears.
+2. `/tests/consumers/summary-browser-smoke.html` is the strict PR-04A application-module
+   gate. In its separate fresh profile every page and ESM request must remain on
+   `http://127.0.0.1:3001`, and external requests, provider operations, real-library storage,
+   unexpected IndexedDB/Cache Storage, and Service Worker registrations must all remain zero.
+
+The two profiles, targets, network counts, and storage snapshots must be reported separately;
+root cookies, storage, cache, or module state cannot be reused by the smoke target. CDP
+Network, Runtime/Console, Page/DOM, Storage/Application, screenshots, profile identity, and
+process-state evidence are the approved equivalent of the unavailable Manual DevTools UI.
+
+The follow-up governance item `External Runtime & Privacy Hardening` owns CDN localization
+and version pinning, GTM/Analytics, the VDOT iframe, privacy copy, a truly offline root page,
+and root-page visual regression. No such product correction is authorized in PR-04A.
+
+### A3.3 fresh-profile rerun — Blocked / correction required
+
+The rerun used two new profiles and installed CDP Network, Runtime/Console, Page/DOM,
+Storage/Application, and in-page fetch/XHR/WebSocket instrumentation before navigation.
+Profile A and Profile B never shared browser state:
+
+```text
+Root inventory profile — /private/tmp/pr04a-a33-root-profile.hlosPc
+Smoke gate profile — /private/tmp/pr04a-a33-smoke-profile.DXAUYk
+Evidence — /private/tmp/pr04a-a33-evidence.hTegwd
+Chrome — Google Chrome 150.0.7871.187; CDP 1.3
+Root CDP port — 9341
+Smoke CDP port — 9342
+```
+
+The Profile A root inventory recorded 81 requests: 67 loopback and 14 existing external
+requests. The external origins were `d3js.org`, `cdn.jsdelivr.net`, `unpkg.com`,
+`googletagmanager.com`, and `vdoto2.com`, matching the existing `index.html` dependencies.
+The separate existing local `/_vercel/insights/script.js` returned 404/aborted. `esm.sh`,
+`/_vercel/speed-insights/script.js`, `/api/strava-*`, Strava, and Open-Meteo counts were zero;
+in-page fetch/XHR/WebSocket, console events, uncaught exceptions, Local/Session Storage,
+IndexedDB, Cache Storage, and Service Workers were also zero/empty. The page reached
+`document.readyState="interactive"`. This is a Legacy inventory, not a fully-offline Pass.
+The root screenshot and JSON are `root-legacy-inventory.png` and
+`root-legacy-inventory.json` in the evidence directory. A git comparison to
+`origin/integration/v2` confirms no PR-04A diff in `index.html`, package files, `styles/**`,
+or `sw.js`.
+
+Profile B loaded the smoke harness directly from a blank target. Canonical native-ESM
+exports and all three synthetic validators passed, including structured clone and JSON
+round-trip. The actual Repository, main, tabs, Run, Gear, and preprocessing module graph
+loaded successfully. The run recorded 55 loopback HTTP/module resources plus one inline
+`data:image/svg+xml` resource; the latter is an embedded data URL, not an external network
+origin. External HTTP(S), `esm.sh`, Speed Insights, `/api/strava-*`, Strava, Open-Meteo, and
+in-page fetch/XHR/WebSocket counts were zero. CDP console error/warning and uncaught exception
+counts were zero. IndexedDB, Cache Storage, and Service Workers remained empty.
+
+The actual Demo Factory passed both direct public-entry and main-session-facade gates.
+`createRepository({ sessionMode: 'demo', mode: 'legacy' })` produced Demo activities,
+athlete, zones, gears, and refresh results; the main façade constructed once and reused the
+Repository for refresh. Real-library read/write/remove and page network counts were zero,
+and the synthetic real sentinel remained byte-for-byte unchanged. The Real synthetic seam
+also passed exact factory options, one construction, initialize/refresh reuse, activity
+reference/order, metadata optional/required parity, gear complete/partial/empty/rejected,
+stale reset, malformed/partial fail-closed, and preprocessing with zero
+`strava_athlete_data` reads.
+
+Two browser gates failed, so B3 remains Blocked:
+
+1. `runAndGearConsumers` reached the real Run Gantt and Gear DOM. Duplicate gear labels,
+   activity order, injected snapshot, retired/filter controls, `gear-custom-*`,
+   `gearEditMode`, and zero `strava_gears` reads were observable. The harness then rejected
+   the rendered custom-price evidence because it expected literal text `140`; the actual
+   Gear card rendered the derived existing output `14.00 €/km` for the synthetic €140 and
+   10 km values, while the `800 km` duration remained visible. Expected: validate the
+   existing observable custom-price behavior. Actual: the literal-total assertion failed
+   despite the derived custom value being rendered. Candidate correction:
+   `tests/consumers/summary-browser-smoke.html` only, subject to a new control-tower phase.
+2. `runPlusEmbeddedConsumer` used the same queryless `run-analysis.js` setter instance and
+   recorded zero real `strava_gears` reads, two Demo-namespace gear reads, and zero page
+   network. The actual embedded render threw stable `TypeError: Cannot read properties of
+   null (reading 'slope')` before the injected gear label could be asserted. The minimal
+   reproducer is `run-plus-diagnostic.json`; it uses one deterministic Run activity, reaches
+   the actual embedded Run graph, and does not expose a stack or payload. Expected: complete
+   embedded render without crashing. At this historical checkpoint the harness also expected
+   an injected session gear label, but A3.5 supersedes that label expectation because Run Plus
+   has no Gear Gantt. Actual: sparse regression data reaches a null regression before the
+   render completes. The control tower later required the separately authorized one-Run
+   `js/tabs/run-analysis.js` correction and prohibited expanding the synthetic fixture.
+
+The authoritative smoke JSON is `smoke-gate.json`; screenshots are `smoke-final.png`,
+`smoke-run-gear.png`, and `smoke-run-plus.png`. Before navigation, Profile B had empty
+Local/Session Storage, IndexedDB, Cache Storage, and Service Workers. After execution it
+contained only the harness's frozen Demo namespace, synthetic forbidden-read real-library
+sentinels, and the approved synthetic UI keys `gear-custom-shoe-1` and `gearEditMode`;
+sentinel parity passed and no provider storage was created. No repository screenshot or JSON
+contains real account, Token, activity, GPS, HR, Power, or identity data.
+
+At this historical A3.3 checkpoint, those two strict smoke gates failed, A3.3 was
+`Completed / Accepted`, and B3 was `Blocked / correction required`. No browser failure was
+relabeled as `Not run` or Pass, and no product or fifth A3.3 path was changed. The later
+B3.2-B3.4 corrections closed both blockers; Metadata and the B3 final disposition above are
+the authoritative current status.
+
+## A3.2 / B3.1 historical rerun evidence — superseded root-gate interpretation
+
+The control tower accepted the first B3 blocker, approved A3.2, expanded the total allowlist
+to eleven paths by adding only `js/shared/utils/speed-insights.js`, approved the exact
+four-path B3.1 correction, and approved complete isolated CDP evidence in place of the
+unavailable Manual DevTools UI. At the time of this superseded evidence snapshot, B3.1 was
+implemented locally but not yet accepted. That historical rerun
+stopped at the first empty-profile root-page gate because the existing root document loads
+multiple external resources before the application entry can complete.
+
+### B3.1 exact scope and Speed Insights result
+
+```text
+docs/tasks/pr-04a-summary-consumers.md
+js/shared/utils/speed-insights.js
+tests/consumers/summary-boundaries.test.js
+tests/consumers/summary-browser-smoke.html
+```
+
+- The remote `esm.sh` module import is removed. `setupSpeedInsights()` remains the public
+  export and import-time entry.
+- Node/non-browser and `localhost`, `*.localhost`, `127.0.0.1`, `::1`, and `[::1]` paths are
+  deterministic no-ops with no DOM, network, console, or storage effect.
+- Non-local browser injection is restricted to the same-origin
+  `/_vercel/speed-insights/script.js` path, explicitly checks `scriptUrl.origin` against the
+  current origin, preserves a pre-existing `window.si`, creates only the minimal `si`/`siq`
+  queue, uses static SDK name/version metadata, and is idempotent across repeated calls and
+  repeated module instances.
+- The safe error handler logs only a fixed string. The file contains no remote URL/import,
+  CDN fallback, fetch/XHR/WebSocket, storage, Token, Repository, Connector, or Service Worker
+  access.
+- Twelve focused boundary tests pass, including static source constraints, Node/loopback
+  no-op execution, and synthetic same-origin production injection/queue/idempotence.
+- The instrumented root rerun recorded `esm.sh` requests `0` and
+  `/_vercel/speed-insights/script.js` requests `0`. The corrected application module itself
+  was not reached on the authoritative reload because earlier parser-blocking external root
+  dependencies prevented `document.readyState` from advancing beyond `loading`.
+
+### New isolated-profile root blocker
+
+- Browser: Google Chrome `150.0.7871.187`; CDP protocol `1.3`; browser websocket identifier
+  `6f732bc8-5b74-4c2f-b732-defa8749b4bc`.
+- Official blank-start profile: `/private/tmp/pr04a-b31-profile-final.e4EK4U`; remote debugging
+  port `9337`; root target `2A4BBF3BD80BCB8F11B6AE884E517701`.
+- A preliminary new profile `/private/tmp/pr04a-b31-profile.F0mlr8` was abandoned and retained
+  because it opened `/` before instrumentation. The authoritative profile opened only
+  `about:blank`; CDP instrumentation was installed before navigating to `/`.
+- Evidence directory: `/private/tmp/pr04a-b31-evidence.A1ZQwt`; blocker JSON:
+  `cdp-root-blocker.json`; screenshot: `root-blocker.png`. No evidence file is in the
+  repository.
+- The official disposable Chrome process and development server were stopped after evidence
+  capture. Final checks found no profile process and no listener on ports `9337` or `3001`;
+  neither the official nor preliminary profile was deleted.
+- The authoritative root reload recorded 34 requests: 20 local and 14 external. One local
+  request, `/_vercel/insights/script.js`, returned `404` and aborted; this is the separate
+  existing Vercel Analytics tag, not the corrected Speed Insights endpoint. The run recorded
+  no `/api/strava-*`, `/_vercel/speed-insights/script.js`, in-page fetch/XHR/WebSocket,
+  console event, uncaught exception, storage mutation, IndexedDB, Cache Storage, or Service
+  Worker.
+- Local Storage, Session Storage, IndexedDB, Cache Storage, and Service Worker snapshots were
+  empty both before and after. The login and app containers existed; the app remained hidden.
+
+External request attempts, prohibited by the then-effective combined root network gate:
+
+```text
+GET https://d3js.org/d3.v7.min.js
+GET https://cdn.jsdelivr.net/npm/cal-heatmap@4.2.2/dist/cal-heatmap.min.js
+GET https://cdn.jsdelivr.net/npm/cal-heatmap@4.2.2/dist/cal-heatmap.css
+GET https://cdn.jsdelivr.net/npm/chart.js
+GET https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js
+GET https://cdn.jsdelivr.net/npm/chartjs-chart-matrix
+GET https://unpkg.com/leaflet@1.9.4/dist/leaflet.css
+GET https://unpkg.com/leaflet@1.9.4/dist/leaflet.js
+GET https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js
+GET https://www.googletagmanager.com/gtag/js
+GET https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js
+GET https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js
+GET https://www.googletagmanager.com/gtm.js
+GET https://vdoto2.com/calculator/embed
+```
+
+Additional unexpected local request:
+
+```text
+GET http://127.0.0.1:3001/_vercel/insights/script.js
+  404 text/plain; net::ERR_ABORTED
+```
+
+The first nine library/style requests, html2canvas, and VDOT iframe returned responses in the
+observed run; the remaining attempts still count regardless of eventual response. The VDOT
+iframe is present in the DOM, and the unresolved external parser/frame graph left the root at
+`document.readyState="loading"`. Expected behavior was a fully local root graph on
+`127.0.0.1:3001` with zero external attempt.
+
+The stable source locations are existing `index.html` external scripts/styles around lines
+35-51, Google analytics around lines 70-92, the local Vercel Analytics tag at line 92, and the
+VDOT iframe around lines 920-922. `index.html`, package files, and all other correction
+candidates are outside the B3.1 four-path allowlist and were not modified. The control tower
+must authorize a separate root dependency/offline correction phase before another full B3
+rerun.
+
+Because the root gate is ordered before smoke seeding and is itself a merge blocker, the
+authoritative run did not navigate a smoke target. Canonical browser validators, actual main
+import, Demo Factory, Real seam, Run/Gear, and Run Plus embedded gates were therefore not
+rerun; their first-B3 historical results are not relabeled as current-rerun evidence.
+
+### B3.1 automated gates
+
+```text
+npm ci — PASS; 6 packages added; 0 vulnerabilities
+npm run check:syntax — PASS; 133 files
+npm run check:privacy — PASS
+node --test tests/consumers/summary-consumers.test.js — 34/34 PASS
+node --test tests/consumers/summary-boundaries.test.js — 12/12 PASS
+node --test tests/legacy/demo-isolation.test.js — 28/28 PASS
+node --test tests/repository/*.test.js — 252/252 PASS
+node --test tests/legacy/auth-lifecycle.test.js tests/legacy/demo-isolation.test.js — 56/56 PASS
+npm test — 700/700 PASS; skipped 0; cancelled 0; todo 0
+git diff --check — PASS
+```
+
+At that historical checkpoint A3.2 remained `Approved`, B3.1 awaited review, and the rerun
+was `Blocked / additional correction required`. A3.3 supersedes that root-gate interpretation
+and the current statuses are recorded in Metadata and the A3.3 section above.
+
 ## Not run and known limitations
 
-- A2 did not run full application Demo or Real initialization in a browser.
-- Browser native dynamic import, exact exports, three validator calls, application orchestration,
-  network/storage/IndexedDB/Cache/Service Worker instrumentation, and Manual DevTools are
-  `Not run`; the controlled evaluate surface cannot load modules.
-- Browser direct contract-module URL load passed, but URL load alone is not ESM execution.
-- No screenshots or visual regression evidence were produced in A2.
+- A3.3 reran the root inventory and every strict smoke category in separate fresh profiles.
+  Its recorded blockers were corrected by B3.2-B3.4 and accepted by the control tower; they
+  are retained as historical correction evidence, not current failures or `Not run` items.
+- Manual DevTools UI was not run. The control tower explicitly approved complete CDP Network,
+  Runtime/Console, Page/DOM, Storage/Application, and screenshot evidence as its equivalent
+  execution surface for this rerun.
 - No real Token, account, Strava/provider network, activity, GPS, HR, Power, device data, private
   fixture, or existing browser profile was used.
 - No Safari/Firefox/mobile/production Service Worker verification ran.
-- Node boundary tests from the existing suite passed but do not satisfy browser gates.
+- Node boundary tests do not satisfy browser gates.
+- A fully offline Legacy root page was not asserted. It remains follow-up work under
+  `External Runtime & Privacy Hardening` together with CDN/GTM/VDOT/privacy/visual governance.
 - A3 resolves the preprocessing identity fallback through main's explicit non-persistent
-  Repository-derived context. B1/B1.1 and B2 are Completed/PASS, while B3 browser proof remains
-  `Not run` / not started.
+  Repository-derived context. B1/B1.1, B2, and B3/B3.1-B3.4 are Completed/PASS; A3.2-A3.6
+  are Completed/Accepted. PR-04A is In review, its Final Review is pending, and it remains
+  Draft.
 
 ## Independent review checklist
 
@@ -1239,7 +2099,30 @@ clear user/Legacy storage as rollback.
 - [x] Implementation Gate is Approved by control tower.
 - [x] A3 is complete; B1 and B1.1 passed control-tower review and are Completed / PASS.
 - [x] B1 finalization is limited to the exact six-path allowlist and PR remains Draft.
-- [x] A3.1 and B2 passed control-tower review and are Completed/PASS; B3 is not authorized.
+- [x] A3.1 and B2 passed control-tower review and are Completed/PASS.
+- [x] B3 preserved synthetic, disposable-profile evidence without using a user profile or
+  private data.
+- [x] B3 full smoke evidence passed and was accepted by the control tower.
+- [x] A3.2 expands the total allowlist to exactly eleven paths and B3.1 uses only its exact
+  four-path scope.
+- [x] Speed Insights static, Node/loopback, and same-origin/idempotence regressions pass.
+- [x] A3.3 separates the root Legacy inventory from the strict smoke gate using different
+  fresh profiles and complete CDP evidence.
+- [x] Root external dependencies are recorded as Legacy inventory and mapped to the later
+  `External Runtime & Privacy Hardening` task.
+- [x] B3.2 corrects the Gear harness expectation and the single-Run null regression without
+  changing Gear or Run Plus product code.
+- [x] Run/Gear and single-Run regression browser gates pass in the fresh B3.2 profile.
+- [x] A3.5 supersedes the incorrect Run Plus embedded session-label assertion; the actual Run
+  Gear Gantt owns that label gate and Run Plus retains only the bounded PR-04C Demo filter.
+- [x] B3.3 full smoke rerun verifies actual Run Plus embedded rendering plus the exact Demo
+  namespace filter contract without modifying product code.
+- [x] B3.4 sends the one-Run browser fixture through the actual preprocessing path and proves
+  finite `pace_per_hr` efficiency with zero real fallback/network activity.
+- [x] Distance Efficiency Node and browser gates cover invalid, one-point, equal-distance, and
+  valid-regression behavior without changing Pace-HR output.
+- [x] All 30 initial/rerender Run Plus embedded chart configs contain finite defined data and
+  labels without NaN/Infinity; B3.4 and B3 are Completed/PASS.
 
 ## Completion evidence
 
@@ -1335,14 +2218,170 @@ B2 local:
   Full tests — 697/697 Pass
   Diff check — Pass
   Publication — Exact eight-path ordinary commit and normal push authorized; PR remains Draft
-  B3 — Not authorized / Not started
+  B3 at B2 close — Not authorized / Not started
+
+B3 local:
+  Authorization — Separate control-tower browser-evidence authorization received
+  Status — Blocked / correction required
+  Paths — Exact two-path B3 allowlist only
+  Browser — Chrome 150.0.7871.187; disposable profile; CDP 127.0.0.1:9335
+  Native canonical ESM — Exact three exports and validator calls Pass
+  Actual Demo Factory — Pass; five demo sources; forbidden real storage access 0
+  Actual Run/Gear DOM evidence — Pass before blocker; provider gear reads 0
+  Actual main import — Module imported, but external module requests detected
+  Blocking requests — esm.sh @vercel/speed-insights entry and implementation module
+  Storage — Synthetic sentinel snapshot unchanged; IndexedDB/Cache/SW empty
+  Console — No uncaught exception; no private payload
+  Manual DevTools — Blocked / unavailable on the isolated-profile control surface
+  npm ci — Pass; 6 packages; 0 vulnerabilities
+  Syntax — 133 files Pass
+  Privacy — Pass
+  Consumer/Boundary/Demo — 34/34, 9/9, 28/28 Pass
+  Repository/Auth+Demo — 252/252, 56/56 Pass
+  Full tests — 697/697 Pass; skipped/cancelled/todo 0
+  Diff check — Pass
+  Browser/server shutdown — Chrome closed; ports 9335 and 3001 not listening
+  Remaining browser gates — Not run after mandatory product-blocker stop
+  Product correction — Not attempted; separate control-tower authorization required
+
+A3.2 / B3.1 local:
+  Authorization — Eleven-path total scope, exact four-path correction, and CDP exception approved
+  Speed Insights correction — Implemented locally / awaiting control-tower review
+  B3 rerun — Blocked / additional correction required
+  Paths — Exact four-path B3.1 allowlist only
+  Browser — Chrome 150.0.7871.187; new profile; CDP 127.0.0.1:9337
+  Root network — 34 total; 20 local; 14 external attempts; 1 local Analytics 404/abort
+  Speed Insights — esm.sh 0; /_vercel/speed-insights endpoint 0
+  Root API and page I/O — /api/strava-* 0; fetch/XHR/WebSocket 0
+  Root storage — local/session/IndexedDB/Cache/SW empty before and after
+  Root runtime — console events 0; uncaught exceptions 0
+  New blocker — Existing index.html CDN, analytics, and VDOT iframe dependencies
+  Current-rerun smoke/validators/main/Demo/Real/Run/Gear/Run Plus — Not run after root stop
+  Consumer/Boundary/Demo — 34/34, 12/12, 28/28 Pass
+  Repository/Auth+Demo — 252/252, 56/56 Pass
+  Syntax/Privacy — 133 files Pass / Pass
+  Full tests — 700/700 Pass; skipped/cancelled/todo 0
+  Diff check — Pass
+  Browser/server shutdown — Chrome closed; ports 9337 and 3001 not listening; profiles retained
+  Publication — Not staged, committed, pushed, Ready, or merged
+
+A3.3 / B3 fresh-profile rerun:
+  A3.2 — Completed / Accepted
+  B3.1 Speed Insights correction — Completed / PASS
+  A3.3 — Completed / Accepted
+  B3 — Blocked / correction required
+  Paths — Exact four-path A3.3/B3 allowlist only; no fifth path
+  Root profile — /private/tmp/pr04a-a33-root-profile.hlosPc; CDP 127.0.0.1:9341
+  Smoke profile — /private/tmp/pr04a-a33-smoke-profile.DXAUYk; CDP 127.0.0.1:9342
+  Evidence — /private/tmp/pr04a-a33-evidence.hTegwd
+  Browser — Google Chrome 150.0.7871.187; CDP 1.3
+  Root inventory — 81 total; 67 loopback; 14 existing external; Analytics local 404
+  Root privacy — esm.sh/Speed Insights/API/Strava/Open-Meteo 0; storage/IDB/Cache/SW empty
+  Canonical browser gate — exact three exports and all validators/round-trips Pass
+  Actual main import — Pass; external HTTP(S)/esm.sh/Speed Insights/API 0
+  Demo Factory/main façade — Pass; one construction; refresh reuse; Demo source; real I/O 0
+  Real synthetic seam — Pass; lifecycle/envelope/metadata/gears/preprocessing/storage gates
+  Run/Gear — Blocked on literal custom-price browser assertion after real DOM rendering
+  Run Plus — Blocked; stable TypeError reading null regression slope; real gear reads 0
+  Smoke application I/O — fetch/XHR/WebSocket 0; console warning/error 0; exceptions 0
+  Smoke application storage — synthetic keys only; real sentinel unchanged; IDB/Cache/SW empty
+  npm ci — Pass; 6 packages added; 0 vulnerabilities
+  Syntax/Privacy — 133 files Pass / Pass
+  Consumer/Boundary/Demo — 34/34, 12/12, 28/28 Pass
+  Repository/Auth+Demo — 252/252, 56/56 Pass
+  Full tests — 700/700 Pass; skipped/cancelled/todo 0
+  Diff check — Pass
+  Browser/server shutdown — Chrome closed; ports 9341, 9342, and 3001 not listening
+  Publication — Not staged, committed, pushed, PR-updated, Ready, or merged
+
+A3.4 / B3.2 local:
+  Authorization — Exact four-path single-Run and harness correction; total eleven paths unchanged
+  A3.4 — Completed / Accepted
+  B3.2 — Completed / PASS
+  B3 — B3.2 label blocker superseded; B3.3 rerun separately authorized
+  Cumulative worktree — Exact six allowed paths; staged empty
+  Product correction — Safe null/zero/non-finite regression degradation in run-analysis.js
+  Gear correction — Harness validates derived 14.00 €/km, 800 km, filters/toggle/snapshot/edit/empty
+  Profile — /private/tmp/pr04a-b32-smoke-profile.e2nIGa
+  Evidence — /private/tmp/pr04a-b32-evidence.uJ8ypO
+  Browser — Chrome 150.0.7871.187; CDP 1.3; actual port 9343
+  Canonical/main/Demo/Real/Run-Gear — Pass
+  Single-Run embedded regression — Pass; one Run Data dataset; no regression; 15 charts complete
+  Superseded gate — Injected session gear label absent from embedded Run Plus DOM/chart configs;
+    Run Plus has no Gear Gantt and the label assertion is not part of the product contract
+  Network — external HTTP(S)/esm.sh/Speed Insights/API/Strava/Open-Meteo/fetch/XHR/WS all 0
+  Storage — synthetic keys only; sentinel unchanged; IndexedDB/Cache/SW empty
+  Runtime — console warnings/errors 0; uncaught exceptions 0
+  Consumer/Boundary/Demo — 35/35, 12/12, 28/28 Pass
+  Repository/Auth+Demo — 252/252, 56/56 Pass
+  Syntax/Privacy — 133 files Pass / Pass
+  Full tests — 701/701 Pass; skipped/cancelled/todo 0
+  npm ci/diff — 0 vulnerabilities / Pass
+  Browser/server shutdown — Chrome closed; ports 9343 and 3001 not listening; evidence retained
+  Publication — Not staged, committed, pushed, PR-updated, Ready, or merged
+
+A3.5 / B3.3 local:
+  A3.5 — Completed / Accepted
+  B3.3 contract correction — Completed / PASS
+  B3 result after CDP audit — REVISE; PASS predicate missed recorded non-finite chart data
+  PR-04A — In progress; Draft
+  Paths — Exact two-path B3.3 scope; cumulative worktree remains exact six paths
+  Product changes in B3.3 — None
+  Profile — /private/tmp/pr04a-b33-smoke-profile.nVoiER
+  Evidence — /private/tmp/pr04a-b33-evidence.G8w77m
+  Browser — Chrome/150.0.7871.187; CDP 1.3; port 9344
+  Target — 01C50694AAF6412273654083735851DA
+  Canonical/main/Demo/Real/Run-Gear — Pass
+  Run Plus — Pass candidate; same module instance, shell, 15 charts, one finite Run Data point
+  Run Plus filter — Synthetic Demo Shoe; provider reads demo_mode/demo_gears only; real/Token I/O 0
+  Network — external HTTP(S)/esm.sh/Speed Insights/API/Strava/Open-Meteo/fetch/XHR/WS all 0
+  Storage — synthetic keys only; sentinel unchanged; Session/IndexedDB/Cache/SW empty
+  Runtime — final DOM passed; failed gates 0; console warnings/errors 0; exceptions 0
+  Consumer/Boundary/Demo — 35/35, 12/12, 28/28 Pass
+  Repository/Auth+Demo — 252/252, 56/56 Pass
+  Syntax/Privacy — 133 files Pass / Pass
+  Full tests — 701/701 Pass; skipped/cancelled/todo 0
+  npm ci/diff — 0 vulnerabilities / Pass
+  Browser/server shutdown — Chrome closed; ports 9344 and 3001 not listening; evidence retained
+  Publication — Not staged, committed, pushed, PR-updated, Ready, or merged
+
+A3.6 / B3.4 local:
+  A3.6 — Completed / Accepted
+  B3.4 — Completed / PASS
+  B3 — Completed / PASS
+  PR-04A — In review; Draft; Final Review pending
+  Paths — Exact four-path B3.4 scope; cumulative worktree remains exact six paths
+  Product correction — Distance Efficiency finite admission and null regression degradation
+  Preprocessing path — Actual main selector + shared preprocess; one Run; finite pace_per_hr
+  Profile — /private/tmp/pr04a-b34-smoke-profile.gD0BIi
+  Evidence — /private/tmp/pr04a-b34-evidence.40o8ir
+  Browser — Chrome/150.0.7871.187; CDP 1.3; port 9345
+  Target — 10E445FEEF5570D8A94E62E9E8F24269
+  Canonical/main/Demo/Real/Run-Gear — Pass
+  Preprocessing — 1 activity; efficiency 0.03333333333333333; pace_per_hr; fallback/network 0
+  Pace-HR — one finite Run Data point; no regression
+  Distance Efficiency — one finite Run Data point; no regression
+  Efficiency Evolution — Raw/Smoothed one point each; finite and defined
+  Embedded audit — 30/30 configs finite/defined; labels contain no NaN/Infinity
+  Run Plus filter — Synthetic Demo Shoe; demo_mode/demo_gears reads only; real/Token I/O 0
+  Network — external HTTP(S)/esm.sh/Speed Insights/API/Strava/Open-Meteo/fetch/XHR/WS all 0
+  Storage — synthetic keys only; sentinel unchanged; Session/IndexedDB/Cache/SW empty
+  Runtime — final DOM passed; failed gates 0; console warnings/errors 0; exceptions 0
+  Consumer/Boundary/Demo — 36/36, 12/12, 28/28 Pass
+  Repository/Auth+Demo — 252/252, 56/56 Pass
+  Syntax/Privacy — 133 files Pass / Pass
+  Full tests — 702/702 Pass; skipped/cancelled/todo 0
+  npm ci/diff — 0 vulnerabilities / Pass
+  Browser/server shutdown — Chrome closed; ports 9345 and 3001 not listening; evidence retained
+  Publication before B3 Finalization — Not staged, committed, pushed, PR-updated, Ready, or merged
 ```
 
 ## Stop conditions
 
-For B1, stop immediately if the fixed head/branch/PR state differs, a check fails, a seventh
-path or other prohibited diff appears, real credentials/private data/profile access is needed,
-provider-vs-UI ownership cannot be determined, Repository public API or
-Repository/Connector/Factory/shared/auth changes are required, a dependency is needed, or PR
-base/head/Draft state is wrong. Preserve evidence; do not self-expand scope, stage, commit,
-push, update the PR, or begin B2/B3.
+For B3 Finalization, stop immediately if the fixed head/branch/Draft PR state differs, a local
+or remote gate fails, the cumulative diff differs from the exact six authorized paths, the PR
+diff differs from the frozen eleven-path allowlist, or real credentials/private data/browser
+profiles are required. Finalization may explicitly stage the six paths, create the approved
+ordinary commit, push normally, update the Draft PR body, and verify the matching CI only.
+Do not start Final Review Closure, mark Ready, merge, alter `integration/v2`, delete the
+worktree/branch, or start PR-04B/PR-04C without separate control-tower authorization.

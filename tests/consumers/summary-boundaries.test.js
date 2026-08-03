@@ -25,6 +25,7 @@ const tabSources = new Map(await Promise.all(summaryTabs.map(async path => (
 const mainSource = await source('js/app/main.js');
 const tabsIndexSource = await source('js/tabs/index.js');
 const runPlusSource = await source('js/tabs/run-plus.js');
+const speedInsightsSource = await source('js/shared/utils/speed-insights.js');
 
 test('main obtains provider-owned data only through the Repository public entry', () => {
     assert.match(
@@ -178,4 +179,166 @@ test('B2 wires the Run gear context through the existing tab public entry', () =
 test('B2 leaves the PR-04C Run Plus provider exception and B3 seam unchanged', () => {
     assert.match(runPlusSource, /from\s*['"]\.\/api\.js['"]/);
     assert.doesNotMatch(mainSource, /summary-browser-smoke/);
+});
+
+test('Speed Insights stays local-offline and production telemetry is same-origin only', () => {
+    assert.doesNotMatch(speedInsightsSource, /esm\.sh|vercel-scripts\.com/);
+    assert.doesNotMatch(speedInsightsSource, /https?:\/\//);
+    assert.doesNotMatch(speedInsightsSource, /(?:from|import\s*\()\s*['"](?:https?:)?\/\//);
+    for (const prohibited of [
+        /\bfetch\b/,
+        /XMLHttpRequest/,
+        /WebSocket/,
+        /localStorage|sessionStorage/,
+        /strava_tokens|Authorization/,
+        /Repository|Connector/
+    ]) {
+        assert.doesNotMatch(speedInsightsSource, prohibited);
+    }
+
+    assert.equal(
+        (speedInsightsSource.match(/\/_vercel\/speed-insights\/script\.js/g) || []).length,
+        1
+    );
+    for (const hostname of [
+        'localhost',
+        '.localhost',
+        '127.0.0.1',
+        '::1',
+        '[::1]'
+    ]) {
+        assert.equal(speedInsightsSource.includes(hostname), true, hostname);
+    }
+    assert.match(speedInsightsSource, /isLocalHostname\(window\.location\?\.hostname\)/);
+    assert.match(speedInsightsSource, /Array\.from\(documentObject\.scripts\)\.some/);
+    assert.match(speedInsightsSource, /if \(hasSpeedInsightsScript\(document, scriptUrl\)\) return/);
+    assert.match(
+        speedInsightsSource,
+        /if \(scriptUrl\.origin !== window\.location\.origin\) return/
+    );
+    assert.match(speedInsightsSource, /export function setupSpeedInsights\(\)/);
+    assert.match(speedInsightsSource, /setupSpeedInsights\(\);\s*$/);
+    assert.match(
+        mainSource,
+        /import\s*['"]\.\.\/shared\/utils\/speed-insights\.js['"]/
+    );
+});
+
+test('Speed Insights import is a Node and loopback no-op', async () => {
+    const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
+    const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document');
+    try {
+        Reflect.deleteProperty(globalThis, 'window');
+        Reflect.deleteProperty(globalThis, 'document');
+        await import(new URL(
+            'js/shared/utils/speed-insights.js?node-noop',
+            projectRoot
+        ));
+
+        let domCalls = 0;
+        globalThis.document = {
+            get scripts() {
+                domCalls += 1;
+                throw new Error('Loopback import touched scripts.');
+            },
+            createElement() {
+                domCalls += 1;
+                throw new Error('Loopback import created a script.');
+            }
+        };
+        for (const [index, hostname] of [
+            'localhost',
+            'dashboard.localhost',
+            '127.0.0.1',
+            '::1',
+            '[::1]'
+        ].entries()) {
+            globalThis.window = {
+                location: {
+                    hostname,
+                    origin: 'http://127.0.0.1:3001'
+                }
+            };
+            const module = await import(new URL(
+                `js/shared/utils/speed-insights.js?loopback=${index}`,
+                projectRoot
+            ));
+            module.setupSpeedInsights();
+        }
+        assert.equal(domCalls, 0);
+    } finally {
+        if (windowDescriptor) Object.defineProperty(globalThis, 'window', windowDescriptor);
+        else Reflect.deleteProperty(globalThis, 'window');
+        if (documentDescriptor) Object.defineProperty(globalThis, 'document', documentDescriptor);
+        else Reflect.deleteProperty(globalThis, 'document');
+    }
+});
+
+test('Speed Insights production injection is same-origin, queued, and idempotent', async () => {
+    const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
+    const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document');
+    const scripts = [];
+    try {
+        globalThis.window = {
+            location: {
+                hostname: 'synthetic.example.test',
+                origin: 'https://synthetic.example.test'
+            }
+        };
+        globalThis.document = {
+            scripts,
+            head: {
+                appendChild(script) {
+                    scripts.push(script);
+                }
+            },
+            createElement(tagName) {
+                assert.equal(tagName, 'script');
+                return {
+                    dataset: {},
+                    addEventListener(type, callback, options) {
+                        assert.equal(type, 'error');
+                        assert.equal(typeof callback, 'function');
+                        assert.deepEqual(options, { once: true });
+                    },
+                    getAttribute(name) {
+                        return name === 'src' ? this.src || null : null;
+                    }
+                };
+            }
+        };
+
+        const first = await import(new URL(
+            'js/shared/utils/speed-insights.js?production=first',
+            projectRoot
+        ));
+        assert.equal(typeof first.setupSpeedInsights, 'function');
+        assert.equal(scripts.length, 1);
+        assert.equal(
+            scripts[0].src,
+            'https://synthetic.example.test/_vercel/speed-insights/script.js'
+        );
+        assert.equal(scripts[0].defer, true);
+        assert.equal(scripts[0].dataset.sdkn, '@vercel/speed-insights');
+        assert.equal(scripts[0].dataset.sdkv, '2.0.0');
+        assert.equal(typeof globalThis.window.si, 'function');
+        assert.deepEqual(globalThis.window.siq, []);
+        globalThis.window.si('synthetic-event');
+        assert.deepEqual(globalThis.window.siq, [['synthetic-event']]);
+        first.setupSpeedInsights();
+        assert.equal(scripts.length, 1);
+
+        const existingSi = globalThis.window.si;
+        await import(new URL(
+            'js/shared/utils/speed-insights.js?production=second',
+            projectRoot
+        ));
+        assert.equal(scripts.length, 1);
+        assert.equal(globalThis.window.si, existingSi);
+    } finally {
+        if (windowDescriptor) Object.defineProperty(globalThis, 'window', windowDescriptor);
+        else Reflect.deleteProperty(globalThis, 'window');
+        if (documentDescriptor) Object.defineProperty(globalThis, 'document', documentDescriptor);
+        else Reflect.deleteProperty(globalThis, 'document');
+    }
 });

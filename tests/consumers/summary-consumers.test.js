@@ -899,6 +899,310 @@ test('__proto__ and constructor remain safe own data keys through real preproces
     }
 });
 
+test('pace-HR efficiency regression degrades safely and preserves valid multi-point output', async () => {
+    const savedDocument = globalThis.document;
+    const savedChart = globalThis.Chart;
+    const savedSetTimeout = globalThis.setTimeout;
+    const chartConfigs = [];
+    const canvas = {
+        id: 'pace-hr-efficiency-chart',
+        closest() {
+            return null;
+        }
+    };
+    globalThis.document = {
+        getElementById(id) {
+            return id === canvas.id ? canvas : null;
+        },
+        querySelector() {
+            return null;
+        }
+    };
+    globalThis.Chart = class ChartEvidence {
+        constructor(_canvas, config) {
+            this.data = config.data;
+            this.config = config;
+            chartConfigs.push(config);
+        }
+
+        destroy() {}
+    };
+    globalThis.setTimeout = callback => {
+        callback();
+        return 0;
+    };
+
+    const assertFiniteConfig = config => {
+        const visit = value => {
+            if (typeof value === 'number') {
+                assert.equal(Number.isFinite(value), true);
+                return;
+            }
+            if (Array.isArray(value)) {
+                value.forEach(visit);
+                return;
+            }
+            if (value && typeof value === 'object') {
+                Object.values(value).forEach(visit);
+            }
+        };
+        visit(config);
+        assert.equal(JSON.stringify(config).includes('NaN'), false);
+        assert.equal(JSON.stringify(config).includes('Infinity'), false);
+    };
+
+    try {
+        const { renderPaceHrEfficiencyChart } = await import(
+            '../../js/tabs/run-analysis.js?pr04a-b32-regression'
+        );
+
+        const noValidRuns = [{ id: 'invalid-run', average_heartrate: null }];
+        const noValidBefore = structuredClone(noValidRuns);
+        renderPaceHrEfficiencyChart(noValidRuns);
+        assert.equal(chartConfigs.length, 0);
+        assert.deepEqual(noValidRuns, noValidBefore);
+
+        const singleRun = [{
+            id: 'single-run',
+            start_date_local: '2026-01-01T06:00:00.000Z',
+            average_heartrate: 150,
+            distance: 10000,
+            moving_time: 3000
+        }];
+        const singleBefore = structuredClone(singleRun);
+        renderPaceHrEfficiencyChart(singleRun);
+        const singleConfig = chartConfigs.at(-1);
+        assert.equal(singleConfig.data.datasets.length, 1);
+        assert.equal(singleConfig.data.datasets[0].label, 'Run Data');
+        assert.deepEqual(singleConfig.data.datasets[0].data, [{ x: 150, y: 5 }]);
+        assert.equal(
+            singleConfig.data.datasets.some(dataset => dataset.label.startsWith('Regression')),
+            false
+        );
+        assertFiniteConfig(singleConfig);
+        assert.deepEqual(singleRun, singleBefore);
+
+        const sameHeartRateRuns = [
+            {
+                id: 'same-hr-first',
+                start_date_local: '2026-01-01T06:00:00.000Z',
+                average_heartrate: 150,
+                distance: 10000,
+                moving_time: 3000
+            },
+            {
+                id: 'same-hr-second',
+                start_date_local: '2026-01-02T06:00:00.000Z',
+                average_heartrate: 150,
+                distance: 10000,
+                moving_time: 3300
+            }
+        ];
+        const sameHeartRateBefore = structuredClone(sameHeartRateRuns);
+        renderPaceHrEfficiencyChart(sameHeartRateRuns);
+        const sameHeartRateConfig = chartConfigs.at(-1);
+        assert.equal(sameHeartRateConfig.data.datasets.length, 1);
+        assert.equal(sameHeartRateConfig.data.datasets[0].label, 'Run Data');
+        assertFiniteConfig(sameHeartRateConfig);
+        assert.deepEqual(sameHeartRateRuns, sameHeartRateBefore);
+
+        const validRegressionRuns = [
+            {
+                id: 'valid-regression-later',
+                start_date_local: '2026-01-02T06:00:00.000Z',
+                average_heartrate: 160,
+                distance: 10000,
+                moving_time: 3000
+            },
+            {
+                id: 'valid-regression-earlier',
+                start_date_local: '2026-01-01T06:00:00.000Z',
+                average_heartrate: 140,
+                distance: 10000,
+                moving_time: 3600
+            }
+        ];
+        const validRegressionBefore = structuredClone(validRegressionRuns);
+        renderPaceHrEfficiencyChart(validRegressionRuns);
+        const validRegressionConfig = chartConfigs.at(-1);
+        assert.equal(validRegressionConfig.data.datasets.length, 2);
+        assert.equal(validRegressionConfig.data.datasets[0].label, 'Run Data');
+        assert.match(
+            validRegressionConfig.data.datasets[1].label,
+            /^Regression \(slope: -?\d+\.\d{4} min\/km per bpm\)$/
+        );
+        assert.equal(
+            validRegressionConfig.data.datasets[1].data.every(point => (
+                Number.isFinite(point.x) && Number.isFinite(point.y)
+            )),
+            true
+        );
+        assertFiniteConfig(validRegressionConfig);
+        assert.deepEqual(validRegressionRuns, validRegressionBefore);
+    } finally {
+        if (savedDocument === undefined) delete globalThis.document;
+        else globalThis.document = savedDocument;
+        if (savedChart === undefined) delete globalThis.Chart;
+        else globalThis.Chart = savedChart;
+        globalThis.setTimeout = savedSetTimeout;
+    }
+});
+
+test('distance-efficiency regression rejects unsafe data and degrades safely for sparse distance input', async () => {
+    const savedDocument = globalThis.document;
+    const savedChart = globalThis.Chart;
+    const savedSetTimeout = globalThis.setTimeout;
+    const chartConfigs = [];
+    const canvas = {
+        id: 'distance-efficiency-chart',
+        closest() {
+            return null;
+        }
+    };
+    globalThis.document = {
+        getElementById(id) {
+            return id === canvas.id ? canvas : null;
+        },
+        querySelector() {
+            return null;
+        }
+    };
+    globalThis.Chart = class ChartEvidence {
+        constructor(_canvas, config) {
+            this.data = config.data;
+            this.config = config;
+            chartConfigs.push(config);
+        }
+
+        destroy() {}
+    };
+    globalThis.setTimeout = callback => {
+        callback();
+        return 0;
+    };
+
+    const assertFiniteConfig = config => {
+        const visit = value => {
+            if (typeof value === 'number') {
+                assert.equal(Number.isFinite(value), true);
+                return;
+            }
+            if (Array.isArray(value)) {
+                value.forEach(visit);
+                return;
+            }
+            if (value && typeof value === 'object') {
+                Object.values(value).forEach(visit);
+            }
+        };
+        visit(config);
+        assert.equal(JSON.stringify(config).includes('NaN'), false);
+        assert.equal(JSON.stringify(config).includes('Infinity'), false);
+    };
+
+    try {
+        const { renderDistanceEfficiencyChart } = await import(
+            '../../js/tabs/run-analysis.js?pr04a-b34-distance-efficiency'
+        );
+
+        const invalidRuns = [
+            { id: 'undefined-efficiency', distance: 10000, efficiency: undefined },
+            { id: 'null-efficiency', distance: 10000, efficiency: null },
+            { id: 'nan-efficiency', distance: 10000, efficiency: Number.NaN },
+            { id: 'infinite-efficiency', distance: 10000, efficiency: Number.POSITIVE_INFINITY },
+            { id: 'zero-distance', distance: 0, efficiency: 0.03 },
+            { id: 'infinite-distance', distance: Number.POSITIVE_INFINITY, efficiency: 0.03 }
+        ];
+        const invalidBefore = structuredClone(invalidRuns);
+        renderDistanceEfficiencyChart(invalidRuns);
+        assert.equal(chartConfigs.length, 0);
+        assert.deepEqual(invalidRuns, invalidBefore);
+
+        const singleRun = [{
+            id: 'single-distance',
+            start_date: '2026-01-01T06:00:00.000Z',
+            distance: 10000,
+            efficiency: 0.03333333333333333
+        }];
+        const singleBefore = structuredClone(singleRun);
+        renderDistanceEfficiencyChart(singleRun);
+        const singleConfig = chartConfigs.at(-1);
+        assert.equal(singleConfig.data.datasets.length, 1);
+        assert.equal(singleConfig.data.datasets[0].label, 'Run Data');
+        assert.deepEqual(singleConfig.data.datasets[0].data, [{
+            x: 10,
+            y: 0.03333333333333333,
+            date: '2026-01-01T06:00:00.000Z'
+        }]);
+        assertFiniteConfig(singleConfig);
+        assert.deepEqual(singleRun, singleBefore);
+
+        const sameDistanceRuns = [
+            {
+                id: 'same-distance-first',
+                start_date: '2026-01-01T06:00:00.000Z',
+                distance: 10000,
+                efficiency: 0.03
+            },
+            {
+                id: 'same-distance-second',
+                start_date: '2026-01-02T06:00:00.000Z',
+                distance: 10000,
+                efficiency: 0.04
+            }
+        ];
+        const sameDistanceBefore = structuredClone(sameDistanceRuns);
+        renderDistanceEfficiencyChart(sameDistanceRuns);
+        const sameDistanceConfig = chartConfigs.at(-1);
+        assert.equal(sameDistanceConfig.data.datasets.length, 1);
+        assert.equal(sameDistanceConfig.data.datasets[0].label, 'Run Data');
+        assertFiniteConfig(sameDistanceConfig);
+        assert.deepEqual(sameDistanceRuns, sameDistanceBefore);
+
+        const validRegressionRuns = [
+            {
+                id: 'longer-run-first',
+                start_date: '2026-01-02T06:00:00.000Z',
+                distance: 20000,
+                efficiency: 0.04
+            },
+            {
+                id: 'shorter-run-second',
+                start_date: '2026-01-01T06:00:00.000Z',
+                distance: 10000,
+                efficiency: 0.03
+            }
+        ];
+        const validRegressionBefore = structuredClone(validRegressionRuns);
+        renderDistanceEfficiencyChart(validRegressionRuns);
+        const validRegressionConfig = chartConfigs.at(-1);
+        assert.equal(validRegressionConfig.data.datasets.length, 2);
+        assert.equal(validRegressionConfig.data.datasets[0].label, 'Run Data');
+        assert.deepEqual(
+            validRegressionConfig.data.datasets[0].data.map(point => point.x),
+            [20, 10]
+        );
+        assert.match(
+            validRegressionConfig.data.datasets[1].label,
+            /^Regression \(slope: -?\d+\.\d{4}\)$/
+        );
+        assert.equal(
+            validRegressionConfig.data.datasets[1].data.every(point => (
+                Number.isFinite(point.x) && Number.isFinite(point.y)
+            )),
+            true
+        );
+        assertFiniteConfig(validRegressionConfig);
+        assert.deepEqual(validRegressionRuns, validRegressionBefore);
+    } finally {
+        if (savedDocument === undefined) delete globalThis.document;
+        else globalThis.document = savedDocument;
+        if (savedChart === undefined) delete globalThis.Chart;
+        else globalThis.Chart = savedChart;
+        globalThis.setTimeout = savedSetTimeout;
+    }
+});
+
 test('Preprocessing athlete accessors and revoked Proxies fail closed without execution', () => {
     let getterCalls = 0;
     const accessorAthlete = {};
