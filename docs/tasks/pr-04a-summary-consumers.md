@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | In review |
+| Status | Ready for review |
 | Base branch | `integration/v2` |
 | Base SHA | `2178858f29d6c8efe5cf45de5ff07443387d2577` |
 | Feature branch | `codex/v2/summary-consumers` |
@@ -15,10 +15,10 @@
 | Related plan | Sprint 2 / PR-04A |
 | Related ADRs | ADR-0003 (Accepted) |
 | Dependencies | PR-00, PR-01, PR-02, and PR-03 merged into `integration/v2` |
-| Pull request | Draft [#8](https://github.com/XiChuan9/StravaStats/pull/8) |
+| Pull request | [#8](https://github.com/XiChuan9/StravaStats/pull/8) — Ready for review after Closure CI |
 | Investigation Gate | Completed / PASS |
 | Implementation Gate | Approved by control tower |
-| Implementation | B1/B1.1, B2, and B3/B3.1-B3.4 completed; Final Review pending |
+| Implementation | B1/B1.1, B2, and B3/B3.1-B3.4 completed; Final Review accepted |
 | A3 | Completed |
 | A3.1 | Completed / Accepted |
 | A3.2 | Completed / Accepted |
@@ -34,7 +34,10 @@
 | B3.3 | Completed / PASS |
 | B3.4 | Completed / PASS |
 | B3 | Completed / PASS |
-| Final Review | Pending |
+| Browser/CDP Gate | Completed / PASS |
+| Final Review | Accepted / PASS |
+| Final Review Closure | Completed |
+| Reviewed product HEAD | `acdab932d3aa8ae210958a79e7406c99329ea2ba` |
 
 ## Goal
 
@@ -72,11 +75,12 @@ also owns the browser application-path verification deferred by PR-02 and PR-03.
   `{ data, source, warnings, partial }`.
 - PR-03 keeps activities cache ownership in `main.js` only until PR-04A; the implemented
   LegacyRepository is cache-aware and owns the future read/write path.
-- PR-02/PR-03 browser dynamic-import and application-path checks remain `Not run` and are
-  explicitly carried into PR-04A.
+- PR-02/PR-03 browser dynamic-import and application-path checks were carried into PR-04A and
+  completed under the accepted Browser/CDP gate.
 - A0-A2 passed control-tower review. No A2.1 is required.
-- A3 freezes decisions and implementation scope only; it does not start implementation.
-- The pull request remains Draft. Ready, merge, PR-04B, PR-04C, and PR-05 are not authorized.
+- A3-A3.6 are Completed/Accepted; B1/B1.1, B2, and B3/B3.1-B3.4 are Completed/PASS.
+- Final Review is Accepted/PASS. Ready for review is authorized after Closure CI; merge,
+  PR-04B, PR-04C, and PR-05 are not authorized.
 
 ## A3 authorization boundary
 
@@ -471,10 +475,11 @@ tests passed. B2 is `Completed / PASS`; this does not authorize B3, Ready, or me
 - A0-A2 passed control-tower review; no A2.1 is required.
 - Investigation Gate is `Completed / PASS`; Implementation Gate is `Approved by control tower`.
 - A3 is Completed; B1 and B1.1 are `Completed / PASS` after control-tower re-review.
-- A3.1 and B2 are Completed/PASS after control-tower review. The first B3 blocker is accepted;
-  A3.2/B3.1 and the complete rerun are authorized locally but not yet reviewed.
+- A3.1-A3.6 are Completed/Accepted; B2 and B3/B3.1-B3.4 are Completed/PASS after control-tower
+  review. The Browser/CDP gate and Final Review are Accepted/PASS.
 - The B1 change is limited to the exact six-path B1 allowlist.
-- Draft PR remains Draft and is neither marked Ready nor merged.
+- The cumulative PR diff is limited to the exact frozen eleven-path allowlist. The PR may be
+  marked Ready only after successful Closure CI and remains unmerged.
 
 ## Required automated checks
 
@@ -1635,8 +1640,9 @@ git diff --check — PASS
 
 A3.5 is Completed/Accepted, and the control tower later accepted the B3.3 contract correction
 as Completed/PASS. Its raw chart evidence nevertheless exposed the additional non-finite-data
-gap governed by A3.6/B3.4 below. The control tower accepted A3.6 and B3.4 and declared B3
-Completed/PASS. PR-04A is now In review and remains Draft; Final Review is pending.
+gap governed by A3.6/B3.4 below. The control tower accepted A3.6 and B3.4, declared B3
+Completed/PASS, and subsequently accepted the independent Final Review with no blocking code
+issues. Final Review Closure is recorded below.
 
 ## A3.6 / B3.4 actual preprocessing and Distance Efficiency correction — Completed / PASS
 
@@ -1767,8 +1773,8 @@ git diff --check — PASS
 ```
 
 A3.6 is Completed/Accepted, B3.4 is Completed/PASS, and B3 is Completed/PASS by control-tower
-decision. PR-04A is In review and remains Draft. Final Review is pending; Ready and merge are
-not authorized.
+decision. The later independent Final Review is Accepted/PASS. Ready for review is authorized
+only after the dedicated Closure commit CI succeeds; merge remains unauthorized.
 
 ### B3 final control-tower disposition and durable evidence summary
 
@@ -1816,6 +1822,38 @@ Auth + Demo — 56/56 PASS
 Full suite — 702/702 PASS; skipped/cancelled/todo 0/0/0
 git diff --check — PASS
 ```
+
+### Final Review Closure — Completed
+
+The control tower accepted the PR-04A independent Final Review with no blocking code findings
+and authorized this document-only Closure. The reviewed product commit is
+`acdab932d3aa8ae210958a79e7406c99329ea2ba`. The cumulative frozen allowlist audit passed with
+exactly 11/11 PR changed paths. A0-A3.6 retain their final governance states; B1/B1.1, B2, and
+B3/B3.1-B3.4 remain Completed/PASS. The Browser/CDP gate remains PASS under the approved CDP
+equivalent-evidence exception.
+
+Independent Final Review evidence:
+
+```text
+npm ci — PASS; 6 packages; 0 vulnerabilities
+npm run check:syntax — PASS; 133 files
+npm run check:privacy — PASS
+Key focused gates — 76/76 PASS
+npm test — 702/702 PASS; skipped/cancelled/todo 0/0/0
+git diff --check — PASS
+Remote CI run — 30778441736
+Remote CI job — 91578310289
+Remote CI head — acdab932d3aa8ae210958a79e7406c99329ea2ba
+Remote CI overall — success
+```
+
+The accepted CDP evidence continues to prove the browser application path. The root-page
+`Legacy External Resource Inventory` remains a separately governed Legacy limitation and is
+not a PR-04A blocker. The sole `run-plus.js → tabs/api.js/getCachedGears()` Demo namespace
+exception remains explicitly handed off to PR-04C; PR-04B and PR-04C have not started.
+
+Ready for review records review availability only. It does not authorize merge, change the
+accepted eleven-path scope, start another PR, or permit storage cleanup.
 
 ## A3.3 browser evidence correction — Approved / rerun in progress
 
@@ -2079,8 +2117,8 @@ and the current statuses are recorded in Metadata and the A3.3 section above.
   `External Runtime & Privacy Hardening` together with CDN/GTM/VDOT/privacy/visual governance.
 - A3 resolves the preprocessing identity fallback through main's explicit non-persistent
   Repository-derived context. B1/B1.1, B2, and B3/B3.1-B3.4 are Completed/PASS; A3.2-A3.6
-  are Completed/Accepted. PR-04A is In review, its Final Review is pending, and it remains
-  Draft.
+  are Completed/Accepted. PR-04A Final Review is Accepted/PASS and Final Review Closure is
+  complete. Merge remains unauthorized.
 
 ## Independent review checklist
 
@@ -2349,7 +2387,7 @@ A3.6 / B3.4 local:
   A3.6 — Completed / Accepted
   B3.4 — Completed / PASS
   B3 — Completed / PASS
-  PR-04A — In review; Draft; Final Review pending
+  PR-04A — Final Review Accepted/PASS; Closure recorded separately
   Paths — Exact four-path B3.4 scope; cumulative worktree remains exact six paths
   Product correction — Distance Efficiency finite admission and null regression degradation
   Preprocessing path — Actual main selector + shared preprocess; one Run; finite pace_per_hr
@@ -2378,10 +2416,9 @@ A3.6 / B3.4 local:
 
 ## Stop conditions
 
-For B3 Finalization, stop immediately if the fixed head/branch/Draft PR state differs, a local
-or remote gate fails, the cumulative diff differs from the exact six authorized paths, the PR
-diff differs from the frozen eleven-path allowlist, or real credentials/private data/browser
-profiles are required. Finalization may explicitly stage the six paths, create the approved
-ordinary commit, push normally, update the Draft PR body, and verify the matching CI only.
-Do not start Final Review Closure, mark Ready, merge, alter `integration/v2`, delete the
-worktree/branch, or start PR-04B/PR-04C without separate control-tower authorization.
+For Final Review Closure, stop immediately if the fixed product head/branch/PR state differs,
+the document-only scope expands, a local or remote gate fails, the PR diff differs from the
+frozen eleven-path allowlist, or real credentials/private data/browser profiles are required.
+Mark the PR Ready only after the Closure commit's matching CI succeeds. Do not merge, alter
+`integration/v2`, delete the worktree/branch, clean browser/Demo/Legacy storage, or start
+PR-04B/PR-04C without separate control-tower authorization.
