@@ -680,7 +680,7 @@ export class StravaApiConnector {
         const types = normalizeStreamTypes(options, operation);
         return this.#request({
             operation,
-            url: `/api/strava-streams?id=${encodeURIComponent(id)}&types=${encodeURIComponent(types.join(','))}`,
+            url: `/api/strava-streams?id=${encodeURIComponent(id)}&type=${encodeURIComponent(types.join(','))}`,
             field: 'streams',
             expectedType: 'object'
         });

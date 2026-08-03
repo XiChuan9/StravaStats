@@ -353,7 +353,7 @@ const endpointCases = [
         }),
         body: { streams: { heartrate: { data: [120] } } },
         expected: { heartrate: { data: [120] } },
-        url: '/api/strava-streams?id=0&types=heartrate%2Ctime'
+        url: '/api/strava-streams?id=0&type=heartrate%2Ctime'
     },
     {
         name: 'athlete',
@@ -488,8 +488,31 @@ test('stream type order and deeply frozen input are preserved', async () => {
     assert.deepEqual(options.types, ['watts', 'time', 'distance']);
     assert.equal(
         calls.fetch[0][0],
-        '/api/strava-streams?id=1&types=watts%2Ctime%2Cdistance'
+        '/api/strava-streams?id=1&type=watts%2Ctime%2Cdistance'
     );
+});
+
+test('streams emits one type query with opaque ID encoding and one request', async () => {
+    const activityId = '000/activity id?#';
+    const types = ['heartrate', 'time', 'distance'];
+    const { connector, calls } = createHarness({
+        response: syntheticResponse({ body: { streams: {} } })
+    });
+
+    await connector.fetchStreams(activityId, { types });
+
+    assert.equal(calls.fetch.length, 1);
+    assert.equal(
+        calls.fetch[0][0],
+        '/api/strava-streams?id=000%2Factivity%20id%3F%23&type=heartrate%2Ctime%2Cdistance'
+    );
+    const requestUrl = new URL(calls.fetch[0][0], 'https://synthetic.invalid');
+    assert.deepEqual(requestUrl.searchParams.getAll('type'), [
+        'heartrate,time,distance'
+    ]);
+    assert.deepEqual(requestUrl.searchParams.getAll('types'), []);
+    assert.equal(requestUrl.searchParams.get('id'), activityId);
+    assert.deepEqual(types, ['heartrate', 'time', 'distance']);
 });
 
 for (const rawToken of [null, '']) {

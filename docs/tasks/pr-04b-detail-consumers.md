@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Approved for implementation |
+| Status | In progress |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/detail-consumers` |
 | Worktree | `/Users/wangchuanliang/Documents/StravaStats-worktrees/detail-consumers` |
@@ -25,9 +25,12 @@
 | A1 | Completed / PASS |
 | A2 | Completed / PASS |
 | A3 | Completed / Accepted |
-| B1 | Not started / Not authorized until A3 review and separate B1 authorization |
-| B2 | Not started / Not authorized until B1 review and separate B2 authorization |
-| B3 | Not started / Not authorized until B2 review and separate B3 authorization |
+| A3.1 | Completed / Accepted |
+| B1.1 | Completed / PASS |
+| B1.2 | Completed / PASS |
+| B1 | Completed / PASS |
+| B2 | Not started / Not authorized |
+| B3 | Not started / Not authorized |
 
 ## Goal
 
@@ -473,9 +476,9 @@ consumer.
 - HTTP 500, network, and invalid response must not be classified as authentication failure. Errors
   must never delete Local Library, Legacy cache, or user data.
 
-## Frozen final 19-file allowlist
+## Frozen final 20-file allowlist
 
-This is the complete PR-04B allowlist. Encountering a twentieth path requires an immediate stop and
+This is the complete PR-04B allowlist. Encountering a twenty-first path requires an immediate stop and
 new control-tower approval.
 
 ```text
@@ -495,6 +498,7 @@ js/pages/swim/swim.js
 js/pages/activity/advanced-analysis.js
 js/connectors/strava/strava-api-connector.js
 tests/repository/strava-api-connector.test.js
+tests/repository/dependency-boundaries.test.js
 tests/consumers/detail-consumers.test.js
 tests/consumers/detail-boundaries.test.js
 tests/consumers/detail-browser-smoke.html
@@ -531,13 +535,14 @@ tests/contracts/**
 tests/repository/**
 ```
 
-The sole `tests/repository/**` exception is
-`tests/repository/strava-api-connector.test.js`. Do not prohibit `js/pages/**` broadly because only
-the exact page paths in the 19-file allowlist are approved.
+The only `tests/repository/**` exceptions are
+`tests/repository/strava-api-connector.test.js` and
+`tests/repository/dependency-boundaries.test.js`. Do not prohibit `js/pages/**` broadly because only
+the exact page paths in the 20-file allowlist are approved.
 
 ## Frozen phase allowlists
 
-### B1 — Not started / separately authorized after A3 review
+### B1 — Completed / PASS
 
 ```text
 docs/tasks/pr-04b-detail-consumers.md
@@ -547,6 +552,7 @@ js/pages/activity-router.js
 js/pages/detail/detail-read-session.js
 js/connectors/strava/strava-api-connector.js
 tests/repository/strava-api-connector.test.js
+tests/repository/dependency-boundaries.test.js
 tests/consumers/detail-consumers.test.js
 tests/consumers/detail-boundaries.test.js
 ```
@@ -678,8 +684,8 @@ or Legacy storage.
 - [x] A2 commit, push, Draft PR update, and exact-head CI verified.
 - [x] A3 decisions and exact phase/file scopes frozen; implementation remains unstarted.
 - [x] A3 local gates passed against the completed decision record.
-- [ ] A3 Task Brief-only commit/push, PR update, and exact-head CI verified.
-- [ ] Final worktree clean, local/upstream `0/0`, PR diff Task Brief only.
+- [x] A3 Task Brief-only commit/push, PR update, and exact-head CI verified.
+- [x] Final A3 worktree clean, local/upstream `0/0`, PR diff Task Brief only.
 
 ## Completion evidence
 
@@ -720,3 +726,111 @@ or Legacy storage.
 - This Task Brief is the sole A3 change. Implementation has not started; B1 is not authorized.
 - A3 commit/push, PR body update, and exact-head CI are post-commit evidence recorded in PR #9 and
   the final control-tower handoff.
+- Commit `98eec7a9ebd797e5580310ce1e8e528311ed99fa`; CI run `30809830279`; job
+  `91673680107`; PR diff Task Brief only; final worktree clean; local/upstream `0/0`.
+
+### A3.1 / B1.1
+
+- **Completed / Accepted.** The B1 initial control-tower result was **REVISE** because the sole
+  failing `tests/repository/dependency-boundaries.test.js` assertion froze the pre-B1 Connector and
+  Connector-test SHA-256 values, conflicting with the approved `types=` to `type=` correction.
+- The final PR-04B allowlist expands from 19 to 20 paths and the B1 allowlist expands from 9 to 10
+  paths by adding only `tests/repository/dependency-boundaries.test.js`. A twenty-first PR path or
+  eleventh B1 path requires new control-tower approval.
+- This extension authorizes only maintenance of the existing fixed, auditable hash boundary. It
+  does not authorize new Repository, Connector, or consumer behavior and does not authorize
+  deleting, skipping, dynamically satisfying, or weakening the hash assertions.
+- The approved frozen hashes are Connector
+  `ea3810a190451cf9bdff9f4f2bdcc3a81a8591c4ec385b14dd07de6324061ba8`, Connector test
+  `c9d429b305d959ebb839e178610c37744dcaffbb9e25cc99f314916cc0ab4d7e`, and unchanged Repository
+  errors `0a9018b272fd0535a5ff8ff6f8661e3630924db360fded96be3386a96da49839`.
+
+### B1
+
+- Status: **Completed / PASS** after final control-tower acceptance of B1, B1.1, and B1.2. B2 and B3
+  remain not started and not authorized.
+- Authorized implementation: page governance, Connector `type=` compatibility, opaque-ID Router,
+  document-local mode/Repository boundary, memoized `DetailReadSession`, and deterministic B1 tests.
+- Privacy boundary: deterministic synthetic data only; no real Token, account, network, activity,
+  GPS, heart-rate, power, private fixture, or user browser profile.
+- Migration impact: none. No storage schema, IndexedDB, Canonical, cache, or key migration; no Legacy
+  cleanup or deletion; Service Worker remains unchanged.
+- Rollback boundary: only local unstaged B1 allowlist files; no reset, rebase, branch/worktree removal,
+  or user-data cleanup.
+- Browser/CDP, visual/manual, real-data, and production Service Worker verification: `Not run`.
+- Local implementation and B1.1 governance correction are present only in the ten authorized B1
+  paths: this Task Brief, page governance, Router HTML/module, `DetailReadSession`, Connector,
+  Connector tests, the dependency hash boundary, and two consumer suites. The four detail
+  consumers, Advanced Analysis, Repository public API/implementation, package files, Service Worker,
+  and all B2/B3 paths remain unchanged.
+- Focused evidence: Connector `102/102`; the two consumer suites `49/49`; combined B1 focused run
+  `151/151`. Legacy/Auth/Demo regression passed `241/241`. All these runs reported
+  skipped/cancelled/todo `0/0/0`.
+- Initial B1 gate evidence reproduced Repository regression `252/253` and full `npm test` `751/752`,
+  with skipped/cancelled/todo `0/0/0`. The sole failure was the pre-existing
+  `tests/repository/dependency-boundaries.test.js` assertion named
+  `B1 Connector, errors, and tests remain byte-for-byte unchanged`. It freezes the pre-B1 Connector
+  and Connector-test SHA-256 values, while this B1 explicitly requires both files to change from
+  `types=` to `type=` and add its regression. The current Connector hash is
+  `ea3810a190451cf9bdff9f4f2bdcc3a81a8591c4ec385b14dd07de6324061ba8`; the current Connector-test
+  hash is `c9d429b305d959ebb839e178610c37744dcaffbb9e25cc99f314916cc0ab4d7e`.
+  A3.1/B1.1 authorized updating only those two fixed hashes while retaining the unchanged errors
+  hash and the same byte-for-byte assertion strength.
+- B1.1 dependency hash correction is **Completed / PASS**: its focused hash boundary and full
+  Repository regression passed while retaining fixed, auditable Connector, Connector-test, and
+  Repository-errors hashes.
+- B1.1 hash correction evidence: the dependency boundary passed `6/6`; Connector passed `102/102`;
+  Repository regression passed `253/253`; Legacy/Auth/Demo passed `241/241`. `npm ci` added 6
+  packages with 0 vulnerabilities; syntax passed for 137 files; privacy passed; `git diff --check`
+  passed. All reported skipped/cancelled/todo counts are `0/0/0`.
+- B1 consumer focused is **blocked at `48/49`**, combined B1 focused at `150/151`, and full
+  `npm test` at `751/752`. The sole failure is
+  `tests/consumers/detail-boundaries.test.js` asserting an embedded
+  `exact nine-path B1 allowlist`; it rejects the newly approved
+  `tests/repository/dependency-boundaries.test.js` path. B1.1 explicitly permits actual changes
+  only to this Task Brief and the dependency-boundary test and requires the previous nine B1 files
+  to remain byte-identical, so the consumer boundary test was not modified. A separate control-tower
+  scope decision is required to update that stale nine-path assertion to the accepted ten-path
+  contract.
+
+### B1.2
+
+- Status: **Completed / PASS**. This is a contract synchronization, not a
+  new scope expansion: the total allowlist remains 20 and the B1 allowlist remains 10.
+- Root cause: after `tests/repository/dependency-boundaries.test.js` became an approved working-tree
+  path, `tests/consumers/detail-boundaries.test.js` still embedded the pre-A3.1 nine-path Set. The
+  consumer suites passed `49/49` before the new path appeared and then failed `48/49` solely on that
+  stale assertion.
+- B1.2 authorizes changes only to this Task Brief and
+  `tests/consumers/detail-boundaries.test.js`: add the already-approved dependency-boundary path to
+  the fixed Set and rename the assertion from nine-path to ten-path. Product code, Connector,
+  Repository, and all other tests remain unauthorized.
+- B1.2 changed only the fixed Set and test name: the scope check still collects tracked/untracked
+  paths through `git status`, committed paths through `START_SHA...HEAD`, requires every observed
+  path to be a member of the fixed Set, and caps observed size at the ten-path Set size. No wildcard,
+  dynamic Task Brief/diff allowlist, skipped test, or weakened assertion was introduced.
+- Final focused evidence: consumer boundary `14/14`; dependency boundary `6/6`; Connector
+  `102/102`; consumer suites `49/49`; B1 combined `151/151`; all four focused files `157/157`.
+  Regression evidence: Repository `253/253`; Legacy/Auth/Demo `241/241`; full tests `752/752`.
+  Every run reported skipped/cancelled/todo `0/0/0`.
+- Final gates: `npm ci` added 6 packages with 0 vulnerabilities; syntax passed for 137 files;
+  privacy passed; `git diff --check` passed. B1.2 isolation and final Git state confirm exactly ten
+  approved unstaged paths, no protected-path changes, empty staging, and local/upstream `0/0`.
+- B1.2 and B1 received final control-tower PASS.
+
+### B1 Finalization
+
+- Final control-tower acceptance: Router Repository boundary PASS; opaque activity ID PASS;
+  `DetailReadSession` same-Promise memoization PASS; Connector single `type=` compatibility PASS;
+  Demo isolation PASS; error/privacy boundary PASS; the 20-file total allowlist and 10-file B1
+  allowlist Accepted; dependency fixed-hash boundary PASS; consumer ten-path boundary PASS.
+- Final local gates: `npm ci` added 6 packages with 0 vulnerabilities; syntax passed for 137 files;
+  privacy passed; Connector `102/102`; dependency boundary `6/6`; consumer suites `49/49`; B1
+  combined `151/151`; all four focused files `157/157`; Repository `253/253`;
+  Legacy/Auth/Demo `241/241`; full tests `752/752`; skipped/cancelled/todo `0/0/0`;
+  `git diff --check` passed.
+- Browser/CDP, manual, visual, real Token/account/data, and production Service Worker verification
+  remain `Not run`. B2 and B3 have not started. The Draft PR must remain Draft; Ready, merge,
+  PR-04C, and PR-05 are not authorized.
+- The B1 Finalization commit and exact-head CI are post-commit evidence recorded in the Draft PR
+  body and final handoff report.
