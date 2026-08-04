@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Approved for implementation |
+| Status | Ready for review |
 | Milestone | M3 |
 | Base branch | `integration/v2` |
 | Exact base SHA | `25e1b24d876ddad1c429c7ddadd2061ef99c21a9` |
@@ -377,3 +377,59 @@ Fix every actionable finding through a minimal reproducer and rerun affected and
 full gates. Only after the review returns `No actionable findings` and exact-head
 CI succeeds may this Task Brief and PR body be closed and the PR marked Ready for
 review. Do not merge, clean the branch/worktree, or begin M4.
+
+## Final Review Closure
+
+PR-06 implementation is complete on the assigned feature branch. The first
+commit, `850ad1fe59a5351f6ac452867f243f9ce9fe0199`, contains only this Task Brief.
+The implementation commit is
+`24969f345204fb4ae6ee50ac85262f4ab43f4250` and changes exactly the 15 paths in
+the cumulative allowlist above.
+
+An independent read-only Final Review initially found four implementation
+defects plus two missing matrix proofs: synchronous observer exceptions were not
+isolated from Legacy success, arbitrary uppercase storage error codes could enter
+the report, permissive date parsing could roll an impossible calendar date
+forward, and the direct application flag boundary did not require the exact safe
+shape; real-store conflict/parity and applicable missing/null/zero field states
+also lacked explicit evidence. Minimal regressions reproduced all four defects
+before correction. The fixes isolate the observer, whitelist frozen PR-05 storage
+codes, strictly validate RFC3339 calendar and offset components, and require the
+three exact enumerable feature-flag data properties. The added real PR-05 store
+conflict test proves the existing Canonical row is retained while both
+`STORAGE_FAILURE/CONFLICT` and `PARITY_MISMATCH` remain observable. The independent
+delta review concluded: `No actionable findings`.
+
+Final local verification after correction:
+
+- `npm ci`: PASS;
+- `npm run check:syntax`: PASS, 158 files;
+- `npm run check:privacy`: PASS;
+- `node --test tests/shadow/*.test.js`: PASS, 26/26;
+- `npm test`: PASS, 1,044/1,044;
+- `git diff --check` and the staged exact-path diff check: PASS.
+
+Final browser evidence used the Codex in-app isolated browser surface at a fresh
+loopback origin (`127.0.0.1:60218`), native application ESM, real browser
+IndexedDB, the actual `app/main.js` insertion point, deterministic synthetic data,
+close, and automatic reload. The post-reload result passed 12 final gates:
+Canonical database version `1`, eight stores, one retained activity; the separate
+synthetic Legacy-like sentinel remained version `3`, one store, one record with
+unchanged bytes. First-load, reload, and aggregate counters were all zero for
+external HTTP resources, provider resources/API, fetch, XHR, WebSocket,
+Authorization, console errors/warnings, uncaught/unhandled errors, Service
+Workers, and Cache Storage. Browser diagnostic logs were empty. The browser
+binding exposed production build flavor and session IDs but no browser version;
+no real profile, account, credential, Token, athlete record, or provider request
+was used.
+
+Exact implementation-head GitHub Actions CI passed at
+`24969f345204fb4ae6ee50ac85262f4ab43f4250`: run `30960596218`, job
+`92163453576`. The closing documentation commit receives its own final-head CI
+before PR #12 is marked Ready.
+
+There is no IndexedDB schema, version, store, index, migration, Repository public
+API, or page-read cutover in this PR. Rollback remains code/flag-only: disable the
+strict two-key shadow gate or revert PR-06 while retaining Legacy and Canonical
+data. No database should be cleared. PR-06 stops here: no merge, branch/worktree
+cleanup, or M4 work is authorized.
