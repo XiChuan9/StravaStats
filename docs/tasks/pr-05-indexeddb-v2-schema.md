@@ -4,7 +4,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | In progress |
+| Status | In review |
+| Final review | Pending |
 | Milestone | M2 |
 | Base branch | `integration/v2` |
 | Exact base SHA | `84e5e0af23d133a4fdf1e4c0cf371b5b97b26110` |
@@ -28,9 +29,11 @@ and backup-manifest metadata foundation, without changing any page read source o
 opening the Legacy `strava-dashboard-cache` database for write, upgrade, clear, or
 delete operations.
 
-The control tower accepted the A3 decision package on 2026-08-04. Implementation
-is authorized only through the frozen phase allowlists below. Each phase remains
-independently gated; A3 authorizes B1, not B2 or B3.
+The control tower accepted the A3 decision package and subsequently authorized
+and independently accepted B1, B2, B3, and their corrective subphases on
+2026-08-04. The implementation remains bounded by the frozen phase allowlists
+below. PR-05 is now in review with Final Review Pending; it remains Draft and is
+not authorized for Ready, merge, or cleanup.
 
 ## Why now
 
@@ -723,12 +726,13 @@ git diff --check
 
 ### B2: atomic Canonical adapter, queries, and manifest foundation
 
-Current status: **Completed / PASS.** Independent control-tower review accepted
-B2 and B2.1, including the A3.1 correction, and authorized B2 Finalization. The
-overall PR-05 status remains `In progress` because B3 has not started. The
-initial B2 authorization permitted local work only. The separate Finalization
-authorization permits the exact ten-path commit, push, and Draft PR update; it
-does not authorize B3, Ready state, merge, or cleanup.
+Final B2 phase status: **Completed / PASS.** Independent control-tower review
+accepted B2 and B2.1, including the A3.1 correction, and authorized B2
+Finalization. At that phase boundary the overall PR-05 status remained
+`In progress` because B3 had not started. The initial B2 authorization permitted
+local work only; its separate Finalization authorization permitted the exact
+ten-path commit, push, and Draft PR update without authorizing B3, Ready state,
+merge, or cleanup.
 
 Additional B2 writable paths:
 
@@ -749,7 +753,8 @@ node --test tests/storage/*.test.js
 
 ### B3: real-browser storage lifecycle and final gates
 
-Additional B3 writable path, not authorized until its later phase gate:
+The control tower authorized local B3 implementation and Browser/CDP evidence.
+Finalization remains separately gated. The only additional writable path is:
 
 ```text
 tests/storage/indexeddb-v2-browser-smoke.html
@@ -898,7 +903,7 @@ corrections:
   losslessly.
 - `listActivities` accepts only an omitted filter or one of the ten Accepted
   `sportCategory` values; `limit` defaults to `100` and must be an integer from
-  `1` through `200`; `direction` defaults to `desc` and accepts only `asc` or
+  `1` through `500`; `direction` defaults to `desc` and accepts only `asc` or
   `desc`. Equal `startTimeUtc` values use opaque string ID code-unit order as the
   stable tie-breaker; IDs are never parsed or compared numerically.
 - `blocked`, open lifecycle, cancellation, `versionchange`, and late success
@@ -941,8 +946,8 @@ tests/storage/backup-manifest.test.js
 tests/storage/indexeddb-v2-browser-smoke.html
 ```
 
-B1 is completed and only the first ten paths changed in that phase. B2 and B3
-remain unauthorized. Package and lock files, Accepted
+B1 was completed with only the first ten paths changed in that phase. Later B2
+and B3 authorization was separately recorded and accepted below. Package and lock files, Accepted
 ADRs, `docs/migrations/indexeddb-v2.md`, Repository/runtime/page/tab/analysis
 code, Feature Flag code, CI workflows, and every path outside the active
 allowlist are prohibited.
@@ -966,6 +971,14 @@ Rollback remains code-only: revert the implementation while Legacy continues as
 the default read path. Never downgrade, overwrite, clear, or delete V2 or Legacy
 data, and never copy V2 data into Legacy. A failed upgrade must abort and close;
 an explicit later initialization may retry the same additive registry step.
+
+### A3.2 governance consistency correction
+
+Status: **Completed / PASS (Accepted).** The stale lower A3 `listActivities` maximum was
+corrected to `1..500`, matching the later control-tower B2 freeze,
+implementation, and accepted tests. This is bookkeeping for the same public
+method boundary; it changes no product code, API, database version, store, or
+index. This Task Brief has one authoritative maximum: `500`.
 
 ## B1.1 independent-review correction record
 
@@ -1424,3 +1437,154 @@ tests/storage/canonical-store.test.js
 - Git remains intentionally unstaged, uncommitted, and unpushed at published B1
   head `50058e07b7bd376f6e408afd362a904c0c9e0d49`; local/upstream is `0/0`, the
   Draft PR body is unchanged, and B3 has not started.
+
+## B3 local Browser/CDP implementation record
+
+Status: **Completed / PASS.** The control tower independently accepted A3.2,
+B3, and B3.1. PR-05 is **In review** with **Final Review Pending**. Draft PR #11
+must remain OPEN/Draft and is not authorized for Ready, merge, or cleanup.
+
+Independent review accepted the storage lifecycle coverage but rejected the
+cross-reload environment proof. The initial harness reinitialized `metrics` and
+Performance Resource Timing after reload, persisted only sentinel/manifest/gate
+data, and therefore reported zeros for the second document without proving the
+first document that executed the main lifecycle. B3.1 adds a settled
+`environment-first-load` gate before reload, persists only safe counters, keeps
+instrumentation active until navigation destroys the first document, then
+separately asserts the reload counters and their aggregate total.
+
+### Exact B3 scope
+
+Only the two authorized paths changed:
+
+```text
+docs/tasks/pr-05-indexeddb-v2-schema.md
+tests/storage/indexeddb-v2-browser-smoke.html
+```
+
+The cumulative PR path inventory is exactly 17. No `js/storage` product module,
+Node test, package/lockfile, Accepted ADR, migration design, Repository, runtime,
+page/tab/analysis, Feature Flag, CI workflow, or Browser product path changed.
+
+### Superseded initial loopback browser evidence
+
+- Superseded evidence directory:
+  `/private/tmp/pr05-b3-evidence-UjQ6sw`. The safe JSON is
+  `browser-evidence.json`; the final-page screenshot is `browser-passed.png`.
+  Nothing from this directory was copied into the repository.
+- Browser surface: isolated Codex In-app Browser, Chromium `150.0.0.0`, browser
+  binding `-49de-4126-aed0-a4be3f0abbfc`, target `5`. The superseded origin was
+  `http://127.0.0.1:59522`; the profile/origin began with no
+  `strava-stats-v2`, Service Worker, or Cache Storage state.
+- A first diagnostic origin on port `59422` proved the initial CSP omitted an
+  inline-module nonce, so no harness or product module executed. That tab and
+  server were closed and are not acceptance evidence. The nonce-only harness
+  reran from the fresh final origin above.
+- The initial DOM reported `data-status="passed"` after an actual page reload and
+  all `17/17` gates. Native ESM imported the real public
+  `js/storage/index.js` and its production dependencies. The final browser tab,
+  all public/raw V2 and sentinel connections, loopback server, and ports were
+  closed after evidence capture. Independent review does not accept this origin
+  or evidence directory as final B3 proof because its environment zeros covered
+  only the reload document.
+
+The 17 browser gates covered:
+
+1. fresh-origin V2 absence and zero Service Worker/Cache Storage;
+2. same-origin synthetic Legacy-like sentinel creation and byte-hash baseline;
+3. public import and factory construction with zero IndexedDB I/O;
+4. fresh initialization with database version `1`, eight stores, six exact
+   indexes, metadata, and completed bootstrap migration;
+5. repeated initialize, asynchronous close, and explicit reopen;
+6. atomic `putBundle` committed/already-present and `getBundle` all streams;
+7. selected-stream reads and five-field envelope/unreferenced-device round trip;
+8. indexed asc/desc/filter lists, opaque equal-time ID ordering, accepted limit
+   `500`, and rejected `501`;
+9. accessor/revoked-Proxy/options failures before transaction I/O;
+10. injected Constraint/Abort failures with exact zero-partial-write counts;
+11. close waiting for an in-flight write terminal event, stale rejection, and
+    explicit recovery;
+12. exact count-only backup manifest with one metadata get, eight counts, zero
+    payload reads, and no files/hashes;
+13. two public connections receiving native `versionchange` from an atomically
+    aborted v2 request, becoming stale, retaining database version `1`, and
+    recovering only through explicit initialize;
+14. sentinel version/store/index/count/byte-hash preservation before reload;
+15. native ESM import after reload;
+16. explicit reopen/get/manifest equivalence after reload; and
+17. final sentinel preservation and connection cleanup.
+
+### Safe browser inventory and environment gates
+
+- Final V2 inventory: database `strava-stats-v2`, IndexedDB version `1`, eight
+  stores, six indexes. Manifest counts were metadata `1`, migrations `1`,
+  activities `5`, activitySources `5`, streamSeries `10`, laps `0`, events `0`,
+  and devices `3`; manifest payload reads were `0`.
+- The separate sentinel was
+  `synthetic-legacy-like-b3-sentinel` version `3`, one store, one index, one
+  record, with identical before/after SHA-256
+  `3267b1a052ab8db33ff033fe97d497609625eb508c8b32fe341c502bc5a6f53f`.
+  No actual Legacy database name or user record was opened, upgraded, read, or
+  written.
+- The initial DOM reported reload-document zeros for external HTTP(S), provider
+  API, fetch, XHR, WebSocket, Authorization/Token, console error/warning,
+  uncaught/unhandled, Service Worker, and Cache Storage. Those numbers are
+  superseded rather than accepted because first-load counters were not persisted.
+- The DOM and evidence contain only safe gate names, versions, counts, the
+  synthetic sentinel hash, and environment identifiers. They contain no bundle
+  payload, coordinate, heart-rate, power, token, authorization value, account,
+  or private fixture.
+
+### B3.1 final cross-reload Browser/CDP evidence
+
+- Final B3.1 evidence is exclusively under
+  `/private/tmp/pr05-b31-evidence-qrgxqf`: `browser-evidence.json` and
+  `browser-passed.png`. The earlier CSP diagnostic origin `59422` and rejected
+  B3 origin `59522` remain explicitly discarded and are not final evidence.
+- The complete corrected harness ran from the new unique origin
+  `http://127.0.0.1:60035`. It began with no `strava-stats-v2`, Service Worker,
+  or Cache Storage. Browser surface was isolated Codex In-app Browser,
+  Chromium `150.0.0.0`, binding `-9f16-4d25-9453-e7cd8e4b09a1`, target `6`.
+- Final DOM was `data-status="passed"` with `19/19` gates. The original 17
+  lifecycle assertions reran from scratch. `environment-first-load` waited for
+  two animation frames plus a browser task before inspecting Performance
+  Resource Timing and every runtime counter, asserted all zeros, and persisted
+  only that safe counter object. Instrumentation remained active until reload
+  destroyed the first document.
+- `environment-reload` independently waited and asserted the second document,
+  reasserted the persisted first-load counters, then constructed and asserted an
+  aggregate total. First-load, reload, and total each recorded exact zeros for
+  external HTTP(S), fetch, XHR, WebSocket, Authorization, console error/warning,
+  uncaught exception, unhandled rejection, Service Worker, and Cache Storage.
+  Browser warning/error logs were also zero.
+- Final database, manifest, and sentinel values matched the original accepted
+  lifecycle evidence: V2 version `1`, eight stores, six indexes; manifest counts
+  `1/1/5/5/10/0/0/3`, one metadata get, eight counts, zero payload reads; and
+  sentinel version/store/index/count/hash unchanged. All public/raw connections,
+  the tab, server, and port `60035` were closed after evidence capture.
+
+### B3 privacy, migration, rollback, and Not-run boundary
+
+The harness never calls database deletion or store clearing and never opens the
+actual Legacy database. It proves only fresh physical v1 creation, additive
+bootstrap, atomic data transactions, aborted versionchange rollback, explicit
+reopen, and same-origin synthetic sentinel preservation. Rollback remains
+code-only: close V2 and revert PR-05 while retaining all V2 and Legacy data.
+
+Final B3.1 local Node and repository gates after the corrected cross-reload
+browser harness:
+
+- `npm ci`: PASS; 6 packages installed from the unchanged lockfile.
+- `npm run check:syntax`: PASS for 151 files.
+- `npm run check:privacy`: PASS.
+- `node --test tests/storage/*.test.js`: PASS, 51 tests, 0 failures.
+- `npm test`: PASS, 1,016 tests, 0 failures/cancelled/skipped/todo.
+- `git diff --check`, explicit harness whitespace check, exact two-path B3 audit,
+  cumulative 17-path audit, prohibited-path audit, and pre-finalization unstaged
+  state: PASS. B3 Finalization tracks the harness as a normal stage-0 file in
+  the exact two-path commit.
+
+Real quota pressure, browser/process crash durability, Safari, Firefox, mobile,
+workers, 5k/10k activities, 200k-point streams, production Service Worker, user
+profiles, real provider network, real credentials, and real athlete data remain
+explicitly **Not run**.

@@ -1,0 +1,1021 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta
+        http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'nonce-b3-storage-smoke'; connect-src 'none'; img-src data:; style-src 'unsafe-inline'; object-src 'none'; base-uri 'none'; worker-src 'none'"
+    >
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="data:,">
+    <title>IndexedDB v2 browser smoke</title>
+    <style>
+        body { font-family: system-ui, sans-serif; margin: 2rem; }
+        [data-status="passed"] { color: #126b31; }
+        [data-status="failed"] { color: #9d1c1c; }
+        pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+    </style>
+</head>
+<body data-status="running">
+    <main>
+        <h1>IndexedDB v2 browser smoke</h1>
+        <p id="state" data-testid="state">running</p>
+        <pre id="summary" data-testid="summary">{"status":"running"}</pre>
+    </main>
+    <script type="module" nonce="b3-storage-smoke">
+        const V2_NAME = 'strava-stats-v2';
+        const SENTINEL_NAME = 'synthetic-legacy-like-b3-sentinel';
+        const FIXED_TIME = Date.parse('2026-08-05T01:02:03.004Z');
+        const APPLICATION_VERSION = 'browser-smoke@1';
+        const RELOAD_KEY = 'indexeddb-v2-browser-smoke-reload';
+        const EXPECTED_STORES = [
+            'metadata',
+            'migrations',
+            'activities',
+            'activitySources',
+            'streamSeries',
+            'laps',
+            'events',
+            'devices'
+        ];
+        const EXPECTED_INDEXES = {
+            metadata: [],
+            migrations: [],
+            activities: [
+                'bySportCategoryAndStartTimeUtc',
+                'byStartTimeUtc'
+            ],
+            activitySources: ['byActivityId'],
+            streamSeries: ['byActivityId'],
+            laps: ['byActivityIdAndIndex'],
+            events: ['byActivityIdAndIndex'],
+            devices: []
+        };
+        const EXPECTED_FINAL_COUNTS = {
+            metadata: 1,
+            migrations: 1,
+            activities: 5,
+            activitySources: 5,
+            streamSeries: 10,
+            laps: 0,
+            events: 0,
+            devices: 3
+        };
+
+        const stateElement = document.querySelector('#state');
+        const summaryElement = document.querySelector('#summary');
+        const metrics = {
+            authorizationAttempts: 0,
+            consoleErrors: 0,
+            consoleWarnings: 0,
+            fetch: 0,
+            xhr: 0,
+            webSocket: 0,
+            uncaught: 0,
+            unhandled: 0
+        };
+        const gateNames = [];
+        const storesToClose = new Set();
+        let currentGate = 'bootstrap';
+
+        console.error = () => { metrics.consoleErrors += 1; };
+        console.warn = () => { metrics.consoleWarnings += 1; };
+        addEventListener('error', event => {
+            metrics.uncaught += 1;
+            event.preventDefault();
+        });
+        addEventListener('unhandledrejection', event => {
+            metrics.unhandled += 1;
+            event.preventDefault();
+        });
+
+        const nativeFetch = globalThis.fetch;
+        globalThis.fetch = (...args) => {
+            metrics.fetch += 1;
+            const init = args[1];
+            try {
+                const headers = new Headers(init?.headers);
+                if (headers.has('authorization')) metrics.authorizationAttempts += 1;
+            } catch {
+                metrics.authorizationAttempts += 1;
+            }
+            return Promise.reject(new TypeError('blocked'));
+        };
+        const nativeXhrOpen = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function (...args) {
+            metrics.xhr += 1;
+            throw new DOMException('blocked', 'SecurityError');
+        };
+        const NativeWebSocket = globalThis.WebSocket;
+        globalThis.WebSocket = class BlockedWebSocket {
+            constructor() {
+                metrics.webSocket += 1;
+                throw new DOMException('blocked', 'SecurityError');
+            }
+        };
+
+        function assert(condition, code) {
+            if (!condition) throw new Error(code);
+        }
+
+        async function gate(name, callback) {
+            currentGate = name;
+            await callback();
+            gateNames.push(name);
+        }
+
+        function requestResult(request) {
+            return new Promise((resolve, reject) => {
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = event => {
+                    event.preventDefault();
+                    reject(request.error);
+                };
+            });
+        }
+
+        function transactionDone(transaction) {
+            return new Promise((resolve, reject) => {
+                transaction.oncomplete = () => resolve();
+                transaction.onabort = () => reject(transaction.error);
+                transaction.onerror = event => event.preventDefault();
+            });
+        }
+
+        function openDatabase(name, version, upgrade) {
+            return new Promise((resolve, reject) => {
+                const request = version === undefined
+                    ? indexedDB.open(name)
+                    : indexedDB.open(name, version);
+                request.onupgradeneeded = event => {
+                    upgrade?.(request.result, request.transaction, event);
+                };
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = event => {
+                    event.preventDefault();
+                    reject(request.error);
+                };
+            });
+        }
+
+        async function databaseInventory() {
+            assert(typeof indexedDB.databases === 'function', 'databases-api');
+            const inventory = await indexedDB.databases();
+            return inventory
+                .map(item => ({ name: item.name, version: item.version }))
+                .sort((left, right) => left.name < right.name ? -1 : 1);
+        }
+
+        async function digestText(text) {
+            const bytes = new TextEncoder().encode(text);
+            const digest = await crypto.subtle.digest('SHA-256', bytes);
+            return Array.from(new Uint8Array(digest))
+                .map(value => value.toString(16).padStart(2, '0'))
+                .join('');
+        }
+
+        async function ensureSentinel() {
+            const database = await openDatabase(SENTINEL_NAME, 3, db => {
+                const store = db.createObjectStore('syntheticRecords', {
+                    keyPath: 'id'
+                });
+                store.createIndex('byKind', 'kind', { unique: false });
+                store.add({
+                    id: 'sentinel-record',
+                    kind: 'synthetic',
+                    value: ['alpha', 0, null]
+                });
+            });
+            database.close();
+        }
+
+        async function sentinelSnapshot() {
+            const database = await openDatabase(SENTINEL_NAME);
+            try {
+                const transaction = database.transaction(
+                    'syntheticRecords',
+                    'readonly'
+                );
+                const done = transactionDone(transaction);
+                const store = transaction.objectStore('syntheticRecords');
+                const records = await requestResult(store.getAll());
+                await done;
+                const byteHash = await digestText(JSON.stringify(records));
+                return {
+                    version: database.version,
+                    stores: Array.from(database.objectStoreNames),
+                    indexes: Array.from(store.indexNames),
+                    recordCount: records.length,
+                    byteHash
+                };
+            } finally {
+                database.close();
+            }
+        }
+
+        async function inspectV2() {
+            const database = await openDatabase(V2_NAME);
+            try {
+                const transaction = database.transaction(
+                    EXPECTED_STORES,
+                    'readonly'
+                );
+                const done = transactionDone(transaction);
+                const indexes = {};
+                const counts = {};
+                for (const name of EXPECTED_STORES) {
+                    const store = transaction.objectStore(name);
+                    indexes[name] = Array.from(store.indexNames).sort();
+                    counts[name] = await requestResult(store.count());
+                }
+                const metadata = await requestResult(
+                    transaction.objectStore('metadata').get('database')
+                );
+                const migration = await requestResult(
+                    transaction.objectStore('migrations')
+                        .get('schema-0001-bootstrap')
+                );
+                await done;
+                return {
+                    version: database.version,
+                    stores: Array.from(database.objectStoreNames).sort(),
+                    indexes,
+                    counts,
+                    metadata: {
+                        databaseName: metadata?.databaseName,
+                        schemaId: metadata?.schemaId,
+                        indexedDbVersion: metadata?.indexedDbVersion,
+                        canonicalSchemaVersion: metadata?.canonicalSchemaVersion,
+                        createdByApplicationVersion:
+                            metadata?.createdByApplicationVersion
+                    },
+                    migration: {
+                        id: migration?.id,
+                        status: migration?.status,
+                        retryCount: migration?.retryCount,
+                        outputStoreCount: migration?.outputSummary?.storeCount
+                    }
+                };
+            } finally {
+                database.close();
+            }
+        }
+
+        function makeBundle({
+            id,
+            startTimeUtc,
+            sportCategory = 'run',
+            deviceIds = [],
+            sourceDeviceId
+        }) {
+            const source = {
+                id: `${id}-source`,
+                activityId: id,
+                provider: 'synthetic-browser',
+                acquisitionMethod: 'synthetic-import',
+                importedAt: '2026-08-05T00:00:00.000Z'
+            };
+            if (sourceDeviceId !== undefined) {
+                source.deviceId = sourceDeviceId;
+            }
+            return {
+                schemaVersion: 1,
+                activity: {
+                    schemaVersion: 1,
+                    id,
+                    sportCategory,
+                    sportVariant: null,
+                    startTimeUtc,
+                    timeZone: {
+                        ianaName: 'Etc/UTC',
+                        utcOffsetMinutes: 0
+                    },
+                    capabilities: {
+                        hasGps: false,
+                        hasHeartRate: false,
+                        hasPower: false,
+                        hasCadence: false,
+                        hasLaps: false
+                    },
+                    name: `Synthetic ${id}`,
+                    elapsedTimeSeconds: 120
+                },
+                streams: {
+                    activityId: id,
+                    series: [
+                        {
+                            streamType: 'moving',
+                            unit: 'boolean',
+                            offsetsSeconds: [0, 60],
+                            values: [true, false]
+                        },
+                        {
+                            streamType: 'distance',
+                            unit: 'meters',
+                            offsetsSeconds: [0, 60],
+                            values: [0, 100]
+                        }
+                    ]
+                },
+                laps: [],
+                events: [],
+                sources: [source],
+                devices: deviceIds.map(deviceId => ({
+                    id: deviceId,
+                    manufacturer: 'synthetic-maker',
+                    model: `synthetic-${deviceId}`
+                })),
+                warnings: [],
+                versionMetadata: {
+                    schemaVersion: 1,
+                    parserVersion: 'synthetic-parser@1',
+                    normalizerVersion: 'synthetic-normalizer@1',
+                    analysisVersion: null,
+                    settingsVersion: 'synthetic-settings@1',
+                    inputHash: null
+                }
+            };
+        }
+
+        function storeOptions(storageModule) {
+            return {
+                indexedDB,
+                IDBKeyRange,
+                now: () => FIXED_TIME,
+                applicationVersion: APPLICATION_VERSION
+            };
+        }
+
+        function trackStore(storage) {
+            storesToClose.add(storage);
+            return storage;
+        }
+
+        async function expectCode(promise, code) {
+            let seen = null;
+            try {
+                await promise;
+            } catch (error) {
+                seen = error?.code ?? null;
+            }
+            assert(seen === code, `error-${code}`);
+        }
+
+        async function noServiceWorkerOrCache() {
+            const registrations = 'serviceWorker' in navigator
+                ? await navigator.serviceWorker.getRegistrations()
+                : [];
+            const cacheNames = 'caches' in globalThis ? await caches.keys() : [];
+            assert(registrations.length === 0, 'service-worker');
+            assert(cacheNames.length === 0, 'cache-storage');
+            return {
+                serviceWorkers: registrations.length,
+                cacheStorage: cacheNames.length
+            };
+        }
+
+        function externalResourceCount() {
+            return performance.getEntriesByType('resource').filter(entry => {
+                try {
+                    const url = new URL(entry.name);
+                    return (
+                        (url.protocol === 'http:' || url.protocol === 'https:')
+                        && url.origin !== location.origin
+                    );
+                } catch {
+                    return true;
+                }
+            }).length;
+        }
+
+        function waitForSettledEnvironment() {
+            return new Promise(resolve => {
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => setTimeout(resolve, 0));
+                });
+            });
+        }
+
+        function environmentSnapshot(isolation) {
+            return {
+                externalHttp: externalResourceCount(),
+                fetch: metrics.fetch,
+                xhr: metrics.xhr,
+                webSocket: metrics.webSocket,
+                authorization: metrics.authorizationAttempts,
+                consoleErrors: metrics.consoleErrors,
+                consoleWarnings: metrics.consoleWarnings,
+                uncaught: metrics.uncaught,
+                unhandled: metrics.unhandled,
+                serviceWorkers: isolation.serviceWorkers,
+                cacheStorage: isolation.cacheStorage
+            };
+        }
+
+        function assertZeroEnvironment(snapshot, prefix) {
+            for (const [name, value] of Object.entries(snapshot)) {
+                assert(value === 0, `${prefix}-${name}`);
+            }
+        }
+
+        function totalEnvironment(firstLoad, reload) {
+            return Object.fromEntries(Object.keys(firstLoad).map(name => [
+                name,
+                firstLoad[name] + reload[name]
+            ]));
+        }
+
+        async function closeTrackedStores() {
+            for (const storage of storesToClose) {
+                try {
+                    await storage.close();
+                } catch {
+                    // Final status remains governed by the explicit gate result.
+                }
+            }
+            storesToClose.clear();
+        }
+
+        async function runFirstLoad() {
+            let sentinelBefore;
+            let storageModule;
+            await gate('fresh-origin', async () => {
+                const inventory = await databaseInventory();
+                assert(!inventory.some(item => item.name === V2_NAME), 'v2-preexisting');
+                const isolation = await noServiceWorkerOrCache();
+                assert(isolation.serviceWorkers === 0, 'fresh-service-worker');
+                assert(isolation.cacheStorage === 0, 'fresh-cache');
+            });
+
+            await gate('synthetic-sentinel', async () => {
+                await ensureSentinel();
+                sentinelBefore = await sentinelSnapshot();
+                assert(sentinelBefore.version === 3, 'sentinel-version');
+                assert(sentinelBefore.recordCount === 1, 'sentinel-count');
+            });
+
+            await gate('import-construct-zero-io', async () => {
+                storageModule = await import(
+                    '../../js/storage/index.js?indexeddb-v2-browser-smoke=1'
+                );
+                const afterImport = await databaseInventory();
+                assert(!afterImport.some(item => item.name === V2_NAME), 'import-io');
+                const storage = trackStore(storageModule.createCanonicalStore(
+                    storeOptions(storageModule)
+                ));
+                globalThis.__browserSmokeStorage = storage;
+                const afterConstruct = await databaseInventory();
+                assert(
+                    !afterConstruct.some(item => item.name === V2_NAME),
+                    'construct-io'
+                );
+            });
+
+            const storage = globalThis.__browserSmokeStorage;
+            await gate('fresh-schema-bootstrap', async () => {
+                const ready = await storage.initialize();
+                assert(ready.status === 'ready', 'initialize-ready');
+                const inspected = await inspectV2();
+                assert(inspected.version === 1, 'database-version');
+                assert(
+                    JSON.stringify(inspected.stores) ===
+                        JSON.stringify(EXPECTED_STORES.slice().sort()),
+                    'store-inventory'
+                );
+                for (const name of EXPECTED_STORES) {
+                    assert(
+                        JSON.stringify(inspected.indexes[name]) ===
+                            JSON.stringify(EXPECTED_INDEXES[name]),
+                        `indexes-${name}`
+                    );
+                }
+                assert(inspected.metadata.databaseName === V2_NAME, 'metadata-name');
+                assert(
+                    inspected.metadata.schemaId === 'strava-stats-v2@1',
+                    'metadata-schema'
+                );
+                assert(inspected.metadata.indexedDbVersion === 1, 'metadata-version');
+                assert(
+                    inspected.metadata.canonicalSchemaVersion === 1,
+                    'metadata-canonical'
+                );
+                assert(
+                    inspected.metadata.createdByApplicationVersion ===
+                        APPLICATION_VERSION,
+                    'metadata-app'
+                );
+                assert(
+                    inspected.migration.id === 'schema-0001-bootstrap'
+                    && inspected.migration.status === 'completed'
+                    && inspected.migration.retryCount === 0
+                    && inspected.migration.outputStoreCount === 8,
+                    'bootstrap-migration'
+                );
+            });
+
+            await gate('repeat-close-explicit-reopen', async () => {
+                assert((await storage.initialize()).status === 'ready', 'repeat-init');
+                assert((await storage.close()).status === 'closed', 'first-close');
+                assert((await storage.initialize()).status === 'ready', 'explicit-reopen');
+            });
+
+            const sharedDevice = 'synthetic-shared-device';
+            const bundles = [
+                makeBundle({
+                    id: '000123',
+                    startTimeUtc: '2026-08-05T05:00:00.000Z',
+                    deviceIds: [sharedDevice],
+                    sourceDeviceId: sharedDevice
+                }),
+                makeBundle({
+                    id: '123',
+                    startTimeUtc: '2026-08-05T05:00:00.000Z',
+                    deviceIds: [sharedDevice],
+                    sourceDeviceId: sharedDevice
+                }),
+                makeBundle({
+                    id: 'opaque-ride',
+                    startTimeUtc: '2026-08-05T06:00:00.000Z',
+                    sportCategory: 'ride'
+                }),
+                makeBundle({
+                    id: 'opaque-unreferenced',
+                    startTimeUtc: '2026-08-05T04:00:00.000Z',
+                    deviceIds: ['z-unreferenced', 'a-unreferenced']
+                })
+            ];
+
+            await gate('canonical-put-get', async () => {
+                for (const bundle of bundles) {
+                    const result = await storage.putBundle(bundle);
+                    assert(result.status === 'committed', 'put-committed');
+                }
+                const repeated = await storage.putBundle(structuredClone(bundles[0]));
+                assert(repeated.status === 'already-present', 'already-present');
+                const all = await storage.getBundle('000123');
+                assert(
+                    JSON.stringify(all.streams.series.map(item => item.streamType))
+                        === JSON.stringify(['distance', 'moving']),
+                    'get-all-streams'
+                );
+                const selected = await storage.getBundle('000123', {
+                    streamTypes: ['distance']
+                });
+                assert(
+                    JSON.stringify(selected.streams.series.map(item => item.streamType))
+                        === JSON.stringify(['distance']),
+                    'get-selected-stream'
+                );
+                assert(Object.isFrozen(all), 'get-frozen');
+            });
+
+            await gate('unreferenced-device-association', async () => {
+                const restored = await storage.getBundle('opaque-unreferenced');
+                assert(
+                    JSON.stringify(restored.devices.map(item => item.id))
+                        === JSON.stringify(['a-unreferenced', 'z-unreferenced']),
+                    'unreferenced-roundtrip'
+                );
+                assert(
+                    !Object.hasOwn(restored.sources[0], 'deviceId'),
+                    'unreferenced-source'
+                );
+                const database = await openDatabase(V2_NAME);
+                try {
+                    const transaction = database.transaction('activities', 'readonly');
+                    const done = transactionDone(transaction);
+                    const envelope = await requestResult(
+                        transaction.objectStore('activities')
+                            .get('opaque-unreferenced')
+                    );
+                    await done;
+                    assert(
+                        JSON.stringify(Object.keys(envelope).sort()) ===
+                            JSON.stringify([
+                                'activity',
+                                'deviceIds',
+                                'schemaVersion',
+                                'versionMetadata',
+                                'warnings'
+                            ]),
+                        'five-field-envelope'
+                    );
+                    assert(
+                        JSON.stringify(envelope.deviceIds) ===
+                            JSON.stringify(['a-unreferenced', 'z-unreferenced']),
+                        'device-id-order'
+                    );
+                } finally {
+                    database.close();
+                }
+            });
+
+            await gate('indexed-lists', async () => {
+                const asc = await storage.listActivities({
+                    direction: 'asc',
+                    limit: 500
+                });
+                assert(
+                    JSON.stringify(asc.map(item => item.id)) ===
+                        JSON.stringify([
+                            'opaque-unreferenced',
+                            '000123',
+                            '123',
+                            'opaque-ride'
+                        ]),
+                    'list-asc'
+                );
+                const desc = await storage.listActivities({ direction: 'desc' });
+                assert(
+                    JSON.stringify(desc.map(item => item.id)) ===
+                        JSON.stringify([
+                            'opaque-ride',
+                            '123',
+                            '000123',
+                            'opaque-unreferenced'
+                        ]),
+                    'list-desc'
+                );
+                const ride = await storage.listActivities({ sportCategory: 'ride' });
+                assert(
+                    JSON.stringify(ride.map(item => item.id)) ===
+                        JSON.stringify(['opaque-ride']),
+                    'list-filter'
+                );
+                await expectCode(
+                    storage.listActivities({ limit: 501 }),
+                    'INVALID_REQUEST'
+                );
+            });
+
+            await gate('unsafe-input-pre-io', async () => {
+                const nativeTransaction = IDBDatabase.prototype.transaction;
+                let transactions = 0;
+                IDBDatabase.prototype.transaction = function (...args) {
+                    transactions += 1;
+                    return nativeTransaction.apply(this, args);
+                };
+                try {
+                    let getterCalls = 0;
+                    const unsafe = makeBundle({
+                        id: 'unsafe-accessor',
+                        startTimeUtc: '2026-08-05T08:00:00.000Z'
+                    });
+                    Object.defineProperty(unsafe.activity, 'name', {
+                        enumerable: true,
+                        get() {
+                            getterCalls += 1;
+                            return 'must-not-run';
+                        }
+                    });
+                    await expectCode(storage.putBundle(unsafe), 'DATA_INVALID');
+                    const revoked = Proxy.revocable({}, {});
+                    revoked.revoke();
+                    await expectCode(storage.putBundle(revoked.proxy), 'DATA_INVALID');
+                    const unsafeOptions = {};
+                    Object.defineProperty(unsafeOptions, 'limit', {
+                        enumerable: true,
+                        get() {
+                            getterCalls += 1;
+                            return 1;
+                        }
+                    });
+                    await expectCode(
+                        storage.listActivities(unsafeOptions),
+                        'INVALID_REQUEST'
+                    );
+                    assert(getterCalls === 0, 'unsafe-getter-called');
+                    assert(transactions === 0, 'unsafe-transaction-io');
+                } finally {
+                    IDBDatabase.prototype.transaction = nativeTransaction;
+                }
+            });
+
+            await gate('constraint-and-abort-rollback', async () => {
+                const before = (await inspectV2()).counts;
+                const nativeAdd = IDBObjectStore.prototype.add;
+                let injectedName = 'ConstraintError';
+                IDBObjectStore.prototype.add = function (value, ...args) {
+                    if (
+                        this.name === 'streamSeries'
+                        && value?.activityId === 'failed-constraint'
+                    ) {
+                        throw new DOMException('synthetic', injectedName);
+                    }
+                    if (
+                        this.name === 'streamSeries'
+                        && value?.activityId === 'failed-abort'
+                    ) {
+                        throw new DOMException('synthetic', injectedName);
+                    }
+                    return nativeAdd.call(this, value, ...args);
+                };
+                try {
+                    await expectCode(storage.putBundle(makeBundle({
+                        id: 'failed-constraint',
+                        startTimeUtc: '2026-08-05T08:00:00.000Z'
+                    })), 'CONSTRAINT_VIOLATION');
+                    injectedName = 'AbortError';
+                    await expectCode(storage.putBundle(makeBundle({
+                        id: 'failed-abort',
+                        startTimeUtc: '2026-08-05T08:30:00.000Z'
+                    })), 'TRANSACTION_ABORTED');
+                } finally {
+                    IDBObjectStore.prototype.add = nativeAdd;
+                }
+                const after = (await inspectV2()).counts;
+                assert(JSON.stringify(after) === JSON.stringify(before), 'rollback-counts');
+                assert(await storage.getBundle('failed-constraint') === null, 'rollback-one');
+                assert(await storage.getBundle('failed-abort') === null, 'rollback-two');
+            });
+
+            await gate('close-inflight-terminal', async () => {
+                const closingBundle = makeBundle({
+                    id: 'opaque-close',
+                    startTimeUtc: '2026-08-05T07:00:00.000Z'
+                });
+                const order = [];
+                const write = storage.putBundle(closingBundle)
+                    .then(value => {
+                        order.push('write');
+                        return value;
+                    });
+                const close = storage.close().then(value => {
+                    order.push('close');
+                    return value;
+                });
+                assert((await write).status === 'committed', 'inflight-write');
+                assert((await close).status === 'closed', 'inflight-close');
+                assert(
+                    JSON.stringify(order) === JSON.stringify(['write', 'close']),
+                    'close-order'
+                );
+                await expectCode(storage.getBundle('opaque-close'), 'CONNECTION_STALE');
+                await storage.initialize();
+                assert(
+                    (await storage.getBundle('opaque-close')).activity.id ===
+                        'opaque-close',
+                    'close-reopen'
+                );
+            });
+
+            let manifestSummary;
+            await gate('metadata-only-manifest', async () => {
+                const nativeGet = IDBObjectStore.prototype.get;
+                const nativeGetAll = IDBObjectStore.prototype.getAll;
+                const nativeOpenCursor = IDBObjectStore.prototype.openCursor;
+                const nativeCount = IDBObjectStore.prototype.count;
+                let payloadReads = 0;
+                let metadataGets = 0;
+                let counts = 0;
+                IDBObjectStore.prototype.get = function (...args) {
+                    if (this.name === 'metadata') metadataGets += 1;
+                    else payloadReads += 1;
+                    return nativeGet.apply(this, args);
+                };
+                IDBObjectStore.prototype.getAll = function (...args) {
+                    payloadReads += 1;
+                    return nativeGetAll.apply(this, args);
+                };
+                IDBObjectStore.prototype.openCursor = function (...args) {
+                    payloadReads += 1;
+                    return nativeOpenCursor.apply(this, args);
+                };
+                IDBObjectStore.prototype.count = function (...args) {
+                    counts += 1;
+                    return nativeCount.apply(this, args);
+                };
+                try {
+                    const manifest = await storage.createBackupManifest();
+                    const projectedCounts = Object.fromEntries(
+                        manifest.stores.map(item => [item.name, item.recordCount])
+                    );
+                    assert(manifest.backupFormatVersion === 1, 'manifest-format');
+                    assert(manifest.databaseName === V2_NAME, 'manifest-name');
+                    assert(manifest.indexedDbVersion === 1, 'manifest-version');
+                    assert(manifest.canonicalSchemaVersion === 1, 'manifest-canonical');
+                    assert(manifest.applicationVersion === APPLICATION_VERSION, 'manifest-app');
+                    assert(manifest.files.length === 0, 'manifest-files');
+                    assert(manifest.hashes.length === 0, 'manifest-hashes');
+                    assert(
+                        JSON.stringify(projectedCounts) ===
+                            JSON.stringify(EXPECTED_FINAL_COUNTS),
+                        'manifest-counts'
+                    );
+                    assert(payloadReads === 0, 'manifest-payload-read');
+                    assert(metadataGets === 1, 'manifest-metadata-get');
+                    assert(counts === 8, 'manifest-count-calls');
+                    manifestSummary = {
+                        backupFormatVersion: manifest.backupFormatVersion,
+                        databaseName: manifest.databaseName,
+                        indexedDbVersion: manifest.indexedDbVersion,
+                        canonicalSchemaVersion: manifest.canonicalSchemaVersion,
+                        storeCounts: projectedCounts,
+                        payloadReads,
+                        metadataGets,
+                        countCalls: counts
+                    };
+                } finally {
+                    IDBObjectStore.prototype.get = nativeGet;
+                    IDBObjectStore.prototype.getAll = nativeGetAll;
+                    IDBObjectStore.prototype.openCursor = nativeOpenCursor;
+                    IDBObjectStore.prototype.count = nativeCount;
+                }
+            });
+
+            await gate('multi-connection-versionchange', async () => {
+                await storage.close();
+                const first = trackStore(storageModule.createCanonicalStore(
+                    storeOptions(storageModule)
+                ));
+                const second = trackStore(storageModule.createCanonicalStore(
+                    storeOptions(storageModule)
+                ));
+                await first.initialize();
+                await second.initialize();
+                const request = indexedDB.open(V2_NAME, 2);
+                const aborted = new Promise((resolve, reject) => {
+                    request.onupgradeneeded = () => request.transaction.abort();
+                    request.onsuccess = () => {
+                        request.result.close();
+                        reject(new Error('upgrade-committed'));
+                    };
+                    request.onerror = event => {
+                        event.preventDefault();
+                        resolve(request.error?.name);
+                    };
+                });
+                assert(await aborted === 'AbortError', 'upgrade-abort');
+                await expectCode(first.listActivities(), 'CONNECTION_STALE');
+                await expectCode(second.listActivities(), 'CONNECTION_STALE');
+                const inspected = await inspectV2();
+                assert(inspected.version === 1, 'aborted-version');
+                assert(
+                    JSON.stringify(inspected.counts) ===
+                        JSON.stringify(EXPECTED_FINAL_COUNTS),
+                    'aborted-counts'
+                );
+                await first.initialize();
+                await second.initialize();
+                assert((await first.listActivities()).length === 5, 'first-reopen');
+                assert((await second.listActivities()).length === 5, 'second-reopen');
+                await first.close();
+                await second.close();
+            });
+
+            await gate('sentinel-preserved-before-reload', async () => {
+                const sentinelAfter = await sentinelSnapshot();
+                assert(
+                    JSON.stringify(sentinelAfter) === JSON.stringify(sentinelBefore),
+                    'sentinel-changed'
+                );
+            });
+
+            await closeTrackedStores();
+            let firstLoadEnvironment;
+            await gate('environment-first-load', async () => {
+                await waitForSettledEnvironment();
+                const isolation = await noServiceWorkerOrCache();
+                firstLoadEnvironment = environmentSnapshot(isolation);
+                assertZeroEnvironment(firstLoadEnvironment, 'first-load');
+            });
+            sessionStorage.setItem(RELOAD_KEY, JSON.stringify({
+                sentinel: sentinelBefore,
+                manifest: manifestSummary,
+                gates: gateNames,
+                environment: firstLoadEnvironment
+            }));
+            location.reload();
+            await new Promise(() => {});
+        }
+
+        async function runReload() {
+            const persisted = JSON.parse(sessionStorage.getItem(RELOAD_KEY));
+            assert(persisted !== null, 'reload-state');
+            sessionStorage.removeItem(RELOAD_KEY);
+            let storageModule;
+            await gate('reload-native-import', async () => {
+                storageModule = await import(
+                    '../../js/storage/index.js?indexeddb-v2-browser-smoke=2'
+                );
+            });
+            const storage = trackStore(storageModule.createCanonicalStore(
+                storeOptions(storageModule)
+            ));
+            await gate('reload-explicit-reopen-equivalence', async () => {
+                assert((await storage.initialize()).status === 'ready', 'reload-init');
+                const restored = await storage.getBundle('opaque-unreferenced');
+                assert(restored?.devices.length === 2, 'reload-get');
+                const manifest = await storage.createBackupManifest();
+                const counts = Object.fromEntries(
+                    manifest.stores.map(item => [item.name, item.recordCount])
+                );
+                assert(
+                    JSON.stringify(counts) ===
+                        JSON.stringify(persisted.manifest.storeCounts),
+                    'reload-manifest'
+                );
+            });
+            await gate('reload-sentinel-preserved', async () => {
+                const sentinelAfter = await sentinelSnapshot();
+                assert(
+                    JSON.stringify(sentinelAfter) ===
+                        JSON.stringify(persisted.sentinel),
+                    'reload-sentinel'
+                );
+            });
+            await storage.close();
+            await closeTrackedStores();
+            const inventory = await databaseInventory();
+            let reloadEnvironment;
+            await gate('environment-reload', async () => {
+                await waitForSettledEnvironment();
+                const isolation = await noServiceWorkerOrCache();
+                reloadEnvironment = environmentSnapshot(isolation);
+                assertZeroEnvironment(persisted.environment, 'persisted-first-load');
+                assertZeroEnvironment(reloadEnvironment, 'reload');
+            });
+            const environmentTotal = totalEnvironment(
+                persisted.environment,
+                reloadEnvironment
+            );
+            assertZeroEnvironment(environmentTotal, 'environment-total');
+            const browserVersion = navigator.userAgent.match(
+                /(?:Chrome|Chromium)\/([\d.]+)/
+            )?.[1] ?? 'chromium-unreported';
+            const allGates = [...persisted.gates, ...gateNames];
+            const summary = {
+                status: 'passed',
+                gateCount: allGates.length,
+                gates: allGates,
+                browser: `Chromium/${browserVersion}`,
+                origin: location.origin,
+                database: {
+                    name: V2_NAME,
+                    version: 1,
+                    stores: 8,
+                    indexes: 6
+                },
+                inventory,
+                manifest: persisted.manifest,
+                sentinel: {
+                    name: SENTINEL_NAME,
+                    version: persisted.sentinel.version,
+                    stores: persisted.sentinel.stores,
+                    indexes: persisted.sentinel.indexes,
+                    recordCount: persisted.sentinel.recordCount,
+                    byteHash: persisted.sentinel.byteHash,
+                    preserved: true
+                },
+                environment: {
+                    firstLoad: persisted.environment,
+                    reload: reloadEnvironment,
+                    total: environmentTotal
+                },
+                network: {
+                    externalHttp: environmentTotal.externalHttp,
+                    fetch: environmentTotal.fetch,
+                    xhr: environmentTotal.xhr,
+                    webSocket: environmentTotal.webSocket,
+                    authorization: environmentTotal.authorization
+                },
+                runtime: {
+                    consoleErrors: environmentTotal.consoleErrors,
+                    consoleWarnings: environmentTotal.consoleWarnings,
+                    uncaught: environmentTotal.uncaught,
+                    unhandled: environmentTotal.unhandled,
+                    serviceWorkers: environmentTotal.serviceWorkers,
+                    cacheStorage: environmentTotal.cacheStorage
+                },
+                connectionsClosed: true,
+                reloadVerified: true
+            };
+            stateElement.textContent = 'passed';
+            summaryElement.textContent = JSON.stringify(summary, null, 2);
+            document.body.dataset.status = 'passed';
+        }
+
+        try {
+            if (sessionStorage.getItem(RELOAD_KEY) === null) {
+                await runFirstLoad();
+            } else {
+                await runReload();
+            }
+        } catch {
+            await closeTrackedStores();
+            stateElement.textContent = 'failed';
+            summaryElement.textContent = JSON.stringify({
+                status: 'failed',
+                failedGate: currentGate,
+                completedGates: gateNames,
+                safeCounters: metrics
+            }, null, 2);
+            document.body.dataset.status = 'failed';
+        } finally {
+            globalThis.fetch = nativeFetch;
+            XMLHttpRequest.prototype.open = nativeXhrOpen;
+            globalThis.WebSocket = NativeWebSocket;
+        }
+    </script>
+</body>
+</html>
