@@ -98,7 +98,7 @@ test('B2 removes provider gear-cache access from every summary tab', () => {
     }
 });
 
-test('tabs/api.js importer is exactly the PR-04C Run Plus exception', async () => {
+test('PR-04C removes the tabs/api.js exception and all tab importers', async () => {
     const entries = await readdir(new URL('js/tabs/', projectRoot), {
         withFileTypes: true
     });
@@ -110,7 +110,11 @@ test('tabs/api.js importer is exactly the PR-04C Run Plus exception', async () =
             importers.push(entry.name);
         }
     }
-    assert.deepEqual(importers.sort(), ['run-plus.js']);
+    assert.deepEqual(importers, []);
+    await assert.rejects(
+        source('js/tabs/api.js'),
+        error => error?.code === 'ENOENT'
+    );
 });
 
 test('tabs governance file contains every frozen B1 boundary and parity rule', async () => {
@@ -131,8 +135,10 @@ test('tabs governance file contains every frozen B1 boundary and parity rule', a
         /chart configuration, DOM IDs\/classes, ordering, or visual output/,
         /Missing metadata or capabilities/,
         /`Not run`/,
-        /Run and Gear provider-gear-cache reads.*pending B2/s,
-        /`run-plus\.js` belongs to PR-04C/
+        /Run Plus gear labels and options use only the immutable session gear snapshot/,
+        /injected `getActivity` and `getStreams`\s+callbacks/,
+        /Activity IDs.*opaque non-empty strings/,
+        /Demo and Real use the same injected shape/
     ]) {
         assert.match(rules, pattern);
     }
@@ -176,8 +182,18 @@ test('B2 wires the Run gear context through the existing tab public entry', () =
     );
 });
 
-test('B2 leaves the PR-04C Run Plus provider exception and B3 seam unchanged', () => {
-    assert.match(runPlusSource, /from\s*['"]\.\/api\.js['"]/);
+test('PR-04C removes the final Run Plus provider boundary without changing the B3 seam', () => {
+    for (const pattern of [
+        /from\s*['"]\.\/api\.js['"]/,
+        /getCachedGears|strava_gears|strava_tokens/,
+        /\/api\/strava-/,
+        /Authorization|\bfetch\s*\(/,
+        /indexedDB|createRepository|new\s+\w*Connector/
+    ]) {
+        assert.doesNotMatch(runPlusSource, pattern);
+    }
+    assert.match(runPlusSource, /options\.getActivity\(activityId\)/);
+    assert.match(runPlusSource, /options\.getStreams\(activityId\)/);
     assert.doesNotMatch(mainSource, /summary-browser-smoke/);
 });
 

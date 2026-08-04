@@ -244,10 +244,6 @@ const {
     selectTrendsMetadataContext
 } = await import('../../js/tabs/athlete.js?demo-isolation-test');
 const {
-    RUN_PLUS_REMOTE_ERROR,
-    requestRunPlusRemote
-} = await import('../../js/tabs/run-plus.js?demo-isolation-test');
-const {
     renderGearGanttChart: renderRunGearGanttChart,
     setRunSessionGears
 } = await import('../../js/tabs/run-analysis.js');
@@ -290,6 +286,7 @@ function compileSummaryBoundary(source) {
             resetSummarySessionGears,
             applySummarySessionGearLoad,
             buildSessionGearNameMap,
+            createRunPlusRenderOptions,
             selectPreprocessingAthlete
         };`
     )(
@@ -312,6 +309,7 @@ const {
     resetSummarySessionGears,
     applySummarySessionGearLoad,
     buildSessionGearNameMap,
+    createRunPlusRenderOptions,
     selectPreprocessingAthlete
 } = compileSummaryBoundary(mainSource);
 
@@ -328,6 +326,8 @@ function repositorySessionHarness({ storage, sessionMode = 'demo' }) {
     const calls = {
         factory: 0,
         listActivities: [],
+        getActivity: [],
+        getStreams: [],
         getAthlete: 0,
         getZones: 0,
         getGears: 0
@@ -342,6 +342,27 @@ function repositorySessionHarness({ storage, sessionMode = 'demo' }) {
                 sessionMode === 'demo'
                     ? REPOSITORY_SOURCE.DEMO
                     : REPOSITORY_SOURCE.CACHE
+            );
+        },
+        async getActivity(activityId) {
+            calls.getActivity.push(activityId);
+            const activity = sessionMode === 'demo'
+                ? getDemoActivities(storage).find(item => String(item.id) === activityId)
+                : { id: activityId, laps: [] };
+            return repositoryEnvelope(
+                activity,
+                sessionMode === 'demo'
+                    ? REPOSITORY_SOURCE.DEMO
+                    : REPOSITORY_SOURCE.NETWORK
+            );
+        },
+        async getStreams(activityId, options) {
+            calls.getStreams.push({ activityId, options });
+            return repositoryEnvelope(
+                {},
+                sessionMode === 'demo'
+                    ? REPOSITORY_SOURCE.DEMO
+                    : REPOSITORY_SOURCE.NETWORK
             );
         },
         async getAthlete() {
@@ -1144,145 +1165,60 @@ test('Demo preprocessing context blocks Legacy athlete fallback when metadata is
     );
 });
 
-test('Run Plus Demo remote gate blocks Token reads, fetch, and Token writes', async () => {
-    const syntheticActivityPayload = 'synthetic-private-activity-payload';
-    const storage = new MemoryStorage(realLibrary());
+test('Run Plus Demo data façade uses only the Demo Repository session', async () => {
+    const storage = new MemoryStorage({
+        ...realLibrary(),
+        ...demoNamespace()
+    });
     storage.operations = [];
-    let fetchCalls = 0;
-    let btoaCalls = 0;
-    let blockedError = null;
-
-    try {
-        await requestRunPlusRemote(
-            `/api/strava-streams?id=${syntheticActivityPayload}`,
-            {
-                allowRemoteStrava: false,
-                storage,
-                fetchImpl: async () => {
-                    fetchCalls += 1;
-                    throw new Error('Prohibited Demo fetch');
-                },
-                btoaImpl: () => {
-                    btoaCalls += 1;
-                    return 'prohibited-demo-auth';
-                }
-            }
-        );
-    } catch (error) {
-        blockedError = error;
-    }
-
-    assert.equal(blockedError?.code, RUN_PLUS_REMOTE_ERROR.DISABLED);
-    assert.equal(
-        storage.getItemCalls.filter(key => key === 'strava_tokens').length,
-        0
-    );
-    assert.equal(fetchCalls, 0);
-    assert.equal(btoaCalls, 0);
-    assert.equal(
-        storage.operations.filter(operation => (
-            operation.operation === 'set'
-            && operation.key === 'strava_tokens'
-        )).length,
-        0
-    );
-    const serializedError = JSON.stringify({
-        name: blockedError?.name,
-        code: blockedError?.code,
-        message: blockedError?.message
+    storage.forbiddenReads = new Set([
+        'strava_tokens',
+        'strava_activities',
+        'strava_athlete_data',
+        'strava_training_zones',
+        'strava_gears'
+    ]);
+    const harness = repositorySessionHarness({ storage, sessionMode: 'demo' });
+    const session = establishSummaryRepositorySession({
+        activeSessionMode: null,
+        sessionRepository: null,
+        requestedSessionMode: 'demo',
+        repositoryFactory: harness.factory
+    }).sessionRepository;
+    const gears = getDemoGears(storage);
+    const options = createRunPlusRenderOptions({
+        sessionRepository: session,
+        sessionGears: gears,
+        onFiltersChange() {}
     });
-    assert.equal(serializedError.includes(REAL_ACCESS_TOKEN), false);
-    assert.equal(serializedError.includes(syntheticActivityPayload), false);
-});
+    const activityId = String(getDemoActivities(storage)[0].id);
 
-test('Run Plus real remote requests preserve Token, fetch, and refresh behavior', async () => {
-    const makeResponse = body => ({
-        ok: true,
-        status: 200,
-        json: async () => body,
-        text: async () => {
-            throw new Error('Successful response text must not be read');
-        }
-    });
-    const storageWithoutRefresh = new MemoryStorage(realLibrary());
-    storageWithoutRefresh.operations = [];
-    let fetchCallsWithoutRefresh = 0;
-    let btoaCallsWithoutRefresh = 0;
-    const resultWithoutRefresh = await requestRunPlusRemote(
-        '/api/strava-streams?id=synthetic-real-activity',
-        {
-            allowRemoteStrava: true,
-            storage: storageWithoutRefresh,
-            btoaImpl: tokenString => {
-                btoaCallsWithoutRefresh += 1;
-                assert.equal(
-                    JSON.parse(tokenString).access_token,
-                    REAL_ACCESS_TOKEN
-                );
-                return 'synthetic-encoded-auth';
-            },
-            fetchImpl: async (_url, options) => {
-                fetchCallsWithoutRefresh += 1;
-                assert.equal(
-                    options.headers.Authorization,
-                    'Bearer synthetic-encoded-auth'
-                );
-                return makeResponse({ streams: [] });
-            }
-        }
-    );
-    assert.deepEqual(resultWithoutRefresh, { streams: [] });
-    assert.equal(
-        storageWithoutRefresh.getItemCalls
-            .filter(key => key === 'strava_tokens').length,
-        1
-    );
-    assert.equal(fetchCallsWithoutRefresh, 1);
-    assert.equal(btoaCallsWithoutRefresh, 1);
-    assert.equal(
-        storageWithoutRefresh.operations.filter(operation => (
-            operation.operation === 'set'
-            && operation.key === 'strava_tokens'
-        )).length,
-        0
-    );
+    const activity = await options.getActivity(activityId);
+    const streams = await options.getStreams(activityId);
 
-    const storageWithRefresh = new MemoryStorage(realLibrary());
-    storageWithRefresh.operations = [];
-    let fetchCallsWithRefresh = 0;
-    const refreshedTokens = {
-        access_token: 'synthetic-refreshed-access-token',
-        refresh_token: 'synthetic-refreshed-refresh-token',
-        expires_at: 2200000000
-    };
-    await requestRunPlusRemote('/api/strava-activity?id=synthetic-real-activity', {
-        allowRemoteStrava: true,
-        storage: storageWithRefresh,
-        btoaImpl: () => 'synthetic-encoded-auth',
-        fetchImpl: async () => {
-            fetchCallsWithRefresh += 1;
-            return makeResponse({
-                activity: { id: 'synthetic-real-activity' },
-                tokens: refreshedTokens
-            });
+    assert.equal(activity.id, getDemoActivities(storage)[0].id);
+    assert.deepEqual(streams, {});
+    assert.deepEqual(harness.calls.getActivity, [activityId]);
+    assert.deepEqual(harness.calls.getStreams, [{
+        activityId,
+        options: {
+            types: [
+                'time',
+                'distance',
+                'velocity_smooth',
+                'heartrate',
+                'cadence',
+                'altitude'
+            ]
         }
-    });
-    assert.equal(
-        storageWithRefresh.getItemCalls
-            .filter(key => key === 'strava_tokens').length,
-        1
-    );
-    assert.equal(fetchCallsWithRefresh, 1);
-    assert.equal(
-        storageWithRefresh.operations.filter(operation => (
-            operation.operation === 'set'
-            && operation.key === 'strava_tokens'
-        )).length,
-        1
-    );
+    }]);
+    assert.notEqual(options.gears, gears);
+    assert.deepEqual(options.gears, gears);
+    assert.equal(Object.isFrozen(options), true);
+    assert.equal(Object.isFrozen(options.gears), true);
     assert.deepEqual(
-        JSON.parse(storageWithRefresh.getItem('strava_tokens')),
-        refreshedTokens
+        storage.getItemCalls.filter(key => storage.forbiddenReads.has(key)),
+        []
     );
 });
 
@@ -1762,10 +1698,8 @@ test('Source and privacy boundaries enforce production-path isolation', async ()
         2,
         'initialize and refresh must call the production activity loader'
     );
-    assert.match(
-        mainSource,
-        /allowRemoteStrava:\s*activeSessionMode\s*===\s*APP_SESSION_MODE\.REAL/
-    );
+    assert.match(mainSource, /createRunPlusRenderOptions\(\{/);
+    assert.match(mainSource, /sessionRepository:\s*requireSummaryRepositorySession\(/);
     assert.match(
         mainSource,
         /return buildSessionGearNameMap\(sessionGears\)/
@@ -1780,42 +1714,20 @@ test('Source and privacy boundaries enforce production-path isolation', async ()
     assert.equal(athleteSource.includes('strava_training_zones'), false);
     assert.equal(athleteSource.includes('active athlete'), false);
 
-    const remoteStart = runPlusSource.indexOf(
-        'export async function requestRunPlusRemote'
-    );
-    const remoteEnd = runPlusSource.indexOf(
-        'async function fetchNsmActivityDetails',
-        remoteStart
-    );
-    const remoteBoundary = runPlusSource.slice(remoteStart, remoteEnd);
-    const gateIndex = remoteBoundary.indexOf(
-        'if (allowRemoteStrava !== true)'
-    );
-    const tokenReadIndex = remoteBoundary.indexOf(
-        "storage.getItem('strava_tokens')"
-    );
-    const fetchIndex = remoteBoundary.indexOf(
-        'const response = await fetchImpl'
-    );
-    const tokenWriteIndex = remoteBoundary.indexOf(
-        "storage.setItem('strava_tokens'"
-    );
-    assert.equal(
-        gateIndex >= 0
-        && gateIndex < tokenReadIndex
-        && tokenReadIndex < fetchIndex
-        && fetchIndex < tokenWriteIndex,
-        true
-    );
-    assert.equal(remoteBoundary.includes('response.text'), false);
+    for (const pattern of [
+        /getCachedGears|strava_gears|strava_tokens/,
+        /\/api\/strava-/,
+        /Authorization|\bfetch\s*\(/,
+        /indexedDB|createRepository|new\s+\w*Connector/
+    ]) {
+        assert.doesNotMatch(runPlusSource, pattern);
+    }
     assert.equal(
         runPlusSource.includes("console.error('NSM interval analysis failed:'"),
         false
     );
-    assert.match(
-        runPlusSource,
-        /allowRemoteStrava:\s*options\?\.allowRemoteStrava\s*===\s*true/
-    );
+    assert.match(runPlusSource, /options\.getActivity\(activityId\)/);
+    assert.match(runPlusSource, /options\.getStreams\(activityId\)/);
     assert.match(
         indexSource,
         /id="logout-button"[\s\S]*?aria-label="Disconnect Strava"[\s\S]*?title="Disconnect Strava"/

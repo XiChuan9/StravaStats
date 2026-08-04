@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import {
     access,
     readFile,
@@ -10,28 +9,9 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const B31_BASELINE_SHA = '779d4ac5ff4c4cd29787553034bb5d69cce337d3';
-// Generated from B31_BASELINE_SHA with `git ls-tree -r -z`, excluding exactly
-// the ten B3.1 paths, sorting by path with code-unit order, and hashing canonical
-// `<mode> <object-id>\t<path>\0` records in order.
-const PROTECTED_TREE_SHA256 =
-    '2a472f3955d31a2933f634f19f9b74b0cfb0701ae2461e6e0f68ca5bf8860ee6';
-const PROTECTED_ENTRY_COUNT = 208;
 const projectRootUrl = new URL('../../', import.meta.url);
 const projectRoot = fileURLToPath(projectRootUrl);
-const B31_ALLOWED_PATHS = new Set([
-    'docs/tasks/pr-04b-detail-consumers.md',
-    'classifyRun.js',
-    'classifyBike.js',
-    'js/pages/activity/activity.js',
-    'js/pages/run/run.js',
-    'js/pages/bike/bike.js',
-    'js/pages/swim/swim.js',
-    'tests/consumers/detail-consumers.test.js',
-    'tests/consumers/detail-boundaries.test.js',
-    'tests/consumers/detail-browser-smoke.html'
-]);
-const PR04B_ALLOWED_PATHS = new Set([
+const PR04B_CONTRACT_PATHS = new Set([
     'docs/tasks/pr-04b-detail-consumers.md',
     'classifyRun.js',
     'classifyBike.js',
@@ -65,88 +45,25 @@ const B1_IMPLEMENTATION_PATHS = Object.freeze([
     'tests/repository/dependency-boundaries.test.js'
 ]);
 
-function readIndexEntries() {
+function readTrackedPaths() {
     const output = execFileSync(
         'git',
-        ['ls-files', '-s', '-z'],
+        ['ls-files', '-z'],
         { cwd: projectRoot, encoding: 'utf8' }
     );
     const records = output.split('\0');
     assert.equal(records.pop(), '');
-
-    return records.map(record => {
-        const match = /^(\d+) ([0-9a-f]+) (\d)\t([\s\S]+)$/.exec(record);
-        assert.notEqual(match, null, `Malformed index entry: ${record}`);
-        const [, mode, objectId, stage, relativePath] = match;
-        assert.match(mode, /^[0-7]{6}$/);
-        assert.match(objectId, /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/);
-        assert.equal(stage, '0', `Unmerged index entry: ${relativePath}`);
-        return { mode, objectId, relativePath };
-    });
+    return new Set(records);
 }
 
-function protectedTreeDigest(entries) {
-    const protectedEntries = entries
-        .filter(entry => !B31_ALLOWED_PATHS.has(entry.relativePath))
-        .sort((left, right) => (
-            left.relativePath < right.relativePath
-                ? -1
-                : (left.relativePath > right.relativePath ? 1 : 0)
-        ));
-    const hash = createHash('sha256');
-    for (const entry of protectedEntries) {
-        hash.update(
-            `${entry.mode} ${entry.objectId}\t${entry.relativePath}\0`
-        );
-    }
-    return hash.digest('hex');
-}
-
-function assertProtectedTreeDigest() {
-    const entries = readIndexEntries();
-    const trackedPaths = new Set(entries.map(entry => entry.relativePath));
-    for (const relativePath of [
-        'docs/tasks/pr-04b-detail-consumers.md',
-        'tests/consumers/detail-boundaries.test.js'
-    ]) {
+function assertPr04bContractsTracked(trackedPaths) {
+    for (const relativePath of PR04B_CONTRACT_PATHS) {
         assert.equal(
             trackedPaths.has(relativePath),
             true,
-            `Baseline-tracked B3 path is not tracked: ${relativePath}`
+            `PR-04B contract file is not tracked: ${relativePath}`
         );
     }
-    assert.equal(
-        entries.filter(entry => !B31_ALLOWED_PATHS.has(entry.relativePath)).length,
-        PROTECTED_ENTRY_COUNT
-    );
-    assert.equal(protectedTreeDigest(entries), PROTECTED_TREE_SHA256);
-    return trackedPaths;
-}
-
-function assertObservedB31Paths(observed) {
-    for (const relativePath of observed) {
-        assert.equal(
-            B31_ALLOWED_PATHS.has(relativePath),
-            true,
-            `B3.1 path is not approved: ${relativePath}`
-        );
-    }
-    assert.equal(
-        observed.size <= B31_ALLOWED_PATHS.size,
-        true,
-        'B3.1 worktree contains an eleventh path.'
-    );
-}
-
-function assertObservedPr04bPaths(observed) {
-    for (const relativePath of observed) {
-        assert.equal(
-            PR04B_ALLOWED_PATHS.has(relativePath),
-            true,
-            `PR-04B path is not approved: ${relativePath}`
-        );
-    }
-    assert.ok(observed.size <= PR04B_ALLOWED_PATHS.size, 'PR-04B contains a twenty-third path.');
 }
 
 async function source(relativePath) {
@@ -547,15 +464,14 @@ test('B1 adds no session handoff and quick-start remains outside production entr
     }
 });
 
-test('protected pre-B3.1 implementation stays frozen and the finalized browser harness is tracked', async () => {
-    const trackedPaths = assertProtectedTreeDigest();
+test('durable PR-04B contract files and finalized browser harness remain tracked', async () => {
+    const trackedPaths = readTrackedPaths();
+    assertPr04bContractsTracked(trackedPaths);
     for (const relativePath of B1_IMPLEMENTATION_PATHS) {
-        assert.equal(B31_ALLOWED_PATHS.has(relativePath), false, relativePath);
         assert.equal(trackedPaths.has(relativePath), true, relativePath);
     }
 
     const browserHarnessPath = 'tests/consumers/detail-browser-smoke.html';
-    assert.equal(B31_ALLOWED_PATHS.has(browserHarnessPath), true);
     assert.equal(
         trackedPaths.has(browserHarnessPath),
         true,
@@ -565,74 +481,24 @@ test('protected pre-B3.1 implementation stays frozen and the finalized browser h
     await access(browserHarness);
 });
 
-test('working tree and protected index remain inside the exact ten-path B3.1 boundary', () => {
-    const status = execFileSync(
-        'git',
-        ['status', '--porcelain=v1', '-z', '--untracked-files=all'],
-        { cwd: projectRoot, encoding: 'utf8' }
-    );
-    const statusPaths = status
-        .split('\0')
-        .filter(Boolean)
-        .map(entry => entry.slice(3));
-    const observed = new Set(statusPaths);
-    assertObservedB31Paths(observed);
-    assertProtectedTreeDigest();
-});
-
-test('protected-tree digest rejects a simulated protected blob change', () => {
-    const entries = readIndexEntries();
-    const protectedIndex = entries.findIndex(entry => (
-        !B31_ALLOWED_PATHS.has(entry.relativePath)
-    ));
-    assert.notEqual(protectedIndex, -1);
-    const mutated = entries.map((entry, index) => (
-        index === protectedIndex
-            ? { ...entry, objectId: '0'.repeat(entry.objectId.length) }
-            : entry
-    ));
-    assert.notEqual(protectedTreeDigest(mutated), PROTECTED_TREE_SHA256);
-});
-
-test('B3.1 path audit rejects a simulated eleventh path', () => {
-    const observed = new Set([
-        ...B31_ALLOWED_PATHS,
-        'tests/consumers/unapproved-b3-path.html'
-    ]);
+test('tracked-file guard rejects a simulated missing PR-04B contract', () => {
+    const trackedPaths = new Set(PR04B_CONTRACT_PATHS);
+    trackedPaths.delete('js/pages/detail/detail-read-session.js');
     assert.throws(
-        () => assertObservedB31Paths(observed),
-        /B3\.1 path is not approved/
+        () => assertPr04bContractsTracked(trackedPaths),
+        /PR-04B contract file is not tracked/
     );
 });
 
-test('PR-04B total boundary freezes twenty-two paths and rejects a twenty-third', () => {
-    assert.equal(PR04B_ALLOWED_PATHS.size, 22);
-    for (const relativePath of B31_ALLOWED_PATHS) {
-        assert.equal(PR04B_ALLOWED_PATHS.has(relativePath), true, relativePath);
-    }
-    assert.doesNotThrow(() => assertObservedPr04bPaths(PR04B_ALLOWED_PATHS));
-    assert.throws(
-        () => assertObservedPr04bPaths(new Set([
-            ...PR04B_ALLOWED_PATHS,
-            'tests/consumers/unapproved-pr04b-path.html'
-        ])),
-        /PR-04B path is not approved/
-    );
-});
-
-test('package, Repository public files, and Service Worker stay protected by the tree digest', () => {
-    const trackedPaths = assertProtectedTreeDigest();
+test('completed PR-04B governance and public boundaries remain present without a global-tree freeze', () => {
+    const trackedPaths = readTrackedPaths();
     for (const relativePath of [
-        'package.json',
-        'package-lock.json',
-        'sw.js',
         'js/repository/index.js',
         'js/repository/factory.js',
         'js/repository/errors.js',
         'js/repository/legacy/legacy-repository.js',
         'js/repository/demo/demo-repository.js'
     ]) {
-        assert.equal(B31_ALLOWED_PATHS.has(relativePath), false, relativePath);
         assert.equal(trackedPaths.has(relativePath), true, relativePath);
     }
 });

@@ -51,6 +51,8 @@ const SUMMARY_SOURCES = new Set(Object.values(REPOSITORY_SOURCE));
 const SUMMARY_WARNING_CODES = new Set(Object.values(REPOSITORY_WARNING_CODE));
 const SUMMARY_OPERATIONS = new Set([
     'listActivities',
+    'getActivity',
+    'getStreams',
     'getAthlete',
     'getZones',
     'getGears'
@@ -59,6 +61,20 @@ const SUMMARY_GEAR_LOAD_KEYS = new Set([
     'data',
     'partial',
     'status'
+]);
+const RUN_PLUS_STREAM_OPTION_KEYS = new Set(['types']);
+const RUN_PLUS_RENDER_OPTION_KEYS = new Set([
+    'sessionRepository',
+    'sessionGears',
+    'onFiltersChange'
+]);
+const RUN_PLUS_STREAM_TYPES = Object.freeze([
+    'time',
+    'distance',
+    'velocity_smooth',
+    'heartrate',
+    'cadence',
+    'altitude'
 ]);
 
 function safeOperationalError() {
@@ -222,6 +238,8 @@ export function adaptRepositoryResult(value, {
     try {
         if (dataShape === 'array') {
             dataIsValid = isDenseDataArray(envelope.data);
+        } else if (dataShape === 'object') {
+            dataIsValid = readPlainDataRecord(envelope.data) !== null;
         } else if (dataShape === 'nullable-object') {
             dataIsValid = (
                 envelope.data === null
@@ -282,6 +300,44 @@ export function createSummaryRepositorySession({
                 allowPartial: false,
                 warningObserver
             });
+        },
+        async getActivity(activityId) {
+            if (typeof activityId !== 'string' || activityId.trim().length === 0) {
+                throw safeOperationalError();
+            }
+            return adaptRepositoryResult(await repository.getActivity(activityId), {
+                operation: 'getActivity',
+                dataShape: 'object',
+                allowPartial: false,
+                warningObserver
+            });
+        },
+        async getStreams(activityId, options) {
+            if (typeof activityId !== 'string' || activityId.trim().length === 0) {
+                throw safeOperationalError();
+            }
+            const values = readPlainDataRecord(options, RUN_PLUS_STREAM_OPTION_KEYS);
+            const types = values === null ? null : readDenseDataArray(values.types);
+            if (
+                values === null
+                || Reflect.ownKeys(values).length !== RUN_PLUS_STREAM_OPTION_KEYS.size
+                || types === null
+                || types.length === 0
+                || types.some(type => typeof type !== 'string' || type.trim().length === 0)
+            ) {
+                throw safeOperationalError();
+            }
+            return adaptRepositoryResult(
+                await repository.getStreams(activityId, {
+                    types: Object.freeze([...types])
+                }),
+                {
+                    operation: 'getStreams',
+                    dataShape: 'object',
+                    allowPartial: false,
+                    warningObserver
+                }
+            );
         },
         async getAthlete() {
             return adaptRepositoryResult(await repository.getAthlete(), {
@@ -503,6 +559,74 @@ export function buildSessionGearNameMap(sessionGears) {
     }).filter(([gearId]) => gearId));
 }
 // B2_C_SESSION_GEAR_MAP_END
+
+function readRunPlusSessionData(value) {
+    const envelope = readPlainDataRecord(value, SUMMARY_ENVELOPE_KEYS);
+    if (
+        envelope === null
+        || Reflect.ownKeys(envelope).length !== SUMMARY_ENVELOPE_KEYS.size
+        || !SUMMARY_SOURCES.has(envelope.source)
+        || envelope.partial !== false
+        || !Array.isArray(envelope.warnings)
+        || readPlainDataRecord(envelope.data) === null
+    ) {
+        throw safeOperationalError();
+    }
+    return envelope.data;
+}
+
+export function createRunPlusRenderOptions(value = {}) {
+    const options = readPlainDataRecord(value, RUN_PLUS_RENDER_OPTION_KEYS);
+    const repository = options === null
+        ? null
+        : readPlainDataRecord(options.sessionRepository);
+    const gears = options === null
+        ? null
+        : readDenseDataArray(options.sessionGears);
+    if (
+        options === null
+        || Reflect.ownKeys(options).length !== RUN_PLUS_RENDER_OPTION_KEYS.size
+        || repository === null
+        || typeof repository.getActivity !== 'function'
+        || typeof repository.getStreams !== 'function'
+        || gears === null
+        || typeof options.onFiltersChange !== 'function'
+    ) {
+        throw safeOperationalError();
+    }
+
+    const readActivity = repository.getActivity;
+    const readStreams = repository.getStreams;
+    const getActivity = async activityId => {
+        if (typeof activityId !== 'string' || activityId.trim().length === 0) {
+            throw safeOperationalError();
+        }
+        try {
+            return readRunPlusSessionData(await readActivity(activityId));
+        } catch {
+            throw safeOperationalError();
+        }
+    };
+    const getStreams = async activityId => {
+        if (typeof activityId !== 'string' || activityId.trim().length === 0) {
+            throw safeOperationalError();
+        }
+        try {
+            return readRunPlusSessionData(await readStreams(activityId, {
+                types: [...RUN_PLUS_STREAM_TYPES]
+            }));
+        } catch {
+            throw safeOperationalError();
+        }
+    };
+
+    return Object.freeze({
+        gears: Object.freeze([...gears]),
+        getActivity,
+        getStreams,
+        onFiltersChange: options.onFiltersChange
+    });
+}
 
 // B2_C_PREPROCESSING_CONTEXT_START
 export function selectPreprocessingAthlete(sessionMode, athlete) {
@@ -813,10 +937,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getRunPlusRenderOptions() {
-        return {
-            allowRemoteStrava: activeSessionMode === APP_SESSION_MODE.REAL,
+        return createRunPlusRenderOptions({
+            sessionRepository: requireSummaryRepositorySession(
+                activeSessionMode,
+                sessionRepository
+            ),
+            sessionGears,
             onFiltersChange: handleRunPlusFiltersChange
-        };
+        });
     }
 
     function handleRunPlusFiltersChange({ dateFilterFrom: newFrom = null, dateFilterTo: newTo = null, gearFilter: newGear = 'all' } = {}) {

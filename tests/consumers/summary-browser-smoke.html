@@ -558,6 +558,7 @@
                     'loadOptionalSessionGears',
                     'resetSummarySessionGears',
                     'applySummarySessionGearLoad',
+                    'createRunPlusRenderOptions',
                     'selectPreprocessingAthlete'
                 ]) {
                     requireGate(typeof module[exportName] === 'function');
@@ -699,6 +700,18 @@
                         }
                         return envelope(realActivities);
                     },
+                    async getActivity(activityId) {
+                        calls.push({ operation: 'getActivity', activityId });
+                        return envelope({ id: activityId, laps: [] }, {
+                            source: 'network'
+                        });
+                    },
+                    async getStreams(activityId, options) {
+                        calls.push({ operation: 'getStreams', activityId, options });
+                        return envelope({ time: { data: [0, 1] } }, {
+                            source: 'network'
+                        });
+                    },
                     async getAthlete() {
                         calls.push({ operation: 'getAthlete', mode: metadataMode });
                         if (metadataMode === 'initialize') {
@@ -838,6 +851,22 @@
                 requireGate(gearEvidence.rejected.status === 'rejected');
                 requireGate(gearEvidence.rejected.count === 0);
 
+                const runPlusOptions = mainModule.createRunPlusRenderOptions({
+                    sessionRepository: session,
+                    sessionGears: completeGears,
+                    onFiltersChange() {}
+                });
+                const runPlusActivity = await runPlusOptions.getActivity('opaque/real:id');
+                const runPlusStreams = await runPlusOptions.getStreams('opaque/real:id');
+                requireGate(runPlusActivity.id === 'opaque/real:id');
+                requireGate(JSON.stringify(runPlusStreams) === JSON.stringify({
+                    time: { data: [0, 1] }
+                }));
+                requireGate(Object.isFrozen(runPlusOptions));
+                requireGate(Object.isFrozen(runPlusOptions.gears));
+                requireGate(JSON.stringify(runPlusOptions.gears.map(gear => gear.id))
+                    === JSON.stringify(['real-shoe-2', 'real-shoe-1', 'real-shoe-2']));
+
                 activityMode = 'partial';
                 let partialFailedClosed = false;
                 try {
@@ -898,19 +927,19 @@
                     === modules.runModule.setRunSessionGears
                 );
                 requireGate(storageMethods.getItem.call(localStorage, 'strava_demo_mode') === 'true');
-                const injectedLabel = 'Injected Session Gear Label';
-                modules.tabsModule.setRunSessionGears([{
-                    id: 'demo-shoe',
-                    name: injectedLabel
-                }]);
-                const providerReadStart = observations.storage.length;
+                const injectedLabel = 'Injected Session Gear Duplicate';
+                const injectedGears = [
+                    { id: 'demo-shoe', name: 'Injected Session Gear First' },
+                    { id: 'unused-shoe', name: 'Unused Session Gear' },
+                    { id: 'demo-shoe', name: injectedLabel }
+                ];
                 const networkStart = observations.pageNetwork.length;
                 const chartStart = observations.chartConfigs.length;
                 const rawRun = {
-                    id: 'run-plus-demo-activity',
+                    id: 'demo-browser-run',
                     type: 'Run',
                     sport_type: 'Run',
-                    name: 'Synthetic Run Plus Demo',
+                    name: 'Synthetic 6x Threshold Run Plus Demo',
                     start_date: '2026-01-05T06:00:00.000Z',
                     start_date_local: '2026-01-05T06:00:00.000Z',
                     distance: 10000,
@@ -920,6 +949,30 @@
                     average_heartrate: 150,
                     gear_id: 'demo-shoe'
                 };
+                let activityReads = 0;
+                let streamReads = 0;
+                const renderOptions = Object.freeze({
+                    gears: Object.freeze([...injectedGears]),
+                    async getActivity(activityId) {
+                        activityReads += 1;
+                        requireGate(activityId === 'demo-browser-run');
+                        return { ...rawRun, laps: [] };
+                    },
+                    async getStreams(activityId) {
+                        streamReads += 1;
+                        requireGate(activityId === 'demo-browser-run');
+                        throw new Error('synthetic private stream failure');
+                    },
+                    onFiltersChange(nextFilters) {
+                        modules.tabsModule.renderRunPlusTab(
+                            processedActivities,
+                            nextFilters.dateFilterFrom,
+                            nextFilters.dateFilterTo,
+                            nextFilters.gearFilter,
+                            renderOptions
+                        );
+                    }
+                });
                 const preprocessingContext = mainModule.selectPreprocessingAthlete(
                     'demo',
                     demoAthlete
@@ -946,8 +999,15 @@
                 requireGate(athleteFallbackReads.length === 0);
                 requireGate(preprocessingTokenOrRealCacheEvents.length === 0);
                 requireGate(observations.pageNetwork.length === preprocessingNetworkStart);
+                const runPlusProviderReadStart = observations.storage.length;
 
-                modules.tabsModule.renderRunPlusTab(processedActivities, '', '', 'all');
+                modules.tabsModule.renderRunPlusTab(
+                    processedActivities,
+                    '',
+                    '',
+                    'all',
+                    renderOptions
+                );
                 await Promise.resolve();
                 const root = document.getElementById('run-plus-tab');
                 const embeddedCharts = observations.chartConfigs.slice(chartStart).filter(config => (
@@ -970,9 +1030,11 @@
                 }));
                 requireGate(gearFilterOptions.some(option => (
                     option.value === 'demo-shoe'
-                    && option.label === 'Synthetic Demo Shoe'
+                    && option.label === injectedLabel
                 )));
-                requireGate(!gearFilterOptions.some(option => option.label === injectedLabel));
+                requireGate(!gearFilterOptions.some(option => (
+                    option.label === 'Synthetic Demo Shoe'
+                )));
                 gearFilter.value = 'demo-shoe';
                 gearFilter.dispatchEvent(new Event('change', { bubbles: true }));
                 await Promise.resolve();
@@ -986,7 +1048,49 @@
                     || config.allDataValuesDefined !== true
                     || config.labelsContainNonFinite === true
                 ));
-                const runPlusStorage = observations.storage.slice(providerReadStart);
+                let unsafeOptionGetterCalls = 0;
+                const unsafeOptions = {};
+                Object.defineProperty(unsafeOptions, 'gears', {
+                    enumerable: true,
+                    get() {
+                        unsafeOptionGetterCalls += 1;
+                        throw new Error('unsafe option getter executed');
+                    }
+                });
+                modules.tabsModule.renderRunPlusTab([], '', '', 'all', unsafeOptions);
+                requireGate(unsafeOptionGetterCalls === 0);
+
+                history.pushState({}, '', '/run-plus/nsm');
+                modules.tabsModule.renderRunPlusTab(
+                    processedActivities,
+                    '',
+                    '',
+                    'all',
+                    renderOptions
+                );
+                const settleAnalysis = async () => {
+                    await Promise.resolve();
+                    await new Promise(resolve => setTimeout(resolve, 0));
+                    await Promise.resolve();
+                };
+                for (let clickIndex = 0; clickIndex < 2; clickIndex += 1) {
+                    const intervalButton = root.querySelector('[data-nsm-analyze-intervals]');
+                    requireGate(Boolean(intervalButton));
+                    intervalButton.click();
+                    await settleAnalysis();
+                }
+                const deepButton = root.querySelector('[data-nsm-analyze-streams]');
+                requireGate(Boolean(deepButton));
+                deepButton.click();
+                await settleAnalysis();
+                deepButton.click();
+                await settleAnalysis();
+                requireGate(activityReads === 2);
+                requireGate(streamReads === 2);
+                requireGate(deepButton.textContent === 'Deep HR failed');
+                requireGate(deepButton.title === 'Unable to analyze intervals');
+                requireGate(root.querySelector('.run-plus-shell'));
+                const runPlusStorage = observations.storage.slice(runPlusProviderReadStart);
                 const providerStorageKeys = new Set([...demoKeys, ...realKeys]);
                 const providerStorageEvents = runPlusStorage.filter(event => (
                     providerStorageKeys.has(event.key)
@@ -1019,11 +1123,16 @@
                         tokenOrRealCacheEvents: preprocessingTokenOrRealCacheEvents.length,
                         networkAttempts: observations.pageNetwork.length - preprocessingNetworkStart
                     },
-                    gearFilterLabelSource: 'Synthetic Demo Shoe',
-                    sessionContextLabelNotRequired: !gearFilterOptions.some(option => (
+                    gearFilterLabelSource: injectedLabel,
+                    sessionGearOrderAndDuplicates: injectedGears.map(gear => gear.id),
+                    sessionContextLabelApplied: gearFilterOptions.some(option => (
                         option.label === injectedLabel
                     )),
                     gearFilterInteractionApplied: rerenderedGearFilter?.value === 'demo-shoe',
+                    unsafeOptionGetterCalls,
+                    nsmActivityReads: activityReads,
+                    nsmStreamReads: streamReads,
+                    nsmSafeFailureLabel: deepButton.textContent,
                     singleRunRegressionSafe: Boolean(
                         singleRunPaceHrChart
                         && singleRunPaceHrChart.datasetCount === 1
@@ -1080,10 +1189,11 @@
                 requireGate(observations.runPlus.efficiencyEvolutionSafe);
                 requireGate(observations.runPlus.allEmbeddedNumericAuditPassed);
                 requireGate(observations.runPlus.gearFilterInteractionApplied);
-                requireGate(JSON.stringify(providerReadKeys) === JSON.stringify([
-                    'strava_demo_gears',
-                    'strava_demo_mode'
-                ]));
+                requireGate(observations.runPlus.sessionContextLabelApplied);
+                requireGate(observations.runPlus.unsafeOptionGetterCalls === 0);
+                requireGate(observations.runPlus.nsmActivityReads === 2);
+                requireGate(observations.runPlus.nsmStreamReads === 2);
+                requireGate(providerReadKeys.length === 0);
                 requireGate(providerWritesOrRemoves.length === 0);
                 requireGate(realProviderEvents.length === 0);
                 requireGate(tokenEvents.length === 0);
