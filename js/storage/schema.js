@@ -1,0 +1,198 @@
+import {
+    V2_CANONICAL_SCHEMA_VERSION,
+    V2_DATABASE_NAME,
+    V2_DATABASE_VERSION,
+    V2_SCHEMA_ID,
+    V2_STORE_NAME
+} from './constants.js';
+
+function deepFreeze(value) {
+    if (value === null || typeof value !== 'object' || Object.isFrozen(value)) {
+        return value;
+    }
+    for (const key of Reflect.ownKeys(value)) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        if (descriptor && Object.hasOwn(descriptor, 'value')) {
+            deepFreeze(descriptor.value);
+        }
+    }
+    return Object.freeze(value);
+}
+
+export const V2_SCHEMA = deepFreeze({
+    databaseName: V2_DATABASE_NAME,
+    indexedDbVersion: V2_DATABASE_VERSION,
+    schemaId: V2_SCHEMA_ID,
+    canonicalSchemaVersion: V2_CANONICAL_SCHEMA_VERSION,
+    stores: [
+        {
+            name: V2_STORE_NAME.METADATA,
+            keyPath: 'key',
+            autoIncrement: false,
+            indexes: []
+        },
+        {
+            name: V2_STORE_NAME.MIGRATIONS,
+            keyPath: 'id',
+            autoIncrement: false,
+            indexes: []
+        },
+        {
+            name: V2_STORE_NAME.ACTIVITIES,
+            keyPath: 'activity.id',
+            autoIncrement: false,
+            indexes: [
+                {
+                    name: 'byStartTimeUtc',
+                    keyPath: 'activity.startTimeUtc',
+                    unique: false,
+                    multiEntry: false
+                },
+                {
+                    name: 'bySportCategoryAndStartTimeUtc',
+                    keyPath: [
+                        'activity.sportCategory',
+                        'activity.startTimeUtc'
+                    ],
+                    unique: false,
+                    multiEntry: false
+                }
+            ]
+        },
+        {
+            name: V2_STORE_NAME.ACTIVITY_SOURCES,
+            keyPath: 'id',
+            autoIncrement: false,
+            indexes: [
+                {
+                    name: 'byActivityId',
+                    keyPath: 'activityId',
+                    unique: false,
+                    multiEntry: false
+                }
+            ]
+        },
+        {
+            name: V2_STORE_NAME.STREAM_SERIES,
+            keyPath: ['activityId', 'streamType'],
+            autoIncrement: false,
+            indexes: [
+                {
+                    name: 'byActivityId',
+                    keyPath: 'activityId',
+                    unique: false,
+                    multiEntry: false
+                }
+            ]
+        },
+        {
+            name: V2_STORE_NAME.LAPS,
+            keyPath: 'id',
+            autoIncrement: false,
+            indexes: [
+                {
+                    name: 'byActivityIdAndIndex',
+                    keyPath: ['activityId', 'index'],
+                    unique: true,
+                    multiEntry: false
+                }
+            ]
+        },
+        {
+            name: V2_STORE_NAME.EVENTS,
+            keyPath: 'id',
+            autoIncrement: false,
+            indexes: [
+                {
+                    name: 'byActivityIdAndIndex',
+                    keyPath: ['activityId', 'index'],
+                    unique: true,
+                    multiEntry: false
+                }
+            ]
+        },
+        {
+            name: V2_STORE_NAME.DEVICES,
+            keyPath: 'id',
+            autoIncrement: false,
+            indexes: []
+        }
+    ]
+});
+
+function names(list) {
+    return Array.from(list).sort();
+}
+
+function sameArray(left, right) {
+    return (
+        left.length === right.length
+        && left.every((value, index) => value === right[index])
+    );
+}
+
+function sameKeyPath(actual, expected) {
+    if (Array.isArray(expected)) {
+        return Array.isArray(actual) && sameArray(actual, expected);
+    }
+    return actual === expected;
+}
+
+export function createPhysicalSchema(database) {
+    for (const descriptor of V2_SCHEMA.stores) {
+        const store = database.createObjectStore(descriptor.name, {
+            keyPath: descriptor.keyPath,
+            autoIncrement: descriptor.autoIncrement
+        });
+        for (const index of descriptor.indexes) {
+            store.createIndex(index.name, index.keyPath, {
+                unique: index.unique,
+                multiEntry: index.multiEntry
+            });
+        }
+    }
+}
+
+export function verifyPhysicalSchema(database) {
+    const expectedStoreNames = V2_SCHEMA.stores
+        .map(store => store.name)
+        .sort();
+    if (!sameArray(names(database.objectStoreNames), expectedStoreNames)) {
+        return false;
+    }
+
+    let transaction;
+    try {
+        transaction = database.transaction(expectedStoreNames, 'readonly');
+        for (const descriptor of V2_SCHEMA.stores) {
+            const store = transaction.objectStore(descriptor.name);
+            if (
+                !sameKeyPath(store.keyPath, descriptor.keyPath)
+                || store.autoIncrement !== descriptor.autoIncrement
+            ) {
+                return false;
+            }
+
+            const expectedIndexNames = descriptor.indexes
+                .map(index => index.name)
+                .sort();
+            if (!sameArray(names(store.indexNames), expectedIndexNames)) {
+                return false;
+            }
+
+            for (const descriptorIndex of descriptor.indexes) {
+                const index = store.index(descriptorIndex.name);
+                if (
+                    !sameKeyPath(index.keyPath, descriptorIndex.keyPath)
+                    || index.unique !== descriptorIndex.unique
+                    || index.multiEntry !== descriptorIndex.multiEntry
+                ) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    } catch {
+        return false;
+    }
+}
