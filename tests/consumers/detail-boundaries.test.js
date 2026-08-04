@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
     access,
     readFile,
@@ -10,6 +11,11 @@ import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const START_SHA = '98eec7a9ebd797e5580310ce1e8e528311ed99fa';
+// Generated from START_SHA with `git ls-tree -r -z`, excluding exactly the
+// ten B1 paths, sorting by path with code-unit order, and hashing canonical
+// `<mode> <object-id>\t<path>\0` records in order.
+const PROTECTED_TREE_SHA256 =
+    'c36cf8c22cbfe1b907728bb48569b442f713a71e8b374fda155ae17074c555e2';
 const projectRootUrl = new URL('../../', import.meta.url);
 const projectRoot = fileURLToPath(projectRootUrl);
 const B1_ALLOWED_PATHS = new Set([
@@ -35,6 +41,57 @@ const B2_PRODUCT_PATHS = Object.freeze([
     'js/pages/swim/swim.js',
     'js/pages/activity/advanced-analysis.js'
 ]);
+
+function readIndexEntries() {
+    const output = execFileSync(
+        'git',
+        ['ls-files', '-s', '-z'],
+        { cwd: projectRoot, encoding: 'utf8' }
+    );
+    const records = output.split('\0');
+    assert.equal(records.pop(), '');
+
+    return records.map(record => {
+        const match = /^(\d+) ([0-9a-f]+) (\d)\t([\s\S]+)$/.exec(record);
+        assert.notEqual(match, null, `Malformed index entry: ${record}`);
+        const [, mode, objectId, stage, relativePath] = match;
+        assert.match(mode, /^[0-7]{6}$/);
+        assert.match(objectId, /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/);
+        assert.equal(stage, '0', `Unmerged index entry: ${relativePath}`);
+        return { mode, objectId, relativePath };
+    });
+}
+
+function protectedTreeDigest(entries) {
+    const protectedEntries = entries
+        .filter(entry => !B1_ALLOWED_PATHS.has(entry.relativePath))
+        .sort((left, right) => (
+            left.relativePath < right.relativePath
+                ? -1
+                : (left.relativePath > right.relativePath ? 1 : 0)
+        ));
+    const hash = createHash('sha256');
+    for (const entry of protectedEntries) {
+        hash.update(
+            `${entry.mode} ${entry.objectId}\t${entry.relativePath}\0`
+        );
+    }
+    return hash.digest('hex');
+}
+
+function assertProtectedTreeDigest() {
+    const entries = readIndexEntries();
+    const trackedPaths = new Set(entries.map(entry => entry.relativePath));
+    for (const relativePath of B1_ALLOWED_PATHS) {
+        assert.equal(
+            trackedPaths.has(relativePath),
+            true,
+            `Approved B1 path is not tracked: ${relativePath}`
+        );
+    }
+    assert.equal(protectedTreeDigest(entries), PROTECTED_TREE_SHA256);
+    return trackedPaths;
+}
 
 async function source(relativePath) {
     return readFile(new URL(relativePath, projectRootUrl), 'utf8');
@@ -220,24 +277,21 @@ test('B1 adds no session handoff and quick-start remains outside production entr
     }
 });
 
-test('B2 product files and B3 browser harness remain untouched at the B1 start SHA', async () => {
+test('B2 product files and B3 harness stay outside B1 and under the protected-tree digest', async () => {
+    const trackedPaths = assertProtectedTreeDigest();
     for (const relativePath of B2_PRODUCT_PATHS) {
-        const baseline = execFileSync(
-            'git',
-            ['show', `${START_SHA}:${relativePath}`],
-            { cwd: projectRoot, encoding: 'utf8' }
-        );
-        assert.equal(await source(relativePath), baseline, relativePath);
+        assert.equal(B1_ALLOWED_PATHS.has(relativePath), false, relativePath);
+        assert.equal(trackedPaths.has(relativePath), true, relativePath);
     }
 
-    const browserHarness = path.join(
-        projectRoot,
-        'tests/consumers/detail-browser-smoke.html'
-    );
+    const browserHarnessPath = 'tests/consumers/detail-browser-smoke.html';
+    assert.equal(B1_ALLOWED_PATHS.has(browserHarnessPath), false);
+    assert.equal(trackedPaths.has(browserHarnessPath), false);
+    const browserHarness = path.join(projectRoot, browserHarnessPath);
     await assert.rejects(access(browserHarness));
 });
 
-test('working tree changes remain inside the exact ten-path B1 allowlist', () => {
+test('working tree and protected index remain inside the exact ten-path B1 boundary', () => {
     const status = execFileSync(
         'git',
         ['status', '--porcelain=v1', '-z', '--untracked-files=all'],
@@ -247,12 +301,7 @@ test('working tree changes remain inside the exact ten-path B1 allowlist', () =>
         .split('\0')
         .filter(Boolean)
         .map(entry => entry.slice(3));
-    const committedPaths = execFileSync(
-        'git',
-        ['diff', '--name-only', `${START_SHA}...HEAD`],
-        { cwd: projectRoot, encoding: 'utf8' }
-    ).trim().split('\n').filter(Boolean);
-    const observed = new Set([...statusPaths, ...committedPaths]);
+    const observed = new Set(statusPaths);
 
     for (const relativePath of observed) {
         assert.equal(
@@ -262,9 +311,11 @@ test('working tree changes remain inside the exact ten-path B1 allowlist', () =>
         );
     }
     assert.equal(observed.size <= B1_ALLOWED_PATHS.size, true);
+    assertProtectedTreeDigest();
 });
 
-test('package, Repository public files, and Service Worker remain byte-identical to B1 start', async () => {
+test('package, Repository public files, and Service Worker stay protected by the tree digest', () => {
+    const trackedPaths = assertProtectedTreeDigest();
     for (const relativePath of [
         'package.json',
         'package-lock.json',
@@ -275,12 +326,8 @@ test('package, Repository public files, and Service Worker remain byte-identical
         'js/repository/legacy/legacy-repository.js',
         'js/repository/demo/demo-repository.js'
     ]) {
-        const baseline = execFileSync(
-            'git',
-            ['show', `${START_SHA}:${relativePath}`],
-            { cwd: projectRoot, encoding: 'utf8' }
-        );
-        assert.equal(await source(relativePath), baseline, relativePath);
+        assert.equal(B1_ALLOWED_PATHS.has(relativePath), false, relativePath);
+        assert.equal(trackedPaths.has(relativePath), true, relativePath);
     }
 });
 

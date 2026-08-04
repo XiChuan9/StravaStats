@@ -26,9 +26,11 @@
 | A2 | Completed / PASS |
 | A3 | Completed / Accepted |
 | A3.1 | Completed / Accepted |
+| A3.2 | Completed / Accepted |
 | B1.1 | Completed / PASS |
 | B1.2 | Completed / PASS |
-| B1 | Completed / PASS |
+| B1.3 | Completed / PASS |
+| B1 | Completed locally / Awaiting B1.3 exact-head CI |
 | B2 | Not started / Not authorized |
 | B3 | Not started / Not authorized |
 
@@ -542,7 +544,7 @@ the exact page paths in the 20-file allowlist are approved.
 
 ## Frozen phase allowlists
 
-### B1 — Completed / PASS
+### B1 — Completed locally / awaiting B1.3 exact-head CI
 
 ```text
 docs/tasks/pr-04b-detail-consumers.md
@@ -747,8 +749,9 @@ or Legacy storage.
 
 ### B1
 
-- Status: **Completed / PASS** after final control-tower acceptance of B1, B1.1, and B1.2. B2 and B3
-  remain not started and not authorized.
+- Status before the exact-head shallow-checkout result: final control-tower acceptance of B1, B1.1,
+  and B1.2. Current status is **Completed locally / awaiting B1.3 exact-head CI** after B1.3
+  control-tower PASS; B2 and B3 remain not started and not authorized.
 - Authorized implementation: page governance, Connector `type=` compatibility, opaque-ID Router,
   document-local mode/Repository boundary, memoized `DetailReadSession`, and deterministic B1 tests.
 - Privacy boundary: deterministic synthetic data only; no real Token, account, network, activity,
@@ -818,7 +821,7 @@ or Legacy storage.
   approved unstaged paths, no protected-path changes, empty staging, and local/upstream `0/0`.
 - B1.2 and B1 received final control-tower PASS.
 
-### B1 Finalization
+### B1 Finalization — local PASS / awaiting B1.3 exact-head CI
 
 - Final control-tower acceptance: Router Repository boundary PASS; opaque activity ID PASS;
   `DetailReadSession` same-Promise memoization PASS; Connector single `type=` compatibility PASS;
@@ -834,3 +837,65 @@ or Legacy storage.
   PR-04C, and PR-05 are not authorized.
 - The B1 Finalization commit and exact-head CI are post-commit evidence recorded in the Draft PR
   body and final handoff report.
+
+### A3.2 / B1.3
+
+- **A3.2: Completed / Accepted. B1.3: Completed / PASS.** B1 is completed locally and awaits the
+  B1.3 correction commit's exact-head CI. B2 and B3 remain not started and not authorized.
+- B1 commit `bcd572fa2108f01d7e657fc2d2e3f5f4ec50f5d3` produced exact-head pull-request CI run
+  `30863157208`, job `91849280317`. Install dependencies, syntax, and repository privacy passed;
+  the test step failed at `749/752`, with skipped/cancelled/todo `0/0/0`.
+- The three failures are confined to `tests/consumers/detail-boundaries.test.js`. GitHub Actions'
+  depth-1 checkout does not contain A3 start commit
+  `98eec7a9ebd797e5580310ce1e8e528311ed99fa`, so the test's `git show START_SHA:path` and
+  `git diff START_SHA...HEAD` history reads fail. This is a CI checkout compatibility defect in the
+  boundary test, not a Router, `DetailReadSession`, Connector, Repository, Demo, privacy, or consumer
+  behavior failure.
+- A3.2 authorizes changing only this Task Brief and
+  `tests/consumers/detail-boundaries.test.js`. It does not extend the frozen 20-file total allowlist
+  or 10-file B1 allowlist and does not authorize product, Connector, Repository, workflow, package,
+  or any other test change.
+- The accepted correction does not change `.github/**`, checkout depth, or fetch history. It replaces
+  history-dependent protected-file comparisons with fixed protected-tree SHA-256
+  `c36cf8c22cbfe1b907728bb48569b442f713a71e8b374fda155ae17074c555e2`, derived independently
+  from the A3 tree with `git ls-tree -r -z`, excluding exactly the frozen ten B1 paths, sorting paths
+  by JavaScript code-unit order, and hashing canonical `<mode> <object-id>\t<path>\0` records.
+- The working-tree audit remains based on `git status --porcelain=v1 -z --untracked-files=all`; every
+  observed path must belong to the fixed ten-path Set and the observed count cannot exceed ten. The
+  protected index is read with `git ls-files -s -z`, requires stage-zero entries, excludes only the
+  same fixed ten paths, and must match the fixed digest. No wildcard, dynamic Task Brief/diff
+  allowlist, current-equals-current assertion, warning downgrade, skipped test, or weakened boundary
+  is authorized.
+- The package files, Repository public files/implementation, Service Worker, B2 product files, and B3
+  browser harness remain protected by the fixed tree digest and explicit scope assertions. Any
+  protected-file mutation changes the digest, and any eleventh working-tree path still fails the
+  fixed ten-path audit.
+- Independent digest evidence: the A3 baseline and current protected index each contain 207 protected
+  entries and both produce `c36cf8c22cbfe1b907728bb48569b442f713a71e8b374fda155ae17074c555e2`.
+  A synthetic in-memory protected-object mutation produces
+  `d0f5e4b1e88fe9a64f47ace0abd0c089953d30ba7f6511191ef78edb53f538ca`, proving the fixed
+  comparison rejects protected-tree changes.
+- Depth-1 reproduction at exact B1 HEAD confirmed `--is-shallow-repository=true` and confirmed A3
+  start commit is absent. With only the two authorized B1.3 files overlaid, the boundary passed
+  `14/14` and full tests passed `752/752`, with skipped/cancelled/todo `0/0/0`. Adding a synthetic
+  eleventh untracked path in that disposable clone failed the boundary at `13/14` with
+  `B1 path is not approved`; the clone was then deleted.
+- Formal-worktree final gates: `npm ci` added 6 packages and found 0 vulnerabilities; syntax passed
+  for 137 files; privacy passed; consumer boundary `14/14`; consumer suites `49/49`; all four
+  focused files `157/157`; Repository `253/253`; Legacy/Auth/Demo `241/241`; full tests `752/752`;
+  skipped/cancelled/todo `0/0/0`; and `git diff --check` passed.
+- Control-tower independent verification passed: A3 baseline protected entries `207`; independent
+  digest `c36cf8c22cbfe1b907728bb48569b442f713a71e8b374fda155ae17074c555e2`; boundary
+  `14/14`; fixed digest, stage-zero parsing, exact ten-path exclusion, working-tree audit, shallow
+  boundary/full verification, and the B1.3 two-path isolation all `PASS`.
+- The protected-tree digest is a B1 phase guard. B2 may update that phase guard only through its
+  already approved `tests/consumers/detail-boundaries.test.js` path. The currently frozen B3 phase
+  allowlist contains only this Task Brief and `tests/consumers/detail-browser-smoke.html`. Because B3
+  will add that browser harness, the control tower must review the B3 phase allowlist before B3 is
+  authorized; if B3 also needs `tests/consumers/detail-boundaries.test.js`, that path must first be
+  added through a separate B3 scope extension. This B1.3 finalization does not pre-exclude or
+  pre-authorize the B3 harness in the digest guard.
+- The B1.3 correction commit and its exact-head CI are post-commit evidence. The new CI must not be
+  recorded as passing before it completes. PR #9 must remain Draft; Ready, merge, PR-04C, PR-05,
+  B2, and B3 remain unauthorized. Browser/CDP, manual, visual, real Token/account/data, user browser
+  profile, real Strava network, and production Service Worker verification remain `Not run`.
