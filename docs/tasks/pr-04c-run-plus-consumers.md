@@ -4,10 +4,12 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Local implementation and verification complete / Draft finalization pending |
+| Status | Ready for review / Closure Completed |
 | Base branch | `integration/v2` |
 | Base SHA | `eb78e19482f470edf4ae5f2483a579db5efec648` |
 | Feature branch | `codex/v2/run-plus-consumers` |
+| Implementation commit | `7ddce6c0e477d30480dad0b7a49f1b3aaf2e148d` |
+| Draft PR | [#10](https://github.com/XiChuan9/StravaStats/pull/10) |
 | Owner | Codex execution thread |
 | Related ADRs | ADR-0001, ADR-0002, ADR-0003 |
 | Dependencies | PR-04A and PR-04B merged |
@@ -100,9 +102,20 @@ write provider data. User-owned Run Plus/NSM settings and cached analysis output
 keys and behavior. Rollback is an ordinary revert of this PR; Legacy data and session Repository
 behavior remain intact.
 
-## Local completion evidence
+## Final review closure evidence
 
-- Exact implementation scope: all ten frozen paths and no additional path.
+- Draft PR [#10](https://github.com/XiChuan9/StravaStats/pull/10) targets
+  `integration/v2` from `codex/v2/run-plus-consumers` and remains Draft at closure.
+- Reviewed implementation head: `7ddce6c0e477d30480dad0b7a49f1b3aaf2e148d`; exact changed-file
+  scope: all ten frozen paths and no additional path.
+- Exact-head GitHub Actions CI: Run
+  [30908287609](https://github.com/XiChuan9/StravaStats/actions/runs/30908287609), Job
+  [91988475609](https://github.com/XiChuan9/StravaStats/actions/runs/30908287609/job/91988475609),
+  completed successfully; install, syntax, privacy, and tests all passed.
+- Control-tower Final Review: **Accepted / PASS**, with no P0-P3 actionable findings.
+- Closure status `Ready for review` records review readiness only. It does not authorize marking
+  the PR Ready, merging, releasing, branch/worktree cleanup, or modifying `integration/v2`.
+
 - `npm ci`: PASS, 6 packages installed.
 - Syntax: PASS, 137 files; privacy: PASS; `git diff --check`: PASS.
 - Focused Run Plus / summary / Demo / detail boundary matrix: 100/100 PASS.
