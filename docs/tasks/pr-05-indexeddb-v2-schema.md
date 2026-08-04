@@ -723,7 +723,14 @@ git diff --check
 
 ### B2: atomic Canonical adapter, queries, and manifest foundation
 
-Additional B2 writable paths, not authorized until its later phase gate:
+Current status: **Completed / PASS.** Independent control-tower review accepted
+B2 and B2.1, including the A3.1 correction, and authorized B2 Finalization. The
+overall PR-05 status remains `In progress` because B3 has not started. The
+initial B2 authorization permitted local work only. The separate Finalization
+authorization permits the exact ten-path commit, push, and Draft PR update; it
+does not authorize B3, Ready state, merge, or cleanup.
+
+Additional B2 writable paths:
 
 ```text
 js/storage/transaction.js
@@ -1160,6 +1167,11 @@ and local/upstream divergence `0/0`. Do not create or modify B2 files, mark the
 PR ready, merge, rebase, amend, force-push, delete the branch, or clean up the
 worktree.
 
+This historical B1 stop was satisfied by commit
+`50058e07b7bd376f6e408afd362a904c0c9e0d49` and exact-head CI success. The later
+explicit B2 authorization supersedes only the prohibition on beginning B2; all
+other Git, Draft, merge, cleanup, and B3 restrictions remain active.
+
 ### B1.1 local correction evidence
 
 - Final independent result: **Completed / PASS**; the initial `REVISE` findings
@@ -1217,3 +1229,198 @@ worktree.
 - Real Browser/CDP IndexedDB, quota pressure, crash durability, Safari, Firefox,
   mobile, workers, 5k/10k activities, and 200k-point performance remain Not run
   and owned by B3.
+
+## B2 local implementation record
+
+### Frozen public and connection boundary
+
+- The public storage entry still exports exactly `V2_DATABASE_NAME`,
+  `V2_DATABASE_VERSION`, `V2_SCHEMA`, `STORAGE_ERROR_CODE`, `StorageError`, and
+  `createCanonicalStore`. No low-level transaction or Repository export was
+  added.
+- The frozen factory still exposes exactly `initialize`, `putBundle`,
+  `getBundle`, `listActivities`, `createBackupManifest`, and `close`.
+- All four B2 data methods require the current ready connection. Before explicit
+  initialization, after close, and after `versionchange`, they fail with
+  `CONNECTION_STALE` and perform no implicit open, upgrade, or retry.
+- `close()` remains a Promise terminal barrier and now also waits for tracked B2
+  operations. It closes the connection immediately to new work, lets an existing
+  transaction reach its terminal event, then resolves. The B1 open/upgrade and
+  migration-runner behavior is unchanged.
+
+### Private transaction foundation
+
+`js/storage/transaction.js` provides only an internal module export. It accepts
+an exact non-empty dense array of known V2 stores, `readonly` or `readwrite`, and
+a stable operation. Its frozen narrow context queues `get`, indexed `getAll`,
+`count`, `add`, and `put` without returning the database, transaction, request,
+or cursor through a public result. Business results are built only from settled
+internal slots after `transaction.oncomplete`.
+
+Synchronous queue failure aborts before settlement. Request error, transaction
+error/abort, quota, and constraint faults map to redacted stable errors. There is
+no retry, delete, clear, or recovery overwrite. Fault tests cover mid-queue
+failure, constraint rollback, quota rollback, after-read writes, and a synthetic
+complete-before-request-result platform violation.
+
+### Atomic Canonical adapter
+
+- `putBundle` first calls `validateImportedActivityBundle`, then creates a
+  descriptor-safe detached JSON-safe snapshot before opening a readwrite
+  transaction. It never mutates, sorts, or freezes caller input.
+- Under the A3.1 correction, the physical activity envelope stores exactly five
+  fields: `schemaVersion`, `activity`, `warnings`, `versionMetadata`, and
+  `deviceIds`. `deviceIds` is the unique opaque device ID projection from the
+  accepted bundle, code-unit sorted and descriptor-safe; it is internal
+  association metadata and never enters the public bundle. Each stream record
+  remains exactly `{ activityId, streamType, series }`; laps, events, sources,
+  and devices retain their accepted records.
+- One readwrite transaction spans the six Canonical stores. A new exact graph
+  returns frozen `committed`; a complete structural match returns frozen
+  `already-present` with zero write requests. Absent, `null`, `0`, and `-0`
+  remain distinct, special own data keys survive, and ordinary-object property
+  order is not semantic.
+- Any differing collision, partial graph, same-activity extra relation, or
+  non-device orphan collision aborts with `CONFLICT`. An identical device may be
+  shared across activities; a differing device cannot. Quota and constraint
+  injection prove full rollback.
+- `getBundle` validates an opaque ID and exact safe stream options before I/O,
+  reads all or selected series, detects missing/broken graphs, reconstructs the
+  nine bundle fields from explicit consistent stored schema versions, sorts the
+  read projection deterministically, revalidates it, and returns a detached
+  deeply frozen bundle.
+- `listActivities` accepts only the ten Canonical sport categories when present,
+  safe-integer limits `1..500` with default `100`, and `asc`/`desc` with default
+  `desc`. It uses the frozen activity indexes, applies opaque ID code-unit order
+  as the equal-time tie-breaker, returns only frozen detached CanonicalActivity
+  records, and never loads relation or stream stores.
+
+### Backup manifest foundation
+
+`createBackupManifest` validates the bootstrap metadata and uses only one
+metadata `get` plus `count` on the eight stores in `V2_SCHEMA` order. It never
+reads activity payloads or invents hashes. The exact deeply frozen result has
+`backupFormatVersion: 1`, database/indexedDB/Canonical versions, an injected-clock
+`createdAt`, current `applicationVersion`, ordered `{ name, recordCount }`
+entries, and empty `files`/`hashes` arrays. Invalid clocks fail before I/O and
+metadata/count mismatches fail closed.
+
+### Exact B2 local paths and scope
+
+Actual B2 paths are:
+
+```text
+docs/tasks/pr-05-indexeddb-v2-schema.md
+js/storage/database.js
+js/storage/errors.js
+js/storage/transaction.js
+js/storage/canonical-store.js
+js/storage/backup-manifest.js
+tests/storage/indexeddb-v2-transactions.test.js
+tests/storage/canonical-store.test.js
+tests/storage/backup-manifest.test.js
+tests/storage/indexeddb-v2-boundaries.test.js
+```
+
+`database.js` changes only to retain the accepted `IDBKeyRange` boundary, route
+the four approved methods through the current ready connection, and track their
+terminal Promises for close. The existing boundary test changes only to replace
+the B1 `UNAVAILABLE` skeleton expectation with B2 `CONNECTION_STALE` and include
+the three new production modules in destructive/Legacy source scans.
+
+`js/storage/errors.js` changed only during the approved B2.1 correction to add
+module-private issued-error branding used by the internal transaction runner;
+the public index exports and StorageError code/message/toJSON contract are
+unchanged. `js/storage/index.js`, `constants.js`, `schema.js`, `migrations.js`,
+and the B1 schema test required no B2 change. Package/lock, Accepted ADR,
+migration-design, Repository, runtime, page/tab/analysis, Feature Flag, and CI
+workflow paths remain prohibited and unchanged. No B3 harness exists in B2.
+
+### B2 local evidence
+
+- All fixtures are small, deterministic, synthetic, offline, and contain no
+  token, real athlete data, private GPS, heart rate, power history, or network
+  dependency.
+- `npm ci`: PASS; 6 packages installed from the frozen lockfile.
+- `npm run check:syntax`: PASS for 151 files.
+- `npm run check:privacy`: PASS.
+- `node --test tests/storage/*.test.js`: PASS, 48 tests, 0 failures.
+- `npm test`: PASS, 1,013 tests, 0 failures.
+- `git diff --check`: PASS after this evidence update; the six new files also
+  pass explicit untracked-file whitespace checks.
+- Exact path audit: PASS. B2 has exactly the ten paths listed above; the
+  cumulative PR remains the approved 16 paths. Package/lock, Accepted ADR,
+  migration design, Repository/runtime/pages/analysis, and CI workflow paths
+  have no B2 changes.
+- Git state at the B2 stop boundary remains intentionally unstaged,
+  uncommitted, and unpushed. The published B1 head and Draft PR body are
+  unchanged; implementation has not entered B3.
+- Browser/CDP IndexedDB, quota pressure against a real browser, crash durability,
+  Safari, Firefox, mobile, workers, 5k/10k activities, and 200k-point performance
+  remain Not run and owned by B3.
+- Rollback remains code-only: close V2 and revert B2 while Legacy stays the
+  default/fallback. Do not delete, clear, downgrade, overwrite, or copy data into
+  Legacy.
+
+## A3.1 / B2.1 correction record
+
+Status: **Completed / PASS.** Independent control-tower review accepted both
+findings and authorized B2 Finalization. A3.1 and B2.1 are complete; B3 has not
+started.
+
+### A3.1 five-field envelope decision
+
+Independent review proved that ADR-0006 accepts a `DeviceReference` that is not
+referenced by any source. The former source-derived reconstruction rejected or
+lost that valid record. A3.1 therefore freezes the five-field envelope described
+above without changing the Accepted Canonical contract, database version,
+stores, indexes, or public API.
+
+`putBundle` now derives `deviceIds` only from the already validated detached
+bundle, checks unique opaque IDs, and code-unit sorts the new array without
+mutating caller input. Strict envelope equality includes the association, so an
+identical retry remains `already-present` with zero writes and any differing or
+tampered association conflicts. `getBundle` reads every listed device, not only
+source-referenced devices, then revalidates the complete nine-field bundle.
+Missing listed devices, duplicate/unsorted/non-string IDs, broken source
+references, and malformed envelopes fail with `SCHEMA_MISMATCH`. Identical
+devices remain safely shareable between activities, and `listActivities` still
+returns only CanonicalActivity records.
+
+### B2.1 issued-error boundary
+
+Review also proved that `instanceof StorageError` can execute Proxy reflection
+and leak a revoked or hostile object. `errors.js` now registers each constructed
+StorageError in a module-private `WeakSet`; the internal runner uses that
+side-effect-free identity check. A genuine issued error preserves its code and
+object identity. Transparent, revoked, prototype-reflection-failing, accessor,
+or lookalike values are never returned or retained; unsafe name access maps to a
+frozen redacted `TRANSACTION_ABORTED`, while safely read `QuotaExceededError`
+and `ConstraintError` names retain their approved mappings.
+
+### B2.1 exact local scope and focused evidence
+
+The correction modifies only these six paths, all already inside the approved
+cumulative 16-path allowlist:
+
+```text
+docs/tasks/pr-05-indexeddb-v2-schema.md
+js/storage/errors.js
+js/storage/transaction.js
+js/storage/canonical-store.js
+tests/storage/indexeddb-v2-transactions.test.js
+tests/storage/canonical-store.test.js
+```
+
+- Two-file B2.1 focused run: PASS, 23 tests, 0 failures.
+- All-storage pre-gate run: PASS, 51 tests, 0 failures.
+- `npm ci`: PASS; 6 packages installed from the frozen lockfile.
+- `npm run check:syntax`: PASS for 151 files.
+- `npm run check:privacy`: PASS.
+- `npm test`: PASS, 1,016 tests, 0 failures.
+- Final `git diff --check`, explicit untracked-file whitespace checks, cumulative
+  path audit, prohibited-path audit, staged-state audit, and privacy recheck:
+  PASS.
+- Git remains intentionally unstaged, uncommitted, and unpushed at published B1
+  head `50058e07b7bd376f6e408afd362a904c0c9e0d49`; local/upstream is `0/0`, the
+  Draft PR body is unchanged, and B3 has not started.

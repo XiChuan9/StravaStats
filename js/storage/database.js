@@ -18,6 +18,12 @@ import {
     resolveMigrationTimestamp
 } from './migrations.js';
 import { verifyPhysicalSchema } from './schema.js';
+import {
+    getCanonicalBundle,
+    listCanonicalActivities,
+    putCanonicalBundle
+} from './canonical-store.js';
+import { buildBackupManifest } from './backup-manifest.js';
 
 const FACTORY_OPTION_KEYS = Object.freeze([
     'indexedDB',
@@ -139,7 +145,8 @@ function normalizeFactoryOptions(options) {
     if (!values) return null;
 
     const open = findDataMethod(values.indexedDB, 'open');
-    if (!open) return null;
+    const bound = findDataMethod(values.IDBKeyRange, 'bound');
+    if (!open || !bound) return null;
     if (
         values.IDBKeyRange === null
         || (
@@ -156,6 +163,11 @@ function normalizeFactoryOptions(options) {
     return Object.freeze({
         indexedDB: values.indexedDB,
         open,
+        keyRange: Object.freeze({
+            bound(lower, upper) {
+                return bound.call(values.IDBKeyRange, lower, upper);
+            }
+        }),
         now: values.now,
         applicationVersion: values.applicationVersion
     });
@@ -522,13 +534,6 @@ function openAndVerify(dependencies, state, generation, expectExisting) {
     });
 }
 
-function unavailable(operation) {
-    return Promise.reject(storageError(
-        STORAGE_ERROR_CODE.UNAVAILABLE,
-        operation
-    ));
-}
-
 export function createCanonicalStore(options) {
     const dependencies = normalizeFactoryOptions(options);
     if (!dependencies) {
@@ -542,6 +547,7 @@ export function createCanonicalStore(options) {
         database: null,
         opening: null,
         closing: null,
+        operations: new Set(),
         generation: 0,
         stale: false
     };
@@ -579,6 +585,10 @@ export function createCanonicalStore(options) {
 
         state.generation += 1;
         state.stale = true;
+        if (state.database) {
+            closeDatabase(state.database);
+            state.database = null;
+        }
         const finalize = () => {
             if (state.database) {
                 closeDatabase(state.database);
@@ -586,9 +596,11 @@ export function createCanonicalStore(options) {
             }
             return CLOSED_RESULT;
         };
-        const closing = state.opening
-            ? state.opening.then(finalize, finalize)
-            : Promise.resolve(finalize());
+        const terminals = [...state.operations];
+        if (state.opening) terminals.push(state.opening);
+        const closing = terminals.length === 0
+            ? Promise.resolve(finalize())
+            : Promise.allSettled(terminals).then(finalize);
         state.closing = closing;
         closing.then(() => {
             if (state.closing === closing) state.closing = null;
@@ -598,19 +610,68 @@ export function createCanonicalStore(options) {
         return closing;
     }
 
+    function runReady(operation, callback) {
+        if (
+            !state.database
+            || state.stale
+            || state.opening
+            || state.closing
+        ) {
+            return Promise.reject(storageError(
+                STORAGE_ERROR_CODE.CONNECTION_STALE,
+                operation
+            ));
+        }
+        let result;
+        try {
+            result = callback(state.database);
+        } catch {
+            return Promise.reject(storageError(
+                STORAGE_ERROR_CODE.TRANSACTION_ABORTED,
+                operation
+            ));
+        }
+        const tracked = Promise.resolve(result);
+        state.operations.add(tracked);
+        tracked.then(() => {
+            state.operations.delete(tracked);
+        }, () => {
+            state.operations.delete(tracked);
+        });
+        return tracked;
+    }
+
     return Object.freeze({
         initialize,
-        putBundle() {
-            return unavailable(STORAGE_OPERATION.PUT_BUNDLE);
+        putBundle(bundle) {
+            return runReady(STORAGE_OPERATION.PUT_BUNDLE, database => (
+                putCanonicalBundle(database, dependencies.keyRange, bundle)
+            ));
         },
-        getBundle() {
-            return unavailable(STORAGE_OPERATION.GET_BUNDLE);
+        getBundle(activityId, options) {
+            return runReady(STORAGE_OPERATION.GET_BUNDLE, database => (
+                getCanonicalBundle(
+                    database,
+                    dependencies.keyRange,
+                    activityId,
+                    options
+                )
+            ));
         },
-        listActivities() {
-            return unavailable(STORAGE_OPERATION.LIST_ACTIVITIES);
+        listActivities(options) {
+            return runReady(STORAGE_OPERATION.LIST_ACTIVITIES, database => (
+                listCanonicalActivities(
+                    database,
+                    dependencies.keyRange,
+                    options
+                )
+            ));
         },
         createBackupManifest() {
-            return unavailable(STORAGE_OPERATION.CREATE_BACKUP_MANIFEST);
+            return runReady(
+                STORAGE_OPERATION.CREATE_BACKUP_MANIFEST,
+                database => buildBackupManifest(database, dependencies)
+            );
         },
         close
     });

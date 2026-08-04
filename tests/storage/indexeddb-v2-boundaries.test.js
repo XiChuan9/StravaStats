@@ -141,7 +141,7 @@ test('public import is side-effect free and exports exactly the frozen API', asy
     assert.equal(Object.isFrozen(storageModule.V2_SCHEMA), true);
 });
 
-test('factory and B2-reserved methods are frozen, stable, and perform zero I/O', async () => {
+test('factory data methods require ready state and perform zero implicit I/O', async () => {
     const {
         STORAGE_ERROR_CODE,
         createCanonicalStore
@@ -173,7 +173,7 @@ test('factory and B2-reserved methods are frozen, stable, and perform zero I/O',
         ['createBackupManifest', []]
     ]) {
         await assert.rejects(storage[method](...args), error => {
-            assert.equal(error.code, STORAGE_ERROR_CODE.UNAVAILABLE);
+            assert.equal(error.code, STORAGE_ERROR_CODE.CONNECTION_STALE);
             assert.equal(error.operation, method);
             assert.equal(Object.isFrozen(error), true);
             return true;
@@ -480,6 +480,9 @@ test('production storage sources contain no destructive or Legacy boundary', asy
         'schema.js',
         'migrations.js',
         'database.js',
+        'transaction.js',
+        'canonical-store.js',
+        'backup-manifest.js',
         'index.js'
     ];
     const sources = await Promise.all(sourceFiles.map(async file => ({

@@ -24,6 +24,7 @@ const ERROR_MESSAGES = Object.freeze({
 const ERROR_CODES = Object.freeze(Object.values(STORAGE_ERROR_CODE));
 const OPERATIONS = Object.freeze(Object.values(STORAGE_OPERATION));
 const DETAIL_KEYS = Object.freeze(['operation', 'retryable']);
+const ISSUED_STORAGE_ERRORS = new WeakSet();
 
 function includes(array, value) {
     return array.some(item => item === value);
@@ -110,6 +111,7 @@ export class StorageError extends Error {
         this.code = normalizedCode;
         this.operation = valid ? normalizedDetails.operation : null;
         this.retryable = valid ? normalizedDetails.retryable : false;
+        ISSUED_STORAGE_ERRORS.add(this);
         Object.freeze(this);
     }
 
@@ -122,6 +124,14 @@ export class StorageError extends Error {
             retryable: this.retryable
         });
     }
+}
+
+export function isStorageError(value) {
+    return (
+        value !== null
+        && (typeof value === 'object' || typeof value === 'function')
+        && ISSUED_STORAGE_ERRORS.has(value)
+    );
 }
 
 export function storageError(code, operation, retryable = false) {
