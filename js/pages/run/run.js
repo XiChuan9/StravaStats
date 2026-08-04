@@ -58,10 +58,6 @@ const DOM = {
     hrZonesChart: document.getElementById('hr-zones-chart'),
 };
 
-// Parse activity ID from URL
-const params = new URLSearchParams(window.location.search);
-const activityId = parseInt(params.get('id'), 10);
-
 // Chart instances registry for cleanup
 const chartInstances = {};
 
@@ -70,6 +66,7 @@ let currentSmoothingLevel = 100;
 let originalStreamData = null; // Store unsmoothed data
 let lastStreamData = null;
 let lastActivityData = null;
+let allowExternalWeatherForPage = true;
 
 // Dynamic chart data storage
 let dynamicChartData = {
@@ -745,54 +742,6 @@ function populateDynamicChartData(streams, isOriginal = false) {
 }
 
 // =====================================================
-// 3. API FUNCTIONS
-// =====================================================
-
-/**
- * Retrieves and decodes auth token from localStorage
- */
-function getAuthPayload() {
-    const tokenString = localStorage.getItem('strava_tokens');
-    if (!tokenString) return null;
-    return btoa(tokenString);
-}
-
-/**
- * Fetches data from backend API
- */
-async function fetchFromApi(url, authPayload) {
-    const response = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${authPayload}` }
-    });
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`API Error ${response.status}: ${errorText}`);
-    }
-    const result = await response.json();
-    if (result.tokens) {
-        localStorage.setItem('strava_tokens', JSON.stringify(result.tokens));
-    }
-    return result;
-}
-
-/**
- * Fetches detailed activity information
- */
-async function fetchActivityDetails(activityId, authPayload) {
-    const result = await fetchFromApi(`/api/strava-activity?id=${activityId}`, authPayload);
-    return result.activity;
-}
-
-/**
- * Fetches activity stream data (distance, time, HR, altitude, cadence)
- */
-async function fetchActivityStreams(activityId, authPayload) {
-    const streamTypes = 'distance,time,heartrate,altitude,cadence,watts,velocity_smooth';
-    const result = await fetchFromApi(`/api/strava-streams?id=${activityId}&type=${streamTypes}`, authPayload);
-    return result.streams;
-}
-
-// =====================================================
 // 4. RENDERING FUNCTIONS - ACTIVITY INFO
 // =====================================================
 
@@ -1052,17 +1001,23 @@ function renderActivityMap(activity, streams) {
                 weatherToggle.addEventListener('change', () => renderActivityMap(activity, streams));
             }
 
-            renderWeatherAnalysis(activity, coords);
-            renderWeatherMapDetails(activity, coords, map, weatherToggle?.checked);
+            if (allowExternalWeatherForPage) {
+                renderWeatherAnalysis(activity, coords);
+                renderWeatherMapDetails(activity, coords, map, weatherToggle?.checked);
+            }
         } else {
             DOM.map.innerHTML = '<p>No route data available (empty polyline).</p>';
-            renderWeatherAnalysis(activity, []);
-            renderWeatherMapDetails(activity, [], null, false);
+            if (allowExternalWeatherForPage) {
+                renderWeatherAnalysis(activity, []);
+                renderWeatherMapDetails(activity, [], null, false);
+            }
         }
     } else {
         DOM.map.innerHTML = '<p>No route data available or Leaflet not loaded.</p>';
-        renderWeatherAnalysis(activity, []);
-        renderWeatherMapDetails(activity, [], null, false);
+        if (allowExternalWeatherForPage) {
+            renderWeatherAnalysis(activity, []);
+            renderWeatherMapDetails(activity, [], null, false);
+        }
     }
 }
 
@@ -1501,7 +1456,7 @@ function renderSegments(segments) {
 /**
  * Renders HR zone distribution chart
  */
-function renderHrZoneDistributionChart(streams) {
+function renderHrZoneDistributionChart(streams, zones) {
     const canvas = document.getElementById('hr-zones-chart');
     const section = document.getElementById('hr-zones-section');
     if (!canvas || !section) return;
@@ -1511,17 +1466,12 @@ function renderHrZoneDistributionChart(streams) {
     }
     section.style.display = '';
 
-    const zonesDataText = localStorage.getItem('strava_training_zones');
-    if (!zonesDataText) {
-        console.warn('Training zones not found in localStorage.');
-        return;
-    }
-
-    const allZones = JSON.parse(zonesDataText);
-    const hrZones = allZones?.heart_rate?.zones?.filter(z => z.max > 0);
+    const configuredZones = zones?.heart_rate?.zones;
+    const hrZones = Array.isArray(configuredZones)
+        ? configuredZones.filter(zone => zone && typeof zone === 'object' && zone.max > 0)
+        : null;
 
     if (!hrZones || hrZones.length === 0) {
-        console.warn('Valid HR zones not found.');
         return;
     }
 
@@ -1846,30 +1796,14 @@ function renderClassifierResults(classificationData) {
 /**
  * Main entry point - loads activity data and renders all sections
  */
-async function main() {
-    // Validate activity ID
-    if (!activityId) {
-        if (DOM.details) DOM.details.innerHTML = '<p>Error: No Activity ID provided.</p>';
-        return;
-    }
+export async function renderRunPage({ activity, streams, zones, athlete, activityId, allowExternalWeather }) {
+    moveAndHideCustomChartSection();
+    allowExternalWeatherForPage = allowExternalWeather === true;
 
-    // Check authentication
-    const authPayload = getAuthPayload();
-    if (!authPayload) {
-        if (DOM.details) DOM.details.innerHTML = '<p>You must be logged in to view activity details.</p>';
-        return;
-    }
+    if (DOM.streamCharts) DOM.streamCharts.style.display = 'grid';
 
-    try {
-        moveAndHideCustomChartSection();
-
-        if (DOM.streamCharts) DOM.streamCharts.style.display = 'grid';
-
-        // Fetch activity data in parallel
-        const [activityData, streamData] = await Promise.all([
-            fetchActivityDetails(activityId, authPayload),
-            fetchActivityStreams(activityId, authPayload)
-        ]);
+    const activityData = structuredClone(activity);
+    const streamData = structuredClone(streams);
 
         // Calculate variability metrics from streams
         let paceVariabilityStream = '-';
@@ -1938,7 +1872,7 @@ async function main() {
         renderLapsChart(activityData.laps);
         renderSegments(activityData.segment_efforts);
         renderClassifierResults(classifyRun(activityData, streamData));
-        renderHrZoneDistributionChart(streamData);
+        renderHrZoneDistributionChart(streamData, zones);
         renderHrMinMaxAreaChart(initialSmoothedStreams, currentSmoothingLevel);
         renderPaceMinMaxAreaChart(initialSmoothedStreams, currentSmoothingLevel);
         syncSideBySideContainers();
@@ -1947,13 +1881,5 @@ async function main() {
         // Initialize dynamic chart controls
         initDynamicChartControls();
 
-        if (DOM.streamCharts) DOM.streamCharts.style.display = '';
-
-    } catch (error) {
-        console.error('Failed to load activity page:', error);
-        if (DOM.details) DOM.details.innerHTML = `<p><strong>Error loading activity:</strong> ${error.message}</p>`;
-    }
+    if (DOM.streamCharts) DOM.streamCharts.style.display = '';
 }
-
-// Initialize on DOM ready
-document.addEventListener('DOMContentLoaded', main);

@@ -30,8 +30,9 @@
 | B1.1 | Completed / PASS |
 | B1.2 | Completed / PASS |
 | B1.3 | Completed / PASS |
-| B1 | Completed locally / Awaiting B1.3 exact-head CI |
-| B2 | Not started / Not authorized |
+| B1 | Completed / PASS |
+| B2 | Completed / PASS |
+| B2.1 | Completed / PASS |
 | B3 | Not started / Not authorized |
 
 ## Goal
@@ -40,7 +41,7 @@
 - 设计最小迁移，使详情 consumer 只通过 Repository 或明确的页面 read façade 获取数据。
 - 避免页面和 Advanced Analysis 重复获取同一活动数据。
 - 保持现有详情输出、算法、DOM、CSS、路由和视觉不变。
-- A0–A3 只完成调查、决策冻结和记账；implementation has not started。
+- A0–A3 只完成调查、决策冻结和记账；B1–B2.1 已完成并通过控制塔验收，B3 尚未授权。
 
 ## Why now
 
@@ -58,7 +59,7 @@ storage、cache 或 API。PR-04B 必须先完成只读调查和控制塔决策�
 - Demo/Real 如何冻结一次 session mode，并保持 provider/storage 隔离？
 - 哪些候选文件、测试和浏览器证据是后续实施的最小集合？
 
-## In scope
+## Initial A0–A3 in scope
 
 - 本 Task Brief。
 - 只读源码、测试和文档调查。
@@ -67,7 +68,7 @@ storage、cache 或 API。PR-04B 必须先完成只读调查和控制塔决策�
 - 测试与浏览器验证设计。
 - 隐私、migration、rollback 和风险分析。
 
-## Out of scope
+## Initial A0–A3 out of scope
 
 - 所有产品代码和测试实现。
 - PR-04C Run Plus/NSM。
@@ -544,7 +545,7 @@ the exact page paths in the 20-file allowlist are approved.
 
 ## Frozen phase allowlists
 
-### B1 — Completed locally / awaiting B1.3 exact-head CI
+### B1 — Completed / PASS
 
 ```text
 docs/tasks/pr-04b-detail-consumers.md
@@ -562,7 +563,7 @@ tests/consumers/detail-boundaries.test.js
 Goals: page governance, Connector `type=` fix, opaque Router ID, Router Repository boundary,
 `DetailReadSession`, document mode freeze, memoization, and foundational boundary tests.
 
-### B2 — Not started / not authorized until B1 review
+### B2 — Completed / PASS
 
 ```text
 docs/tasks/pr-04b-detail-consumers.md
@@ -583,7 +584,7 @@ Goals: migrate all four detail consumers; remove consumer Token/fetch/provider s
 activity/streams/zones/athlete; reuse the bundle in Advanced; preserve algorithms, DOM, charts, maps,
 laps, and exports.
 
-### B3 — Not started / not authorized until B2 review
+### B3 — Not started / not authorized
 
 ```text
 docs/tasks/pr-04b-detail-consumers.md
@@ -750,8 +751,9 @@ or Legacy storage.
 ### B1
 
 - Status before the exact-head shallow-checkout result: final control-tower acceptance of B1, B1.1,
-  and B1.2. Current status is **Completed locally / awaiting B1.3 exact-head CI** after B1.3
-  control-tower PASS; B2 and B3 remain not started and not authorized.
+  and B1.2. B1.3 subsequently received control-tower PASS and exact-head CI success, so B1 is
+  **Completed / PASS**. B2 and B2.1 are also Completed / PASS; B3 remains not started and not
+  authorized.
 - Authorized implementation: page governance, Connector `type=` compatibility, opaque-ID Router,
   document-local mode/Repository boundary, memoized `DetailReadSession`, and deterministic B1 tests.
 - Privacy boundary: deterministic synthetic data only; no real Token, account, network, activity,
@@ -821,7 +823,7 @@ or Legacy storage.
   approved unstaged paths, no protected-path changes, empty staging, and local/upstream `0/0`.
 - B1.2 and B1 received final control-tower PASS.
 
-### B1 Finalization — local PASS / awaiting B1.3 exact-head CI
+### B1 Finalization — Completed / PASS
 
 - Final control-tower acceptance: Router Repository boundary PASS; opaque activity ID PASS;
   `DetailReadSession` same-Promise memoization PASS; Connector single `type=` compatibility PASS;
@@ -840,8 +842,10 @@ or Legacy storage.
 
 ### A3.2 / B1.3
 
-- **A3.2: Completed / Accepted. B1.3: Completed / PASS.** B1 is completed locally and awaits the
-  B1.3 correction commit's exact-head CI. B2 and B3 remain not started and not authorized.
+- **A3.2: Completed / Accepted. B1.3: Completed / PASS.** B1.3 correction commit
+  `dd4f5019719c4daa0d3b634715ce1d2879dc11c3` passed exact-head CI run `30868619414`, job
+  `91865731738`, with `752/752`; B1 is Completed / PASS. B2 is now in progress, while B3 remains
+  not started and not authorized.
 - B1 commit `bcd572fa2108f01d7e657fc2d2e3f5f4ec50f5d3` produced exact-head pull-request CI run
   `30863157208`, job `91849280317`. Install dependencies, syntax, and repository privacy passed;
   the test step failed at `749/752`, with skipped/cancelled/todo `0/0/0`.
@@ -895,7 +899,137 @@ or Legacy storage.
   authorized; if B3 also needs `tests/consumers/detail-boundaries.test.js`, that path must first be
   added through a separate B3 scope extension. This B1.3 finalization does not pre-exclude or
   pre-authorize the B3 harness in the digest guard.
-- The B1.3 correction commit and its exact-head CI are post-commit evidence. The new CI must not be
-  recorded as passing before it completes. PR #9 must remain Draft; Ready, merge, PR-04C, PR-05,
-  B2, and B3 remain unauthorized. Browser/CDP, manual, visual, real Token/account/data, user browser
-  profile, real Strava network, and production Service Worker verification remain `Not run`.
+- The B1.3 correction commit and exact-head CI are recorded post-commit evidence. PR #9 must remain
+  Draft; Ready, merge, PR-04C, PR-05, and B3 remain unauthorized. Browser/CDP, manual, visual, real
+  Token/account/data, user browser profile, real Strava network, and production Service Worker
+  verification remain `Not run`.
+
+### B2 implementation
+
+- Status: **Completed / PASS** after control-tower B2.1 re-review. Fixed start is
+  `dd4f5019719c4daa0d3b634715ce1d2879dc11c3`; B1–B1.3 and B2–B2.1 are Completed / PASS. PR-04B
+  remains In progress, PR #9 must remain Draft, and B3 remains not started and not authorized.
+- B2 is restricted to the exact twelve paths in the frozen B2 phase allowlist above. A thirteenth
+  B2 path requires a stop and new control-tower approval.
+- The B2 phase guard excludes exactly those twelve paths from the fixed baseline tree and protects
+  all other tracked mode/blob/path records with SHA-256
+  `85bda50961073e26a99c6598488ead4746f5094c7d5798630dc92004af2e51e9`. Both the B2 baseline
+  and initial index contain 205 protected entries. Runtime validation uses stage-zero
+  `git ls-files -s -z`; the worktree audit continues to use
+  `git status --porcelain=v1 -z --untracked-files=all` and rejects a thirteenth path.
+- Exact session configurations are: Generic
+  `[distance,time,heartrate,altitude,cadence,watts,velocity_smooth,latlng,grade_smooth,moving]`
+  with zones and without athlete; Run and Bike
+  `[distance,time,heartrate,altitude,cadence,watts,velocity_smooth]` with zones and without athlete;
+  Swim `[distance,time,heartrate,cadence]` with zones and athlete.
+- Each page composition root must preserve the opaque URL ID, freeze Demo/Real mode once, create one
+  public Repository and one `DetailReadSession`, call `load()` once, validate required success
+  envelopes, and inject detached renderer inputs. Renderers own no Repository, Token, provider API,
+  provider storage, retry, or direct fallback.
+- Zones come only from the session bundle. Swim athlete correction uses only injected athlete data
+  and a renderer-local activity copy. Demo gates external weather completely; Real preserves the
+  existing weather call timing and inputs.
+- Generic Advanced Analysis reuses the already loaded activity/streams bundle. It performs no
+  Repository load, provider fetch, Token/Auth, provider parsing, or private logging; repeated clicks
+  may rerun local analysis but add zero provider or Repository I/O.
+- Required activity/streams failures are fatal and use stable safe UI; optional zones/athlete may be
+  `null` without fabricated metadata. Errors never expose raw messages or delete Local Library,
+  cache, storage, or user data.
+- Local B2 implementation keeps each composition root at exactly one mode read, one public Factory
+  call, one `DetailReadSession` construction, one `load()`, and one renderer call. Opaque IDs
+  `000123`, nonnumeric IDs, URL-special IDs, and missing/blank rejection pass for all four entries;
+  the exact stream order and metadata flags above are asserted without sorting, deduplication, or
+  `temperature` expansion.
+- Required activity/streams envelope failure is fatal with one load, no retry/direct fallback, and
+  no raw message disclosure. Optional zones/athlete `null` values reach the renderer unchanged.
+  Deterministic capability fixtures cover full data, empty streams, missing HR/GPS/power/cadence,
+  missing laps, missing zones, and missing athlete. Four renderer seams accept empty streams without
+  mutating the Repository activity/streams payloads.
+- Demo tests exercise the public Factory path with synthetic Demo namespace data: Real connector,
+  real Token/cache/provider-key access, `fetch`, `btoa`, IndexedDB, and external weather I/O are all
+  zero, and Real sentinels remain unchanged. Real synthetic composition keeps weather enabled while
+  consumers perform no Token/provider-storage access.
+- Generic/Run/Bike zone charts consume only injected `zones.heart_rate.zones`; Swim maps the same
+  injected shape to its existing zone renderer. Forbidden provider zone-key reads are zero. Swim's
+  matching injected athlete applies the unchanged 20m correction on a renderer-local clone; null,
+  nonmatching, accessor, and unsafe athlete shapes fail closed, and the Repository payload remains
+  byte-for-byte equivalent.
+- Advanced Analysis imports the existing analysis/export modules through the corrected relative
+  paths and accepts injected activity/streams. Two consecutive local analyses add zero Repository,
+  activity, streams, Token, or fetch I/O; the existing analysis/UI/export path remains in place and
+  errors use stable safe copy.
+- The B2 protected tree contains 205 entries and matches fixed digest
+  `85bda50961073e26a99c6598488ead4746f5094c7d5798630dc92004af2e51e9` in the formal worktree and
+  a disposable depth-1 checkout at exact baseline HEAD. The shallow boundary passes `19/19`; after
+  overlaying only the twelve B2 paths, its full suite passes `826/826`, with
+  skipped/cancelled/todo `0/0/0`. The disposable checkout was removed and no evidence file entered
+  the repository.
+- Pre-B2.1 local gate evidence: `npm ci` added 6 packages and found 0 vulnerabilities; syntax passes
+  for 137 files; privacy passes; detail boundary `19/19`; detail consumer behavior `104/104`;
+  combined consumer focused `123/123`; Repository regression `253/253`; Legacy/Auth/Demo
+  regression `241/241`; full tests `826/826`; skipped/cancelled/todo `0/0/0`; and
+  `git diff --check` passes. All test data is deterministic, synthetic, offline, and
+  private-fixture-free.
+- Privacy impact: no real Token, account, network, activity, GPS, heart-rate, power, private fixture,
+  or user browser profile was used. Migration impact: none; there is no storage, IndexedDB,
+  Canonical, cache, or key migration, no Legacy cleanup/deletion, and no Service Worker change.
+  Rollback is limited to the twelve unstaged B2 paths and requires no reset, rebase, branch/worktree
+  removal, or user-data cleanup.
+- Browser/CDP, manual, visual, real Token/account/data, user browser profile, real Strava network,
+  and production Service Worker verification remain `Not run`. Control tower accepted B2 and B2.1
+  as **Completed / PASS**; this does not authorize B3, Ready, merge, PR-04C, or PR-05.
+- This protected digest remains a phase guard. Before B3 authorization, control tower must review
+  the B3 allowlist; B2 does not create or pre-authorize the browser harness.
+
+### B2.1 success-envelope and bundle descriptor correction
+
+- Control-tower B2 initial review: **REVISE**. The single confirmed contract deviation was that the
+  four composition roots accepted `{ data: {} }` as a success envelope and used optional property
+  reads on the session bundle. All other B2 scope, migration, Advanced Analysis, Demo/weather,
+  privacy, and automated-gate findings passed initial review.
+- B2.1 status: **Completed / PASS** after control-tower re-review. The correction closes the only
+  B2 initial-review blocker; B3 remains not started and not authorized.
+- B2.1 changes are restricted to seven existing B2 paths:
+  `docs/tasks/pr-04b-detail-consumers.md`, `js/pages/activity/index.js`,
+  `js/pages/run/index.js`, `js/pages/bike/index.js`, `js/pages/swim/index.js`,
+  `tests/consumers/detail-consumers.test.js`, and
+  `tests/consumers/detail-boundaries.test.js`. This is not a B2 allowlist expansion; the phase
+  allowlist remains the frozen twelve paths and the protected-tree digest remains
+  `85bda50961073e26a99c6598488ead4746f5094c7d5798630dc92004af2e51e9` over 205 protected entries.
+- The corrected bundle contract accepts only an `Object.prototype` object with exact own keys
+  `activity`, `streams`, `zones`, and `athlete`; each must be an enumerable own data property.
+  Accessors, non-enumerable properties, extra string/symbol keys, custom prototypes, and reflective
+  Proxy failures fail closed without executing getters or exposing raw exceptions. No
+  `bundle?.activity`-style read remains.
+- Every non-null Repository result must be an exact success envelope with enumerable own data
+  properties `data`, `source`, `warnings`, and `partial`. `source` must be a public
+  `REPOSITORY_SOURCE` value, `partial` a strict boolean, `warnings` a native dense
+  `Array.prototype` array with descriptor-safe index properties and no extra keys, and `data` an
+  `Object.prototype` object obtained from its descriptor. The composition roots do not mutate the
+  envelope, warnings, or data.
+- Required activity/streams malformed results are fatal. Optional zones/athlete accept only literal
+  `null` as absence; every malformed non-null optional envelope is fatal rather than silently
+  becoming null. Failure remains one `load()`, zero renderer calls, no retry/direct fallback, and
+  stable secret-free error UI.
+- Independent accessor reproducer after correction returns exactly `{ "ok": false,
+  "rendered": 0, "getterCalls": 0 }` for a bundle-level activity getter.
+- Test coverage includes all four pages for incomplete/extra envelopes, invalid source/partial/
+  warnings, sparse/accessor/custom/subclass/extra-key warnings, bundle and data accessors, exact-key
+  bundle violations, revoked/throwing Proxies, malformed optional metadata, literal-null optional
+  success, exact-envelope reference/order preservation, safe errors, one load, and zero renderer on
+  failure. Final local B2.1 gates after this Task Brief update: `npm ci` added 6 packages and found
+  0 vulnerabilities; syntax passes for 137 files; privacy passes; detail boundary `19/19`; combined
+  detail consumer/boundary focused `254/254`; Repository regression `253/253`; full tests
+  `957/957`; skipped/cancelled/todo `0/0/0`; and `git diff --check` passes. The literal
+  `node --test tests/repository` directory argument is unsupported by Node v25.8.1 and reports
+  `MODULE_NOT_FOUND`; the same Repository suite was therefore run using the explicit existing
+  `tests/repository/*.test.js` files for the recorded `253/253` result.
+- Privacy impact remains none: deterministic synthetic data only, no real Token/account/network/
+  activity/GPS/HR/power/private fixture or user browser profile. Migration impact remains none: no
+  storage, IndexedDB, Canonical, cache, or key migration and no Legacy cleanup. Rollback is limited
+  to the seven unstaged B2.1 paths; no reset, rebase, branch/worktree deletion, or user-data cleanup
+  is required.
+- Browser/CDP, manual, visual, real Token/account/data, real Strava network, user browser profile,
+  and production Service Worker verification remain `Not run`. B3 remains not started and not
+  authorized; `tests/consumers/detail-browser-smoke.html` was not created. PR-04B remains In
+  progress and PR #9 must remain Draft.

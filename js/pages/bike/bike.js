@@ -58,10 +58,6 @@ const DOM = {
     hrZonesChart: document.getElementById('hr-zones-chart'),
 };
 
-// Parse activity ID from URL
-const params = new URLSearchParams(window.location.search);
-const activityId = parseInt(params.get('id'), 10);
-
 // Chart instances registry
 const chartInstances = {};
 
@@ -70,6 +66,7 @@ let currentSmoothingLevel = 100;
 let originalStreamData = null;
 let lastActivityData = null;
 let currentBikeClassification = null;
+let allowExternalWeatherForPage = true;
 
 // Dynamic chart data (smoothed)
 let dynamicChartData = {
@@ -368,42 +365,6 @@ function populateDynamicChartData(streams, isOriginal = false) {
 }
 
 // =====================================================
-// 4. AUTH & API FUNCTIONS
-// =====================================================
-
-function getAuthPayload() {
-    const tokenString = localStorage.getItem('strava_tokens');
-    if (!tokenString) return null;
-    return btoa(tokenString);
-}
-
-async function fetchFromApi(url, authPayload) {
-    const response = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${authPayload}` }
-    });
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`API Error ${response.status}: ${errorText}`);
-    }
-    const result = await response.json();
-    if (result.tokens) {
-        localStorage.setItem('strava_tokens', JSON.stringify(result.tokens));
-    }
-    return result;
-}
-
-async function fetchActivityDetails(id, authPayload) {
-    const result = await fetchFromApi(`/api/strava-activity?id=${id}`, authPayload);
-    return result.activity;
-}
-
-async function fetchActivityStreams(id, authPayload) {
-    const streamTypes = 'distance,time,heartrate,altitude,cadence,watts,velocity_smooth';
-    const result = await fetchFromApi(`/api/strava-streams?id=${id}&type=${streamTypes}`, authPayload);
-    return result.streams;
-}
-
-// =====================================================
 // 5. RENDERING — ACTIVITY INFO
 // =====================================================
 
@@ -683,17 +644,23 @@ function renderActivityMap(activity, streams) {
                 weatherToggle.addEventListener('change', () => renderActivityMap(activity, streams));
             }
 
-            renderWeatherAnalysis(activity, coords);
-            renderWeatherMapDetails(activity, coords, map, weatherToggle?.checked);
+            if (allowExternalWeatherForPage) {
+                renderWeatherAnalysis(activity, coords);
+                renderWeatherMapDetails(activity, coords, map, weatherToggle?.checked);
+            }
         } else {
             DOM.map.innerHTML = '<p>No route data (empty polyline).</p>';
-            renderWeatherAnalysis(activity, []);
-            renderWeatherMapDetails(activity, [], null, false);
+            if (allowExternalWeatherForPage) {
+                renderWeatherAnalysis(activity, []);
+                renderWeatherMapDetails(activity, [], null, false);
+            }
         }
     } else {
         DOM.map.innerHTML = '<p>No route data available.</p>';
-        renderWeatherAnalysis(activity, []);
-        renderWeatherMapDetails(activity, [], null, false);
+        if (allowExternalWeatherForPage) {
+            renderWeatherAnalysis(activity, []);
+            renderWeatherMapDetails(activity, [], null, false);
+        }
     }
 }
 
@@ -1085,7 +1052,7 @@ function renderCadenceSpeedChart(streams) {
 // 11. RENDERING — HR ZONES
 // =====================================================
 
-function renderHrZoneDistributionChart(streams) {
+function renderHrZoneDistributionChart(streams, zones) {
     const canvas = document.getElementById('hr-zones-chart');
     const section = document.getElementById('hr-zones-section');
     if (!canvas || !section) return;
@@ -1095,11 +1062,10 @@ function renderHrZoneDistributionChart(streams) {
     }
     section.style.display = '';
 
-    const zonesDataText = localStorage.getItem('strava_training_zones');
-    if (!zonesDataText) return;
-
-    const allZones = JSON.parse(zonesDataText);
-    const hrZones = allZones?.heart_rate?.zones?.filter(z => z.max > 0);
+    const configuredZones = zones?.heart_rate?.zones;
+    const hrZones = Array.isArray(configuredZones)
+        ? configuredZones.filter(zone => zone && typeof zone === 'object' && zone.max > 0)
+        : null;
     if (!hrZones || hrZones.length === 0) return;
 
     const timeInZones = calculateTimeInZones(streams.heartrate, streams.time, hrZones);
@@ -1457,31 +1423,16 @@ function initSmoothingControl() {
 // 16. MAIN INITIALIZATION
 // =====================================================
 
-async function main() {
-    if (!activityId) {
-        document.body.innerHTML = '<div style="padding:20px;text-align:center;"><h2>Error: No Activity ID</h2><button onclick="window.history.back()">Back</button></div>';
-        return;
-    }
+export async function renderBikePage({ activity, streams, zones, athlete, activityId, allowExternalWeather }) {
+    moveAndHideCustomChartSection();
+    allowExternalWeatherForPage = allowExternalWeather === true;
 
-    const authPayload = getAuthPayload();
-    if (!authPayload) {
-        document.body.innerHTML = '<div style="padding:20px;text-align:center;"><h2>Not authenticated</h2><p>Please log in to Strava.</p><button onclick="window.history.back()">Back</button></div>';
-        return;
-    }
+    if (DOM.streamCharts) DOM.streamCharts.style.display = 'grid';
 
-    try {
-        moveAndHideCustomChartSection();
+    const activityData = structuredClone(activity);
+    const streamData = structuredClone(streams);
 
-        if (DOM.streamCharts) DOM.streamCharts.style.display = 'grid';
-
-        const [activityData, streamData] = await Promise.all([
-            fetchActivityDetails(activityId, authPayload),
-            fetchActivityStreams(activityId, authPayload)
-        ]);
-
-        console.log('Bike activity loaded:', activityData.name, '|', activityData.sport_type || activityData.type);
-
-        originalStreamData = JSON.parse(JSON.stringify(streamData));
+        originalStreamData = structuredClone(streamData);
         lastActivityData = activityData;
         activityData._streamData = streamData;
 
@@ -1500,7 +1451,7 @@ async function main() {
         renderPowerProfile(streamData, activityData);
         renderPowerCurveChart(streamData, activityData);
         renderCadenceSpeedChart(streamData);
-        renderHrZoneDistributionChart(streamData);
+        renderHrZoneDistributionChart(streamData, zones);
         renderHrMinMaxAreaChart(initialSmoothed, currentSmoothingLevel);
         renderSpeedMinMaxAreaChart(initialSmoothed, currentSmoothingLevel);
         renderLaps(activityData.laps);
@@ -1512,17 +1463,5 @@ async function main() {
 
         initDynamicChartControls();
 
-        if (DOM.streamCharts) DOM.streamCharts.style.display = '';
-
-    } catch (error) {
-        console.error('Failed to load bike activity:', error);
-        document.body.innerHTML = `
-            <div style="padding:20px;text-align:center;color:#c00;">
-                <h2>Error Loading Activity</h2>
-                <p>${error.message}</p>
-                <button onclick="window.history.back()">Back</button>
-            </div>`;
-    }
+    if (DOM.streamCharts) DOM.streamCharts.style.display = '';
 }
-
-document.addEventListener('DOMContentLoaded', main);

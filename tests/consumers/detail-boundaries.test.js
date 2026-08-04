@@ -10,27 +10,16 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const START_SHA = '98eec7a9ebd797e5580310ce1e8e528311ed99fa';
-// Generated from START_SHA with `git ls-tree -r -z`, excluding exactly the
-// ten B1 paths, sorting by path with code-unit order, and hashing canonical
+const B2_BASELINE_SHA = 'dd4f5019719c4daa0d3b634715ce1d2879dc11c3';
+// Generated from B2_BASELINE_SHA with `git ls-tree -r -z`, excluding exactly
+// the twelve B2 paths, sorting by path with code-unit order, and hashing canonical
 // `<mode> <object-id>\t<path>\0` records in order.
 const PROTECTED_TREE_SHA256 =
-    'c36cf8c22cbfe1b907728bb48569b442f713a71e8b374fda155ae17074c555e2';
+    '85bda50961073e26a99c6598488ead4746f5094c7d5798630dc92004af2e51e9';
 const projectRootUrl = new URL('../../', import.meta.url);
 const projectRoot = fileURLToPath(projectRootUrl);
-const B1_ALLOWED_PATHS = new Set([
+const B2_ALLOWED_PATHS = new Set([
     'docs/tasks/pr-04b-detail-consumers.md',
-    'js/pages/AGENTS.md',
-    'html/activity-router.html',
-    'js/pages/activity-router.js',
-    'js/pages/detail/detail-read-session.js',
-    'js/connectors/strava/strava-api-connector.js',
-    'tests/repository/strava-api-connector.test.js',
-    'tests/repository/dependency-boundaries.test.js',
-    'tests/consumers/detail-consumers.test.js',
-    'tests/consumers/detail-boundaries.test.js'
-]);
-const B2_PRODUCT_PATHS = Object.freeze([
     'js/pages/activity/index.js',
     'js/pages/run/index.js',
     'js/pages/bike/index.js',
@@ -39,7 +28,18 @@ const B2_PRODUCT_PATHS = Object.freeze([
     'js/pages/run/run.js',
     'js/pages/bike/bike.js',
     'js/pages/swim/swim.js',
-    'js/pages/activity/advanced-analysis.js'
+    'js/pages/activity/advanced-analysis.js',
+    'tests/consumers/detail-consumers.test.js',
+    'tests/consumers/detail-boundaries.test.js'
+]);
+const B1_IMPLEMENTATION_PATHS = Object.freeze([
+    'js/pages/AGENTS.md',
+    'html/activity-router.html',
+    'js/pages/activity-router.js',
+    'js/pages/detail/detail-read-session.js',
+    'js/connectors/strava/strava-api-connector.js',
+    'tests/repository/strava-api-connector.test.js',
+    'tests/repository/dependency-boundaries.test.js'
 ]);
 
 function readIndexEntries() {
@@ -64,7 +64,7 @@ function readIndexEntries() {
 
 function protectedTreeDigest(entries) {
     const protectedEntries = entries
-        .filter(entry => !B1_ALLOWED_PATHS.has(entry.relativePath))
+        .filter(entry => !B2_ALLOWED_PATHS.has(entry.relativePath))
         .sort((left, right) => (
             left.relativePath < right.relativePath
                 ? -1
@@ -82,11 +82,11 @@ function protectedTreeDigest(entries) {
 function assertProtectedTreeDigest() {
     const entries = readIndexEntries();
     const trackedPaths = new Set(entries.map(entry => entry.relativePath));
-    for (const relativePath of B1_ALLOWED_PATHS) {
+    for (const relativePath of B2_ALLOWED_PATHS) {
         assert.equal(
             trackedPaths.has(relativePath),
             true,
-            `Approved B1 path is not tracked: ${relativePath}`
+            `Approved B2 path is not tracked: ${relativePath}`
         );
     }
     assert.equal(protectedTreeDigest(entries), PROTECTED_TREE_SHA256);
@@ -103,6 +103,31 @@ const routerHtml = await source('html/activity-router.html');
 const connectorSource = await source(
     'js/connectors/strava/strava-api-connector.js'
 );
+const pageIndexPaths = [
+    'js/pages/activity/index.js',
+    'js/pages/run/index.js',
+    'js/pages/bike/index.js',
+    'js/pages/swim/index.js'
+];
+const rendererPaths = [
+    'js/pages/activity/activity.js',
+    'js/pages/run/run.js',
+    'js/pages/bike/bike.js',
+    'js/pages/swim/swim.js'
+];
+const pageIndexSources = new Map(
+    await Promise.all(pageIndexPaths.map(async relativePath => [
+        relativePath,
+        await source(relativePath)
+    ]))
+);
+const rendererSources = new Map(
+    await Promise.all(rendererPaths.map(async relativePath => [
+        relativePath,
+        await source(relativePath)
+    ]))
+);
+const advancedSource = await source('js/pages/activity/advanced-analysis.js');
 
 test('page module imports perform zero Token, storage, network, or provider I/O', async () => {
     const guardedNames = [
@@ -132,7 +157,8 @@ test('page module imports perform zero Token, storage, network, or provider I/O'
 
         for (const relativePath of [
             'js/pages/activity-router.js',
-            'js/pages/detail/detail-read-session.js'
+            'js/pages/detail/detail-read-session.js',
+            ...pageIndexPaths
         ]) {
             const url = new URL(relativePath, projectRootUrl);
             await import(`${url.href}?boundary=${Date.now()}-${relativePath}`);
@@ -147,6 +173,148 @@ test('page module imports perform zero Token, storage, network, or provider I/O'
             }
         }
     }
+});
+
+test('four page composition roots use only public Factory and DetailReadSession boundaries', () => {
+    for (const [relativePath, value] of pageIndexSources) {
+        assert.match(
+            value,
+            /import\s*\{\s*createRepository,\s*REPOSITORY_SOURCE\s*\}\s*from\s*['"]\.\.\/\.\.\/repository\/index\.js['"]/
+        );
+        assert.match(
+            value,
+            /import\s*\{\s*createDetailReadSession\s*\}\s*from\s*['"]\.\.\/detail\/detail-read-session\.js['"]/
+        );
+        assert.equal((value.match(/demoModeReader\(\)/g) || []).length, 1, relativePath);
+        assert.equal((value.match(/repositoryFactory\(\{/g) || []).length, 1, relativePath);
+        assert.equal((value.match(/sessionFactory\(\{/g) || []).length, 1, relativePath);
+        assert.equal((value.match(/session\.load\(\)/g) || []).length, 1, relativePath);
+        assert.match(value, /allowExternalWeather:\s*!demo/, relativePath);
+        assert.match(value, /Reflect\.ownKeys\(value\)/, relativePath);
+        assert.match(value, /Object\.getOwnPropertyDescriptor\(value, key\)/, relativePath);
+        assert.match(value, /REPOSITORY_SOURCES\.has\(record\.source\)/, relativePath);
+        assert.match(value, /isDenseNativeArray\(record\.warnings\)/, relativePath);
+        assert.doesNotMatch(value, /bundle\?\./, relativePath);
+        for (const prohibited of [
+            /from\s*['"][^'"]*connectors\//,
+            /from\s*['"][^'"]*repository\/(?:factory|legacy|demo|errors)/,
+            /parseInt|parseFloat|BigInt|\bNumber\s*\(/,
+            /strava_tokens|strava_training_zones|strava_zones|strava_athlete_data/,
+            /Authorization|\/api\/strava-/,
+            /\bfetch\s*\(|\bbtoa\s*\(|indexedDB|sessionStorage|localStorage/
+        ]) {
+            assert.doesNotMatch(value, prohibited, relativePath);
+        }
+    }
+});
+
+test('page stream contracts and metadata flags remain exact and ordered', () => {
+    const expected = new Map([
+        ['js/pages/activity/index.js', {
+            streams: ['distance', 'time', 'heartrate', 'altitude', 'cadence', 'watts', 'velocity_smooth', 'latlng', 'grade_smooth', 'moving'],
+            athlete: false
+        }],
+        ['js/pages/run/index.js', {
+            streams: ['distance', 'time', 'heartrate', 'altitude', 'cadence', 'watts', 'velocity_smooth'],
+            athlete: false
+        }],
+        ['js/pages/bike/index.js', {
+            streams: ['distance', 'time', 'heartrate', 'altitude', 'cadence', 'watts', 'velocity_smooth'],
+            athlete: false
+        }],
+        ['js/pages/swim/index.js', {
+            streams: ['distance', 'time', 'heartrate', 'cadence'],
+            athlete: true
+        }]
+    ]);
+    for (const [relativePath, contract] of expected) {
+        const value = pageIndexSources.get(relativePath);
+        const listMatch = /STREAM_TYPES\s*=\s*Object\.freeze\(\[([\s\S]*?)\]\)/.exec(value);
+        assert.notEqual(listMatch, null, relativePath);
+        const streams = [...listMatch[1].matchAll(/['"]([^'"]+)['"]/g)]
+            .map(match => match[1]);
+        assert.deepEqual(streams, contract.streams, relativePath);
+        assert.match(value, /includeZones:\s*true/, relativePath);
+        assert.match(
+            value,
+            new RegExp(`includeAthlete:\\s*${contract.athlete}`),
+            relativePath
+        );
+        assert.doesNotMatch(value, /['"]temperature['"]|['"]temp['"]/, relativePath);
+    }
+});
+
+test('detail renderers are injected-only consumers with no provider fallback', () => {
+    const exports = new Map([
+        ['js/pages/activity/activity.js', 'renderActivityPage'],
+        ['js/pages/run/run.js', 'renderRunPage'],
+        ['js/pages/bike/bike.js', 'renderBikePage'],
+        ['js/pages/swim/swim.js', 'renderSwimPage']
+    ]);
+    for (const [relativePath, value] of rendererSources) {
+        assert.match(
+            value,
+            new RegExp(`export\\s+async\\s+function\\s+${exports.get(relativePath)}\\s*\\(\\{`),
+            relativePath
+        );
+        assert.match(value, /structuredClone\(activity\)/, relativePath);
+        assert.match(value, /structuredClone\(streams\)/, relativePath);
+        assert.match(value, /allowExternalWeatherForPage\s*=\s*allowExternalWeather\s*===\s*true/, relativePath);
+        for (const prohibited of [
+            /new\s+URLSearchParams/,
+            /getAuthPayload|fetchFromApi|fetchActivityDetails|fetchActivityStreams/,
+            /strava_tokens|strava_training_zones|strava_zones|strava_athlete_data/,
+            /Authorization|\/api\/strava-/,
+            /\bfetch\s*\(|\bbtoa\s*\(|indexedDB|sessionStorage|localStorage/,
+            /createRepository|createDetailReadSession|DOMContentLoaded/
+        ]) {
+            assert.doesNotMatch(value, prohibited, relativePath);
+        }
+    }
+});
+
+test('weather, zones, and Swim athlete behavior stays behind injected boundaries', () => {
+    for (const [relativePath, value] of rendererSources) {
+        assert.match(value, /if\s*\(allowExternalWeatherForPage\)/, relativePath);
+        assert.doesNotMatch(value, /strava_training_zones|strava_zones|strava_athlete_data/, relativePath);
+    }
+    for (const relativePath of [
+        'js/pages/activity/activity.js',
+        'js/pages/run/run.js',
+        'js/pages/bike/bike.js'
+    ]) {
+        assert.match(
+            rendererSources.get(relativePath),
+            /configuredZones\s*=\s*zones\?\.heart_rate\?\.zones[\s\S]*Array\.isArray\(configuredZones\)/,
+            relativePath
+        );
+    }
+    const swimSource = rendererSources.get('js/pages/swim/swim.js');
+    assert.match(swimSource, /zones\?\.heart_rate\?\.zones/);
+    assert.match(swimSource, /maybeCorrectIndoorSwimForAlex\(structuredClone\(activity\), athlete\)/);
+    assert.match(swimSource, /Object\.getOwnPropertyDescriptor\(athlete, key\)/);
+});
+
+test('Advanced Analysis consumes injected bundle data and contains no provider I/O', () => {
+    assert.match(advancedSource, /from\s*['"]\.\.\/\.\.\/analysis\/index\.js['"]/);
+    assert.match(advancedSource, /from\s*['"]\.\.\/\.\.\/analysis\/export\/index\.js['"]/);
+    assert.match(advancedSource, /constructor\(activity_id, metadata, streams,/);
+    for (const prohibited of [
+        /fetchActivityData/,
+        /\/api\/strava-/,
+        /Authorization|strava_tokens/,
+        /\bfetch\s*\(|\bbtoa\s*\(|localStorage|sessionStorage|indexedDB/,
+        /console\.log|console\.error/
+    ]) {
+        assert.doesNotMatch(advancedSource, prohibited);
+    }
+    const genericSource = rendererSources.get('js/pages/activity/activity.js');
+    assert.match(
+        genericSource,
+        /new\s+AdvancedActivityAnalyzer\(activityId, activity, streams\)/
+    );
+    assert.doesNotMatch(genericSource, /fetchActivityData/);
+    assert.doesNotMatch(genericSource, /error\.message|console\.error/);
 });
 
 test('Router depends only on Demo mode and the Repository public Factory boundary', () => {
@@ -277,21 +445,21 @@ test('B1 adds no session handoff and quick-start remains outside production entr
     }
 });
 
-test('B2 product files and B3 harness stay outside B1 and under the protected-tree digest', async () => {
+test('B1 implementation stays outside B2 and under the protected-tree digest', async () => {
     const trackedPaths = assertProtectedTreeDigest();
-    for (const relativePath of B2_PRODUCT_PATHS) {
-        assert.equal(B1_ALLOWED_PATHS.has(relativePath), false, relativePath);
+    for (const relativePath of B1_IMPLEMENTATION_PATHS) {
+        assert.equal(B2_ALLOWED_PATHS.has(relativePath), false, relativePath);
         assert.equal(trackedPaths.has(relativePath), true, relativePath);
     }
 
     const browserHarnessPath = 'tests/consumers/detail-browser-smoke.html';
-    assert.equal(B1_ALLOWED_PATHS.has(browserHarnessPath), false);
+    assert.equal(B2_ALLOWED_PATHS.has(browserHarnessPath), false);
     assert.equal(trackedPaths.has(browserHarnessPath), false);
     const browserHarness = path.join(projectRoot, browserHarnessPath);
     await assert.rejects(access(browserHarness));
 });
 
-test('working tree and protected index remain inside the exact ten-path B1 boundary', () => {
+test('working tree and protected index remain inside the exact twelve-path B2 boundary', () => {
     const status = execFileSync(
         'git',
         ['status', '--porcelain=v1', '-z', '--untracked-files=all'],
@@ -305,12 +473,12 @@ test('working tree and protected index remain inside the exact ten-path B1 bound
 
     for (const relativePath of observed) {
         assert.equal(
-            B1_ALLOWED_PATHS.has(relativePath),
+            B2_ALLOWED_PATHS.has(relativePath),
             true,
-            `B1 path is not approved: ${relativePath}`
+            `B2 path is not approved: ${relativePath}`
         );
     }
-    assert.equal(observed.size <= B1_ALLOWED_PATHS.size, true);
+    assert.equal(observed.size <= B2_ALLOWED_PATHS.size, true);
     assertProtectedTreeDigest();
 });
 
@@ -326,7 +494,7 @@ test('package, Repository public files, and Service Worker stay protected by the
         'js/repository/legacy/legacy-repository.js',
         'js/repository/demo/demo-repository.js'
     ]) {
-        assert.equal(B1_ALLOWED_PATHS.has(relativePath), false, relativePath);
+        assert.equal(B2_ALLOWED_PATHS.has(relativePath), false, relativePath);
         assert.equal(trackedPaths.has(relativePath), true, relativePath);
     }
 });
@@ -385,10 +553,13 @@ async function assertAcyclic(entryPaths) {
     }
 }
 
-test('Router and DetailReadSession module graph is acyclic', async () => {
+test('Router, DetailReadSession, and page composition module graph is acyclic', async () => {
     await assertAcyclic([
         'js/pages/activity-router.js',
-        'js/pages/detail/detail-read-session.js'
+        'js/pages/detail/detail-read-session.js',
+        ...pageIndexPaths,
+        ...rendererPaths,
+        'js/pages/activity/advanced-analysis.js'
     ]);
 });
 

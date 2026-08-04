@@ -60,10 +60,6 @@ const MAP_LAYERS = {
     },
 };
 
-// Parse activity ID from URL
-const params = new URLSearchParams(window.location.search);
-const activityId = parseInt(params.get('id'), 10);
-
 // Chart instances registry for cleanup
 const chartInstances = {};
 
@@ -72,6 +68,7 @@ let currentSmoothingLevel = 100;
 let originalStreamData = null; // Store unsmoothed data
 let lastStreamData = null;
 let lastActivityData = null;
+let allowExternalWeatherForPage = true;
 
 // Dynamic chart data storage
 let dynamicChartData = {
@@ -708,54 +705,6 @@ function populateDynamicChartData(streams, isOriginal = false) {
 }
 
 // =====================================================
-// 3. API FUNCTIONS
-// =====================================================
-
-/**
- * Retrieves and decodes auth token from localStorage
- */
-function getAuthPayload() {
-    const tokenString = localStorage.getItem('strava_tokens');
-    if (!tokenString) return null;
-    return btoa(tokenString);
-}
-
-/**
- * Fetches data from backend API
- */
-async function fetchFromApi(url, authPayload) {
-    const response = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${authPayload}` }
-    });
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`API Error ${response.status}: ${errorText}`);
-    }
-    const result = await response.json();
-    if (result.tokens) {
-        localStorage.setItem('strava_tokens', JSON.stringify(result.tokens));
-    }
-    return result;
-}
-
-/**
- * Fetches detailed activity information
- */
-async function fetchActivityDetails(activityId, authPayload) {
-    const result = await fetchFromApi(`/api/strava-activity?id=${activityId}`, authPayload);
-    return result.activity;
-}
-
-/**
- * Fetches activity stream data (distance, time, HR, altitude, cadence)
- */
-async function fetchActivityStreams(activityId, authPayload) {
-    const streamTypes = 'distance,time,heartrate,altitude,cadence,watts,velocity_smooth';
-    const result = await fetchFromApi(`/api/strava-streams?id=${activityId}&type=${streamTypes}`, authPayload);
-    return result.streams;
-}
-
-// =====================================================
 // 4. RENDERING FUNCTIONS - ACTIVITY INFO
 // =====================================================
 
@@ -958,17 +907,23 @@ function renderActivityMap(activity, streams) {
                 weatherToggle.addEventListener('change', () => renderActivityMap(activity, streams));
             }
 
-            renderWeatherAnalysis(activity, coords);
-            renderWeatherMapDetails(activity, coords, map, weatherToggle?.checked);
+            if (allowExternalWeatherForPage) {
+                renderWeatherAnalysis(activity, coords);
+                renderWeatherMapDetails(activity, coords, map, weatherToggle?.checked);
+            }
         } else {
             DOM.map.innerHTML = '<p>No route data available (empty polyline).</p>';
-            renderWeatherAnalysis(activity, []);
-            renderWeatherMapDetails(activity, [], null, false);
+            if (allowExternalWeatherForPage) {
+                renderWeatherAnalysis(activity, []);
+                renderWeatherMapDetails(activity, [], null, false);
+            }
         }
     } else {
         DOM.map.innerHTML = '<p>No route data available or Leaflet not loaded.</p>';
-        renderWeatherAnalysis(activity, []);
-        renderWeatherMapDetails(activity, [], null, false);
+        if (allowExternalWeatherForPage) {
+            renderWeatherAnalysis(activity, []);
+            renderWeatherMapDetails(activity, [], null, false);
+        }
     }
 }
 
@@ -1378,13 +1333,14 @@ function renderSegments(segments) {
 /**
  * Renders HR zone distribution chart
  */
-function renderHrZoneDistributionChart(streams) {
+function renderHrZoneDistributionChart(streams, zones) {
     const canvas = document.getElementById('hr-zones-chart');
     if (!canvas || !streams.heartrate || !streams.time) return;
 
-    const zonesDataText = localStorage.getItem('strava_training_zones');
-    const allZones = zonesDataText ? JSON.parse(zonesDataText) : null;
-    const hrZones = allZones?.heart_rate?.zones?.filter(z => z.max > 0);
+    const configuredZones = zones?.heart_rate?.zones;
+    const hrZones = Array.isArray(configuredZones)
+        ? configuredZones.filter(zone => zone && typeof zone === 'object' && zone.max > 0)
+        : null;
 
     if (hrZones && hrZones.length > 0) {
         const timeInZones = calculateTimeInZones(streams.heartrate, streams.time, hrZones);
@@ -1725,118 +1681,105 @@ function renderClassifierResults(classificationData) {
 /**
  * Main entry point - loads activity data and renders all sections
  */
-async function main() {
-    // Validate activity ID
-    if (!activityId) {
-        if (DOM.details) DOM.details.innerHTML = '<p>Error: No Activity ID provided.</p>';
-        return;
-    }
+export async function renderActivityPage({ activity, streams, zones, athlete, activityId, allowExternalWeather }) {
+    if (DOM.streamCharts) DOM.streamCharts.style.display = 'grid';
+    allowExternalWeatherForPage = allowExternalWeather === true;
 
-    // Check authentication
-    const authPayload = getAuthPayload();
-    if (!authPayload) {
-        if (DOM.details) DOM.details.innerHTML = '<p>You must be logged in to view activity details.</p>';
-        return;
-    }
+    const activityData = structuredClone(activity);
+    const streamData = structuredClone(streams);
 
-    try {
-        if (DOM.streamCharts) DOM.streamCharts.style.display = 'grid';
+    // Calculate variability metrics from streams
+    let paceVariabilityStream = '-';
+    let hrVariabilityStream = '-';
 
-        // Fetch activity data in parallel
-        const [activityData, streamData] = await Promise.all([
-            fetchActivityDetails(activityId, authPayload),
-            fetchActivityStreams(activityId, authPayload)
-        ]);
-
-        // Calculate variability metrics from streams
-        let paceVariabilityStream = '-';
-        let hrVariabilityStream = '-';
-
-        if (streamData && streamData.time && streamData.distance) {
-            const paceStream = [];
-            for (let i = 1; i < streamData.distance.data.length; i++) {
-                const deltaDist = streamData.distance.data[i] - streamData.distance.data[i - 1];
-                const deltaTime = streamData.time.data[i] - streamData.time.data[i - 1];
-                if (deltaDist > 0 && deltaTime > 0) {
-                    paceStream.push(deltaTime / deltaDist);
-                }
+    if (streamData && streamData.time && streamData.distance) {
+        const paceStream = [];
+        for (let i = 1; i < streamData.distance.data.length; i++) {
+            const deltaDist = streamData.distance.data[i] - streamData.distance.data[i - 1];
+            const deltaTime = streamData.time.data[i] - streamData.time.data[i - 1];
+            if (deltaDist > 0 && deltaTime > 0) {
+                paceStream.push(deltaTime / deltaDist);
             }
-            const smoothingWindowForVariability = Math.max(1, Math.round(150 * (currentSmoothingLevel / 100)));
-            paceVariabilityStream = calculateVariability(paceStream, smoothingWindowForVariability);
         }
-
-        if (streamData && streamData.heartrate) {
-            const smoothingWindowForVariability = Math.max(1, Math.round(150 * (currentSmoothingLevel / 100)));
-            hrVariabilityStream = calculateVariability(streamData.heartrate.data, smoothingWindowForVariability);
-        }
-
-        // Calculate variability metrics from laps
-        let paceVariabilityLaps = '-';
-        let hrVariabilityLaps = '-';
-        const lapsData = activityData.laps && activityData.laps.length > 1
-            ? activityData.laps
-            : activityData.splits_metric;
-
-        if (lapsData && lapsData.length > 1) {
-            const paceDataForCV = lapsData.map(lap => lap.average_speed);
-            const hrDataForCV = lapsData.map(lap => lap.average_heartrate);
-            paceVariabilityLaps = calculateVariability(paceDataForCV, false);
-            hrVariabilityLaps = calculateVariability(hrDataForCV, false);
-        }
-
-        // Attach variability metrics to activity object
-        activityData.pace_variability_stream = paceVariabilityStream;
-        activityData.hr_variability_stream = hrVariabilityStream;
-        activityData.pace_variability_laps = paceVariabilityLaps;
-        activityData.hr_variability_laps = hrVariabilityLaps;
-
-        // Store original stream data BEFORE applying smoothing
-        originalStreamData = JSON.parse(JSON.stringify(streamData));
-        lastActivityData = activityData;
-
-        // Populate original dynamic chart data (for secondary and background stats)
-        populateDynamicChartData(originalStreamData, true);
-
-        // Apply initial smoothing to streams
-        const initialSmoothedStreams = applySmoothingToStreams(originalStreamData, currentSmoothingLevel);
-
-        // Populate dynamic chart data with smoothed data (for primary stat)
-        populateDynamicChartData(initialSmoothedStreams, false);
-
-        // Render all sections
-        renderActivityInfo(activityData);
-        renderActivityStats(activityData);
-        renderAdvancedStats(activityData);
-        renderActivityMap(activityData, streamData);
-        renderSplitsCharts(activityData);
-        renderStreamCharts(initialSmoothedStreams, activityData, currentSmoothingLevel);
-        renderBestEfforts(activityData.best_efforts);
-        renderLaps(activityData.laps);
-        renderLapsChart(activityData.laps);
-        renderSegments(activityData.segment_efforts);
-        renderClassifierResults(classifyRun(activityData, streamData));
-        renderHrZoneDistributionChart(streamData);
-        renderHrMinMaxAreaChart(initialSmoothedStreams, currentSmoothingLevel);
-        renderPaceMinMaxAreaChart(initialSmoothedStreams, currentSmoothingLevel);
-
-        // Initialize dynamic chart controls
-        initDynamicChartControls();
-
-        // Initialize advanced analysis button
-        initAdvancedAnalysis();
-
-        if (DOM.streamCharts) DOM.streamCharts.style.display = '';
-
-    } catch (error) {
-        console.error('Failed to load activity page:', error);
-        if (DOM.details) DOM.details.innerHTML = `<p><strong>Error loading activity:</strong> ${error.message}</p>`;
+        const smoothingWindowForVariability = Math.max(1, Math.round(150 * (currentSmoothingLevel / 100)));
+        paceVariabilityStream = calculateVariability(paceStream, smoothingWindowForVariability);
     }
+
+    if (streamData && streamData.heartrate) {
+        const smoothingWindowForVariability = Math.max(1, Math.round(150 * (currentSmoothingLevel / 100)));
+        hrVariabilityStream = calculateVariability(streamData.heartrate.data, smoothingWindowForVariability);
+    }
+
+    // Calculate variability metrics from laps
+    let paceVariabilityLaps = '-';
+    let hrVariabilityLaps = '-';
+    const lapsData = activityData.laps && activityData.laps.length > 1
+        ? activityData.laps
+        : activityData.splits_metric;
+
+    if (lapsData && lapsData.length > 1) {
+        const paceDataForCV = lapsData.map(lap => lap.average_speed);
+        const hrDataForCV = lapsData.map(lap => lap.average_heartrate);
+        paceVariabilityLaps = calculateVariability(paceDataForCV, false);
+        hrVariabilityLaps = calculateVariability(hrDataForCV, false);
+    }
+
+    // Attach variability metrics to the renderer-local activity copy.
+    activityData.pace_variability_stream = paceVariabilityStream;
+    activityData.hr_variability_stream = hrVariabilityStream;
+    activityData.pace_variability_laps = paceVariabilityLaps;
+    activityData.hr_variability_laps = hrVariabilityLaps;
+
+    // Store original stream data BEFORE applying smoothing
+    originalStreamData = structuredClone(streamData);
+    lastActivityData = activityData;
+
+    // Populate original dynamic chart data (for secondary and background stats)
+    populateDynamicChartData(originalStreamData, true);
+
+    // Apply initial smoothing to streams
+    const initialSmoothedStreams = applySmoothingToStreams(originalStreamData, currentSmoothingLevel);
+
+    // Populate dynamic chart data with smoothed data (for primary stat)
+    populateDynamicChartData(initialSmoothedStreams, false);
+
+    // Render all sections
+    renderActivityInfo(activityData);
+    renderActivityStats(activityData);
+    renderAdvancedStats(activityData);
+    renderActivityMap(activityData, streamData);
+    renderSplitsCharts(activityData);
+    renderStreamCharts(initialSmoothedStreams, activityData, currentSmoothingLevel);
+    renderBestEfforts(activityData.best_efforts);
+    renderLaps(activityData.laps);
+    renderLapsChart(activityData.laps);
+    renderSegments(activityData.segment_efforts);
+    renderClassifierResults(classifyRun(activityData, streamData));
+    renderHrZoneDistributionChart(streamData, zones);
+    renderHrMinMaxAreaChart(initialSmoothedStreams, currentSmoothingLevel);
+    renderPaceMinMaxAreaChart(initialSmoothedStreams, currentSmoothingLevel);
+
+    // Initialize dynamic chart controls
+    initDynamicChartControls();
+
+    // Initialize advanced analysis with the already-loaded bundle data.
+    initAdvancedAnalysis(activityId, activity, streams);
+
+    if (DOM.streamCharts) DOM.streamCharts.style.display = '';
 }
 
 /**
  * Initialize advanced analysis button and handler
  */
-function initAdvancedAnalysis() {
+export function initAdvancedAnalysis(
+    activityId,
+    activity,
+    streams,
+    {
+        analyzerFactory = () => new AdvancedActivityAnalyzer(activityId, activity, streams),
+        uiFactory = content => new AnalysisResultsUI(content)
+    } = {}
+) {
     const btn = document.getElementById('advanced-analysis-btn');
     if (!btn) return;
 
@@ -1857,20 +1800,15 @@ function initAdvancedAnalysis() {
 
         try {
             // Create analyzer instance
-            const analyzer = new AdvancedActivityAnalyzer(activityId);
-
-            // Fetch data from API
-            await analyzer.fetchActivityData();
+            const analyzer = analyzerFactory();
 
             // Run analysis
             const results = await analyzer.analyze(mode);
-            console.log(`📊 Analysis results:`, results);
-
             // Get summary data
             const summary = analyzer.getSummary();
 
             // Create UI renderer
-            const ui = new AnalysisResultsUI(content);
+            const ui = uiFactory(content);
 
             // Render all components
             ui.renderSummary(summary);
@@ -1879,15 +1817,12 @@ function initAdvancedAnalysis() {
             ui.renderSegments(results.segments || {});
             ui.renderExports(analyzer);
 
-            console.log(`✅ Analysis results rendered successfully`);
-
             // Hide loading
             loading.style.display = 'none';
 
-        } catch (error) {
-            console.error('Analysis error:', error);
+        } catch {
             content.innerHTML = `<div style="padding: 15px; background-color: #fee; border: 1px solid #fcc; border-radius: 4px; color: #c00;">
-                <strong>❌ Analysis failed:</strong> ${error.message}
+                <strong>❌ Analysis failed.</strong> Please try again.
             </div>`;
             loading.style.display = 'none';
         } finally {
@@ -1896,6 +1831,3 @@ function initAdvancedAnalysis() {
         }
     });
 }
-
-// Initialize on DOM ready
-document.addEventListener('DOMContentLoaded', main);
