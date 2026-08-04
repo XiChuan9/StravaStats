@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Approved for implementation |
+| Status | In progress |
 | Milestone | M2 |
 | Base branch | `integration/v2` |
 | Exact base SHA | `84e5e0af23d133a4fdf1e4c0cf371b5b97b26110` |
@@ -573,8 +573,11 @@ Recommended semantics:
   never exposes IDB records, cursors, transactions, or store names.
 - `createBackupManifest()` reads metadata and record counts only; it does not read
   or export raw activity content.
-- `close()` is idempotent. `onversionchange` immediately closes and marks the
-  handle stale. No operation silently retries; explicit `initialize()` may reopen.
+- `close()` is an idempotent Promise-returning terminal barrier. It waits for an
+  in-flight open or upgrade to reach a platform terminal event and closes any
+  late connection before resolving. `onversionchange` immediately closes and
+  marks the handle stale. No operation silently retries; explicit `initialize()`
+  may reopen.
 
 This is a Canonical persistence adapter for a future Repository, not a new public
 Repository implementation. PR-05 should not modify `js/repository/index.js`, the
@@ -681,6 +684,10 @@ compatibility overwrite decisions, and archive streaming remain PR-21.
 ## A3 approved phase plan and allowlists
 
 ### B1: physical schema, connection, errors, and governance
+
+Final status: **Completed / PASS** on 2026-08-04 after independent B1, B1.1,
+and B1.2 review. This completion authorizes publication of the exact ten B1
+paths below; it does not authorize B2 or B3.
 
 Approved B1 writable paths:
 
@@ -894,9 +901,10 @@ corrections:
   an early timeout failure and leave a later schema mutation behind. A late
   connection result after cancellation is closed before the call settles.
 - No production or test helper exposes or calls `deleteDatabase`, store
-  `clear`, or any Legacy open/upgrade/readwrite path. Legacy preservation uses an
-  independently created synthetic sentinel and proves a V2 failure leaves its
-  version, stores, and record untouched.
+  `clear`, or any real Legacy open/upgrade/readwrite path. Legacy preservation
+  uses an independently created synthetic Legacy-like sentinel in the same
+  `IDBFactory` storage realm as V2 and proves both V2 success and failure leave
+  its version, stores, indexes, count, and record bytes untouched.
 - Migration status and data consistency use same-transaction structural
   bootstrap plus fault injection for the interruption/crash window and
   idempotent retry. PR-05 does not create a fake large-scale migration.
@@ -926,8 +934,8 @@ tests/storage/backup-manifest.test.js
 tests/storage/indexeddb-v2-browser-smoke.html
 ```
 
-B1 is authorized now and only the first ten paths may change in that phase. B2
-and B3 are not authorized by this phase gate. Package and lock files, Accepted
+B1 is completed and only the first ten paths changed in that phase. B2 and B3
+remain unauthorized. Package and lock files, Accepted
 ADRs, `docs/migrations/indexeddb-v2.md`, Repository/runtime/page/tab/analysis
 code, Feature Flag code, CI workflows, and every path outside the active
 allowlist are prohibited.
@@ -951,6 +959,104 @@ Rollback remains code-only: revert the implementation while Legacy continues as
 the default read path. Never downgrade, overwrite, clear, or delete V2 or Legacy
 data, and never copy V2 data into Legacy. A failed upgrade must abort and close;
 an explicit later initialization may retry the same additive registry step.
+
+## B1.1 independent-review correction record
+
+Final status: **Completed / PASS**. The control tower independently reproduced
+the initial B1 candidate and returned `REVISE` before any B1 file was staged,
+committed, pushed, or added to the Draft PR. B1.1 stayed inside B1 and corrected
+the three findings below without authorizing B2.
+
+The three root causes were:
+
+1. `close()` returned synchronously while an open/upgrade request could still
+   reach late success. Its best-effort abort could fail or arrive too late,
+   allowing mutation after the public result and, in the cancelled bootstrap
+   case, risking a version-1 database without the complete schema.
+2. The structural bootstrap registry existed, but there was no reusable internal
+   data-migration runner implementing persisted
+   `absent -> pending -> running -> completed`, safe failure, stale-running
+   interruption, retry counting, and idempotent crash-window recovery with real
+   IndexedDB transactions.
+3. The original synthetic Legacy sentinel used a different `IDBFactory` from V2,
+   so physical isolation made the preservation assertion true without proving
+   same-realm non-interference.
+
+B1.1 freezes these corrections:
+
+- `close()` returns a stable Promise. During an in-flight request, repeated
+  calls share the same Promise and wait for the request/upgrade transaction to
+  become terminal. Cancellation no longer aborts the versionchange transaction;
+  it permits either IndexedDB's atomic failure or a complete verified schema,
+  closes late success, then settles. If the platform never emits a terminal
+  event, `initialize()` and `close()` remain pending.
+- Bootstrap application is re-entrant inside the same versionchange transaction:
+  a transient operation failure can re-check/create only missing schema pieces,
+  while a persistent failure aborts atomically. Metadata and the bootstrap
+  migration use idempotent `put` operations inside that transaction.
+- The internal data-migration runner persists `pending`, commits `running` before
+  a real atomic data transaction, persists redacted `failed` state after abort,
+  maps stale `running` to `MIGRATION_INTERRUPTED`, increments `retryCount` on the
+  next attempt, and treats `completed`/`rolled_back` as terminal. It exposes no
+  new public index export, store, delete, clear, or compensating behavior.
+- The same-realm synthetic sentinel records version, store/keyPath, index
+  descriptors, count, and deterministic record bytes before and after V2 fresh
+  initialization plus a close-cancel failure.
+
+The exact B1.1 paths are:
+
+```text
+docs/tasks/pr-05-indexeddb-v2-schema.md
+js/storage/database.js
+js/storage/migrations.js
+tests/storage/indexeddb-v2-schema.test.js
+tests/storage/indexeddb-v2-boundaries.test.js
+```
+
+No package, lock, ADR, migration-design, Repository, runtime, page, analysis, CI,
+or B2 path changes are permitted. The first corrected focused run passed 21/21
+synthetic offline Node tests. Full B1.1 gate evidence is recorded below only
+after every command actually runs.
+
+## B1.2 descriptor and store-boundary correction record
+
+Final status: **Completed / PASS**. The control tower accepted all three B1.1
+findings, then returned B1 to `REVISE` for two narrower boundary defects. B1.2
+did not reopen the accepted lifecycle, schema, Legacy preservation, or database
+code and did not authorize B2.
+
+The two B1.2 root causes and corrections are:
+
+1. The JSON-safe migration summary clone assigned ordinary-object keys with
+   `result[key] = value`. An own enumerable data key named `__proto__` therefore
+   reached the inherited setter, changed the clone's prototype, and lost the own
+   data property. The clone now defines every string key with an own enumerable
+   data descriptor. `__proto__`, `constructor`, and ordinary keys retain their
+   values while the output remains an ordinary `Object.prototype` object; input
+   accessors are rejected by descriptor without execution or mutation.
+2. Migration `storeNames` previously excluded only `metadata` and `migrations`.
+   An unknown name could persist `pending` and `running` before the data
+   transaction rejected. Normalization now accepts only a native dense,
+   key-exact, duplicate-free array drawn from the six V2 Canonical stores.
+   Metadata, migrations, unknown stores, sparse/accessor/extra/symbol/custom
+   prototype arrays, and reflection-failing Proxies reject with
+   `MIGRATION_FAILED` before any database transaction or migration-state I/O.
+   Validation never invokes caller iterators or `forEach` methods.
+
+The exact B1.2 paths are:
+
+```text
+docs/tasks/pr-05-indexeddb-v2-schema.md
+js/storage/migrations.js
+tests/storage/indexeddb-v2-schema.test.js
+```
+
+`tests/storage/indexeddb-v2-boundaries.test.js`, `js/storage/database.js`, and
+every other previously accepted file remain unchanged by B1.2. Directed tests
+prove special summary keys survive input, persistence, and the frozen returned
+snapshot without prototype pollution; getter calls and caller mutation are zero.
+They also instrument the database transaction boundary for every rejected store
+array and prove zero migration or Canonical-store changes.
 
 ## Risks
 
@@ -1045,9 +1151,69 @@ an explicit later initialization may retry the same additive registry step.
 - A3 commit, push, Draft-state verification, and exact-head CI are recorded after
   their actual completion; a Not-run check is never recorded as Pass.
 
-### Active stop condition
+### B1 finalization stop condition
 
-After B1 local implementation and verification, stop with B1 changes unstaged
-and uncommitted. Do not update the PR body for B1 and do not enter B2. Draft PR
-#11 must remain open and Draft. Ready-for-review, merge, rebase, amend,
-force-push, branch deletion, and worktree cleanup remain unauthorized.
+The control tower's final B1/B1.1/B1.2 review result is `PASS`. B1 finalization
+may publish exactly the ten approved B1 paths with an ordinary commit, push, and
+Draft PR body update. After exact-head CI succeeds, stop with a clean worktree
+and local/upstream divergence `0/0`. Do not create or modify B2 files, mark the
+PR ready, merge, rebase, amend, force-push, delete the branch, or clean up the
+worktree.
+
+### B1.1 local correction evidence
+
+- Final independent result: **Completed / PASS**; the initial `REVISE` findings
+  and their three root causes remain recorded above as review history.
+- Corrected focused storage tests: 21 passed, 0 failed/cancelled/skipped/todo.
+- `npm ci`: PASS; 6 packages installed from the unchanged lockfile.
+- `npm run check:syntax`: PASS; 145 JavaScript files parsed.
+- `npm run check:privacy`: PASS.
+- `npm test`: PASS; 986 passed, 0 failed/cancelled/skipped/todo.
+- `git diff --check`: PASS after this evidence update.
+- Real browser IndexedDB/CDP, quota pressure, crash durability, Safari, Firefox,
+  mobile, workers, 5k/10k activities, and 200k-point performance: Not run in
+  B1.1; B3 owns the tracked browser harness.
+- Finalization scope remains exactly the ten B1 paths; B2 has not started.
+
+### B1.2 local correction evidence
+
+- Final independent result: **Completed / PASS**. The prior three findings and
+  the two B1.2 boundary corrections all passed control-tower re-verification.
+- Directed schema storage tests: PASS, 14 passed with special-key persistence,
+  getter-zero, caller-preservation, and rejected-store zero-I/O instrumentation.
+- Combined focused storage tests: PASS, 24 passed, 0
+  failed/cancelled/skipped/todo.
+- `npm ci`: PASS; 6 packages installed from the unchanged lockfile.
+- `npm run check:syntax`: PASS; 145 JavaScript files parsed.
+- `npm run check:privacy`: PASS.
+- `npm test`: PASS; 989 passed, 0 failed/cancelled/skipped/todo.
+- `git diff --check`: PASS after this evidence update.
+- Real browser IndexedDB/CDP and the B3 quota, durability, cross-browser, scale,
+  and performance matrix remain Not run.
+- Finalization must keep the PR open and Draft and publish no path outside B1.
+
+### B1 final acceptance evidence
+
+- Overall B1 status: **Completed / PASS**; PR-05 overall status remains
+  `In progress` because B2 and B3 are not complete or authorized.
+- Final contract: `close()` is an asynchronous idempotent terminal barrier;
+  in-flight open/upgrade requests settle before it resolves, and any late
+  connection is closed before return.
+- Migration foundation: exact v1 structural bootstrap plus persisted internal
+  data-migration states, redacted failure/interruption, retry counting, and
+  idempotent real-transaction crash-window tests.
+- Preservation evidence: one synthetic Legacy-like sentinel shares the same
+  `IDBFactory` realm with V2 and retains version, stores, indexes, count, and
+  record bytes across V2 success and close-cancel failure.
+- Descriptor/store evidence: migration summaries preserve own `__proto__` and
+  `constructor` data keys without getter execution or prototype pollution;
+  invalid or non-Canonical store arrays fail before any database transaction.
+- Exact final paths: the ten B1 paths listed in the B1 allowlist, with no B2,
+  package, ADR, migration-design, Repository, runtime, page, analysis, or CI
+  workflow path.
+- Final local gates before publication: `npm ci` PASS (6 packages), syntax PASS
+  (145 files), privacy PASS, focused storage PASS (24 tests), full suite PASS
+  (989 tests), and `git diff --check` PASS.
+- Real Browser/CDP IndexedDB, quota pressure, crash durability, Safari, Firefox,
+  mobile, workers, 5k/10k activities, and 200k-point performance remain Not run
+  and owned by B3.
