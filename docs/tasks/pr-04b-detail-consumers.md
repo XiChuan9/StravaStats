@@ -29,6 +29,7 @@
 | A3.2 | Completed / Accepted |
 | A3.3 | Completed / Accepted |
 | A3.4 | Completed / Accepted |
+| A3.5 | Completed / Accepted |
 | B1.1 | Completed / PASS |
 | B1.2 | Completed / PASS |
 | B1.3 | Completed / PASS |
@@ -37,6 +38,9 @@
 | B2.1 | Completed / PASS |
 | B3 | Completed / PASS |
 | B3.1 | Completed / PASS |
+| B3.2 | Completed / PASS |
+| B3 Finalization | REVISE / Correction Finalization in progress |
+| B3 Finalization correction | Completed locally / Awaiting exact-head CI |
 | Final Review | Pending |
 
 ## Goal
@@ -46,7 +50,9 @@
 - 避免页面和 Advanced Analysis 重复获取同一活动数据。
 - 保持现有详情输出、算法、DOM、CSS、路由和视觉不变。
 - A0–A3.4 已完成调查、决策冻结和记账；B1–B3.1 已完成并通过控制塔验收。
-- PR-04B 已进入 In review；Final Review 保持 Pending。
+- A3.5 已接受 exact-head tracked-harness 边界纠偏；B3.2 已完成并通过控制塔验收。
+- PR-04B 保持 In review；B3 Correction Finalization 已在本地完成并等待 exact-head CI，
+  Final Review 保持 Pending。
 
 ## Why now
 
@@ -1297,3 +1303,49 @@ PR-04C, or PR-05 work was performed.
   B3 Finalization commit and requires no history rewrite or storage cleanup.
 - PR #9 must remain OPEN and Draft. Ready, merge, Final Review closure, PR-04C, and PR-05 are not
   authorized.
+
+### A3.5 / B3.2 exact-head tracked-harness boundary correction
+
+- A3.5 is **Completed / Accepted**. Control tower independently accepted B3.2 as
+  **Completed / PASS**. B3.1 and the B3 product/browser gates remain **Completed / PASS**.
+  B3 Correction Finalization is **Completed locally / awaiting exact-head CI**; PR-04B remains
+  **In review** and Final Review remains Pending.
+- The first B3 Finalization exact-head pull-request CI was
+  [Run 30895711714](https://github.com/XiChuan9/StravaStats/actions/runs/30895711714),
+  [Job 91947976729](https://github.com/XiChuan9/StravaStats/actions/runs/30895711714/job/91947976729),
+  at head `658423804d10b068e3aa8f6ef441f432a1532297`. Install, syntax, and privacy passed;
+  tests finished `964/965` with one failure and zero cancelled, skipped, or todo tests.
+- The only failure was the finalized browser-harness lifecycle assertion. During local B3 work,
+  `tests/consumers/detail-browser-smoke.html` was an approved untracked file, so the original
+  assertion froze `trackedPaths.has(browserHarnessPath)` as `false`. The Finalization commit made
+  that evidence file a normal Git-index entry, while the stale assertion still required `false`.
+  This is not a product, Browser/CDP, privacy, or migration regression.
+- B3.2 freezes the final committed-state contract: the harness remains in the fixed B3.1 allowlist,
+  must exist, and must be tracked at stage zero. The expected tracked state is the explicit constant
+  `true`; it is not selected dynamically and has no CI/environment bypass. The fixed protected-tree
+  digest excludes the harness, so its tracked lifecycle does not change the protected digest.
+- The B3.2 modification scope is exactly this Task Brief and
+  `tests/consumers/detail-boundaries.test.js`. The B3.1 allowlist remains ten paths and the PR-04B
+  allowlist remains twenty-two paths. No product module, browser harness content, package,
+  Repository, Connector, Service Worker, workflow, or additional test path is authorized.
+- The phase baseline remains `779d4ac5ff4c4cd29787553034bb5d69cce337d3`; protected entries remain
+  208 and the fixed SHA-256 remains
+  `2a472f3955d31a2933f634f19f9b74b0cfb0701ae2461e6e0f68ca5bf8860ee6`. Stage-zero validation,
+  NUL parsing, code-unit path sorting, canonical mode/blob/path records, and the protected-blob,
+  eleventh-B3.1-path, and twenty-third-PR-path negative checks remain unchanged.
+- Final local verification passed: `npm ci` added 6 packages, audited 7 packages, and found 0
+  vulnerabilities; syntax passed 137 files; privacy passed; the boundary suite passed `24/24`;
+  consumer plus boundary passed `262/262`; Repository passed `253/253`; and the full suite passed
+  `965/965`. Fail, cancelled, skipped, and todo counts were all zero, and `git diff --check` passed.
+  The protected-blob mutation, simulated eleventh B3.1 path, and simulated twenty-third PR path
+  each continued to fail their negative assertion as required. The harness was directly confirmed
+  as a Git-index tracked path, and the worktree remained limited to the exact two B3.2 paths.
+- Privacy and migration impact are none. Browser/CDP is not rerun because no product or harness
+  content changes; the accepted `9/9` evidence remains applicable. Rollback is limited to these two
+  unstaged paths and requires no history rewrite, storage cleanup, or user-data action.
+- Control tower authorized the B3.2 Correction Finalization as an ordinary two-file follow-up
+  commit. This authorization does not change the fixed parent, baseline, digest, entry count,
+  ten-path B3.1 allowlist, or twenty-two-path PR allowlist. The correction commit and exact-head CI
+  are post-commit evidence and must not be pre-recorded as successful.
+- PR #9 must remain OPEN and Draft. Final Review closure, Ready, merge, PR-04C, and PR-05 remain
+  unauthorized.

@@ -547,7 +547,7 @@ test('B1 adds no session handoff and quick-start remains outside production entr
     }
 });
 
-test('protected pre-B3.1 implementation remains under the fixed tree digest', async () => {
+test('protected pre-B3.1 implementation stays frozen and the finalized browser harness is tracked', async () => {
     const trackedPaths = assertProtectedTreeDigest();
     for (const relativePath of B1_IMPLEMENTATION_PATHS) {
         assert.equal(B31_ALLOWED_PATHS.has(relativePath), false, relativePath);
@@ -556,7 +556,11 @@ test('protected pre-B3.1 implementation remains under the fixed tree digest', as
 
     const browserHarnessPath = 'tests/consumers/detail-browser-smoke.html';
     assert.equal(B31_ALLOWED_PATHS.has(browserHarnessPath), true);
-    assert.equal(trackedPaths.has(browserHarnessPath), false);
+    assert.equal(
+        trackedPaths.has(browserHarnessPath),
+        true,
+        'The approved B3 browser evidence must be tracked after Finalization.'
+    );
     const browserHarness = path.join(projectRoot, browserHarnessPath);
     await access(browserHarness);
 });
