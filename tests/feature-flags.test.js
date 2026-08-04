@@ -14,12 +14,12 @@ test('feature flags default to the legacy repository with local v2 paths disable
 test('feature flag overrides are explicit and validated', () => {
   assert.deepEqual(
     resolveFeatureFlags({
-      dataRepositoryMode: 'v2',
+      dataRepositoryMode: 'shadow',
       localImportEnabled: true,
       canonicalShadowWriteEnabled: true,
     }),
     {
-      dataRepositoryMode: 'v2',
+      dataRepositoryMode: 'shadow',
       localImportEnabled: true,
       canonicalShadowWriteEnabled: true,
     },
@@ -32,6 +32,51 @@ test('feature flag overrides are explicit and validated', () => {
     }),
     DEFAULT_FEATURE_FLAGS,
   );
+});
+
+test('shadow writing requires the exact shadow mode and strict boolean gate', () => {
+  for (const dataRepositoryMode of ['legacy', 'canonical', 'v2', 'unknown']) {
+    const resolved = resolveFeatureFlags({
+      dataRepositoryMode,
+      canonicalShadowWriteEnabled: true,
+    });
+    assert.equal(resolved.canonicalShadowWriteEnabled, false);
+    assert.equal(
+      resolved.dataRepositoryMode,
+      ['legacy', 'canonical'].includes(dataRepositoryMode)
+        ? dataRepositoryMode
+        : 'legacy',
+    );
+  }
+  assert.equal(
+    resolveFeatureFlags({
+      dataRepositoryMode: 'shadow',
+      canonicalShadowWriteEnabled: 'true',
+    }).canonicalShadowWriteEnabled,
+    false,
+  );
+});
+
+test('unsafe feature flag descriptors and Proxies fail closed without getters', () => {
+  let getterCalls = 0;
+  const accessor = {};
+  Object.defineProperty(accessor, 'dataRepositoryMode', {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      return 'shadow';
+    },
+  });
+  const revoked = Proxy.revocable({
+    dataRepositoryMode: 'shadow',
+    canonicalShadowWriteEnabled: true,
+  }, {});
+  revoked.revoke();
+
+  assert.equal(resolveFeatureFlags(accessor), DEFAULT_FEATURE_FLAGS);
+  assert.equal(resolveFeatureFlags(revoked.proxy), DEFAULT_FEATURE_FLAGS);
+  assert.equal(resolveFeatureFlags(Object.create(null)), DEFAULT_FEATURE_FLAGS);
+  assert.equal(getterCalls, 0);
 });
 
 test('runtime feature flags do not mutate the defaults', () => {

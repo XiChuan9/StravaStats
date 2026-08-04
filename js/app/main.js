@@ -28,6 +28,8 @@ import {
 import { preprocessActivities } from '../shared/preprocessing/index.js';
 import { isDemoMode } from '../demo/index.js';
 import { applyServiceWorkerPolicy } from './service-worker-policy.js';
+import { getFeatureFlags } from './feature-flags.js';
+import { getApplicationShadowWriter } from '../shadow/index.js';
 
 export const APP_SESSION_MODE = Object.freeze({
     DEMO: 'demo',
@@ -288,18 +290,32 @@ export function createSummaryRepositorySession({
         sessionMode,
         mode: 'legacy'
     });
+    const shadowWriter = sessionMode === APP_SESSION_MODE.REAL
+        ? getApplicationShadowWriter(getFeatureFlags())
+        : null;
 
     return Object.freeze({
         sessionMode,
         async listActivities({ refresh = false } = {}) {
             if (typeof refresh !== 'boolean') throw safeOperationalError();
             const value = await repository.listActivities({ refresh });
-            return adaptRepositoryResult(value, {
+            const adapted = adaptRepositoryResult(value, {
                 operation: 'listActivities',
                 dataShape: 'array',
                 allowPartial: false,
                 warningObserver
             });
+            if (
+                shadowWriter
+                && adapted.source === REPOSITORY_SOURCE.NETWORK
+            ) {
+                try {
+                    shadowWriter.enqueueLegacyActivities(adapted.data);
+                } catch {
+                    // Shadow observation must never change Legacy success.
+                }
+            }
+            return adapted;
         },
         async getActivity(activityId) {
             if (typeof activityId !== 'string' || activityId.trim().length === 0) {

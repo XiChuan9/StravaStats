@@ -263,6 +263,9 @@ js/app/feature-flags.js
 js/app/main.js
 tests/feature-flags.test.js
 tests/shadow/shadow-app-integration.test.js
+tests/consumers/summary-consumers.test.js
+tests/consumers/run-plus-consumers.test.js
+tests/legacy/demo-isolation.test.js
 ```
 
 ### B3: real-browser native ESM/CDP evidence
@@ -273,10 +276,25 @@ Additional allowed path:
 tests/shadow/shadow-writer-browser-smoke.html
 ```
 
-The cumulative maximum allowlist is exactly 12 paths. Any thirteenth path must
+The cumulative maximum allowlist is exactly 15 paths. Any sixteenth path must
 first be added here with a concrete necessity proof before it is modified.
 Allowlist guards must use this literal list; they must not derive scope from the
 current diff, Git status, dynamic directory scans, or skip rules.
+
+The thirteenth path was formally added before modification because the existing
+summary-consumer suite compiles the marked `app/main.js` boundary with explicit
+dependency injection. B2 adds two imported shadow composition dependencies inside
+that boundary; the established regression suite must inject them to continue
+proving Legacy return identity, Demo isolation, and zero provider fallback. A new
+parallel test cannot replace that existing contract without weakening coverage.
+
+The fourteenth and fifteenth paths were formally added before modification after
+the first full-suite B2 run demonstrated that the existing Run Plus consumer and
+Demo-isolation suites independently compile the same marked `main.js` boundary.
+Their four failures were missing injected shadow composition symbols, not product
+behavior failures. Both paths may only receive the same default no-shadow
+dependency injection used by the established boundary compiler; their Run Plus,
+Demo, Legacy cache, and provider-isolation assertions must remain unchanged.
 
 ## Prohibited scope
 

@@ -15,7 +15,14 @@ const APP_SESSION_MODE = Object.freeze({
 const projectRoot = new URL('../../', import.meta.url);
 const mainSource = await readFile(new URL('js/app/main.js', projectRoot), 'utf8');
 
-function compileBoundary(source) {
+function compileBoundary(source, {
+    getFeatureFlags = () => Object.freeze({
+        dataRepositoryMode: 'legacy',
+        localImportEnabled: false,
+        canonicalShadowWriteEnabled: false
+    }),
+    getApplicationShadowWriter = () => null
+} = {}) {
     const startMarker = '// PR04A_B1_SUMMARY_BOUNDARY_START';
     const endMarker = '// PR04A_B1_SUMMARY_BOUNDARY_END';
     const start = source.indexOf(startMarker);
@@ -31,6 +38,8 @@ function compileBoundary(source) {
         'REPOSITORY_SOURCE',
         'REPOSITORY_WARNING_CODE',
         'APP_SESSION_MODE',
+        'getFeatureFlags',
+        'getApplicationShadowWriter',
         `"use strict";${body};return {
             readPlainDataRecord,
             readDenseDataArray,
@@ -54,7 +63,9 @@ function compileBoundary(source) {
         },
         REPOSITORY_SOURCE,
         REPOSITORY_WARNING_CODE,
-        APP_SESSION_MODE
+        APP_SESSION_MODE,
+        getFeatureFlags,
+        getApplicationShadowWriter
     );
 }
 
