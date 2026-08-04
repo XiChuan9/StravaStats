@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Awaiting decision |
+| Status | Approved for implementation |
 | Milestone | M2 |
 | Base branch | `integration/v2` |
 | Exact base SHA | `84e5e0af23d133a4fdf1e4c0cf371b5b97b26110` |
@@ -28,9 +28,9 @@ and backup-manifest metadata foundation, without changing any page read source o
 opening the Legacy `strava-dashboard-cache` database for write, upgrade, clear, or
 delete operations.
 
-This brief is currently an investigation contract only. Implementation is not
-authorized until the control tower accepts the A3 decision package and changes
-the status to `Approved for implementation`.
+The control tower accepted the A3 decision package on 2026-08-04. Implementation
+is authorized only through the frozen phase allowlists below. Each phase remains
+independently gated; A3 authorizes B1, not B2 or B3.
 
 ## Why now
 
@@ -70,9 +70,9 @@ confirmed:
 - CI uses Node 24 and runs install, syntax, privacy, and the full Node test suite;
 - the A0 local baseline passed 965 tests and left the tracked tree clean.
 
-## Decisions required before implementation
+## Decisions frozen for implementation
 
-The A2 result must present a control-tower decision package covering:
+The A3 control-tower decision freezes:
 
 - exact public API and adapter ownership;
 - physical schema version, stores, key paths, and indexes;
@@ -84,7 +84,8 @@ The A2 result must present a control-tower decision package covering:
 - rollback boundaries and every unresolved contract question.
 
 No implementation decision is accepted merely because it appears in a Proposed
-document.
+document. The definitive A3 decision record below overrides the earlier
+recommendations wherever it adds a correction or tighter boundary.
 
 ## In scope
 
@@ -95,7 +96,7 @@ document.
 - A Draft PR targeting `integration/v2`.
 - A precise candidate implementation plan for later control-tower approval.
 
-### Candidate implementation scope after explicit A3 approval
+### Approved implementation scope within the active phase allowlist
 
 - Physical schema for the independent `strava-stats-v2` database.
 - Storage connection lifecycle and version-change handling.
@@ -178,7 +179,7 @@ smallest API from accepted contracts and immediate PR-05 tests, and must keep:
 - [x] Proposal-only decisions are separated from accepted facts.
 - [x] Candidate allowlists, phase plan, tests, rollback, and open decisions are
       ready for control-tower review.
-- [x] Status is `Awaiting decision`; implementation has not started.
+- [x] A2 ended with `Status = Awaiting decision`; implementation had not started.
 
 ### Candidate implementation acceptance after A3
 
@@ -398,10 +399,11 @@ Canonical contracts <- V2 storage <- future Canonical Repository <- consumers
 Contracts must never import storage, storage must not import pages/tabs/analysis,
 and current consumers must continue to select the Legacy Repository.
 
-## A3 recommended decision package
+## A2 recommended decision package accepted by A3
 
-Everything in this section is an A2 recommendation for control-tower decision.
-It is not authorization to implement.
+The control tower accepted the six recommendations in this section on
+2026-08-04, subject to the tighter corrections in the definitive A3 decision
+record below. Where wording differs, the definitive record controls.
 
 ### Recommended physical schema version and record encoding
 
@@ -676,11 +678,11 @@ compatibility overwrite decisions, and archive streaming remain PR-21.
 | Shadow write, parity, page read selection | defer to PR-06 and cutover PRs | explicitly out of PR-05 |
 | Full backup export/restore and cleanup | defer to PR-21 | only manifest foundation is authorized |
 
-## A3 recommended phase plan and allowlists
+## A3 approved phase plan and allowlists
 
 ### B1: physical schema, connection, errors, and governance
 
-Recommended writable paths:
+Approved B1 writable paths:
 
 ```text
 docs/tasks/pr-05-indexeddb-v2-schema.md
@@ -714,7 +716,7 @@ git diff --check
 
 ### B2: atomic Canonical adapter, queries, and manifest foundation
 
-Additional recommended writable paths:
+Additional B2 writable paths, not authorized until its later phase gate:
 
 ```text
 js/storage/transaction.js
@@ -733,7 +735,7 @@ node --test tests/storage/*.test.js
 
 ### B3: real-browser storage lifecycle and final gates
 
-Additional recommended writable path:
+Additional B3 writable path, not authorized until its later phase gate:
 
 ```text
 tests/storage/indexeddb-v2-browser-smoke.html
@@ -843,23 +845,112 @@ and feasible; the A2 probe is not PR-05 browser test evidence.
   last committed V2 version and Legacy database; do not downgrade IndexedDB in
   place, delete either database, or copy V2 data into Legacy.
 
-## Questions requiring control-tower decision
+## Definitive A3 control-tower decision record
 
-1. Approve physical version 1 with the eight-store minimal schema, deferring the
-   other Proposed stores and indexes until their logical contracts exist?
-2. Approve the PR-05 “Repository Adapter” interpretation as the storage-facing
-   `createCanonicalStore` seam, with no change to the frozen public Repository,
-   Factory, sources, projection, or consumers?
-3. Approve the exact public storage API, no-overwrite idempotency rule, migration
-   state machine, error codes, and metadata/manifest contracts above?
-4. Approve plain-array per-series encoding for physical v1 and defer chunk/Blob/
-   compression to an additive performance-led migration?
-5. Approve a required B3 tracked browser harness while accepting that real quota
-   pressure, crash durability, Safari, Firefox, mobile, workers, 5k/10k activity,
-   and 200k-point performance remain explicitly Not run in PR-05?
-6. Approve the 17-path cumulative candidate allowlist and the new
-   `js/storage/AGENTS.md`, with no package, ADR, migration-design-doc,
-   Repository, runtime, Feature Flag, page, analysis, or CI workflow changes?
+The control tower approved all six A2 questions on 2026-08-04. The physical
+database is version `1`, named exactly `strava-stats-v2`, with only the eight
+stores and indexes listed above. All other Proposed stores and indexes are
+deferred. A StreamSeries is one plain-array structured-cloneable record per
+series in v1; Blob, TypedArray, chunking, and compression require later browser
+performance evidence and an additive migration.
+
+“Repository Adapter” means only the storage-facing `createCanonicalStore` seam
+in PR-05. The existing Repository entry's five exports, Repository seven-method
+contract, Factory modes, sources, projections, consumers, Feature Flag, pages,
+tabs, and analysis remain unchanged. The public storage API, private transaction
+boundary, migration state machine, safe error codes, database metadata, and
+metadata-only backup manifest described above are approved with these mandatory
+corrections:
+
+- `V2_SCHEMA` is a deeply frozen JSON-safe physical descriptor. It contains no
+  IndexedDB handle, database, transaction, request, cursor, function, mutable
+  `Set`, or mutable `Map`.
+- “Already present” means getter-free strict JSON-safe structural equality. It
+  never uses `JSON.stringify` or property enumeration order as semantic
+  equivalence, and it preserves absent, `null`, and `0`. If any existing
+  primary-key record differs, `putBundle` aborts the whole transaction with
+  `CONFLICT`; no partial record is committed.
+- `putBundle` first calls `validateImportedActivityBundle`, then creates a
+  detached validated snapshot. Accessors, Proxies or reflection failure, cycles,
+  symbols, special objects, and other non-JSON-safe values fail closed before a
+  readwrite transaction opens. Neither `putBundle` nor `getBundle` modifies,
+  sorts, or freezes caller input.
+- `getBundle` returns a deterministic storage read projection: laps and events
+  by accepted numeric `index`, stream series by opaque `streamType`, and sources
+  and devices by opaque string ID. This does not modify persisted objects and
+  does not claim to preserve original caller array order. `bundle.schemaVersion`
+  is reconstructed only from explicit, validated, mutually consistent persisted
+  fields. Bundle warnings and all six VersionMetadata fields are preserved
+  losslessly.
+- `listActivities` accepts only an omitted filter or one of the ten Accepted
+  `sportCategory` values; `limit` defaults to `100` and must be an integer from
+  `1` through `200`; `direction` defaults to `desc` and accepts only `asc` or
+  `desc`. Equal `startTimeUtc` values use opaque string ID code-unit order as the
+  stable tie-breaker; IDs are never parsed or compared numerically.
+- `blocked`, open lifecycle, cancellation, `versionchange`, and late success
+  follow the PR-01 cancelled-request principle. A public function never returns
+  while a background request can still mutate schema. If a platform request
+  never reaches a terminal event it may remain pending; code must not manufacture
+  an early timeout failure and leave a later schema mutation behind. A late
+  connection result after cancellation is closed before the call settles.
+- No production or test helper exposes or calls `deleteDatabase`, store
+  `clear`, or any Legacy open/upgrade/readwrite path. Legacy preservation uses an
+  independently created synthetic sentinel and proves a V2 failure leaves its
+  version, stores, and record untouched.
+- Migration status and data consistency use same-transaction structural
+  bootstrap plus fault injection for the interruption/crash window and
+  idempotent retry. PR-05 does not create a fake large-scale migration.
+- `StorageError` and every public result are immutable and detached. They retain
+  no raw cause, DOMException message, key, activity ID, payload, location,
+  credential, or secret.
+
+The approved cumulative allowlist contains exactly these 17 paths:
+
+```text
+docs/tasks/pr-05-indexeddb-v2-schema.md
+js/storage/AGENTS.md
+js/storage/index.js
+js/storage/constants.js
+js/storage/errors.js
+js/storage/schema.js
+js/storage/database.js
+js/storage/migrations.js
+tests/storage/indexeddb-v2-schema.test.js
+tests/storage/indexeddb-v2-boundaries.test.js
+js/storage/transaction.js
+js/storage/canonical-store.js
+js/storage/backup-manifest.js
+tests/storage/indexeddb-v2-transactions.test.js
+tests/storage/canonical-store.test.js
+tests/storage/backup-manifest.test.js
+tests/storage/indexeddb-v2-browser-smoke.html
+```
+
+B1 is authorized now and only the first ten paths may change in that phase. B2
+and B3 are not authorized by this phase gate. Package and lock files, Accepted
+ADRs, `docs/migrations/indexeddb-v2.md`, Repository/runtime/page/tab/analysis
+code, Feature Flag code, CI workflows, and every path outside the active
+allowlist are prohibited.
+
+The B1 public entry exposes the six approved exports and its frozen factory
+skeleton exposes all six approved method names. Only `initialize()` and `close()`
+have storage behavior in B1. `putBundle`, `getBundle`, `listActivities`, and
+`createBackupManifest` fail closed with the stable `UNAVAILABLE` code and perform
+zero IndexedDB I/O until B2 authorizes their implementation. B1 creates the
+physical schema, verifies repeated initialization, closes on `versionchange`,
+and establishes the bootstrap migration record atomically. It does not implement
+Canonical writes, queries, list pagination, or a manifest.
+
+B3 must include a tracked loopback, disposable-profile, page-origin Browser/CDP
+synthetic harness. Node `fake-indexeddb` evidence is never described as browser
+evidence. Real quota pressure, crash durability, Safari, Firefox, mobile,
+workers, 5k/10k activity scale, and 200k-point performance remain explicitly
+Not run in PR-05.
+
+Rollback remains code-only: revert the implementation while Legacy continues as
+the default read path. Never downgrade, overwrite, clear, or delete V2 or Legacy
+data, and never copy V2 data into Legacy. A failed upgrade must abort and close;
+an explicit later initialization may retry the same additive registry step.
 
 ## Risks
 
@@ -943,8 +1034,20 @@ and feasible; the A2 probe is not PR-05 browser test evidence.
 - A2 docs-only commit, push, Draft-state verification, and its exact-head CI are
   recorded in the control-tower completion report after publication.
 
-### Stop condition
+### A3 approval and phase gate
 
-After A2 this brief must say `Status = Awaiting decision`, the Draft PR must remain
-open and Draft, and implementation must still be unstarted. Ready-for-review,
-merge, rebase, amend, force-push, and branch/worktree cleanup are not authorized.
+- Control-tower decision: all six questions approved subject to the mandatory
+  corrections in the definitive A3 record.
+- Status: `Approved for implementation`.
+- Active phase: B1 only; implementation had not started at the A3 docs commit.
+- A3 changed path: only `docs/tasks/pr-05-indexeddb-v2-schema.md`.
+- A3 local docs gate: `git diff --check` must pass before publication.
+- A3 commit, push, Draft-state verification, and exact-head CI are recorded after
+  their actual completion; a Not-run check is never recorded as Pass.
+
+### Active stop condition
+
+After B1 local implementation and verification, stop with B1 changes unstaged
+and uncommitted. Do not update the PR body for B1 and do not enter B2. Draft PR
+#11 must remain open and Draft. Ready-for-review, merge, rebase, amend,
+force-push, branch deletion, and worktree cleanup remain unauthorized.
