@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | In review |
+| Status | Ready for review |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/detail-consumers` |
 | Worktree | `/Users/wangchuanliang/Documents/StravaStats-worktrees/detail-consumers` |
@@ -15,7 +15,7 @@
 | Related ADRs | ADR-0003，以及与 Activity/Streams 合同相关的 ADR-0001/0002 |
 | Dependencies | PR-00 至 PR-04A 已合并 |
 | Starting baseline | `66cdc2c457457a93bec46fdf98c5a508c96770c9` |
-| Pull request | [Draft PR #9](https://github.com/XiChuan9/StravaStats/pull/9) |
+| Pull request | [PR #9](https://github.com/XiChuan9/StravaStats/pull/9) |
 
 ### Phase status
 
@@ -39,9 +39,10 @@
 | B3 | Completed / PASS |
 | B3.1 | Completed / PASS |
 | B3.2 | Completed / PASS |
-| B3 Finalization | REVISE / Correction Finalization in progress |
-| B3 Finalization correction | Completed locally / Awaiting exact-head CI |
-| Final Review | Pending |
+| B3 Finalization | Completed / PASS |
+| B3 Finalization correction | Completed / PASS |
+| Final Review | Accepted / PASS |
+| Final Review Closure | Completed |
 
 ## Goal
 
@@ -51,8 +52,9 @@
 - 保持现有详情输出、算法、DOM、CSS、路由和视觉不变。
 - A0–A3.4 已完成调查、决策冻结和记账；B1–B3.1 已完成并通过控制塔验收。
 - A3.5 已接受 exact-head tracked-harness 边界纠偏；B3.2 已完成并通过控制塔验收。
-- PR-04B 保持 In review；B3 Correction Finalization 已在本地完成并等待 exact-head CI，
-  Final Review 保持 Pending。
+- B3 Finalization 及 correction 已完成并通过 exact-head CI；Final Review 为 Accepted / PASS，
+  Findings 为 No actionable findings。
+- PR-04B Final Review Closure 已完成，状态为 Ready for review；这不代表授权 merge。
 
 ## Why now
 
@@ -1282,7 +1284,7 @@ PR-04C, or PR-05 work was performed.
 
 - Control tower independently reverified B3.1 as **Completed / PASS** and accepted B3 as
   **Completed / PASS**. This acceptance supersedes the historical blocked and awaiting-review
-  states above. PR-04B is now **In review** and Final Review remains **Pending**.
+  states above. The later Final Review verdict is **Accepted / PASS** with no actionable findings.
 - Independent verification passed consumer plus boundary tests `262/262`, the full suite
   `965/965`, syntax for 137 files, repository privacy, and `git diff --check`; all skipped,
   cancelled, and todo counts were zero. Browser/CDP passed all `9/9` gates. After evidence capture,
@@ -1301,15 +1303,16 @@ PR-04C, or PR-05 work was performed.
 - Privacy and migration impact remain none: only deterministic synthetic data was used; no user or
   Legacy data was read, migrated, deleted, or cleaned. Rollback remains an ordinary revert of the
   B3 Finalization commit and requires no history rewrite or storage cleanup.
-- PR #9 must remain OPEN and Draft. Ready, merge, Final Review closure, PR-04C, and PR-05 are not
-  authorized.
+- The historical pre-closure constraint required PR #9 to remain Draft. Final Review Closure now
+  permits Ready for review after its own exact-head CI succeeds; merge, PR-04C, and PR-05 remain
+  unauthorized.
 
 ### A3.5 / B3.2 exact-head tracked-harness boundary correction
 
 - A3.5 is **Completed / Accepted**. Control tower independently accepted B3.2 as
   **Completed / PASS**. B3.1 and the B3 product/browser gates remain **Completed / PASS**.
-  B3 Correction Finalization is **Completed locally / awaiting exact-head CI**; PR-04B remains
-  **In review** and Final Review remains Pending.
+  B3 Correction Finalization is **Completed / PASS** after its exact-head CI; the later Final Review
+  is **Accepted / PASS** with no actionable findings.
 - The first B3 Finalization exact-head pull-request CI was
   [Run 30895711714](https://github.com/XiChuan9/StravaStats/actions/runs/30895711714),
   [Job 91947976729](https://github.com/XiChuan9/StravaStats/actions/runs/30895711714/job/91947976729),
@@ -1345,7 +1348,44 @@ PR-04C, or PR-05 work was performed.
   unstaged paths and requires no history rewrite, storage cleanup, or user-data action.
 - Control tower authorized the B3.2 Correction Finalization as an ordinary two-file follow-up
   commit. This authorization does not change the fixed parent, baseline, digest, entry count,
-  ten-path B3.1 allowlist, or twenty-two-path PR allowlist. The correction commit and exact-head CI
-  are post-commit evidence and must not be pre-recorded as successful.
-- PR #9 must remain OPEN and Draft. Final Review closure, Ready, merge, PR-04C, and PR-05 remain
+  ten-path B3.1 allowlist, or twenty-two-path PR allowlist. Correction commit
+  `2d7b34a41aadd4ead6bed31c825975a374a6734b` passed exact-head CI
+  [Run 30897668780](https://github.com/XiChuan9/StravaStats/actions/runs/30897668780),
+  [Job 91954339885](https://github.com/XiChuan9/StravaStats/actions/runs/30897668780/job/91954339885),
+  with syntax 137 files, privacy PASS, and full tests `965/965`.
+- The historical Draft-only constraint is resolved by the accepted Final Review Closure. Ready for
+  review remains conditional on the Closure commit's exact-head CI; merge, PR-04C, and PR-05 remain
   unauthorized.
+
+### Final Review Closure
+
+- Final Review verdict: **Accepted / PASS**. Findings: **No actionable findings**. Final Review
+  Closure is **Completed**, and the Task Brief status is **Ready for review**.
+- Reviewed base is `66cdc2c457457a93bec46fdf98c5a508c96770c9`. Final reviewed implementation head and the
+  B3.2 correction commit are both `2d7b34a41aadd4ead6bed31c825975a374a6734b`.
+- B3.2 correction exact-head CI is
+  [Run 30897668780](https://github.com/XiChuan9/StravaStats/actions/runs/30897668780),
+  [Job 91954339885](https://github.com/XiChuan9/StravaStats/actions/runs/30897668780/job/91954339885).
+  Its CI head exactly matched the correction commit. Install, syntax, privacy, and tests succeeded;
+  syntax covered 137 files and full tests passed `965/965` with zero failures, cancelled, skipped,
+  or todo tests.
+- Final accepted local evidence is syntax 137 files, privacy PASS, consumer plus boundary
+  `262/262`, Repository `253/253`, full `965/965`, and `git diff --check` PASS. Browser/CDP remains
+  accepted at `9/9`; a governance-only Closure does not require rerunning it.
+- PR scope remains the fixed twenty-two-file allowlist. The B3.1 phase guard remains rooted at
+  `779d4ac5ff4c4cd29787553034bb5d69cce337d3`, protects 208 stage-zero entries, and freezes SHA-256
+  `2a472f3955d31a2933f634f19f9b74b0cfb0701ae2461e6e0f68ca5bf8860ee6`.
+- Historical failed [Run 30895711714](https://github.com/XiChuan9/StravaStats/actions/runs/30895711714)
+  is retained only as resolved lifecycle-correction evidence. It is not a current blocker and is
+  superseded by the successful B3.2 correction CI above.
+- Privacy impact is none: deterministic synthetic/offline evidence only; no real Token, account,
+  activity, GPS, HR, power, private fixture, provider data, or user browser profile. Migration
+  impact is none: no storage/key, IndexedDB, Canonical, cache, Service Worker, Legacy, or user-data
+  migration/cleanup. Rollback remains ordinary per-phase commit reverts without history rewrite or
+  data deletion.
+- Manual DevTools UI, pixel-perfect visual comparison, real account/Token/provider data, the user's
+  browser profile, and production Service Worker remain `Not run`. CDP-equivalent browser execution
+  and screenshots did run and passed.
+- Ready for review does not authorize merge. `integration/v2` remains unchanged at the reviewed
+  base. PR-04C and PR-05 have not started. The Closure commit and its exact-head CI are post-commit
+  operational evidence to be recorded in PR #9; no success is pre-recorded here.
