@@ -276,6 +276,8 @@ function compileSummaryBoundary(source) {
         'REPOSITORY_SOURCE',
         'REPOSITORY_WARNING_CODE',
         'APP_SESSION_MODE',
+        'getFeatureFlags',
+        'getApplicationShadowWriter',
         `"use strict";${boundarySource};return {
             establishSummaryRepositorySession,
             requireSummaryRepositorySession,
@@ -295,7 +297,9 @@ function compileSummaryBoundary(source) {
         },
         REPOSITORY_SOURCE,
         REPOSITORY_WARNING_CODE,
-        Object.freeze({ DEMO: 'demo', REAL: 'real' })
+        Object.freeze({ DEMO: 'demo', REAL: 'real' }),
+        () => Object.freeze({ dataRepositoryMode: 'legacy' }),
+        () => null
     );
 }
 
