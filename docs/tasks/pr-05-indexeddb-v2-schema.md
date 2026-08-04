@@ -4,19 +4,19 @@
 
 | Field | Value |
 | --- | --- |
-| Status | In review |
-| Final review | Pending |
+| Status | Ready for review |
+| Final review | Accepted / PASS — No actionable findings |
 | Milestone | M2 |
 | Base branch | `integration/v2` |
 | Exact base SHA | `84e5e0af23d133a4fdf1e4c0cf371b5b97b26110` |
 | Feature branch | `codex/v2/storage` |
 | Worktree | `/Users/wangchuanliang/.codex/worktrees/09cc/StravaStats` |
 | Owner | XiChuan9 / Codex execution |
-| Reviewer | Control tower decision; independent implementation review required later |
+| Reviewer | Control tower independent Final Review — Accepted / PASS |
 | Related PRD | [StravaStats v2 PRD](../product/stravastats-v2-prd.md) |
 | Related ADRs | [ADR-0001](../architecture/adr/0001-canonical-activity.md), [ADR-0002](../architecture/adr/0002-stream-model.md), [ADR-0003](../architecture/adr/0003-repository-boundary.md), [ADR-0004](../architecture/adr/0004-import-pipeline.md), [ADR-0005](../architecture/adr/0005-analysis-versioning.md), [ADR-0006](../architecture/adr/0006-source-provenance.md) |
 | Dependencies | PR-00 through PR-04C merged into `integration/v2` at the exact base SHA |
-| Pull request | [Draft PR #11](https://github.com/XiChuan9/StravaStats/pull/11) |
+| Pull request | [PR #11](https://github.com/XiChuan9/StravaStats/pull/11) |
 | Created | 2026-08-04 |
 | Last updated | 2026-08-04 |
 
@@ -32,8 +32,9 @@ delete operations.
 The control tower accepted the A3 decision package and subsequently authorized
 and independently accepted B1, B2, B3, and their corrective subphases on
 2026-08-04. The implementation remains bounded by the frozen phase allowlists
-below. PR-05 is now in review with Final Review Pending; it remains Draft and is
-not authorized for Ready, merge, or cleanup.
+below. The independent Final Review returned Accepted / PASS with no actionable
+findings. PR-05 is Ready for review; this status does not authorize merge or
+cleanup, and M3 has not started.
 
 ## Why now
 
@@ -1378,8 +1379,8 @@ workflow paths remain prohibited and unchanged. No B3 harness exists in B2.
 ## A3.1 / B2.1 correction record
 
 Status: **Completed / PASS.** Independent control-tower review accepted both
-findings and authorized B2 Finalization. A3.1 and B2.1 are complete; B3 has not
-started.
+findings and authorized B2 Finalization. A3.1 and B2.1 were complete at that
+phase boundary; B3 had not yet started.
 
 ### A3.1 five-field envelope decision
 
@@ -1441,8 +1442,9 @@ tests/storage/canonical-store.test.js
 ## B3 local Browser/CDP implementation record
 
 Status: **Completed / PASS.** The control tower independently accepted A3.2,
-B3, and B3.1. PR-05 is **In review** with **Final Review Pending**. Draft PR #11
-must remain OPEN/Draft and is not authorized for Ready, merge, or cleanup.
+B3, and B3.1. The later independent Final Review also returned Accepted / PASS
+with no actionable findings. PR-05 is **Ready for review**; merge and cleanup
+remain unauthorized.
 
 Independent review accepted the storage lifecycle coverage but rejected the
 cross-reload environment proof. The initial harness reinitialized `metrics` and
@@ -1588,3 +1590,48 @@ Real quota pressure, browser/process crash durability, Safari, Firefox, mobile,
 workers, 5k/10k activities, 200k-point streams, production Service Worker, user
 profiles, real provider network, real credentials, and real athlete data remain
 explicitly **Not run**.
+
+## Final Review Closure
+
+Status: **Accepted / PASS — No actionable findings.** The control tower's
+independent Final Review accepted the complete PR-05 scope. The phase ledger is
+final:
+
+| Phase | Final status |
+| --- | --- |
+| A3 | Completed / Accepted |
+| A3.1 | Completed / Accepted |
+| A3.2 | Completed / Accepted |
+| B1 | Completed / PASS |
+| B1.1 | Completed / PASS |
+| B1.2 | Completed / PASS |
+| B2 | Completed / PASS |
+| B2.1 | Completed / PASS |
+| B3 | Completed / PASS |
+| B3.1 | Completed / PASS |
+
+The accepted B3 publication commit is
+`9cf404833abc45b88a1529eb9aabbd666d768582`. Exact-head GitHub Actions CI
+Run `30925269051`, Job `92045857146`, completed successfully for that commit.
+Final accepted evidence remains Browser/CDP `19/19` PASS, storage tests `51/51`,
+full tests `1016/1016`, syntax `151` files, and passing privacy, diff, and scope
+audits. The cumulative PR inventory is exactly the 17 approved paths listed in
+this Task Brief, with no package, Accepted ADR, migration-design, Repository,
+runtime, page/tab/analysis, Feature Flag, or CI workflow expansion.
+
+Privacy and data-safety restrictions remain unchanged: all fixtures and browser
+records are deterministic and synthetic; no real token, account, athlete,
+location, heart-rate, power, or private fixture is used or retained. The
+migration remains additive, idempotent, observable, retry-safe, and isolated to
+`strava-stats-v2`; neither V2 nor Legacy data may be downgraded, overwritten,
+cleared, copied into Legacy, or deleted. Rollback remains code-only: close V2
+and revert PR-05 while preserving both databases and the Legacy default path.
+
+Real quota pressure, browser/process crash durability, Safari, Firefox, mobile,
+workers, 5k/10k activities, 200k-point streams, production Service Worker, user
+profiles, real provider network, real credentials, and real athlete data remain
+explicitly **Not run**.
+
+Ready for review is a review-state transition only. It does not authorize merge,
+modification of `integration/v2`, branch/worktree cleanup, or any M3 work. M3
+has not started.
