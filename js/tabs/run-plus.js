@@ -1,5 +1,4 @@
 import * as utils from './utils.js';
-import { getCachedGears } from './api.js';
 import { renderRunAnalysisTab } from './run-analysis.js';
 
 const PACE_FAST_LIMIT_SEC = 150;
@@ -14,6 +13,12 @@ const NSM_SESSION_INPUTS_STORAGE_KEY = 'run_plus_nsm_session_inputs_v1';
 const NSM_TESTS_STORAGE_KEY = 'run_plus_nsm_tests_v1';
 const NSM_INTERVAL_ANALYSIS_STORAGE_KEY = 'run_plus_nsm_interval_analysis_v1';
 const NSM_INTERVAL_ANALYZER_VERSION = 4;
+const RUN_PLUS_OPTION_KEYS = new Set([
+    'gears',
+    'getActivity',
+    'getStreams',
+    'onFiltersChange'
+]);
 const IMPACT_ATL_DAYS = 7;
 const IMPACT_CTL_DAYS = 42;
 const NSM_THRESHOLD_RE = /threshold|tempo|subt|sub-threshold|nsm|umbral|terskel| cruise /i;
@@ -68,6 +73,106 @@ const NSM_TEMPLATE_DEFINITIONS = {
     '3x12': { reps: 3, workSec: 720, recoverySec: 180, family: '3x12' }
 };
 let runPlusRollingWindow = 26;
+
+function readPlainDataRecord(value, allowedKeys = null) {
+    try {
+        if (
+            value === null
+            || typeof value !== 'object'
+            || Array.isArray(value)
+            || Object.getPrototypeOf(value) !== Object.prototype
+        ) {
+            return null;
+        }
+        const keys = Reflect.ownKeys(value);
+        if (keys.some(key => (
+            typeof key !== 'string'
+            || (allowedKeys !== null && !allowedKeys.has(key))
+        ))) {
+            return null;
+        }
+        const result = {};
+        for (const key of keys) {
+            const descriptor = Object.getOwnPropertyDescriptor(value, key);
+            if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) {
+                return null;
+            }
+            Object.defineProperty(result, key, {
+                value: descriptor.value,
+                enumerable: true,
+                configurable: true,
+                writable: true
+            });
+        }
+        return result;
+    } catch {
+        return null;
+    }
+}
+
+function readDenseDataArray(value) {
+    try {
+        if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) {
+            return null;
+        }
+        const keys = Reflect.ownKeys(value);
+        const lengthDescriptor = Object.getOwnPropertyDescriptor(value, 'length');
+        if (
+            !lengthDescriptor
+            || !Object.hasOwn(lengthDescriptor, 'value')
+            || !Number.isSafeInteger(lengthDescriptor.value)
+            || lengthDescriptor.value < 0
+            || keys.length !== lengthDescriptor.value + 1
+        ) {
+            return null;
+        }
+        const values = [];
+        for (let index = 0; index < lengthDescriptor.value; index += 1) {
+            const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+            if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) {
+                return null;
+            }
+            values.push(descriptor.value);
+        }
+        return values;
+    } catch {
+        return null;
+    }
+}
+
+function normalizeRunPlusOptions(value) {
+    const options = readPlainDataRecord(value, RUN_PLUS_OPTION_KEYS);
+    if (options === null) {
+        return Object.freeze({
+            gears: Object.freeze([]),
+            getActivity: null,
+            getStreams: null,
+            onFiltersChange: null
+        });
+    }
+    const gears = Object.hasOwn(options, 'gears')
+        ? readDenseDataArray(options.gears)
+        : [];
+    if (
+        gears === null
+        || (Object.hasOwn(options, 'getActivity') && typeof options.getActivity !== 'function')
+        || (Object.hasOwn(options, 'getStreams') && typeof options.getStreams !== 'function')
+        || (Object.hasOwn(options, 'onFiltersChange') && typeof options.onFiltersChange !== 'function')
+    ) {
+        return Object.freeze({
+            gears: Object.freeze([]),
+            getActivity: null,
+            getStreams: null,
+            onFiltersChange: null
+        });
+    }
+    return Object.freeze({
+        gears: Object.freeze([...gears]),
+        getActivity: options.getActivity || null,
+        getStreams: options.getStreams || null,
+        onFiltersChange: options.onFiltersChange || null
+    });
+}
 
 const FIELD_GROUPS = [
     { key: 'core', label: 'Core activity fields', fields: ['ID', 'DT', 'TYPE', 'DIST', 'MT', 'PACE'], tier: 'MVP' },
@@ -2133,7 +2238,7 @@ function buildImpactLoadModel(runs, gearNameMap, capacityInputs = readCapacityIn
     };
 }
 
-function buildModel(allActivities, dateFilterFrom, dateFilterTo, gearFilter = 'all') {
+function buildModel(allActivities, dateFilterFrom, dateFilterTo, gearFilter = 'all', gears = []) {
     const filteredActivities = utils.filterActivitiesByDate(allActivities || [], dateFilterFrom, dateFilterTo);
     const runs = filteredActivities
         .filter(isRun)
@@ -2165,7 +2270,7 @@ function buildModel(allActivities, dateFilterFrom, dateFilterTo, gearFilter = 'a
     const maxRun = sorted.reduce((best, run) => km(run) > km(best || {}) ? run : best, null);
     const maxElevationRun = sorted.reduce((best, run) => (Number(run.total_elevation_gain) || 0) > (Number(best?.total_elevation_gain) || 0) ? run : best, null);
     const bestRace = raceLike[0] || null;
-    const impactLoad = buildImpactLoadModel(sorted, getGearNameMap(), readCapacityInputs());
+    const impactLoad = buildImpactLoadModel(sorted, getGearNameMap(gears), readCapacityInputs());
 
     return {
         runs: sorted,
@@ -2577,17 +2682,21 @@ function metricAvailability(metric, quality) {
     return ['Ready', 'run-plus-pill--good'];
 }
 
-function getGearNameMap() {
-    const cached = getCachedGears();
-    const gears = cached || JSON.parse(localStorage.getItem('strava_gears') || '[]');
-    return new Map(gears.map(gear => {
-        const label = gear.name || [gear.brand_name, gear.model_name].filter(Boolean).join(' ') || gear.id;
-        return [gear.id, label];
-    }));
+function getGearNameMap(gears) {
+    const entries = [];
+    for (const gear of gears) {
+        const values = readPlainDataRecord(gear);
+        if (values === null || !values.id) continue;
+        const label = values.name
+            || [values.brand_name, values.model_name].filter(Boolean).join(' ')
+            || values.id;
+        entries.push([values.id, label]);
+    }
+    return new Map(entries);
 }
 
-function getRunPlusGearOptions(allActivities) {
-    const gearNameMap = getGearNameMap();
+function getRunPlusGearOptions(allActivities, gears) {
+    const gearNameMap = getGearNameMap(gears);
     const gearIds = [...new Set(
         (allActivities || [])
             .filter(isRun)
@@ -2610,8 +2719,8 @@ function getRunPlusYears(allActivities) {
     )].sort((a, b) => b.localeCompare(a));
 }
 
-function renderRunPlusFilters(allActivities, dateFilterFrom, dateFilterTo, gearFilter) {
-    const gearOptions = getRunPlusGearOptions(allActivities);
+function renderRunPlusFilters(allActivities, dateFilterFrom, dateFilterTo, gearFilter, gears) {
+    const gearOptions = getRunPlusGearOptions(allActivities, gears);
     const selectedGear = gearOptions.some(option => option.value === gearFilter) ? gearFilter : 'all';
     const years = getRunPlusYears(allActivities);
     const activeYear = dateFilterFrom && dateFilterTo && dateFilterFrom.slice(5) === '01-01' && dateFilterTo.slice(5) === '12-31'
@@ -5215,75 +5324,51 @@ function downloadRunPlusText(filename, content, type) {
     URL.revokeObjectURL(url);
 }
 
-export const RUN_PLUS_REMOTE_ERROR = Object.freeze({
-    DISABLED: 'RUN_PLUS_REMOTE_DISABLED',
-    REQUEST_FAILED: 'RUN_PLUS_REMOTE_REQUEST_FAILED',
-    RESPONSE_INVALID: 'RUN_PLUS_REMOTE_RESPONSE_INVALID'
-});
-
-export class RunPlusRemoteError extends Error {
-    constructor(code, { httpStatus = null } = {}) {
-        super('Run Plus remote enrichment is unavailable.');
-        this.name = 'RunPlusRemoteError';
-        this.code = code;
-        this.httpStatus = httpStatus;
-    }
+function nsmRepositoryActivityId(row) {
+    const rowValues = readPlainDataRecord(row);
+    const runValues = rowValues === null ? null : readPlainDataRecord(rowValues.run);
+    const id = runValues?.id;
+    if (typeof id === 'string' && id.trim().length > 0) return id;
+    if (Number.isSafeInteger(id) && id >= 0) return String(id);
+    throw new Error('Activity data is unavailable for interval analysis.');
 }
 
-export async function requestRunPlusRemote(url, {
-    allowRemoteStrava = false,
-    storage = globalThis.localStorage,
-    fetchImpl = globalThis.fetch,
-    btoaImpl = globalThis.btoa
-} = {}) {
-    if (allowRemoteStrava !== true) {
-        throw new RunPlusRemoteError(RUN_PLUS_REMOTE_ERROR.DISABLED);
+async function loadNsmActivityDetails(activityId, options) {
+    if (typeof options.getActivity !== 'function') {
+        throw new Error('Activity data is unavailable for interval analysis.');
     }
-
-    const tokenString = storage.getItem('strava_tokens');
-    const authPayload = tokenString ? btoaImpl(tokenString) : null;
-    const response = await fetchImpl(url, {
-        headers: authPayload ? { Authorization: `Bearer ${authPayload}` } : {}
-    });
-    if (!response.ok) {
-        throw new RunPlusRemoteError(RUN_PLUS_REMOTE_ERROR.REQUEST_FAILED, {
-            httpStatus: response.status
-        });
-    }
-
-    let result;
+    let activity;
     try {
-        result = await response.json();
+        activity = await options.getActivity(activityId);
     } catch {
-        throw new RunPlusRemoteError(RUN_PLUS_REMOTE_ERROR.RESPONSE_INVALID, {
-            httpStatus: response.status
-        });
+        throw new Error('Activity data is unavailable for interval analysis.');
     }
-    if (result.tokens) {
-        storage.setItem('strava_tokens', JSON.stringify(result.tokens));
+    const values = readPlainDataRecord(activity);
+    if (values === null) {
+        throw new Error('Activity data is unavailable for interval analysis.');
     }
-    return result;
+    return values;
 }
 
-async function fetchNsmActivityDetails(activityId, remoteOptions) {
-    const result = await requestRunPlusRemote(
-        `/api/strava-activity?id=${encodeURIComponent(activityId)}`,
-        remoteOptions
-    );
-    return result.activity;
+async function loadNsmActivityStreams(activityId, options) {
+    if (typeof options.getStreams !== 'function') {
+        throw new Error('Stream data is unavailable for interval analysis.');
+    }
+    let streams;
+    try {
+        streams = await options.getStreams(activityId);
+    } catch {
+        throw new Error('Stream data is unavailable for interval analysis.');
+    }
+    const values = readPlainDataRecord(streams);
+    if (values === null) {
+        throw new Error('Stream data is unavailable for interval analysis.');
+    }
+    return values;
 }
 
-async function fetchNsmActivityStreams(activityId, remoteOptions) {
-    const streamTypes = 'time,distance,velocity_smooth,heartrate,cadence,altitude';
-    const result = await requestRunPlusRemote(
-        `/api/strava-streams?id=${encodeURIComponent(activityId)}&type=${encodeURIComponent(streamTypes)}`,
-        remoteOptions
-    );
-    return result.streams;
-}
-
-async function analyzeNsmIntervals(row, remoteOptions) {
-    if (!row?.run?.id) throw new Error('Activity ID is required for interval analysis.');
+async function analyzeNsmIntervals(row, options) {
+    const activityId = nsmRepositoryActivityId(row);
     if (hasNsmManualWorkOverride(row.input)) return buildNsmManualIntervalAnalysis(row.run, row.input, row.tag);
 
     const localLapAnalysis = analyzeNsmLaps(row.run, row.run, row.input);
@@ -5291,10 +5376,7 @@ async function analyzeNsmIntervals(row, remoteOptions) {
 
     let detailError = null;
     try {
-        const activity = await fetchNsmActivityDetails(
-            row.run.id,
-            remoteOptions
-        );
+        const activity = await loadNsmActivityDetails(activityId, options);
         const lapAnalysis = analyzeNsmLaps(activity, row.run, row.input);
         if (lapAnalysis) return lapAnalysis;
     } catch (err) {
@@ -5309,8 +5391,8 @@ async function analyzeNsmIntervals(row, remoteOptions) {
     };
 }
 
-async function analyzeNsmDeepHr(row, remoteOptions) {
-    if (!row?.run?.id) throw new Error('Activity ID is required for deep HR analysis.');
+async function analyzeNsmDeepHr(row, options) {
+    const activityId = nsmRepositoryActivityId(row);
 
     const analyzeStreamsForRow = streams => analyzeNsmStreamsAgainstStructure(streams, row.run, row.input, row.intervalAnalysis)
         || analyzeNsmStreams(streams, row.run, row.input);
@@ -5318,10 +5400,7 @@ async function analyzeNsmDeepHr(row, remoteOptions) {
     const localStreamAnalysis = localStreams ? analyzeStreamsForRow(localStreams) : null;
     if (localStreamAnalysis) return mergeNsmHrOverlay(row.intervalAnalysis, localStreamAnalysis, row.run, row.input, row.tag);
 
-    const streams = await fetchNsmActivityStreams(
-        row.run.id,
-        remoteOptions
-    );
+    const streams = await loadNsmActivityStreams(activityId, options);
     const streamAnalysis = analyzeStreamsForRow(streams);
     if (streamAnalysis) return mergeNsmHrOverlay(row.intervalAnalysis, streamAnalysis, row.run, row.input, row.tag);
     throw new Error('No usable stream HR points matched the interval structure. Keep the laps proxy or check Strava streams for this activity.');
@@ -5376,9 +5455,7 @@ function bindNsmRegistry(root, model, allActivities, dateFilterFrom, dateFilterT
         button.disabled = true;
         button.textContent = loadingLabel;
         try {
-            let analysis = await analyzer(row, {
-                allowRemoteStrava: options?.allowRemoteStrava === true
-            });
+            let analysis = await analyzer(row, options);
             if (button.dataset.nsmAnalyzeIntervals) {
                 if (analysis.source === 'activity_average' && row.intervalAnalysis?.source === 'streams') {
                     analysis = {
@@ -5392,7 +5469,7 @@ function bindNsmRegistry(root, model, allActivities, dateFilterFrom, dateFilterT
             saveNsmIntervalAnalysis(activityId, row.run, analysis);
             renderRunPlusTab(allActivities, dateFilterFrom, dateFilterTo, gearFilter, options);
         } catch (_err) {
-            console.warn('NSM remote analysis unavailable');
+            console.warn('NSM repository analysis unavailable');
             button.disabled = false;
             button.textContent = failedLabel;
             button.title = 'Unable to analyze intervals';
@@ -5511,6 +5588,7 @@ function publishRunPlusNsm(root, nsm) {
 // ─── Main render ────────────────────────────────────────
 
 export function renderRunPlusTab(allActivities, dateFilterFrom, dateFilterTo, gearFilter = 'all', options = {}) {
+    options = normalizeRunPlusOptions(options);
     const root = document.getElementById('run-plus-tab');
     if (!root) return;
 
@@ -5520,7 +5598,13 @@ export function renderRunPlusTab(allActivities, dateFilterFrom, dateFilterTo, ge
         ? nsmSettings.currentBlockStart
         : dateFilterFrom;
     const effectiveDateFilterTo = dateFilterTo;
-    const model = buildModel(allActivities, effectiveDateFilterFrom, effectiveDateFilterTo, gearFilter);
+    const model = buildModel(
+        allActivities,
+        effectiveDateFilterFrom,
+        effectiveDateFilterTo,
+        gearFilter,
+        options.gears
+    );
     model.diagnostics = buildDiagnostics(model);
     model.nsm = buildNsmModel(model);
 
@@ -5533,7 +5617,7 @@ export function renderRunPlusTab(allActivities, dateFilterFrom, dateFilterTo, ge
         publishRunPlusNsm(root, model.nsm);
         root.innerHTML = `
             <div class="run-plus-shell">
-                ${renderRunPlusFilters(allActivities, effectiveDateFilterFrom, effectiveDateFilterTo, gearFilter)}
+                ${renderRunPlusFilters(allActivities, effectiveDateFilterFrom, effectiveDateFilterTo, gearFilter, options.gears)}
                 ${renderRunPlusSubviewNav(subview)}
                 <section class="run-plus-diagnosis-overview">
                     <h2>${subview === 'nsm' ? 'NSM Training Control' : 'Run Plus'}</h2>
@@ -5554,7 +5638,7 @@ export function renderRunPlusTab(allActivities, dateFilterFrom, dateFilterTo, ge
         destroyNsmSubtCharts();
         root.innerHTML = `
             <div class="run-plus-shell">
-                ${renderRunPlusFilters(allActivities, effectiveDateFilterFrom, effectiveDateFilterTo, gearFilter)}
+                ${renderRunPlusFilters(allActivities, effectiveDateFilterFrom, effectiveDateFilterTo, gearFilter, options.gears)}
                 ${renderRunPlusSubviewNav(subview)}
                 ${renderNsmPage(model)}
             </div>
@@ -5591,7 +5675,7 @@ export function renderRunPlusTab(allActivities, dateFilterFrom, dateFilterTo, ge
 
     root.innerHTML = `
         <div class="run-plus-shell">
-            ${renderRunPlusFilters(allActivities, dateFilterFrom, dateFilterTo, gearFilter)}
+            ${renderRunPlusFilters(allActivities, dateFilterFrom, dateFilterTo, gearFilter, options.gears)}
             ${renderRunPlusSubviewNav(subview)}
             ${renderDiagnosisOverview(model)}
             ${renderStatCards(model)}
