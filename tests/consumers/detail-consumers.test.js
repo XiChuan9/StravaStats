@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import vm from 'node:vm';
 
 import {
     activityDetailPage,
@@ -1351,6 +1352,270 @@ test('two Advanced button clicks rerun local UI analysis with zero provider or R
     assert.equal(forbiddenAccesses, 0);
     assert.equal(button.disabled, false);
     assert.equal(button.textContent, '🔬 Analyze Activity');
+});
+
+test('default Advanced adapter keeps five static sections and binds exports to the current analyzer', async () => {
+    class SyntheticElement {
+        constructor(tagName = 'div') {
+            this.tagName = tagName;
+            this.children = [];
+            this.dataset = {};
+            this.style = {};
+            this.listeners = new Map();
+            this.attributes = new Map();
+            this.disabled = false;
+            this.textContent = '';
+            this._innerHTML = '';
+            this._exportButtons = [];
+        }
+
+        append(...children) {
+            this.children.push(...children);
+        }
+
+        addEventListener(name, listener) {
+            this.listeners.set(name, listener);
+        }
+
+        removeAttribute(name) {
+            this.attributes.delete(name);
+        }
+
+        querySelectorAll(selector) {
+            return selector === '.export-btn' ? this._exportButtons : [];
+        }
+
+        set innerHTML(value) {
+            this._innerHTML = value;
+            this.children = [];
+            this._exportButtons = value.includes('class="export-btn"')
+                ? ['gpx', 'csv', 'json'].map(() => {
+                    const button = new SyntheticElement('button');
+                    button.attributes.set('onclick', 'legacy-global-handler');
+                    return button;
+                })
+                : [];
+        }
+
+        get innerHTML() {
+            return this._innerHTML;
+        }
+    }
+
+    const priorDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+    const guardedNames = ['fetch', 'localStorage', 'btoa', 'indexedDB'];
+    const originals = new Map(guardedNames.map(name => [
+        name,
+        Object.getOwnPropertyDescriptor(globalThis, name)
+    ]));
+    const button = new SyntheticElement('button');
+    const mode = { value: 'normal' };
+    const container = new SyntheticElement();
+    const loading = new SyntheticElement();
+    const content = new SyntheticElement();
+    const elements = new Map([
+        ['advanced-analysis-btn', button],
+        ['analysis-mode', mode],
+        ['analysis-results-container', container],
+        ['analysis-loading', loading],
+        ['analysis-content', content]
+    ]);
+    const exportCalls = [];
+    let analyzeCalls = 0;
+    let forbiddenAccesses = 0;
+    const analyzer = {
+        async analyze() {
+            analyzeCalls += 1;
+            return { insights: [], climbs: [], segments: {} };
+        },
+        getSummary() {
+            return {
+                sport: 'Run',
+                distance: 10,
+                duration: '1:00:00',
+                moving_time: '59:00',
+                elevation_gain: 100,
+                avg_pace: { minutes: 5, seconds: 30 },
+                avg_speed: 0,
+                max_speed: 18,
+                avg_hr: 150,
+                max_hr: 175,
+                insights: ['Synthetic insight']
+            };
+        },
+        getClimbDetails() {
+            return [];
+        },
+        getSegmentBreakdown() {
+            return { distance: [], terrain: [] };
+        },
+        downloadExport(format) {
+            exportCalls.push(format);
+        }
+    };
+
+    try {
+        Object.defineProperty(globalThis, 'document', {
+            configurable: true,
+            value: {
+                createElement: tagName => new SyntheticElement(tagName),
+                getElementById: id => elements.get(id) ?? null
+            }
+        });
+        for (const name of guardedNames) {
+            Object.defineProperty(globalThis, name, {
+                configurable: true,
+                get() {
+                    forbiddenAccesses += 1;
+                    throw new Error('Advanced provider I/O is forbidden');
+                }
+            });
+        }
+        const { initAdvancedAnalysis } = await import(
+            `../../js/pages/activity/activity.js?advanced-default=${Date.now()}`
+        );
+        initAdvancedAnalysis('advanced-default-id', {}, {}, {
+            analyzerFactory: () => analyzer
+        });
+        const click = button.listeners.get('click');
+        await click();
+
+        assert.deepEqual(
+            content.children.map(child => child.dataset.analysisSection),
+            ['summary', 'insights', 'climbs', 'segments', 'exports']
+        );
+        for (const child of content.children) {
+            assert.notEqual(child.innerHTML, '');
+        }
+        const exportSection = content.children[4];
+        assert.equal(exportSection._exportButtons.length, 3);
+        for (const exportButton of exportSection._exportButtons) {
+            assert.equal(exportButton.attributes.has('onclick'), false);
+            assert.equal(exportButton.onclick, null);
+            exportButton.listeners.get('click')({ preventDefault() {} });
+        }
+        assert.deepEqual(exportCalls, ['gpx', 'csv', 'json']);
+
+        mode.value = 'advanced';
+        await click();
+        assert.equal(content.children.length, 5);
+    } finally {
+        if (priorDocument) Object.defineProperty(globalThis, 'document', priorDocument);
+        else delete globalThis.document;
+        for (const [name, descriptor] of originals) {
+            if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+            else delete globalThis[name];
+        }
+    }
+
+    assert.equal(analyzeCalls, 2);
+    assert.equal(forbiddenAccesses, 0);
+});
+
+test('Swim polyline decoder renders valid routes and fails malformed input closed', async () => {
+    const priorDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+    try {
+        Object.defineProperty(globalThis, 'document', {
+            configurable: true,
+            value: { getElementById: () => null }
+        });
+        const { decodePolyline } = await import(
+            `../../js/pages/swim/swim.js?polyline=${Date.now()}`
+        );
+        assert.deepEqual(decodePolyline('_p~iF~ps|U_ulLnnqC_mqNvxq`@'), [
+            [38.5, -120.2],
+            [40.7, -120.95],
+            [43.252, -126.453]
+        ]);
+        for (const value of [undefined, null, '', '_', '\u0000', '~~~~~~~']) {
+            assert.deepEqual(decodePolyline(value), []);
+        }
+    } finally {
+        if (priorDocument) Object.defineProperty(globalThis, 'document', priorDocument);
+        else delete globalThis.document;
+    }
+});
+
+test('real Run and Bike classifiers consume injected zones without provider storage or input mutation', async () => {
+    const activity = {
+        distance: 10000,
+        moving_time: 3000,
+        elapsed_time: 3100,
+        total_elevation_gain: 120,
+        average_speed: 3.333,
+        average_heartrate: 150,
+        suffer_score: 120,
+        sport_type: 'Run',
+        name: 'Synthetic Tempo'
+    };
+    const streams = {
+        distance: { data: [0, 2500, 5000, 7500, 10000] },
+        time: { data: [0, 750, 1500, 2250, 3000] },
+        heartrate: { data: [120, 140, 150, 165, 175] },
+        velocity_smooth: { data: [3.2, 3.3, 3.4, 3.3, 3.2] }
+    };
+    const zones = {
+        heart_rate: {
+            zones: [
+                { min: 0, max: 120 },
+                { min: 120, max: 140 },
+                { min: 140, max: 155 },
+                { min: 155, max: 170 },
+                { min: 170, max: -1 }
+            ]
+        }
+    };
+    const before = structuredClone({ activity, streams, zones });
+    let storageCalls = 0;
+    const sandbox = {
+        window: {},
+        localStorage: {
+            getItem() {
+                storageCalls += 1;
+                throw new Error('provider storage must not be read');
+            },
+            setItem() {
+                storageCalls += 1;
+                throw new Error('provider storage must not be written');
+            },
+            removeItem() {
+                storageCalls += 1;
+                throw new Error('provider storage must not be removed');
+            }
+        }
+    };
+    const outputs = {};
+    for (const [fileName, globalName] of [
+        ['classifyRun.js', 'classifyRun'],
+        ['classifyBike.js', 'classifyBike']
+    ]) {
+        const script = await readFile(new URL(fileName, projectRoot), 'utf8');
+        vm.runInNewContext(script, sandbox, { filename: fileName });
+        const classifier = sandbox.window[globalName];
+        outputs[globalName] = classifier(activity, streams, zones);
+        assert.doesNotThrow(() => classifier(activity, streams, null));
+        assert.doesNotThrow(() => classifier(activity, streams, { heart_rate: {} }));
+        assert.equal(Array.isArray(outputs[globalName].top), true);
+        assert.equal(Array.isArray(outputs[globalName].all), true);
+        const scores = Array.from(outputs[globalName].all, result => result.abs);
+        assert.deepEqual(scores, [...scores].sort((a, b) => b - a));
+    }
+
+    assert.deepEqual(
+        JSON.parse(JSON.stringify(outputs.classifyRun.top)),
+        [
+            { type: 'Tempo Run', abs: 375, pct: 69.4 },
+            { type: 'Long Run', abs: 95, pct: 17.6 },
+            { type: 'Race', abs: 55, pct: 10.2 },
+            { type: 'Easy/Recovery Run', abs: 15, pct: 2.8 }
+        ]
+    );
+    assert.deepEqual(
+        JSON.parse(JSON.stringify(outputs.classifyBike.top)),
+        [{ type: 'Mountain Bike', abs: 150, pct: 115.4 }]
+    );
+    assert.equal(storageCalls, 0);
+    assert.deepEqual({ activity, streams, zones }, before);
 });
 
 test('four renderers degrade safely on empty streams without mutating bundle payloads', async () => {

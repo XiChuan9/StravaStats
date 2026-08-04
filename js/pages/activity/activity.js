@@ -1754,7 +1754,7 @@ export async function renderActivityPage({ activity, streams, zones, athlete, ac
     renderLaps(activityData.laps);
     renderLapsChart(activityData.laps);
     renderSegments(activityData.segment_efforts);
-    renderClassifierResults(classifyRun(activityData, streamData));
+    renderClassifierResults(classifyRun(activityData, streamData, zones));
     renderHrZoneDistributionChart(streamData, zones);
     renderHrMinMaxAreaChart(initialSmoothedStreams, currentSmoothingLevel);
     renderPaceMinMaxAreaChart(initialSmoothedStreams, currentSmoothingLevel);
@@ -1771,13 +1771,57 @@ export async function renderActivityPage({ activity, streams, zones, athlete, ac
 /**
  * Initialize advanced analysis button and handler
  */
+function createStaticAnalysisUiAdapter(content, analyzer) {
+    const sections = Object.fromEntries([
+        'summary',
+        'insights',
+        'climbs',
+        'segments',
+        'exports'
+    ].map(name => {
+        const container = document.createElement('div');
+        container.dataset.analysisSection = name;
+        content.append(container);
+        return [name, container];
+    }));
+
+    return {
+        renderSummary() {
+            AnalysisResultsUI.renderSummary(analyzer, sections.summary);
+        },
+        renderInsights() {
+            AnalysisResultsUI.renderInsights(analyzer, sections.insights);
+        },
+        renderClimbs() {
+            AnalysisResultsUI.renderClimbs(analyzer, sections.climbs);
+        },
+        renderSegments() {
+            AnalysisResultsUI.renderSegments(analyzer, sections.segments);
+        },
+        renderExports() {
+            AnalysisResultsUI.renderExports(analyzer, sections.exports);
+            const formats = ['gpx', 'csv', 'json'];
+            const buttons = sections.exports.querySelectorAll('.export-btn');
+            buttons.forEach((button, index) => {
+                const format = formats[index];
+                button.removeAttribute('onclick');
+                button.onclick = null;
+                button.addEventListener('click', event => {
+                    event.preventDefault();
+                    analyzer.downloadExport(format);
+                });
+            });
+        }
+    };
+}
+
 export function initAdvancedAnalysis(
     activityId,
     activity,
     streams,
     {
         analyzerFactory = () => new AdvancedActivityAnalyzer(activityId, activity, streams),
-        uiFactory = content => new AnalysisResultsUI(content)
+        uiFactory = (content, analyzer) => createStaticAnalysisUiAdapter(content, analyzer)
     } = {}
 ) {
     const btn = document.getElementById('advanced-analysis-btn');
@@ -1808,7 +1852,7 @@ export function initAdvancedAnalysis(
             const summary = analyzer.getSummary();
 
             // Create UI renderer
-            const ui = uiFactory(content);
+            const ui = uiFactory(content, analyzer);
 
             // Render all components
             ui.renderSummary(summary);

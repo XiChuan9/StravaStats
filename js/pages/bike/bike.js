@@ -1291,12 +1291,12 @@ function renderBestEfforts(bestEfforts) {
 // 14. RENDERING — BIKE CLASSIFIER
 // =====================================================
 
-function renderBikeClassifier(activity, streams) {
+function renderBikeClassifier(activity, streams, zones) {
     const container = document.getElementById('bike-classifier-results');
     if (!container) return;
     if (typeof window.classifyBike !== 'function') { container.innerHTML = '<p>Classifier not loaded.</p>'; return; }
 
-    const classification = window.classifyBike(activity, streams);
+    const classification = window.classifyBike(activity, streams, zones);
     currentBikeClassification = classification;
     const results = classification?.top;
     if (!results || results.length === 0) { container.innerHTML = '<p>Could not classify bike type.</p>'; return; }
@@ -1458,7 +1458,7 @@ export async function renderBikePage({ activity, streams, zones, athlete, activi
         renderLapsChart(activityData.laps);
         renderSegments(activityData.segment_efforts);
         renderBestEfforts(activityData.best_efforts);
-        renderBikeClassifier(activityData, streamData);
+        renderBikeClassifier(activityData, streamData, zones);
         syncSideBySideContainers();
 
         initDynamicChartControls();

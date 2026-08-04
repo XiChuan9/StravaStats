@@ -10,16 +10,35 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const B2_BASELINE_SHA = 'dd4f5019719c4daa0d3b634715ce1d2879dc11c3';
-// Generated from B2_BASELINE_SHA with `git ls-tree -r -z`, excluding exactly
-// the twelve B2 paths, sorting by path with code-unit order, and hashing canonical
+const B31_BASELINE_SHA = '779d4ac5ff4c4cd29787553034bb5d69cce337d3';
+// Generated from B31_BASELINE_SHA with `git ls-tree -r -z`, excluding exactly
+// the ten B3.1 paths, sorting by path with code-unit order, and hashing canonical
 // `<mode> <object-id>\t<path>\0` records in order.
 const PROTECTED_TREE_SHA256 =
-    '85bda50961073e26a99c6598488ead4746f5094c7d5798630dc92004af2e51e9';
+    '2a472f3955d31a2933f634f19f9b74b0cfb0701ae2461e6e0f68ca5bf8860ee6';
+const PROTECTED_ENTRY_COUNT = 208;
 const projectRootUrl = new URL('../../', import.meta.url);
 const projectRoot = fileURLToPath(projectRootUrl);
-const B2_ALLOWED_PATHS = new Set([
+const B31_ALLOWED_PATHS = new Set([
     'docs/tasks/pr-04b-detail-consumers.md',
+    'classifyRun.js',
+    'classifyBike.js',
+    'js/pages/activity/activity.js',
+    'js/pages/run/run.js',
+    'js/pages/bike/bike.js',
+    'js/pages/swim/swim.js',
+    'tests/consumers/detail-consumers.test.js',
+    'tests/consumers/detail-boundaries.test.js',
+    'tests/consumers/detail-browser-smoke.html'
+]);
+const PR04B_ALLOWED_PATHS = new Set([
+    'docs/tasks/pr-04b-detail-consumers.md',
+    'classifyRun.js',
+    'classifyBike.js',
+    'js/pages/AGENTS.md',
+    'html/activity-router.html',
+    'js/pages/activity-router.js',
+    'js/pages/detail/detail-read-session.js',
     'js/pages/activity/index.js',
     'js/pages/run/index.js',
     'js/pages/bike/index.js',
@@ -29,8 +48,12 @@ const B2_ALLOWED_PATHS = new Set([
     'js/pages/bike/bike.js',
     'js/pages/swim/swim.js',
     'js/pages/activity/advanced-analysis.js',
+    'js/connectors/strava/strava-api-connector.js',
+    'tests/repository/strava-api-connector.test.js',
+    'tests/repository/dependency-boundaries.test.js',
     'tests/consumers/detail-consumers.test.js',
-    'tests/consumers/detail-boundaries.test.js'
+    'tests/consumers/detail-boundaries.test.js',
+    'tests/consumers/detail-browser-smoke.html'
 ]);
 const B1_IMPLEMENTATION_PATHS = Object.freeze([
     'js/pages/AGENTS.md',
@@ -64,7 +87,7 @@ function readIndexEntries() {
 
 function protectedTreeDigest(entries) {
     const protectedEntries = entries
-        .filter(entry => !B2_ALLOWED_PATHS.has(entry.relativePath))
+        .filter(entry => !B31_ALLOWED_PATHS.has(entry.relativePath))
         .sort((left, right) => (
             left.relativePath < right.relativePath
                 ? -1
@@ -82,15 +105,48 @@ function protectedTreeDigest(entries) {
 function assertProtectedTreeDigest() {
     const entries = readIndexEntries();
     const trackedPaths = new Set(entries.map(entry => entry.relativePath));
-    for (const relativePath of B2_ALLOWED_PATHS) {
+    for (const relativePath of [
+        'docs/tasks/pr-04b-detail-consumers.md',
+        'tests/consumers/detail-boundaries.test.js'
+    ]) {
         assert.equal(
             trackedPaths.has(relativePath),
             true,
-            `Approved B2 path is not tracked: ${relativePath}`
+            `Baseline-tracked B3 path is not tracked: ${relativePath}`
         );
     }
+    assert.equal(
+        entries.filter(entry => !B31_ALLOWED_PATHS.has(entry.relativePath)).length,
+        PROTECTED_ENTRY_COUNT
+    );
     assert.equal(protectedTreeDigest(entries), PROTECTED_TREE_SHA256);
     return trackedPaths;
+}
+
+function assertObservedB31Paths(observed) {
+    for (const relativePath of observed) {
+        assert.equal(
+            B31_ALLOWED_PATHS.has(relativePath),
+            true,
+            `B3.1 path is not approved: ${relativePath}`
+        );
+    }
+    assert.equal(
+        observed.size <= B31_ALLOWED_PATHS.size,
+        true,
+        'B3.1 worktree contains an eleventh path.'
+    );
+}
+
+function assertObservedPr04bPaths(observed) {
+    for (const relativePath of observed) {
+        assert.equal(
+            PR04B_ALLOWED_PATHS.has(relativePath),
+            true,
+            `PR-04B path is not approved: ${relativePath}`
+        );
+    }
+    assert.ok(observed.size <= PR04B_ALLOWED_PATHS.size, 'PR-04B contains a twenty-third path.');
 }
 
 async function source(relativePath) {
@@ -293,6 +349,52 @@ test('weather, zones, and Swim athlete behavior stays behind injected boundaries
     assert.match(swimSource, /zones\?\.heart_rate\?\.zones/);
     assert.match(swimSource, /maybeCorrectIndoorSwimForAlex\(structuredClone\(activity\), athlete\)/);
     assert.match(swimSource, /Object\.getOwnPropertyDescriptor\(athlete, key\)/);
+    assert.match(swimSource, /function\s+decodePolyline\(value\)/);
+    assert.match(swimSource, /function\s+getRouteColorSeries\(streams, mode, pointCount\)/);
+});
+
+test('detail classifiers receive injected Repository zones and have no provider storage fallback', async () => {
+    const genericSource = rendererSources.get('js/pages/activity/activity.js');
+    const runSource = rendererSources.get('js/pages/run/run.js');
+    const bikeSource = rendererSources.get('js/pages/bike/bike.js');
+    assert.match(genericSource, /classifyRun\(activityData, streamData, zones\)/);
+    assert.match(runSource, /classifyRun\(activityData, streamData, zones\)/);
+    assert.match(bikeSource, /classifyBike\(activity, streams, zones\)/);
+
+    for (const relativePath of [
+        'classifyRun.js',
+        'classifyBike.js',
+        ...rendererSources.keys()
+    ]) {
+        const value = relativePath.startsWith('classify')
+            ? await source(relativePath)
+            : rendererSources.get(relativePath);
+        assert.doesNotMatch(
+            value,
+            /localStorage|sessionStorage|strava_training_zones|strava_zones|strava_athlete_data|strava_tokens|Authorization/,
+            relativePath
+        );
+    }
+});
+
+test('Advanced default adapter uses static UI methods and instance-free export bindings', () => {
+    const genericSource = rendererSources.get('js/pages/activity/activity.js');
+    for (const method of [
+        'renderSummary',
+        'renderInsights',
+        'renderClimbs',
+        'renderSegments',
+        'renderExports'
+    ]) {
+        assert.match(
+            genericSource,
+            new RegExp(`AnalysisResultsUI\\.${method}\\(analyzer, sections\\.`),
+            method
+        );
+    }
+    assert.doesNotMatch(genericSource, /new\s+AnalysisResultsUI\s*\(/);
+    assert.match(genericSource, /button\.removeAttribute\('onclick'\)/);
+    assert.match(genericSource, /analyzer\.downloadExport\(format\)/);
 });
 
 test('Advanced Analysis consumes injected bundle data and contains no provider I/O', () => {
@@ -445,21 +547,21 @@ test('B1 adds no session handoff and quick-start remains outside production entr
     }
 });
 
-test('B1 implementation stays outside B2 and under the protected-tree digest', async () => {
+test('protected pre-B3.1 implementation remains under the fixed tree digest', async () => {
     const trackedPaths = assertProtectedTreeDigest();
     for (const relativePath of B1_IMPLEMENTATION_PATHS) {
-        assert.equal(B2_ALLOWED_PATHS.has(relativePath), false, relativePath);
+        assert.equal(B31_ALLOWED_PATHS.has(relativePath), false, relativePath);
         assert.equal(trackedPaths.has(relativePath), true, relativePath);
     }
 
     const browserHarnessPath = 'tests/consumers/detail-browser-smoke.html';
-    assert.equal(B2_ALLOWED_PATHS.has(browserHarnessPath), false);
+    assert.equal(B31_ALLOWED_PATHS.has(browserHarnessPath), true);
     assert.equal(trackedPaths.has(browserHarnessPath), false);
     const browserHarness = path.join(projectRoot, browserHarnessPath);
-    await assert.rejects(access(browserHarness));
+    await access(browserHarness);
 });
 
-test('working tree and protected index remain inside the exact twelve-path B2 boundary', () => {
+test('working tree and protected index remain inside the exact ten-path B3.1 boundary', () => {
     const status = execFileSync(
         'git',
         ['status', '--porcelain=v1', '-z', '--untracked-files=all'],
@@ -470,16 +572,48 @@ test('working tree and protected index remain inside the exact twelve-path B2 bo
         .filter(Boolean)
         .map(entry => entry.slice(3));
     const observed = new Set(statusPaths);
-
-    for (const relativePath of observed) {
-        assert.equal(
-            B2_ALLOWED_PATHS.has(relativePath),
-            true,
-            `B2 path is not approved: ${relativePath}`
-        );
-    }
-    assert.equal(observed.size <= B2_ALLOWED_PATHS.size, true);
+    assertObservedB31Paths(observed);
     assertProtectedTreeDigest();
+});
+
+test('protected-tree digest rejects a simulated protected blob change', () => {
+    const entries = readIndexEntries();
+    const protectedIndex = entries.findIndex(entry => (
+        !B31_ALLOWED_PATHS.has(entry.relativePath)
+    ));
+    assert.notEqual(protectedIndex, -1);
+    const mutated = entries.map((entry, index) => (
+        index === protectedIndex
+            ? { ...entry, objectId: '0'.repeat(entry.objectId.length) }
+            : entry
+    ));
+    assert.notEqual(protectedTreeDigest(mutated), PROTECTED_TREE_SHA256);
+});
+
+test('B3.1 path audit rejects a simulated eleventh path', () => {
+    const observed = new Set([
+        ...B31_ALLOWED_PATHS,
+        'tests/consumers/unapproved-b3-path.html'
+    ]);
+    assert.throws(
+        () => assertObservedB31Paths(observed),
+        /B3\.1 path is not approved/
+    );
+});
+
+test('PR-04B total boundary freezes twenty-two paths and rejects a twenty-third', () => {
+    assert.equal(PR04B_ALLOWED_PATHS.size, 22);
+    for (const relativePath of B31_ALLOWED_PATHS) {
+        assert.equal(PR04B_ALLOWED_PATHS.has(relativePath), true, relativePath);
+    }
+    assert.doesNotThrow(() => assertObservedPr04bPaths(PR04B_ALLOWED_PATHS));
+    assert.throws(
+        () => assertObservedPr04bPaths(new Set([
+            ...PR04B_ALLOWED_PATHS,
+            'tests/consumers/unapproved-pr04b-path.html'
+        ])),
+        /PR-04B path is not approved/
+    );
 });
 
 test('package, Repository public files, and Service Worker stay protected by the tree digest', () => {
@@ -494,7 +628,7 @@ test('package, Repository public files, and Service Worker stay protected by the
         'js/repository/legacy/legacy-repository.js',
         'js/repository/demo/demo-repository.js'
     ]) {
-        assert.equal(B2_ALLOWED_PATHS.has(relativePath), false, relativePath);
+        assert.equal(B31_ALLOWED_PATHS.has(relativePath), false, relativePath);
         assert.equal(trackedPaths.has(relativePath), true, relativePath);
     }
 });

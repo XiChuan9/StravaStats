@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | In progress |
+| Status | In review |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/detail-consumers` |
 | Worktree | `/Users/wangchuanliang/Documents/StravaStats-worktrees/detail-consumers` |
@@ -27,13 +27,17 @@
 | A3 | Completed / Accepted |
 | A3.1 | Completed / Accepted |
 | A3.2 | Completed / Accepted |
+| A3.3 | Completed / Accepted |
+| A3.4 | Completed / Accepted |
 | B1.1 | Completed / PASS |
 | B1.2 | Completed / PASS |
 | B1.3 | Completed / PASS |
 | B1 | Completed / PASS |
 | B2 | Completed / PASS |
 | B2.1 | Completed / PASS |
-| B3 | Not started / Not authorized |
+| B3 | Completed / PASS |
+| B3.1 | Completed / PASS |
+| Final Review | Pending |
 
 ## Goal
 
@@ -41,7 +45,8 @@
 - 设计最小迁移，使详情 consumer 只通过 Repository 或明确的页面 read façade 获取数据。
 - 避免页面和 Advanced Analysis 重复获取同一活动数据。
 - 保持现有详情输出、算法、DOM、CSS、路由和视觉不变。
-- A0–A3 只完成调查、决策冻结和记账；B1–B2.1 已完成并通过控制塔验收，B3 尚未授权。
+- A0–A3.4 已完成调查、决策冻结和记账；B1–B3.1 已完成并通过控制塔验收。
+- PR-04B 已进入 In review；Final Review 保持 Pending。
 
 ## Why now
 
@@ -479,12 +484,14 @@ consumer.
 - HTTP 500, network, and invalid response must not be classified as authentication failure. Errors
   must never delete Local Library, Legacy cache, or user data.
 
-## Frozen final 20-file allowlist
+## Frozen final 22-file allowlist
 
-This is the complete PR-04B allowlist. Encountering a twenty-first path requires an immediate stop and
+This is the complete PR-04B allowlist. Encountering a twenty-third path requires an immediate stop and
 new control-tower approval.
 
 ```text
+classifyBike.js
+classifyRun.js
 docs/tasks/pr-04b-detail-consumers.md
 js/pages/AGENTS.md
 html/activity-router.html
@@ -541,7 +548,7 @@ tests/repository/**
 The only `tests/repository/**` exceptions are
 `tests/repository/strava-api-connector.test.js` and
 `tests/repository/dependency-boundaries.test.js`. Do not prohibit `js/pages/**` broadly because only
-the exact page paths in the 20-file allowlist are approved.
+the exact page paths in the 22-file allowlist are approved.
 
 ## Frozen phase allowlists
 
@@ -584,15 +591,25 @@ Goals: migrate all four detail consumers; remove consumer Token/fetch/provider s
 activity/streams/zones/athlete; reuse the bundle in Advanced; preserve algorithms, DOM, charts, maps,
 laps, and exports.
 
-### B3 — Not started / not authorized
+### B3 / B3.1 — Completed / PASS
 
 ```text
+classifyBike.js
+classifyRun.js
 docs/tasks/pr-04b-detail-consumers.md
+js/pages/activity/activity.js
+js/pages/bike/bike.js
+js/pages/run/run.js
+js/pages/swim/swim.js
+tests/consumers/detail-boundaries.test.js
+tests/consumers/detail-consumers.test.js
 tests/consumers/detail-browser-smoke.html
 ```
 
-Goals: complete Node gates, disposable-profile Browser/CDP gates, deterministic synthetic end-to-end
-evidence, and final privacy/migration/rollback/scope audit.
+Goals: switch the shallow-safe phase guard to the fixed B3 baseline and exact three-path Set;
+complete Node gates, disposable-profile Browser/CDP gates, deterministic synthetic end-to-end
+evidence, and final privacy/migration/rollback/scope audit. A3.4 subsequently authorized the exact
+ten-path B3.1 correction above; no eleventh B3.1 path or twenty-third PR path was authorized.
 
 Every phase stops after local implementation and verification. Do not stage, commit, push, update the
 PR body, or enter the next phase until control-tower review and separate Finalization authorization.
@@ -1029,7 +1046,254 @@ or Legacy storage.
   storage, IndexedDB, Canonical, cache, or key migration and no Legacy cleanup. Rollback is limited
   to the seven unstaged B2.1 paths; no reset, rebase, branch/worktree deletion, or user-data cleanup
   is required.
-- Browser/CDP, manual, visual, real Token/account/data, real Strava network, user browser profile,
-  and production Service Worker verification remain `Not run`. B3 remains not started and not
-  authorized; `tests/consumers/detail-browser-smoke.html` was not created. PR-04B remains In
-  progress and PR #9 must remain Draft.
+- At B2.1 Finalization, Browser/CDP, manual, visual, real Token/account/data, real Strava network,
+  user browser profile, and production Service Worker verification remained `Not run`; the browser
+  harness did not yet exist. The A3.3 authorization below supersedes that historical B3 state.
+  PR-04B remains In progress and PR #9 must remain Draft.
+
+### A3.3 / B3 browser and final gate
+
+- A3.3 is **Completed / Accepted**. Control tower expanded the B3 phase allowlist from two to
+  exactly three paths: this Task Brief, `tests/consumers/detail-boundaries.test.js`, and
+  `tests/consumers/detail-browser-smoke.html`. The correction is required because the approved new
+  harness must replace the B2 phase guard with a guard rooted at the B3 baseline. This is not a PR
+  total-allowlist expansion: the frozen PR-04B total remains twenty paths. A fourth B3 path or a
+  twenty-first PR path requires an immediate stop and new approval.
+- B3 fixed baseline is `779d4ac5ff4c4cd29787553034bb5d69cce337d3`. B3 status is **Blocked /
+  correction required** after the authorized browser execution found product behavior that cannot
+  be corrected inside the exact three-path B3 scope. PR #9 must remain Draft; Final Review, Ready,
+  merge, PR-04C, and PR-05 are not authorized.
+- The B3 phase guard excludes exactly the three B3 paths from the fixed baseline tree. It preserves
+  stage-zero `git ls-files -s -z` parsing, code-unit path order, canonical
+  `<mode> <object-id>\t<path>\0` records, NUL separation, a fixed SHA-256, and the exact worktree
+  audit from `git status --porcelain=v1 -z --untracked-files=all`. The newly approved harness may be
+  untracked during local B3 work and must not be required in the baseline index.
+- B3 authorizes no change to product JS/HTML/CSS, Repository, Connector, analysis, package files,
+  Service Worker, or `.github/**`. Browser evidence must remain deterministic, synthetic, offline,
+  and isolated from user profiles and real provider data.
+
+#### B3 phase guard and Node evidence
+
+- The fixed B3 protected tree contains **215** stage-zero entries after excluding the exact three
+  approved B3 paths. Its fixed SHA-256 is
+  `3058eae9944ae6e43ecdcbcb567037951b6713fd20f7a65641aa2dfcd225771f`.
+  The test still builds canonical `<mode> <object-id>\t<path>\0` records from
+  `git ls-files -s -z`, sorts paths by code units, and hashes the protected records. It does not
+  read the baseline commit at runtime or derive the expected digest from the current tree.
+- The guard has explicit negative coverage for a simulated protected-blob mutation and a simulated
+  fourth B3 path. Both fail the relevant assertion. The worktree audit continues to include staged,
+  unstaged, and untracked paths through `git status --porcelain=v1 -z --untracked-files=all`.
+- Disposable depth-one evidence is at
+  `/private/tmp/pr04b-b3-shallow-final.N149c5/repo`: `git rev-list --count HEAD` returned `1`, the
+  boundary suite passed `21/21`, and the complete suite passed `959/959`, with zero skipped,
+  cancelled, or todo tests. No temporary evidence was copied into the repository.
+- Local gates after the B3 changes: `npm ci` added 6 packages and found 0 vulnerabilities; syntax
+  passed for 137 files; privacy passed; consumer/boundary focused passed `256/256`; Repository
+  passed `253/253`; full tests passed `959/959`; skipped/cancelled/todo were `0/0/0`; and
+  `git diff --check` passed.
+
+#### B3 isolated browser evidence
+
+- Final evidence is under `/private/tmp/pr04b-b3-evidence-779d4ac-final2`. Chrome was
+  `150.0.7871.187`. Profile A used
+  `/private/tmp/pr04b-b3-profile-a-779d4ac-final2`, CDP port 9361, and target
+  `E269DA1973BABD91671021ACF723AB0D`. Profile B used
+  `/private/tmp/pr04b-b3-profile-b-779d4ac-final2`, CDP port 9362, and target
+  `E93F2071B8ACF8E0962B42CC36FA8270`. Both profiles started with empty Local Storage, Session
+  Storage, IndexedDB, Cache Storage, and Service Worker state and never used a user profile.
+- Profile A loaded the actual Router plus Generic, Run, Bike, and Swim documents through a
+  synthetic Demo namespace. Its legacy external-resource inventory is Leaflet 1.9.4 CSS and JS
+  from `unpkg.com` and Chart.js from `cdn.jsdelivr.net`; thirteen repeated external resource
+  requests across the five navigations were intentionally failed by CDP. Same-origin Vercel
+  analytics and favicon requests returned local 404s. These intercepted/404 resource log entries
+  are inventory evidence, not proof that production detail pages are fully offline. No weather
+  request was made because Demo disabled external weather.
+- Profile B loaded only `tests/consumers/detail-browser-smoke.html`. It imported the actual Router,
+  DetailReadSession, four composition roots, four renderers, Advanced Analysis, AnalysisResultsUI,
+  and Repository public entry as native browser ESM. External HTTP(S), provider API, fetch, XHR,
+  WebSocket, Token/Authorization, `btoa`, IndexedDB, and provider-owned storage access were all
+  zero. CDP observed zero console errors, zero console warnings, zero uncaught exceptions, zero
+  unhandled rejections, and zero log errors. Session Storage, IndexedDB, Cache Storage, and Service
+  Worker state remained empty. Only explicitly synthetic Demo activities/zones/athlete/gears,
+  Demo-mode, provider-key sentinels, and the synthetic cached-activities sentinel existed in Local
+  Storage after the run.
+- Native ESM passed for 12 modules with zero import-time provider I/O. Opaque Router coverage passed
+  12 cases, including numeric-looking, nonnumeric, and URL-special IDs plus all frozen sport routes.
+  All four composition roots passed with mode/Factory/session/load/render counts of `1/1/1/1/1`,
+  exact stream ordering, exact metadata flags, and zero renderer calls for malformed input. The
+  public Demo Factory and synthetic Real seam both passed; Real used the exact mode options and
+  permitted weather without sending an external request.
+- Zones and Swim correction passed: forbidden provider-key reads were zero in the isolated
+  injected path, the matching synthetic athlete produced the existing 20 m correction (1000 m to
+  800 m), and the Repository activity snapshot remained byte-identical. Generic, Run, and Bike
+  renderer full/degraded cases completed before the Swim full-data failure. The remaining Swim
+  degradation cases and complete four-page DOM/chart/map/laps/export parity could not be accepted
+  after the blocking full-data failure.
+
+#### B3 blockers requiring a separately approved product correction
+
+1. **Swim route rendering fails for full data.** `js/pages/swim/swim.js:197` calls
+   `decodePolyline(polyline)`, but that identifier is neither defined nor imported by the module.
+   The isolated full-data renderer gate therefore failed at that line, and the actual Swim Demo
+   page fell into its safe error UI with its normal title/stats/map/laps/zones DOM replaced. This
+   requires a product-file change and cannot be fixed in the B3 harness.
+2. **Advanced default UI integration is internally inconsistent.** The production Generic path
+   creates `new AnalysisResultsUI(content)` and calls instance methods, while
+   `analysis-ui-components.js` exposes `renderSummary`, `renderInsights`, `renderClimbs`,
+   `renderSegments`, and `renderExports` only as static methods. Two clicks did execute local
+   analysis twice with zero additional Repository/load/activity/streams/Token/storage/provider
+   I/O, but the required summary/insights/climbs/segments/export DOM could not render. The harness
+   exposed only the stable code `ADVANCED_UI_INSTANCE_METHOD_MISSING`, not the raw exception.
+3. **Actual Demo documents retain provider-owned zone reads through legacy classifiers.** Profile A
+   observed one provider-key read in Router→Run, Generic, Run, and Bike documents. Bike's
+   `classifyBike.js` attempted to parse the synthetic `strava_zones` sentinel and emitted one
+   explained warning. Writes and removes were zero, and the sentinels remained byte-identical, but
+   the required actual-Demo provider-storage count is not zero.
+
+Because these are browser-gate failures outside the approved B3 files, B3 is **Blocked / correction
+required**. The harness itself remains fail-closed with `data-status="failed"` and safe summaries.
+No product correction, staging, commit, push, PR-body update, Ready transition, merge, Final Review,
+PR-04C, or PR-05 work was performed.
+
+#### B3 privacy, migration, rollback, and limitations
+
+- Privacy impact remains none: all activity, stream, zone, athlete, lap, ID, and sentinel values
+  were deterministic synthetic data. No real Token, account, provider request, GPS, HR, power,
+  private fixture, or user browser profile was used. The headless Chrome process emitted its own
+  background GCM/updater diagnostics, while page-target CDP evidence and host-resolution rules
+  confirm that the harness sent no external or provider request.
+- Migration impact is none: there is no storage, IndexedDB, Canonical, cache, key, or Service Worker
+  migration and no Legacy/user-data cleanup. Rollback is limited to the three unstaged B3 paths;
+  it requires no reset, rebase, branch/worktree deletion, or storage cleanup.
+- Manual DevTools UI inspection, pixel-perfect visual comparison, real Token/account/data/provider
+  network, user browser profile, production Service Worker, Ready, merge, Final Review, PR-04C, and
+  PR-05 remain `Not run`. CDP screenshots cover the actual five-page inventory and the isolated
+  harness, but visual parity is not accepted because the Swim and Advanced browser gates failed.
+
+### A3.4 / B3.1 browser blocker correction
+
+- A3.4 is **Completed / Accepted**. B3 initial browser review remains **Blocked / correction
+  required**; B3.1 is **In progress / awaiting control-tower review**. The fixed product baseline is
+  `779d4ac5ff4c4cd29787553034bb5d69cce337d3`.
+- Control tower expanded the frozen PR-04B total allowlist from twenty to twenty-two paths by adding
+  only `classifyRun.js` and `classifyBike.js`. That expansion authorizes removal of classifier
+  provider-storage dependencies; it does not authorize classifier algorithm rewrites, page
+  redesign, storage fallback, or any twenty-third PR path.
+- B3.1 has an exact ten-path phase allowlist: this Task Brief, `classifyRun.js`, `classifyBike.js`,
+  the Generic/Run/Bike/Swim renderer modules, the consumer test, the boundary test, and the browser
+  harness. An eleventh B3.1 path requires an immediate stop and separate approval.
+- The B3.1 phase guard excludes those exact ten paths from the fixed baseline. It contains 208
+  protected stage-zero entries and freezes SHA-256
+  `2a472f3955d31a2933f634f19f9b74b0cfb0701ae2461e6e0f68ca5bf8860ee6` using the existing
+  shallow-checkout-safe canonical-record algorithm.
+- The prior Profile A warning source is corrected here: `classifyBike.js` read
+  `strava_training_zones`, not `strava_zones`. B3.1 must inject Repository-shape zones into the
+  classifiers, add a local pure Swim polyline decoder, and adapt the Generic Advanced integration
+  to the existing static `AnalysisResultsUI` contract without changing that UI class.
+- Browser/CDP, Node, depth-one, privacy, migration, rollback, and final scope evidence will be
+  recorded below after actual execution. B3.1 must not be marked Completed/PASS locally.
+
+#### B3.1 local correction evidence
+
+- The correction stayed inside the exact ten-path B3.1 allowlist. The PR-wide allowlist remains the
+  frozen twenty-two paths; no twenty-third PR path or eleventh B3.1 path was introduced. The phase
+  guard verified 208 protected stage-zero entries against fixed SHA-256
+  `2a472f3955d31a2933f634f19f9b74b0cfb0701ae2461e6e0f68ca5bf8860ee6`. Its negative protected
+  blob and eleventh-path cases passed.
+- Swim now owns a pure encoded-polyline decoder. The first corrected browser run exposed a second
+  pre-existing undefined full-route helper, `getRouteColorSeries()` at the same approved Swim
+  boundary; a local implementation matching the existing Generic/Run/Bike resampling semantics
+  completed the route path. Valid synthetic polylines render, while missing, empty, incomplete,
+  malformed, or out-of-range values return an empty route without making the whole page fatal.
+- Generic Advanced Analysis now uses an activity-local adapter over the five static
+  `AnalysisResultsUI` methods. Summary, insights, climbs, segments, and exports have independent
+  containers. Each fresh analysis owns fresh containers/listeners, inline global export handlers
+  are removed, and GPX/CSV/JSON buttons call the current analyzer directly. Two clicks run local
+  analysis twice with zero Repository/load/activity/streams/Token/storage/provider/network delta.
+- Generic and Run pass the injected Repository-shape zones to `classifyRun`; Bike passes the same
+  shape to `classifyBike`. Both classifiers retain their global names and backward-compatible third
+  argument, use no provider storage fallback, tolerate null/malformed zones, emit no raw warning,
+  preserve input snapshots, and retain the deterministic synthetic output ordering and scores.
+- Automated gates after the final correction: `npm ci` added 6 packages with 0 vulnerabilities;
+  syntax passed 137 files; privacy passed; consumer plus boundary focused passed `262/262`;
+  Repository passed `253/253`; full tests passed `965/965`; skipped/cancelled/todo were `0/0/0`;
+  and `git diff --check` passed. A disposable depth-one checkout without a history fetch passed the
+  boundary suite `24/24` and full suite `965/965`, then was deleted.
+
+#### B3.1 final isolated Browser/CDP evidence
+
+- Final evidence is `/private/tmp/pr04b-b31-evidence-779d4ac-final2`; the prior B3 evidence remains
+  untouched at `/private/tmp/pr04b-b3-evidence-779d4ac-final2`. Chrome was `150.0.7871.187`.
+  Profile A used `/private/tmp/pr04b-b31-profile-a-final2`, CDP port 9357, target
+  `DB29894374B4F8B236BF3C2A1E948860`. Profile B used
+  `/private/tmp/pr04b-b31-profile-b-final2`, CDP port 9358, target
+  `3E3E76E7FA1A08A57666890E68526D59`. They were separate disposable profiles with empty initial
+  Local Storage, Session Storage, IndexedDB, Cache Storage, and Service Worker state.
+- Profile A executed actual Router error, Router-to-Generic, Router-to-Run, Router-to-Bike, and
+  Router-to-Swim paths. Generic, Run, Bike, and Swim all retained title/stats/map/laps/zones DOM;
+  their actual page modules loaded, real provider-key reads/writes/removes were `0/0/0`, provider
+  and Open-Meteo requests were zero, Demo weather was disabled, and synthetic Real sentinels were
+  unchanged. Generic/Run produced real Run classifier DOM and Bike produced real Bike classifier
+  DOM without the former JSON parse warning.
+- Profile A intentionally blocked ten repeated legacy external resource requests. The unique
+  inventory remains Leaflet 1.9.4 CSS/JS from `unpkg.com` and Chart.js from `cdn.jsdelivr.net`;
+  local Vercel analytics/favicon 404 entries and blocked resource log errors are inventory, not a
+  claim that production detail pages are fully offline. Page console warnings/errors and uncaught
+  exceptions were zero.
+- Profile B finished with `data-status="passed"`: all nine gates passed. Native ESM loaded twelve
+  actual modules plus both real classifiers with zero import-time provider I/O; twelve opaque
+  Router cases passed; four composition roots reported exact `1/1/1/1/1` mode/Factory/session/load/
+  render counts; the public Demo Factory and synthetic Real seam passed; and 36 full/degraded
+  renderer cases produced 274 chart calls and 72 map calls with core DOM intact.
+- Profile B also proved zero forbidden provider-zone/athlete/Token key reads, the existing synthetic
+  Swim 20 m correction from 1000 m to 800 m with an unchanged Repository snapshot, two Advanced
+  clicks with zero provider-I/O delta, and direct export formats `gpx`, `csv`, and `json`. External
+  HTTP(S), provider API, fetch, XHR, WebSocket, `btoa`, IndexedDB, provider storage reads/writes/
+  removes, console errors, console warnings, uncaught exceptions, unhandled rejections, and log
+  errors were all zero. Session Storage, IndexedDB, Cache Storage, and Service Worker state stayed
+  empty; Local Storage contained only the explicit synthetic Demo data and sentinels.
+- Screenshots include the five Profile A states plus Profile B full harness, Advanced, and Swim
+  views in the final evidence directory. `summary.json`, `profile-a.json`, and `profile-b.json`
+  contain the deterministic network, storage, console, runtime, target, and gate records. The
+  loopback server and both Chrome/CDP processes were stopped; ports 8768, 9357, and 9358 had no
+  remaining listeners.
+
+#### B3.1 privacy, migration, rollback, and stop state
+
+- Privacy impact is none: only deterministic synthetic activities, streams, zones, athlete, laps,
+  IDs, and sentinels were used. No real Token, account, provider request, GPS, HR, power, private
+  fixture, user browser profile, or user storage was read. Evidence remains under `/private/tmp`
+  and was not copied into the repository.
+- Migration impact is none: no storage, IndexedDB, Canonical, cache, key, or Service Worker
+  migration ran, and no Legacy or user data was deleted or cleaned. Rollback is limited to the ten
+  unstaged B3.1 paths and requires no reset, rebase, branch/worktree deletion, or storage cleanup.
+- Manual DevTools UI inspection, pixel-perfect visual comparison, real Token/account/data/provider
+  network, user browser profile, production Service Worker, Ready, merge, Final Review, PR-04C, and
+  PR-05 remain `Not run`. CDP-equivalent browser evidence and screenshots did run. B3.1 remains
+  **In progress / awaiting control-tower review** and is not locally marked Completed/PASS.
+
+### B3 control-tower acceptance and Finalization
+
+- Control tower independently reverified B3.1 as **Completed / PASS** and accepted B3 as
+  **Completed / PASS**. This acceptance supersedes the historical blocked and awaiting-review
+  states above. PR-04B is now **In review** and Final Review remains **Pending**.
+- Independent verification passed consumer plus boundary tests `262/262`, the full suite
+  `965/965`, syntax for 137 files, repository privacy, and `git diff --check`; all skipped,
+  cancelled, and todo counts were zero. Browser/CDP passed all `9/9` gates. After evidence capture,
+  ports 8768, 9357, and 9358 had no remaining listeners.
+- The fixed B3.1 phase guard remains rooted at
+  `779d4ac5ff4c4cd29787553034bb5d69cce337d3`, protects 208 stage-zero entries, and freezes SHA-256
+  `2a472f3955d31a2933f634f19f9b74b0cfb0701ae2461e6e0f68ca5bf8860ee6`. The PR-wide allowlist is
+  the exact twenty-two paths above.
+- `getRouteColorSeries` was the second pre-existing missing helper exposed on the same Swim
+  full-route path after the polyline decoder correction. It was completed inside the approved
+  `js/pages/swim/swim.js` path with the same resampling semantics as Generic, Run, and Bike and
+  introduced no dependency, network, storage, or additional path.
+- Final Browser/CDP evidence is
+  `/private/tmp/pr04b-b31-evidence-779d4ac-final2`. Manual DevTools UI, real account/Token/provider
+  data, the user's browser profile, and production Service Worker remain `Not run`.
+- Privacy and migration impact remain none: only deterministic synthetic data was used; no user or
+  Legacy data was read, migrated, deleted, or cleaned. Rollback remains an ordinary revert of the
+  B3 Finalization commit and requires no history rewrite or storage cleanup.
+- PR #9 must remain OPEN and Draft. Ready, merge, Final Review closure, PR-04C, and PR-05 are not
+  authorized.

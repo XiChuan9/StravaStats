@@ -121,6 +121,59 @@ function formatSwimPace(speedInMps) {
     return formatPaceSwim(100 / speedInMps);
 }
 
+/**
+ * Decodes a Strava/Google encoded polyline without external dependencies.
+ * Malformed or incomplete input fails closed to an empty route so the rest of
+ * the Swim detail page can continue rendering.
+ */
+export function decodePolyline(value) {
+    if (typeof value !== 'string' || value.length === 0) return [];
+
+    let index = 0;
+    let latitude = 0;
+    let longitude = 0;
+    const coordinates = [];
+
+    function readDelta() {
+        let result = 0;
+        let shift = 0;
+
+        while (index < value.length && shift <= 30) {
+            const byte = value.charCodeAt(index++) - 63;
+            if (byte < 0 || byte > 63) return null;
+            result |= (byte & 0x1f) << shift;
+            if (byte < 0x20) {
+                return (result & 1) ? ~(result >> 1) : (result >> 1);
+            }
+            shift += 5;
+        }
+
+        return null;
+    }
+
+    while (index < value.length) {
+        const latitudeDelta = readDelta();
+        const longitudeDelta = readDelta();
+        if (latitudeDelta === null || longitudeDelta === null) return [];
+
+        latitude += latitudeDelta;
+        longitude += longitudeDelta;
+        const decodedLatitude = latitude / 1e5;
+        const decodedLongitude = longitude / 1e5;
+        if (
+            !Number.isFinite(decodedLatitude)
+            || !Number.isFinite(decodedLongitude)
+            || Math.abs(decodedLatitude) > 90
+            || Math.abs(decodedLongitude) > 180
+        ) {
+            return [];
+        }
+        coordinates.push([decodedLatitude, decodedLongitude]);
+    }
+
+    return coordinates;
+}
+
 function calculateVariability(data) {
     return calculateCoefficient(data);
 }
@@ -181,6 +234,24 @@ function valueToRouteColor(value, minValue, maxValue) {
     const normalized = Math.max(0, Math.min(1, (value - minValue) / (maxValue - minValue)));
     const hue = 220 - (normalized * 220);
     return `hsl(${hue}, 90%, 55%)`;
+}
+
+function getRouteColorSeries(streams, mode, pointCount) {
+    if (!streams || mode === 'route') return null;
+
+    let source = null;
+    if (mode === 'heartrate') source = streams.heartrate?.data;
+    if (mode === 'cadence') source = streams.cadence?.data;
+    if (mode === 'altitude') source = streams.altitude?.data;
+    if (mode === 'speed') source = streams.velocity_smooth?.data?.map(value => value * 3.6) || null;
+    if (mode === 'pace') {
+        source = streams.velocity_smooth?.data?.map(value => (
+            value > 0 ? 60 / (value * 3.6) : null
+        )) || null;
+    }
+
+    if (!Array.isArray(source) || source.length < 2) return null;
+    return resampleSeries(source, pointCount);
 }
 
 function renderActivityMap(activity, streams) {

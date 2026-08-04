@@ -1871,7 +1871,7 @@ export async function renderRunPage({ activity, streams, zones, athlete, activit
         renderLaps(activityData.laps);
         renderLapsChart(activityData.laps);
         renderSegments(activityData.segment_efforts);
-        renderClassifierResults(classifyRun(activityData, streamData));
+        renderClassifierResults(classifyRun(activityData, streamData, zones));
         renderHrZoneDistributionChart(streamData, zones);
         renderHrMinMaxAreaChart(initialSmoothedStreams, currentSmoothingLevel);
         renderPaceMinMaxAreaChart(initialSmoothedStreams, currentSmoothingLevel);
