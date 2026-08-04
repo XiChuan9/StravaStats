@@ -60,10 +60,6 @@ const DOM = {
     hrZonesChart: document.getElementById('hr-zones-chart'),
 };
 
-// Parse activity ID from URL
-const params = new URLSearchParams(window.location.search);
-const activityId = parseInt(params.get('id'), 10);
-
 // Chart instances registry for cleanup
 const chartInstances = {};
 
@@ -73,6 +69,7 @@ let originalStreamData = null;
 let lastStreamData = null;
 let lastActivityData = null;
 let activityStrokes = null;
+let allowExternalWeatherForPage = true;
 
 // Dynamic chart data storage
 let dynamicChartData = {
@@ -122,6 +119,59 @@ function formatDate(date) {
 function formatSwimPace(speedInMps) {
     if (!speedInMps || speedInMps === 0) return '-';
     return formatPaceSwim(100 / speedInMps);
+}
+
+/**
+ * Decodes a Strava/Google encoded polyline without external dependencies.
+ * Malformed or incomplete input fails closed to an empty route so the rest of
+ * the Swim detail page can continue rendering.
+ */
+export function decodePolyline(value) {
+    if (typeof value !== 'string' || value.length === 0) return [];
+
+    let index = 0;
+    let latitude = 0;
+    let longitude = 0;
+    const coordinates = [];
+
+    function readDelta() {
+        let result = 0;
+        let shift = 0;
+
+        while (index < value.length && shift <= 30) {
+            const byte = value.charCodeAt(index++) - 63;
+            if (byte < 0 || byte > 63) return null;
+            result |= (byte & 0x1f) << shift;
+            if (byte < 0x20) {
+                return (result & 1) ? ~(result >> 1) : (result >> 1);
+            }
+            shift += 5;
+        }
+
+        return null;
+    }
+
+    while (index < value.length) {
+        const latitudeDelta = readDelta();
+        const longitudeDelta = readDelta();
+        if (latitudeDelta === null || longitudeDelta === null) return [];
+
+        latitude += latitudeDelta;
+        longitude += longitudeDelta;
+        const decodedLatitude = latitude / 1e5;
+        const decodedLongitude = longitude / 1e5;
+        if (
+            !Number.isFinite(decodedLatitude)
+            || !Number.isFinite(decodedLongitude)
+            || Math.abs(decodedLatitude) > 90
+            || Math.abs(decodedLongitude) > 180
+        ) {
+            return [];
+        }
+        coordinates.push([decodedLatitude, decodedLongitude]);
+    }
+
+    return coordinates;
 }
 
 function calculateVariability(data) {
@@ -186,6 +236,24 @@ function valueToRouteColor(value, minValue, maxValue) {
     return `hsl(${hue}, 90%, 55%)`;
 }
 
+function getRouteColorSeries(streams, mode, pointCount) {
+    if (!streams || mode === 'route') return null;
+
+    let source = null;
+    if (mode === 'heartrate') source = streams.heartrate?.data;
+    if (mode === 'cadence') source = streams.cadence?.data;
+    if (mode === 'altitude') source = streams.altitude?.data;
+    if (mode === 'speed') source = streams.velocity_smooth?.data?.map(value => value * 3.6) || null;
+    if (mode === 'pace') {
+        source = streams.velocity_smooth?.data?.map(value => (
+            value > 0 ? 60 / (value * 3.6) : null
+        )) || null;
+    }
+
+    if (!Array.isArray(source) || source.length < 2) return null;
+    return resampleSeries(source, pointCount);
+}
+
 function renderActivityMap(activity, streams) {
     const section = document.getElementById('activity-map-container');
     if (!DOM.map || !section) return;
@@ -193,7 +261,7 @@ function renderActivityMap(activity, streams) {
     const polyline = activity.map?.summary_polyline || activity.map?.polyline;
     if (!polyline || !window.L) {
         section.classList.add('hidden');
-        renderWeatherAnalysis(activity, []);
+        if (allowExternalWeatherForPage) renderWeatherAnalysis(activity, []);
         return;
     }
 
@@ -201,7 +269,7 @@ function renderActivityMap(activity, streams) {
     if (!coords.length) {
         section.classList.remove('hidden');
         DOM.map.innerHTML = '<p>No route data available (empty polyline).</p>';
-        renderWeatherAnalysis(activity, []);
+        if (allowExternalWeatherForPage) renderWeatherAnalysis(activity, []);
         return;
     }
 
@@ -264,29 +332,39 @@ function renderActivityMap(activity, streams) {
         weatherToggle.addEventListener('change', () => renderActivityMap(activity, streams));
     }
 
-    renderWeatherAnalysis(activity, coords);
-    renderWeatherMapDetails(activity, coords, map, weatherToggle?.checked);
+    if (allowExternalWeatherForPage) {
+        renderWeatherAnalysis(activity, coords);
+        renderWeatherMapDetails(activity, coords, map, weatherToggle?.checked);
+    }
 }
 
 function normalizeText(value) {
-    return String(value || '')
+    if (typeof value !== 'string') return '';
+    return value
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
         .trim()
         .toLowerCase();
 }
 
-function isTargetAthleteAlexGascon() {
-    const athleteData = JSON.parse(localStorage.getItem('strava_athlete_data') || 'null');
-    if (!athleteData) return false;
+function readAthleteValue(athlete, key) {
+    try {
+        if (!athlete || typeof athlete !== 'object') return undefined;
+        const descriptor = Object.getOwnPropertyDescriptor(athlete, key);
+        return descriptor && Object.hasOwn(descriptor, 'value') ? descriptor.value : undefined;
+    } catch {
+        return undefined;
+    }
+}
 
-    const athleteId = Number(athleteData.id);
-    const first = normalizeText(athleteData.firstname);
-    const last = normalizeText(athleteData.lastname);
+function isTargetAthleteAlexGascon(athlete) {
+    const athleteId = readAthleteValue(athlete, 'id');
+    const first = normalizeText(readAthleteValue(athlete, 'firstname'));
+    const last = normalizeText(readAthleteValue(athlete, 'lastname'));
     const fullName = `${first} ${last}`.trim();
-    const username = normalizeText(athleteData.username);
+    const username = normalizeText(readAthleteValue(athlete, 'username'));
 
-    return athleteId === TARGET_ATHLETE_ID || fullName === 'alex gascon' || username === 'gascn_alex' || username === 'alexgasconn' || username === 'alexgascon';
+    return athleteId === TARGET_ATHLETE_ID || athleteId === String(TARGET_ATHLETE_ID) || fullName === 'alex gascon' || username === 'gascn_alex' || username === 'alexgasconn' || username === 'alexgascon';
 }
 
 function isDateOnOrBeforeCutoff(dateLike) {
@@ -326,8 +404,8 @@ function applyPool20mCorrectionToSplit(split) {
     }
 }
 
-function maybeCorrectIndoorSwimForAlex(activity) {
-    if (!isTargetAthleteAlexGascon()) return activity;
+export function maybeCorrectIndoorSwimForAlex(activity, athlete) {
+    if (!isTargetAthleteAlexGascon(athlete)) return activity;
     if (!isIndoorPoolSwim(activity)) return activity;
     if (!isDateOnOrBeforeCutoff(activity?.start_date_local || activity?.start_date)) return activity;
 
@@ -494,42 +572,6 @@ function initSmoothingControl() {
             renderStreamCharts(smoothedStreams, lastActivityData);
         }
     });
-}
-
-// =====================================================
-// 3. API FUNCTIONS
-// =====================================================
-
-function getAuthPayload() {
-    const tokenString = localStorage.getItem('strava_tokens');
-    if (!tokenString) return null;
-    return btoa(tokenString);
-}
-
-async function fetchFromApi(url, authPayload) {
-    const response = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${authPayload}` }
-    });
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`API Error ${response.status}: ${errorText}`);
-    }
-    const result = await response.json();
-    if (result.tokens) {
-        localStorage.setItem('strava_tokens', JSON.stringify(result.tokens));
-    }
-    return result;
-}
-
-async function fetchActivityDetails(activityId, authPayload) {
-    const result = await fetchFromApi(`/api/strava-activity?id=${activityId}`, authPayload);
-    return result.activity;
-}
-
-async function fetchActivityStreams(activityId, authPayload) {
-    const streamTypes = 'distance,time,heartrate,cadence';
-    const result = await fetchFromApi(`/api/strava-streams?id=${activityId}&type=${streamTypes}`, authPayload);
-    return result.streams;
 }
 
 // =====================================================
@@ -963,24 +1005,14 @@ function renderStreamCharts(streams, activity) {
 /**
  * Main initialization and rendering logic
  */
-async function loadActivityPage() {
-    try {
-        const authPayload = getAuthPayload();
-        if (!authPayload || !activityId) {
-            throw new Error('Missing authentication or activity ID');
-        }
-
-        // Fetch activity details and streams in parallel
-        const [activityDataRaw, streams] = await Promise.all([
-            fetchActivityDetails(activityId, authPayload),
-            fetchActivityStreams(activityId, authPayload)
-        ]);
-
-        const activityData = maybeCorrectIndoorSwimForAlex(activityDataRaw);
+export async function renderSwimPage({ activity, streams, zones, athlete, activityId, allowExternalWeather }) {
+    allowExternalWeatherForPage = allowExternalWeather === true;
+    const activityData = maybeCorrectIndoorSwimForAlex(structuredClone(activity), athlete);
+    const streamData = structuredClone(streams);
 
         lastActivityData = activityData;
-        lastStreamData = streams;
-        originalStreamData = JSON.parse(JSON.stringify(streams));
+        lastStreamData = streamData;
+        originalStreamData = structuredClone(streamData);
 
         // Extract strokes if available
         if (activityData.splits_swim) {
@@ -991,26 +1023,13 @@ async function loadActivityPage() {
         renderActivityInfo(activityData);
         renderActivityStats(activityData);
         renderActivityAdvanced(activityData);
-        renderActivityMap(activityData, streams);
+        renderActivityMap(activityData, streamData);
         renderStrokeBreakdown(activityData);
         renderLaps(activityData.laps);
         renderLapsChart(activityData.laps);
 
-        // Get zones from localStorage for HR zone rendering
-        const cachedZones = JSON.parse(localStorage.getItem('strava_zones') || '[]');
-        if (cachedZones.length > 0) {
-            renderHRZones(activityData, cachedZones);
-        } else {
-            renderHRZones(activityData, []);
-        }
+        const heartRateZones = Array.isArray(zones?.heart_rate?.zones) ? zones.heart_rate.zones : [];
+        renderHRZones(activityData, heartRateZones);
 
-        renderStreamCharts(streams, activityData);
-
-    } catch (error) {
-        console.error('Error loading activity page:', error);
-        document.body.innerHTML = `<div style="padding: 20px; color: red;"><h2>Error Loading Activity</h2><p>${error.message}</p></div>`;
-    }
+        renderStreamCharts(streamData, activityData);
 }
-
-// Load page when DOM is ready
-document.addEventListener('DOMContentLoaded', loadActivityPage);

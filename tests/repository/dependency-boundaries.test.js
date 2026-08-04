@@ -160,11 +160,13 @@ test('public import performs zero token, storage, network, or DOM side effects',
     }
 });
 
-test('B1 Connector, errors, and tests remain byte-for-byte unchanged', async () => {
+test('approved Connector boundary files match the frozen PR-04B B1 hashes', async () => {
+    // PR-04B B1 approved the Connector and test changes for the type= fix.
+    // Repository errors remain unchanged; any later unapproved change still fails here.
     const expected = new Map([
         [
             'js/connectors/strava/strava-api-connector.js',
-            'a150a25b1cf87fd6559def67ccafde1566d7a85cd699d1e6e227e7d628dff9dd'
+            'ea3810a190451cf9bdff9f4f2bdcc3a81a8591c4ec385b14dd07de6324061ba8'
         ],
         [
             'js/repository/errors.js',
@@ -172,7 +174,7 @@ test('B1 Connector, errors, and tests remain byte-for-byte unchanged', async () 
         ],
         [
             'tests/repository/strava-api-connector.test.js',
-            'f3cb3440b388e527b08b1575a9a61cc91cb8d7779a27ab537fbfa514e2c61ea2'
+            'c9d429b305d959ebb839e178610c37744dcaffbb9e25cc99f314916cc0ab4d7e'
         ]
     ]);
     for (const [relative, hash] of expected) {
