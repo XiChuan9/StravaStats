@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | A2 complete / Task Brief publication pending |
+| Status | Closure complete / exact-head Ready gate pending |
 | Milestone | M6 |
 | Base branch | `integration/v2` |
 | Exact base SHA | `fa336abfa5f3349234e5c08ef6d8fad7047bfbd4` |
@@ -208,10 +208,12 @@ timeout that permits background extraction to continue.
 - One archive entry may be referenced by at most one CSV row. Repeated reference,
   invalid path, missing entry, case-only/normalization ambiguity, and unsupported
   suffix do not read another entry and produce one stable row warning.
-- An associated child descriptor contains only a fixed safe media token, exact
-  raw SHA-256, original byte length, and strict base64 payload inside the
-  row-scoped RawArtifact. The wrapper validator recomputes length/SHA before
-  delegating exact CSV text to the existing `activitiesCsvDecoder`.
+- An associated child descriptor contains only a fixed safe format token,
+  original byte length, CRC32, and strict base64 payload inside the row-scoped
+  RawArtifact. The wrapper validator recomputes length/CRC32 before delegating
+  exact CSV text to the existing `activitiesCsvDecoder`. The existing Import
+  Core separately computes the compound row RawArtifact's SHA-256 before its
+  normal storage and exact-duplicate decision.
 - The archive-row decoder appends only stable warning objects to the accepted
   bundle. Normalizer then attaches the row RawArtifact ID to the existing source.
   No filename, path, child hash, payload, or new top-level field enters Canonical.
@@ -359,8 +361,8 @@ Deterministic code-generated synthetic ZIP coverage must prove:
 - exact `Activity Filename` association for six suffixes; missing/empty,
   duplicate reference, invalid, case ambiguity, not found, and unsupported type;
 - one row per ImportItem, invalid-row isolation, wrapper validation, raw child
-  SHA/length/base64 preservation, no FIT/TCX/GPX/gzip decode, and empty detail
-  collections/capabilities;
+  format/length/CRC/base64 preservation, no FIT/TCX/GPX/gzip decode, and empty
+  detail collections/capabilities;
 - same ZIP, repeated ZIP, concurrent ZIP, direct/repeated CSV, exact identity
   conflict, cancel, service-close during inspection, Worker crash/retry, reload,
   quota/abort, Import Log, and Preview with no second Canonical activity;
@@ -416,6 +418,70 @@ opaque preservation only for FIT/TCX/GPX and their `.gz` forms. Additional ZIP
 extensions, larger-archive performance, locale profiles, decoders, UI, cutover,
 analysis, and real-user archive compatibility remain future separately approved
 work.
+
+## Closure
+
+### Delivered behavior and changed files
+
+- `js/import/zip-inspector.js` implements the frozen fail-closed ZIP structure,
+  filename, entry-boundary, CRC, method, host-attribute, limit, cancellation,
+  and time-budget contract. `js/import/strava-zip.js` performs exact root
+  `activities.csv` extraction, safe optional child association, and delegates
+  each compound row to the existing activities.csv decoder.
+- `js/import/import-service.js`, `js/import/synthetic-import-worker.js`, and the
+  narrow `js/storage/import-store.js` allowlist connect archive expansion to the
+  unchanged RawArtifact -> ImportItem -> Normalizer -> Canonical transaction
+  path. The internal row media type is rejected as direct caller input.
+- `js/import/activities-csv-decoder.js`, `js/import/errors.js`, and
+  `js/import/AGENTS.md` freeze the optional provider-only column, stable redacted
+  codes, and archive boundary ownership.
+- Deterministic fixture generation and specialized/worker/boundary/browser tests
+  live only in the approved synthetic fixture and test paths. The final diff is
+  15 paths, within the literal 18-path maximum; no package/lockfile, database
+  constants, schema, Repository, aggregate public Import API, page, Service
+  Worker, or deployment file changed.
+
+### Verification evidence
+
+- Final local gate: `npm ci` PASS; syntax PASS for 181 files; privacy PASS;
+  specialized ZIP suite PASS 12/12; full suite PASS 1,118/1,118;
+  `git diff --check` PASS.
+- The specialized matrix exercises stored/raw-DEFLATE success; base64, header,
+  central/local, CRC, encryption, descriptor, method, host, ZIP64, multi-disk,
+  traversal/collision/special/nested/overlap defenses; all frozen limits and
+  budgets; manifest and child association warnings; row isolation; duplicate,
+  concurrent, reload, cancellation, crash/retry, quota/abort, hostile input, and
+  public-report redaction.
+- Disposable Chromium 150 on a fresh loopback origin used a code-generated ZIP,
+  native `File`, module Worker, Web Crypto, raw-DEFLATE, and real IndexedDB.
+  First load produced two completed rows with safe warnings; reload retained one
+  ride and one run in Import Log/Preview; exact re-import skipped both rows and
+  left Canonical activity count at two. V2 remained version 2 with 11 stores and
+  9 indexes, and the synthetic Legacy sentinel was unchanged.
+- Browser evidence recorded zero authorization attempts, external/provider
+  resources, console warnings/errors, uncaught/unhandled failures, XHR,
+  WebSocket, Service Workers, and Cache Storage. All pages, browser connections,
+  database handles, server, and loopback port were closed.
+- Implementation head `edfeb6560dfa201e35287b14e5a68a75adeb0ae5`
+  passed pull-request CI run `30971621218`. This Closure commit must also pass
+  exact-head pull-request CI before the PR is marked Ready; the immutable final
+  SHA/run evidence belongs in the PR body because it cannot be known inside its
+  own commit.
+
+### Review, migration, privacy, rollback, and remaining limits
+
+Independent risk-surface review found no actionable defect after the minimal
+reproductions and corrections captured by the specialized tests. PR comments,
+reviews, and review threads were empty at Closure time. The exact-base diff is
+allowlisted and whitespace-clean, and public Import/Repository and physical V2
+boundaries remain frozen.
+
+There is no schema or data migration. Only deterministic synthetic archive,
+CSV, and activity bytes were used; no real athlete data, account, Token,
+credential, user profile, or provider request was read. Rollback remains
+code-only and retains all Legacy and V2 records. The limitations above are
+intentional: strict English/root manifest and bounded ZIP subset, opaque child
+preservation without FIT/TCX/GPX/gzip decoding, and no production UI/cutover.
 
 ## Completion gate
 
