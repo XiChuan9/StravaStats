@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Synthetic GPX decoder browser smoke</title>
+</head>
+<body>
+  <main id="result" aria-live="polite">pending</main>
+  <script type="module">
+    const counters = {
+      fetch: 0,
+      xhr: 0,
+      websocket: 0,
+      worker: 0,
+      consoleWarningOrError: 0,
+      uncaught: 0,
+      unhandled: 0
+    };
+    const original = {
+      fetch: globalThis.fetch,
+      XMLHttpRequest: globalThis.XMLHttpRequest,
+      WebSocket: globalThis.WebSocket,
+      Worker: globalThis.Worker,
+      warn: console.warn,
+      error: console.error
+    };
+    globalThis.fetch = (...args) => {
+      counters.fetch += 1;
+      return original.fetch(...args);
+    };
+    globalThis.XMLHttpRequest = class extends original.XMLHttpRequest {
+      constructor(...args) {
+        counters.xhr += 1;
+        super(...args);
+      }
+    };
+    globalThis.WebSocket = class extends original.WebSocket {
+      constructor(...args) {
+        counters.websocket += 1;
+        super(...args);
+      }
+    };
+    globalThis.Worker = class extends original.Worker {
+      constructor(...args) {
+        counters.worker += 1;
+        super(...args);
+      }
+    };
+    console.warn = (...args) => {
+      counters.consoleWarningOrError += 1;
+      original.warn(...args);
+    };
+    console.error = (...args) => {
+      counters.consoleWarningOrError += 1;
+      original.error(...args);
+    };
+    addEventListener('error', () => { counters.uncaught += 1; });
+    addEventListener('unhandledrejection', () => { counters.unhandled += 1; });
+
+    async function inventory() {
+      const databases = typeof indexedDB.databases === 'function'
+        ? await indexedDB.databases()
+        : [];
+      const cacheKeys = await caches.keys();
+      const registrations = 'serviceWorker' in navigator
+        ? await navigator.serviceWorker.getRegistrations()
+        : [];
+      return {
+        localStorage: localStorage.length,
+        sessionStorage: sessionStorage.length,
+        indexedDB: databases.length,
+        cacheStorage: cacheKeys.length,
+        serviceWorkers: registrations.length
+      };
+    }
+
+    try {
+      const before = await inventory();
+      const [
+        { gpxDecoder },
+        { SYNTHETIC_GPX_START, createSyntheticGpxActivity, createSyntheticGpxPoint, syntheticGpxDescriptor },
+        { validateCanonicalActivity, validateCanonicalStreamSet, validateImportedActivityBundle }
+      ] = await Promise.all([
+        import('../../js/decoders/gpx/decoder.js'),
+        import('../fixtures/synthetic/gpx/gpx-fixture.js'),
+        import('../../js/data/contracts/index.js')
+      ]);
+      const full = gpxDecoder.decode(syntheticGpxDescriptor(
+        createSyntheticGpxActivity({ schemaLocation: true })
+      ));
+      const missingTime = gpxDecoder.decode(syntheticGpxDescriptor(
+        createSyntheticGpxActivity({
+          tracks: [{
+            name: 'Synthetic missing time',
+            type: 'Run',
+            segments: [[
+              createSyntheticGpxPoint({ latitude: 5, longitude: 6, heartRate: 170 }),
+              createSyntheticGpxPoint({ latitude: 0, longitude: 0, time: SYNTHETIC_GPX_START })
+            ]]
+          }]
+        })
+      ));
+      const validations = [full, missingTime].every(bundle =>
+        validateCanonicalActivity(bundle.activity).ok
+        && validateCanonicalStreamSet(bundle.streams).ok
+        && validateImportedActivityBundle(bundle).ok
+      );
+      const after = await inventory();
+      const result = Object.freeze({
+        ok: validations
+          && full.activity.sportCategory === 'run'
+          && full.streams.series.length === 5
+          && missingTime.streams.series.length === 1
+          && missingTime.warnings.some(item => item.code === 'GPX_UNTIMED_TRACKPOINT_IGNORED'),
+        activityCount: 2,
+        seriesCount: full.streams.series.length + missingTime.streams.series.length,
+        warningCount: full.warnings.length + missingTime.warnings.length,
+        fetch: counters.fetch,
+        xhr: counters.xhr,
+        websocket: counters.websocket,
+        worker: counters.worker,
+        consoleWarningOrError: counters.consoleWarningOrError,
+        uncaught: counters.uncaught,
+        unhandled: counters.unhandled,
+        before,
+        after
+      });
+      globalThis.__GPX_BROWSER_RESULT__ = result;
+      document.querySelector('#result').textContent = JSON.stringify(result);
+    } catch {
+      globalThis.__GPX_BROWSER_RESULT__ = Object.freeze({ ok: false });
+      document.querySelector('#result').textContent = '{"ok":false}';
+    }
+  </script>
+</body>
+</html>

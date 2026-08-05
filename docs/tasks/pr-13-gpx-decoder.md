@@ -245,7 +245,7 @@ descendants; controlled-namespace smuggling fails closed.
 | children on one element | 200,000 |
 | Tracks | 10,000 |
 | Segments | 20,000 |
-| Trackpoints | 200,000 |
+| Trackpoints | 225,000 |
 | final timed rows | 200,000 |
 | extension elements | 400,000 total |
 | direct children per `extensions` | 32 |
@@ -254,6 +254,9 @@ Every limit is checked before append/output growth. Every exact boundary and
 `+1` has executable focused evidence; large cases run in isolated child
 processes so one limit does not mask another. A breach returns no partial
 bundle. Parsing is synchronous; no timeout or background task survives failure.
+The 225,000 structural Trackpoint cap is intentionally distinct from the
+200,000 final timed-row cap so each guard has independent exact and `+1`
+evidence, including files whose untimed points cannot enter Canonical streams.
 
 ### GPX core structure, metadata, and values
 
@@ -470,6 +473,30 @@ git diff --check
 
 The implementation and final closure heads must each pass exact-head pull-
 request CI.
+
+## A9 implementation evidence ledger
+
+- A0 baseline: local and remote `integration/v2` were clean and exactly
+  `a5b1c6942980458495777a5285536ef8be301d50`; the target branch did not exist.
+- A1 docs-only commit:
+  `2a236567ccc80c51987bebc9c0d3c9fc9b9c1663`. Draft PR #19 targets
+  `integration/v2`, and exact-head CI run `31002059498` passed.
+- The synthetic core-only fixture validated with `xmllint --nonet` against the
+  official Topografix GPX 1.1 XSD. Standalone synthetic TPE v2 and Activity
+  Extension v2 `TPX` fragments also validated with `--nonet` against their
+  selected official Garmin schemas. All schemas remained in `/private/tmp`.
+- Native browser ESM smoke passed first in the in-app browser and then in a new
+  disposable headless Chrome profile driven through loopback CDP. The latter
+  decoded two bundles and six series with `fetch`, XHR, WebSocket, Worker,
+  console warning/error, uncaught, and unhandled counts all zero. Local and
+  Session Storage, IndexedDB, Cache Storage, and Service Worker counts were zero
+  before and after. CDP observed 12 same-origin static requests, zero external
+  requests, and zero runtime failures. The server, tabs, processes, ports,
+  temporary profile, and CDP script were removed after verification.
+- Pre-review local gates passed: clean `npm ci`; syntax over 195 files; privacy;
+  23 focused GPX tests; 405 Import/Contract/Storage tests; and 1,258 full tests.
+  `git diff --check` passed. Final gate results are recorded in Closure after the
+  independent review is closed.
 
 ## Completion gate
 
