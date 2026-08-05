@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Approved for implementation; A3 frozen |
+| Status | Implementation and review complete; closure head pending exact-head CI and Ready transition |
 | Milestone | M11 |
 | Base branch | `integration/v2` |
 | Exact base SHA | `76846965023c6a049df4d6a02015ccf54a9994c3` |
@@ -375,6 +375,119 @@ Legacy-first throughout M11.
 Not run at A1: implementation-focused tests, served Source Manager browser/CDP,
 exact implementation-head CI, independent Final Review, closure CI, and Ready
 transition. They are mandatory later and are not implied by the clean baseline.
+
+## Closure ledger
+
+### Implementation and exact scope
+
+- The implementation commit is
+  `ef38aebf7ef85050555c619c46fd92b7113406a1`.
+- The exact-base diff changes eleven of the fifteen allowed paths and no path
+  outside the frozen literal allowlist:
+  `docs/tasks/pr-14-decoder-registry.md`, `source-manager.html`,
+  `js/import/synthetic-import-worker.js`, `js/import/import-service.js`,
+  `js/storage/import-store.js`, `js/pages/source-manager/source-manager.js`,
+  `tests/import/decoder-registry-wiring.test.js`,
+  `tests/import/import-boundaries.test.js`,
+  `tests/source-manager/source-manager.test.js`,
+  `tests/source-manager/source-manager-boundaries.test.js`, and
+  `tests/source-manager/source-manager-browser-smoke.html`.
+- FIT, TCX, and GPX use their existing Decoder descriptors in the one central
+  production Registry. No Decoder logic is copied and the public Import,
+  Canonical, Storage-schema, package, Worker-message, Service Worker, Legacy,
+  provider/auth, or deployment contracts change.
+- Source Manager advertises the three formats only in the same implementation
+  that proved their actual served intake path. CSV and Strava ZIP framing,
+  selection, limits, and priority remain unchanged.
+
+### Test-first and independent review evidence
+
+- Minimal failing tests preceded Registry registration, end-to-end media
+  acceptance, Source Manager transport detection, and truthful support copy.
+- The first browser execution exposed a stale global report-row assertion; the
+  correction retained the existing per-report maximum and passed on a fresh
+  loopback origin.
+- Independent read-only Final Review found two actionable P1 findings: a
+  quadratic XML prolog scan and a scope guard that did not protect tracked
+  paths outside the allowlist. New focused tests failed `19/21` with exactly
+  those findings before the minimal repairs.
+- The repaired XML root scan is index-based and bounded to 65,536 characters.
+  The repaired scope guard hashes all tracked index entries outside the literal
+  allowlist against a fixed baseline, is history-free/depth-1-compatible, and
+  preserves its pre-commit/post-commit harness lifecycle.
+- Fresh independent read-only re-review of the repaired exact-base diff found
+  no actionable findings. The accepted residual bounds are intentional
+  rejection of an XML root beyond the 64 KiB scan window and the requirement
+  that final exact-path/worktree audits detect any unstaged protected edit.
+
+### Local verification
+
+All commands below completed successfully on the implementation head after the
+review repairs:
+
+```text
+npm ci                                           6 packages installed
+npm run check:syntax                             196 files passed
+npm run check:privacy                            passed
+decoder-registry focused                         9/9 passed
+Source Manager focused                           20/20 passed
+Import regression                               80/80 passed
+Contract + Storage regression                    334/334 passed
+Decoder regression                               124/124 passed
+npm test                                         1271/1271 passed
+git diff --check                                 passed
+literal exact-path audit                         11/15 allowed paths
+post-stage and post-commit scope harness          9/9 passed
+```
+
+### Served-path browser evidence
+
+The reviewed smoke ran the actual served
+`/source-manager.html?mode=real` path on fresh loopback origin
+`127.0.0.1:43116` in the in-app disposable browser, not a user Chrome profile.
+Deterministic synthetic CSV, ZIP, FIT, TCX, and GPX exercised Source Manager ->
+Worker/ImportService -> Registry -> Decoder -> Canonical validation -> real
+IndexedDB Storage -> Import Log -> Activities Preview. It also exercised FIT
+duplicate, malformed FIT, cancellation, reload, and Demo/Real isolation.
+
+All 44 browser gates passed. Console warning/error records were empty;
+Authorization, external HTTP, fetch, provider, telemetry, XHR, and WebSocket
+observations were all zero; Service Worker registrations and Cache entries were
+zero. IndexedDB remained physical version 2 with 11 stores and 9 indexes. Safe
+final counts were activities 5, activitySources 5, devices 1, events 2,
+importItems 10,008, importJobs 9, laps 2, metadata 1, migrations 2,
+rawArtifacts 6, and streamSeries 20. The Legacy-like sentinel was unchanged.
+All database handles, Workers, tabs, browser state, servers, and ports were
+closed; no screenshot or profile was committed.
+
+### Implementation-head CI
+
+GitHub Actions run `31014944444` (run number 116) targeted exact implementation
+head `ef38aebf7ef85050555c619c46fd92b7113406a1`. Attempt 1 job
+`92336446972` reached the workflow timeout after install, syntax, privacy, and
+the new PR-14 tests had passed; it reported no test assertion failure. The
+control tower reran the same exact-head single job without a code, workflow,
+branch, or PR-state change. Attempt 2 job `92343044885` completed successfully,
+including install, syntax, privacy, the full test step, post steps, and job
+completion.
+
+### Privacy, migration, rollback, and final Not run
+
+- Privacy: only deterministic synthetic invented inputs were used. No real
+  activity, route, location, health/power stream, account, Token, export,
+  credential, private fixture, user browser profile, provider request, or
+  telemetry was read, written, logged, or committed.
+- Migration: none. Database version, stores, indexes, validators, data shape,
+  transaction shape, and Legacy storage are unchanged.
+- Rollback: revert this bounded PR or stop new FIT/TCX/GPX intake while
+  retaining all successfully written V2 artifacts, activities, logs, and all
+  Legacy data. No cleanup, deletion, downgrade, reverse-copy, or overwrite is
+  part of rollback.
+- Not run: merge, branch/worktree cleanup, deployment, release, production or
+  provider/auth verification, real/private-data verification, user-Chrome
+  verification, Legacy/Canonical cutover, or M12/PR-15. The closure-head CI and
+  Draft-to-Ready transition remain deliberately pending after this bookkeeping
+  commit.
 
 ## Completion gate
 
