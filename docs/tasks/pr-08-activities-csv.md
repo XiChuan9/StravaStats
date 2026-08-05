@@ -295,7 +295,7 @@ and RawArtifact media-type extension. Fixed expectations may move only to the
 new literal PR-08 contract; guards may not be removed, weakened, skipped, or
 generated from the current diff.
 
-The cumulative maximum is exactly the 19 paths above. A twentieth path requires
+The cumulative maximum is exactly the 18 paths above. A nineteenth path requires
 a necessity record here before modification. Scope checks use this literal list,
 never the current diff, a directory glob, dynamic expected values, or a bypass.
 
@@ -342,7 +342,7 @@ Deterministic Node/fake IndexedDB coverage must prove:
   count zero, input non-mutation, frozen detached results, and stable redaction;
 - exact public exports, literal decoder/media/header/error/warning allowlists,
   Repository seven methods, physical eleven stores/nine indexes, Legacy/API/
-  Token/Service Worker non-impact, and exact 19-path scope.
+  Token/Service Worker non-impact, and exact 18-path scope.
 
 The Browser/CDP harness uses a fresh loopback origin and a disposable in-app
 browser surface. It constructs one synthetic `File`, obtains bytes, performs
