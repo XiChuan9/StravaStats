@@ -3,12 +3,28 @@ import { IMPORT_ERROR_CODE } from './errors.js';
 import { ownDataValues } from './safe-data.js';
 import { syntheticJsonDecoder } from './synthetic-json-decoder.js';
 import { activitiesCsvDecoder } from './activities-csv-decoder.js';
+import { stravaArchiveRowDecoder } from './strava-zip.js';
 
 const registry = createDecoderRegistry([
     syntheticJsonDecoder,
-    activitiesCsvDecoder
+    activitiesCsvDecoder,
+    stravaArchiveRowDecoder
 ]);
 const INPUT_FIELDS = Object.freeze(['mediaType', 'content', 'rawArtifactId']);
+
+function ownErrorValue(error, field) {
+    try {
+        if (error === null || (typeof error !== 'object' && typeof error !== 'function')) {
+            return undefined;
+        }
+        const descriptor = Object.getOwnPropertyDescriptor(error, field);
+        return descriptor && Object.hasOwn(descriptor, 'value')
+            ? descriptor.value
+            : undefined;
+    } catch {
+        return undefined;
+    }
+}
 
 export function processSyntheticImport(input) {
     try {
@@ -24,12 +40,13 @@ export function processSyntheticImport(input) {
             decoded
         });
     } catch (error) {
+        const code = ownErrorValue(error, 'code');
         return Object.freeze({
             ok: false,
-            code: typeof error?.code === 'string'
-                ? error.code
+            code: typeof code === 'string'
+                ? code
                 : IMPORT_ERROR_CODE.DECODER_FAILED,
-            retryable: error?.retryable === true
+            retryable: ownErrorValue(error, 'retryable') === true
         });
     }
 }

@@ -21,7 +21,8 @@ const HEADER_FIELDS = Object.freeze([
     'averageHeartRate',
     'averagePower',
     'averageCadence',
-    'timeZone'
+    'timeZone',
+    'activityFilename'
 ]);
 const PROFILE_FIELDS = Object.freeze(['id', 'headers']);
 const INPUT_FIELDS = Object.freeze(['mediaType', 'content']);
@@ -54,7 +55,8 @@ export const ENGLISH_ACTIVITIES_CSV_PROFILE = deepFreeze({
         averageHeartRate: ['Average Heart Rate'],
         averagePower: ['Average Watts'],
         averageCadence: ['Average Cadence'],
-        timeZone: ['Activity Time Zone']
+        timeZone: ['Activity Time Zone'],
+        activityFilename: ['Activity Filename']
     }
 });
 

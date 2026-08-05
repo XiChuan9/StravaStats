@@ -28,7 +28,8 @@ const ARTIFACT_FIELDS = Object.freeze([
 ]);
 const IMPORT_MEDIA_TYPES = Object.freeze([
     'application/vnd.stravastats.synthetic+json',
-    'text/csv;profile=strava-activities'
+    'text/csv;profile=strava-activities',
+    'application/vnd.stravastats.strava-archive-row+json'
 ]);
 const TRANSITION_FIELDS = Object.freeze([
     'errorCode',

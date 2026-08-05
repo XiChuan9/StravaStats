@@ -4,9 +4,10 @@ These rules extend the repository root instructions for `js/import/`.
 
 - Import runtime accepts only descriptor-safe plain data and never executes
   caller accessors, iterators, Proxy traps intentionally, or raw error causes.
-- PR-08 supports deterministic Synthetic JSON plus the frozen English Strava
-  `activities.csv` profile. Do not add another locale, ZIP, FIT, TCX, GPX, XML,
-  archive expansion, provider, or network behavior here.
+- PR-09 supports deterministic Synthetic JSON, the frozen English Strava
+  `activities.csv` profile, and the strict synthetic Strava ZIP profile frozen
+  in `docs/tasks/pr-09-strava-zip.md`. Do not add another locale, a general ZIP
+  API, FIT/TCX/GPX/XML decoding, a provider, or network behavior here.
 - CSV parsing is bounded and inert: never evaluate formulas, follow links,
   execute markup, guess units/locales, or depend on host locale/timezone.
 - Every Canonical write must pass `validateImportedActivityBundle` and use the

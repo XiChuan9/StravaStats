@@ -13,6 +13,11 @@ import {
 } from '../../js/import/index.js';
 import { ACTIVITIES_CSV_MEDIA_TYPE } from '../../js/import/activities-csv-decoder.js';
 import { frameActivitiesCsv } from '../../js/import/csv-tokenizer.js';
+import {
+    STRAVA_ARCHIVE_ROW_MEDIA_TYPE,
+    expandStravaZipArtifact
+} from '../../js/import/strava-zip.js';
+import { syntheticStravaZipArtifact } from '../fixtures/synthetic/strava/archive-fixture.js';
 
 const fixtureUrl = new URL(
     '../fixtures/synthetic/canonical/import-run-summary.json',
@@ -95,6 +100,25 @@ test('inline Worker selects activities.csv through the registered media type', a
     assert.equal(result.ok, true);
     assert.equal(result.decoded.activity.id, 'strava-archive:00042');
     assert.equal(Object.isFrozen(result.decoded), true);
+    worker.close();
+});
+
+test('inline Worker selects only archive-generated row children and reuses CSV decoding', async () => {
+    const worker = createInlineImportWorker();
+    const [artifact] = await expandStravaZipArtifact(
+        syntheticStravaZipArtifact({ method: 8 }).content
+    );
+    assert.equal(artifact.mediaType, STRAVA_ARCHIVE_ROW_MEDIA_TYPE);
+    const result = await worker.process({
+        ...artifact,
+        rawArtifactId: 'raw:synthetic-archive-row'
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.decoded.activity.id, 'strava-archive:00042');
+    assert.ok(result.decoded.warnings.some(warning => (
+        warning.code === 'ZIP_ACTIVITY_FILE_UNSUPPORTED'
+    )));
+    assert.equal(result.decoded.streams.series.length, 0);
     worker.close();
 });
 

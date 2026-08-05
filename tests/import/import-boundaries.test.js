@@ -31,7 +31,8 @@ test('production Import Core has no provider, network, DOM, logging, or destruct
         'activities-csv-decoder.js', 'activities-preview.js', 'csv-tokenizer.js',
         'decoder-registry.js', 'errors.js', 'import-service.js',
         'index.js', 'normalizer.js', 'safe-data.js', 'state-machine.js',
-        'synthetic-import-worker.js', 'synthetic-json-decoder.js', 'worker-client.js'
+        'strava-zip.js', 'synthetic-import-worker.js',
+        'synthetic-json-decoder.js', 'worker-client.js', 'zip-inspector.js'
     ];
     const source = (await Promise.all(files.map(file => readFile(
         new URL(`../../js/import/${file}`, import.meta.url),
@@ -42,7 +43,42 @@ test('production Import Core has no provider, network, DOM, logging, or destruct
         source,
         /console\.|document\.|localStorage|deleteDatabase|objectStore\([^)]*\)\.clear\s*\(/
     );
-    assert.doesNotMatch(source, /strava\.com|application\/gpx|\.fit\b|\.tcx\b|\.zip\b/i);
+    assert.doesNotMatch(source, /strava\.com|application\/gpx|DOMParser|FileReader/);
+    assert.doesNotMatch(source, /parseFit|decodeFit|parseTcx|decodeTcx|parseGpx|decodeGpx/i);
+});
+
+test('PR-09 keeps the literal 18-path allowlist and fixed archive boundaries', async () => {
+    const brief = await readFile(new URL(
+        '../../docs/tasks/pr-09-strava-zip.md',
+        import.meta.url
+    ), 'utf8');
+    const allowed = [
+        'docs/tasks/pr-09-strava-zip.md',
+        'js/import/AGENTS.md',
+        'js/import/errors.js',
+        'js/import/activities-csv-decoder.js',
+        'js/import/zip-inspector.js',
+        'js/import/strava-zip.js',
+        'js/import/synthetic-import-worker.js',
+        'tests/fixtures/synthetic/strava/archive-fixture.js',
+        'tests/fixtures/synthetic/strava/README.md',
+        'tests/import/strava-zip.test.js',
+        'tests/import/import-worker.test.js',
+        'js/import/import-service.js',
+        'js/storage/import-store.js',
+        'tests/import/import-core.test.js',
+        'tests/import/import-boundaries.test.js',
+        'tests/storage/indexeddb-v2-boundaries.test.js',
+        'tests/import/import-browser-smoke.html',
+        'tests/shadow/shadow-boundaries.test.js'
+    ];
+    assert.equal(new Set(allowed).size, 18);
+    for (const relative of allowed) assert.equal(brief.includes(relative), true, relative);
+    assert.match(brief, /cumulative maximum is exactly 18 paths/i);
+    assert.match(brief, /A nineteenth path requires/i);
+    assert.match(brief, /Do not add a production dependency/i);
+    assert.match(brief, /physical\/store\/index migration/i);
+    assert.match(brief, /aggregate\/public Import API expansion/i);
 });
 
 test('PR-08 keeps the deterministic CSV fixture and literal 18-path allowlist', async () => {
