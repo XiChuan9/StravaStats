@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Approved for implementation after docs-only Draft PR gate |
+| Status | Implementation, local/browser gates, and Final Review passed; exact-head CI and Ready transition pending |
 | Milestone | M7 |
 | Base branch | `integration/v2` |
 | Exact base SHA | `065dbd0475739a594ae1ce3dcf34b025a71b6318` |
@@ -433,6 +433,106 @@ than site-wide navigation; CSV/ZIP only; FIT/TCX/GPX, Strava API connection,
 Demo seed import, destructive data actions, retry UI, full per-file filename
 presentation, Canonical page cutover, and general local-first bootstrap remain
 future separately approved work.
+
+## Implementation and verification ledger
+
+### Publication and scope
+
+- The docs-only commit is
+  `391c688304cf45d9f6fe3a5bd9b0ea58ff2f5d80` on
+  `codex/v2/source-manager`; Draft PR #16 targets `integration/v2`.
+- B1-B3 changed only the exact nine frozen paths. Package files, API,
+  Repository, Import exports, storage schema/store/indexes, Decoder/ZIP core,
+  Service Worker, current shell, navigation, analysis, tabs, and detail
+  consumers remain unchanged.
+- The page is additive at `/source-manager.html`. The root application and its
+  Legacy-first/default read path are unchanged.
+
+### Local deterministic gates
+
+Executed after implementation on 2026-08-05:
+
+```text
+npm ci                                      PASS (6 packages)
+npm run check:syntax                        PASS (186 files)
+npm run check:privacy                       PASS
+node --test tests/source-manager/*.test.js  PASS (16/16)
+node --test tests/import/*.test.js          PASS (71/71)
+node --test tests/storage/*.test.js         PASS (54/54)
+npm test                                    PASS (1,134/1,134)
+git diff --check                            PASS
+```
+
+One exploratory focused command used stale guessed filenames and therefore
+did not select tests; it was immediately replaced by the required literal
+Import/Storage wildcard commands above. No test was skipped or waived.
+
+### Served-path browser evidence
+
+The final clean-origin run served the repository on loopback port 43116 and
+used headless Chrome with a new temporary profile. A CDP driver enabled Page,
+Network, Runtime, and Log domains before navigation, then loaded the real
+same-origin page, native ESM, module Worker, Web Crypto, and IndexedDB. It
+passed picker-equivalent CSV, explicit `DataTransfer` ZIP drop, exact duplicate,
+unsupported FIT, invalid ZIP, real cancellation, reload, persisted Import Log,
+Activities Preview, Demo/Real isolation, and the synthetic Legacy-like sentinel
+check.
+
+The run recorded 2 Canonical activities, 2 activity-source associations, 4
+Import Jobs, and no fabricated streams, laps, events, or devices. V2 remained
+physical version 2 with exactly eleven stores and nine indexes. Reload report
+rendering is bounded to 100 visible items per report while persisted totals
+remain exact.
+
+Harness-observed unsafe browser counters were zero: external HTTP(S), provider,
+telemetry, application-frame Fetch/XHR, and the served-production-source audit
+for WebSocket and Authorization/Token use. The pre-navigation CDP driver
+separately reported zero external HTTP(S), Authorization header, provider,
+telemetry, WebSocket, application data request, console warning/error, Runtime
+exception, and Log warning/error events. Service Worker registrations and Cache
+Storage entries were also zero.
+The 320-by-720 CSS-pixel run had four cards, First-run, both critical import
+actions visible, and no horizontal overflow. Opening the dialog focused its
+heading; closing returned focus to the originating Local Files button. Polite
+and assertive live regions and the keyboard-focusable drop alternative were
+present.
+
+Synthetic-only evidence is outside Git at:
+
+```text
+/private/tmp/pr10-source-manager-browser-smoke.json
+/private/tmp/pr10-source-manager-browser-smoke.png
+/private/tmp/pr10-source-manager-320.json
+/private/tmp/pr10-source-manager-320.png
+```
+
+All browser tabs and loopback servers were closed after capture. No real user
+profile, account, Token, private fixture, athlete data, provider request, or
+external network was used.
+
+### Independent Final Review
+
+The independent exact-base/staged-diff review initially found three actionable
+issues: unknown persisted report codes could reach DOM text, the browser harness
+claimed some unobserved startup counters, and the file input lacked an explicit
+label. Focused regressions reproduced the contract gaps. The final diff now:
+
+- uses `IMPORT_ERROR_CODE` as a dedicated persisted-report allowlist and maps
+  private, unknown, accessor, and preflight-only codes to `IMPORT_FAILED`;
+- limits harness counters to observed signals and requires a pre-navigation CDP
+  driver for startup console/exception/network evidence;
+- gives the native file input the explicit label `Choose CSV or ZIP files`.
+
+The diagnostic CDP run also reproduced one `/favicon.ico` network-log error;
+same-origin data favicons now prevent that automatic request. Final independent
+re-review reported no actionable findings, Source Manager 16/16, and staged
+diff check PASS.
+
+### Pending closure-only gates
+
+- push the implementation head and observe exact-head GitHub Actions success;
+- update the PR body/ledger, re-run exact-head closure CI if the ledger changes,
+  and move Draft PR #16 to Ready for review.
 
 ## Completion gate
 

@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#fc5200">
+    <meta
+        http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    >
+    <title>Sources — StravaStats</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/styles/source-manager.css">
+</head>
+<body>
+    <main id="source-manager-app" class="source-manager" aria-labelledby="source-manager-title">
+        <header class="page-header">
+            <a class="brand" href="/" aria-label="StravaStats home">StravaStats</a>
+            <div>
+                <p class="eyebrow">Local-first library</p>
+                <h1 id="source-manager-title">Sources</h1>
+                <p class="page-intro">Import activity summaries locally. Nothing on this page connects to a provider.</p>
+            </div>
+        </header>
+
+        <section id="blocking-error" class="notice notice--error" role="alert" hidden>
+            <h2>Source Manager is unavailable</h2>
+            <p id="blocking-error-copy">The local library could not be opened.</p>
+            <code id="blocking-error-code">STORAGE_UNAVAILABLE</code>
+        </section>
+
+        <section id="first-run" class="first-run" aria-labelledby="first-run-title" hidden>
+            <p class="eyebrow">First run</p>
+            <h2 id="first-run-title">Start your local activity library</h2>
+            <p>Choose a CSV file or Strava archive. No account connection, migration, or deletion happens automatically.</p>
+        </section>
+
+        <section aria-labelledby="source-cards-title">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Data sources</p>
+                    <h2 id="source-cards-title">Choose a source</h2>
+                </div>
+                <p id="session-label" class="session-label">Real local library</p>
+            </div>
+
+            <div class="source-grid" data-testid="source-grid">
+                <article class="source-card" data-source-card="local" data-status="available" aria-labelledby="source-local-title">
+                    <div class="source-card__heading">
+                        <span class="source-icon" aria-hidden="true">LF</span>
+                        <span class="status-badge" data-source-status="local">Available</span>
+                    </div>
+                    <h3 id="source-local-title">Local Files</h3>
+                    <p>Import an English Strava <code>activities.csv</code> file from this device.</p>
+                    <button type="button" class="button button--primary" data-open-import="local">Choose local files</button>
+                    <p class="source-note">FIT, TCX, and GPX are not supported yet.</p>
+                </article>
+
+                <article class="source-card" data-source-card="archive" data-status="available" aria-labelledby="source-archive-title">
+                    <div class="source-card__heading">
+                        <span class="source-icon" aria-hidden="true">ZA</span>
+                        <span class="status-badge" data-source-status="archive">Available</span>
+                    </div>
+                    <h3 id="source-archive-title">Strava Archive</h3>
+                    <p>Import a bounded Strava ZIP containing an exact root <code>activities.csv</code>.</p>
+                    <button type="button" class="button button--primary" data-open-import="archive">Choose archive</button>
+                    <p class="source-note">Archive activity files remain opaque in this milestone.</p>
+                </article>
+
+                <article class="source-card" data-source-card="api" data-status="not_configured" aria-labelledby="source-api-title">
+                    <div class="source-card__heading">
+                        <span class="source-icon" aria-hidden="true">SA</span>
+                        <span class="status-badge" data-source-status="api">Not configured</span>
+                    </div>
+                    <h3 id="source-api-title">Strava API</h3>
+                    <p>Provider connection is outside PR-10. Local data remains available without it.</p>
+                    <div class="button-row">
+                        <button type="button" class="button" disabled>Connect later</button>
+                        <button type="button" class="button" disabled>Disconnect</button>
+                    </div>
+                    <p class="source-note">Disconnecting and deleting local data are separate actions. Deletion is unavailable here.</p>
+                </article>
+
+                <article class="source-card" data-source-card="demo" data-status="not_configured" aria-labelledby="source-demo-title">
+                    <div class="source-card__heading">
+                        <span class="source-icon" aria-hidden="true">DM</span>
+                        <span class="status-badge" data-source-status="demo">Not configured</span>
+                    </div>
+                    <h3 id="source-demo-title">Demo</h3>
+                    <p>Inspect the source flow without falling back to Real storage or provider state.</p>
+                    <button type="button" class="button" id="demo-info-button">About Demo</button>
+                    <p id="demo-copy" class="source-note">Demo seed import is not available in this milestone.</p>
+                </article>
+            </div>
+        </section>
+
+        <section class="library-section" aria-labelledby="preview-title">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">V2 public projection</p>
+                    <h2 id="preview-title">Activities Preview</h2>
+                </div>
+                <p id="preview-total" class="preview-total">0 activities</p>
+            </div>
+            <ul id="preview-list" class="preview-list" aria-label="Activities by sport">
+                <li>No imported activities yet.</li>
+            </ul>
+        </section>
+
+        <section class="report-section" aria-labelledby="reports-title">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Persisted V2 boundary</p>
+                    <h2 id="reports-title">Import Log</h2>
+                </div>
+                <div class="report-filters" role="group" aria-label="Filter report items">
+                    <button type="button" class="filter-button is-active" data-report-filter="all" aria-pressed="true">All</button>
+                    <button type="button" class="filter-button" data-report-filter="success" aria-pressed="false">Success</button>
+                    <button type="button" class="filter-button" data-report-filter="skipped" aria-pressed="false">Skipped</button>
+                    <button type="button" class="filter-button" data-report-filter="failed" aria-pressed="false">Failed</button>
+                    <button type="button" class="filter-button" data-report-filter="cancelled" aria-pressed="false">Cancelled</button>
+                </div>
+            </div>
+            <div id="report-list" class="report-list">
+                <p class="empty-copy">No imports recorded.</p>
+            </div>
+        </section>
+    </main>
+
+    <dialog id="import-dialog" class="import-dialog" aria-labelledby="import-dialog-title" aria-describedby="import-dialog-description">
+        <form method="dialog" class="dialog-shell">
+            <header class="dialog-header">
+                <div>
+                    <p class="eyebrow">Local import</p>
+                    <h2 id="import-dialog-title" tabindex="-1">Import files</h2>
+                </div>
+                <button type="submit" id="dialog-close-icon" class="icon-button" aria-label="Close import dialog">×</button>
+            </header>
+            <p id="import-dialog-description">Choose or drop synthetic CSV/ZIP files. Exact duplicates are checked by the Import pipeline when import starts.</p>
+
+            <label class="visually-hidden" for="file-input">Choose CSV or ZIP files</label>
+            <input id="file-input" class="visually-hidden" type="file" multiple accept=".csv,.zip,.fit,.tcx,.gpx">
+            <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-controls="file-input" aria-describedby="dropzone-help">
+                <strong>Drop CSV or ZIP files here</strong>
+                <span id="dropzone-help">or use the keyboard-accessible file picker</span>
+                <button type="button" id="choose-files" class="button">Choose files</button>
+            </div>
+
+            <div id="selection-summary" class="selection-summary" hidden>
+                <h3>Selected files</h3>
+                <ul id="selection-list"></ul>
+            </div>
+
+            <div id="dialog-error" class="notice notice--error" role="alert" hidden>
+                <code id="dialog-error-code">IMPORT_FAILED</code>
+                <p id="dialog-error-copy">The import could not be completed.</p>
+            </div>
+
+            <section id="import-progress" class="import-progress" aria-labelledby="import-progress-title" hidden>
+                <div class="progress-heading">
+                    <h3 id="import-progress-title">Import progress</h3>
+                    <span id="progress-count">0 of 0 complete</span>
+                </div>
+                <progress id="progress-bar" value="0" max="1" aria-label="Completed import items"></progress>
+                <p id="progress-status" role="status">Waiting to start.</p>
+                <button type="button" id="cancel-import" class="button button--danger">Cancel import</button>
+            </section>
+
+            <p id="import-live" class="visually-hidden" aria-live="polite" aria-atomic="true"></p>
+            <p id="import-alert" class="visually-hidden" aria-live="assertive" aria-atomic="true"></p>
+
+            <footer class="dialog-actions">
+                <button type="button" id="dialog-close" class="button">Close</button>
+                <button type="button" id="start-import" class="button button--primary" disabled>Start import</button>
+            </footer>
+        </form>
+    </dialog>
+
+    <script type="module" src="/js/source-manager.js"></script>
+</body>
+</html>

@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta
+        http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'nonce-pr10-source-manager'; style-src 'unsafe-inline'; connect-src 'self'; frame-src 'self'; img-src data:; worker-src 'self'; object-src 'none'; base-uri 'none'"
+    >
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PR-10 Source Manager browser smoke</title>
+    <link rel="icon" href="data:,">
+    <style>
+        body { margin: 2rem; font-family: system-ui, sans-serif; }
+        iframe { width: 390px; height: 760px; border: 1px solid #94a3b8; }
+        [data-status="passed"] { color: #15803d; }
+        [data-status="failed"] { color: #b91c1c; }
+        pre { max-width: 90vw; overflow-wrap: anywhere; white-space: pre-wrap; }
+    </style>
+</head>
+<body data-status="running">
+    <main>
+        <h1>PR-10 Source Manager browser smoke</h1>
+        <p id="state" data-testid="state">running</p>
+        <pre id="summary" data-testid="summary">{"status":"running"}</pre>
+        <div id="frames"></div>
+    </main>
+    <script type="module" nonce="pr10-source-manager">
+        const V2_NAME = 'strava-stats-v2';
+        const SENTINEL_NAME = 'synthetic-pr10-legacy-like-sentinel';
+        const state = document.getElementById('state');
+        const summary = document.getElementById('summary');
+        const frames = document.getElementById('frames');
+        const gates = [];
+        const metrics = {
+            authorization: 0,
+            externalHttp: 0,
+            fetch: 0,
+            provider: 0,
+            telemetry: 0,
+            xhr: 0,
+            webSocket: 0
+        };
+        const encoder = new TextEncoder();
+        const crcTable = Array.from({ length: 256 }, (_, index) => {
+            let value = index;
+            for (let bit = 0; bit < 8; bit += 1) {
+                value = (value >>> 1) ^ ((value & 1) ? 0xedb88320 : 0);
+            }
+            return value >>> 0;
+        });
+
+        function assert(value, code) {
+            if (!value) throw new Error(code);
+            gates.push(code);
+        }
+
+        async function waitFor(check, code, timeout = 20_000) {
+            const started = performance.now();
+            while (performance.now() - started < timeout) {
+                let value = null;
+                try { value = check(); } catch { value = null; }
+                if (value) return value;
+                await new Promise(resolve => setTimeout(resolve, 25));
+            }
+            throw new Error(code);
+        }
+
+        function request(request) {
+            return new Promise((resolve, reject) => {
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(new Error('IDB_REQUEST_FAILED'));
+            });
+        }
+
+        function transaction(transaction) {
+            return new Promise((resolve, reject) => {
+                transaction.oncomplete = resolve;
+                transaction.onabort = () => reject(new Error('IDB_TRANSACTION_ABORTED'));
+                transaction.onerror = () => {};
+            });
+        }
+
+        async function ensureSentinel() {
+            const opened = indexedDB.open(SENTINEL_NAME, 1);
+            opened.onupgradeneeded = () => {
+                opened.result.createObjectStore('syntheticRecords', { keyPath: 'id' })
+                    .add({ id: 'synthetic-pr10', values: [null, 0, 'value'] });
+            };
+            const database = await request(opened);
+            database.close();
+        }
+
+        async function sentinelSnapshot() {
+            const database = await request(indexedDB.open(SENTINEL_NAME));
+            const tx = database.transaction('syntheticRecords', 'readonly');
+            const records = await request(tx.objectStore('syntheticRecords').getAll());
+            await transaction(tx);
+            database.close();
+            return JSON.stringify(records);
+        }
+
+        async function v2Snapshot() {
+            const database = await request(indexedDB.open(V2_NAME));
+            const stores = Array.from(database.objectStoreNames).sort();
+            const tx = database.transaction(stores, 'readonly');
+            const counts = {};
+            const indexes = {};
+            for (const name of stores) {
+                const store = tx.objectStore(name);
+                counts[name] = await request(store.count());
+                indexes[name] = Array.from(store.indexNames).sort();
+            }
+            await transaction(tx);
+            const version = database.version;
+            database.close();
+            return { version, stores, indexes, counts };
+        }
+
+        function crc32(bytes) {
+            let crc = 0xffffffff;
+            for (const byte of bytes) crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+            return (crc ^ 0xffffffff) >>> 0;
+        }
+
+        function u16(value) {
+            return Uint8Array.of(value & 0xff, (value >>> 8) & 0xff);
+        }
+
+        function u32(value) {
+            return Uint8Array.of(
+                value & 0xff,
+                (value >>> 8) & 0xff,
+                (value >>> 16) & 0xff,
+                (value >>> 24) & 0xff
+            );
+        }
+
+        function join(parts) {
+            const output = new Uint8Array(parts.reduce((sum, part) => sum + part.byteLength, 0));
+            let offset = 0;
+            for (const part of parts) {
+                output.set(part, offset);
+                offset += part.byteLength;
+            }
+            return output;
+        }
+
+        function storedZip(csv) {
+            const name = encoder.encode('activities.csv');
+            const content = encoder.encode(csv);
+            const checksum = crc32(content);
+            const local = join([
+                u32(0x04034b50), u16(10), u16(0x0800), u16(0), u16(0), u16(0),
+                u32(checksum), u32(content.byteLength), u32(content.byteLength),
+                u16(name.byteLength), u16(0), name, content
+            ]);
+            const central = join([
+                u32(0x02014b50), u16(0x0314), u16(10), u16(0x0800), u16(0),
+                u16(0), u16(0), u32(checksum), u32(content.byteLength),
+                u32(content.byteLength), u16(name.byteLength), u16(0), u16(0),
+                u16(0), u16(0), u32((0o100644 << 16) >>> 0), u32(0), name
+            ]);
+            return join([
+                local, central, u32(0x06054b50), u16(0), u16(0), u16(1), u16(1),
+                u32(central.byteLength), u32(local.byteLength), u16(0)
+            ]);
+        }
+
+        function csv(id, type = 'Run') {
+            return [
+                'Activity ID,Activity Date,Activity Type,Activity Name,Elapsed Time,Moving Time,Distance',
+                `${id},2026-08-01T01:02:03Z,${type},Synthetic Browser Activity,3600,3500,10.5`,
+                ''
+            ].join('\n');
+        }
+
+        function cancelCsv() {
+            const rows = [
+                'Activity ID,Activity Date,Activity Type,Activity Name,Elapsed Time,Moving Time,Distance'
+            ];
+            for (let index = 0; index < 10_000; index += 1) {
+                rows.push(`cancel-${index},2026-08-02T02:03:04Z,Run,Synthetic Cancel,60,55,0`);
+            }
+            rows.push('');
+            return rows.join('\n');
+        }
+
+        async function createFrame(mode) {
+            const frame = document.createElement('iframe');
+            frame.title = `${mode} Source Manager`;
+            frame.src = `../../source-manager.html?mode=${mode}`;
+            frames.append(frame);
+            await new Promise((resolve, reject) => {
+                frame.onload = resolve;
+                frame.onerror = reject;
+            });
+            await waitFor(
+                () => !frame.contentDocument.getElementById('first-run').hidden,
+                `${mode.toUpperCase()}_FIRST_RUN_TIMEOUT`
+            );
+            return frame;
+        }
+
+        async function choose(frame, source, file, useDrop = false) {
+            const doc = frame.contentDocument;
+            doc.querySelector(`[data-open-import="${source}"]`).click();
+            await waitFor(() => doc.getElementById('import-dialog').open, 'DIALOG_OPEN_TIMEOUT');
+            const realmFile = new frame.contentWindow.File(
+                [await file.arrayBuffer()],
+                file.name,
+                { type: file.type }
+            );
+            const transfer = new frame.contentWindow.DataTransfer();
+            transfer.items.add(realmFile);
+            if (useDrop) {
+                doc.getElementById('dropzone').dispatchEvent(new frame.contentWindow.DragEvent('drop', {
+                    bubbles: true,
+                    cancelable: true,
+                    dataTransfer: transfer
+                }));
+            } else {
+                const input = doc.getElementById('file-input');
+                Object.defineProperty(input, 'files', { value: transfer.files, configurable: true });
+                input.dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true }));
+            }
+            await waitFor(
+                () => !doc.getElementById('selection-summary').hidden,
+                'PREFLIGHT_TIMEOUT'
+            );
+            return doc;
+        }
+
+        async function auditServedProductionSources() {
+            const paths = [
+                '../../js/source-manager.js',
+                '../../js/app/source-manager.js',
+                '../../js/pages/source-manager/source-manager.js'
+            ];
+            for (const path of paths) {
+                const response = await fetch(path, { cache: 'no-store', credentials: 'omit' });
+                if (!response.ok) throw new Error('SOURCE_AUDIT_FETCH_FAILED');
+                const source = await response.text();
+                metrics.authorization += (
+                    source.match(/Authorization|Bearer|access_token|refresh_token/gi) || []
+                ).length;
+                metrics.webSocket += (source.match(/\bWebSocket\b/g) || []).length;
+            }
+        }
+
+        async function importFile(frame, source, file, expectedReports, useDrop = false) {
+            const doc = await choose(frame, source, file, useDrop);
+            if (useDrop) assert(!doc.getElementById('selection-summary').hidden, 'DROP_SELECTION_READY');
+            assert(!doc.getElementById('start-import').disabled, 'PREFLIGHT_READY');
+            doc.getElementById('start-import').click();
+            await waitFor(
+                () => doc.querySelectorAll('.report-card').length >= expectedReports,
+                'IMPORT_REPORT_TIMEOUT',
+                30_000
+            );
+            return doc;
+        }
+
+        function collectResources(frame) {
+            const origin = location.origin;
+            for (const entry of frame.contentWindow.performance.getEntriesByType('resource')) {
+                let url;
+                try { url = new URL(entry.name); } catch { continue; }
+                const externalHttp = url.origin !== origin && /^https?:$/.test(url.protocol);
+                if (externalHttp) metrics.externalHttp += 1;
+                if (externalHttp && /strava|garmin|coros|wahoo|polar/i.test(url.hostname + url.pathname)) {
+                    metrics.provider += 1;
+                }
+                if (/analytics|telemetry|insights|gtag|tagmanager/i.test(url.hostname + url.pathname)) metrics.telemetry += 1;
+                if (entry.initiatorType === 'fetch') metrics.fetch += 1;
+                if (entry.initiatorType === 'xmlhttprequest') metrics.xhr += 1;
+            }
+        }
+
+        let realFrame;
+        let demoFrame;
+        try {
+            await auditServedProductionSources();
+            await ensureSentinel();
+            const sentinelBefore = await sentinelSnapshot();
+            realFrame = await createFrame('real');
+            const realDoc = realFrame.contentDocument;
+            assert(realDoc.querySelectorAll('[data-source-card]').length === 4, 'FOUR_SOURCE_CARDS');
+            assert(realDoc.getElementById('preview-total').textContent === '0 activities', 'EMPTY_PREVIEW');
+            assert(
+                realDoc.querySelector('[data-open-import="local"]')?.tagName === 'BUTTON',
+                'KEYBOARD_ENTRY_PRESENT'
+            );
+
+            const privateFilename = 'private-athlete-route.csv';
+            const firstFile = new File([csv('browser-001')], privateFilename, { type: 'text/csv' });
+            await importFile(realFrame, 'local', firstFile, 1);
+            assert(realDoc.getElementById('preview-total').textContent === '1 activity', 'CSV_SUCCESS_PREVIEW');
+            assert(!realDoc.body.textContent.includes(privateFilename), 'NO_RAW_FILENAME_DOM');
+
+            realDoc.getElementById('dialog-close').click();
+            await importFile(realFrame, 'local', firstFile, 2);
+            assert(realDoc.getElementById('preview-total').textContent === '1 activity', 'EXACT_DUPLICATE_NO_SECOND_ACTIVITY');
+            assert(realDoc.getElementById('report-list').textContent.includes('skipped_exact_duplicate'), 'EXACT_DUPLICATE_REPORT');
+
+            realDoc.getElementById('dialog-close').click();
+            const zipFile = new File([storedZip(csv('browser-zip-001', 'Ride'))], 'private-archive.zip', {
+                type: 'application/zip'
+            });
+            await importFile(realFrame, 'archive', zipFile, 3, true);
+            assert(realDoc.getElementById('preview-total').textContent === '2 activities', 'ZIP_SUCCESS_PREVIEW');
+            assert(!realDoc.body.textContent.includes('private-archive.zip'), 'NO_ZIP_FILENAME_DOM');
+
+            realDoc.getElementById('dialog-close').click();
+            const fitDoc = await choose(realFrame, 'local', new File(['private'], 'private.fit'));
+            assert(fitDoc.getElementById('start-import').disabled, 'FIT_UNSUPPORTED_DISABLED');
+            assert(fitDoc.getElementById('selection-list').textContent.includes('FILE_TYPE_UNSUPPORTED'), 'FIT_UNSUPPORTED_COPY');
+            fitDoc.getElementById('dialog-close').click();
+
+            const invalidDoc = await choose(realFrame, 'archive', new File(['not zip'], 'invalid.zip'));
+            assert(invalidDoc.getElementById('start-import').disabled, 'INVALID_ZIP_DISABLED');
+            assert(invalidDoc.getElementById('selection-list').textContent.includes('FILE_HEADER_INVALID'), 'INVALID_ZIP_COPY');
+            invalidDoc.getElementById('dialog-close').click();
+
+            const cancelDoc = await choose(realFrame, 'local', new File([cancelCsv()], 'synthetic-cancel.csv'));
+            cancelDoc.getElementById('start-import').click();
+            await waitFor(() => !cancelDoc.getElementById('import-progress').hidden, 'CANCEL_PROGRESS_TIMEOUT', 30_000);
+            cancelDoc.getElementById('cancel-import').click();
+            await waitFor(
+                () => cancelDoc.getElementById('report-list').textContent.includes('cancelled'),
+                'CANCEL_REPORT_TIMEOUT',
+                30_000
+            );
+            assert(cancelDoc.getElementById('report-list').textContent.includes('cancelled'), 'CANCEL_OBSERVABLE');
+
+            collectResources(realFrame);
+            realFrame.contentWindow.location.reload();
+            await new Promise(resolve => { realFrame.onload = resolve; });
+            await waitFor(
+                () => realFrame.contentDocument.getElementById('preview-total').textContent === '2 activities',
+                'RELOAD_PREVIEW_TIMEOUT',
+                30_000
+            );
+            assert(realFrame.contentDocument.querySelectorAll('.report-card').length >= 4, 'RELOAD_IMPORT_LOG');
+            assert(
+                realFrame.contentDocument.querySelectorAll('.report-item').length <= 103,
+                'REPORT_RENDER_BOUNDED'
+            );
+            collectResources(realFrame);
+
+            demoFrame = await createFrame('demo');
+            const demoDoc = demoFrame.contentDocument;
+            assert(demoDoc.querySelectorAll('[data-source-card]').length === 4, 'DEMO_FOUR_SOURCE_CARDS');
+            assert(demoDoc.getElementById('preview-total').textContent === '0 activities', 'DEMO_REAL_ISOLATION');
+            assert(demoDoc.querySelector('[data-open-import="local"]').disabled, 'DEMO_IMPORT_DISABLED');
+            assert(demoDoc.querySelector('[data-source-card="demo"]').dataset.status === 'available', 'DEMO_AVAILABLE_STATE');
+            collectResources(demoFrame);
+
+            const v2 = await v2Snapshot();
+            const sentinelAfter = await sentinelSnapshot();
+            assert(sentinelBefore === sentinelAfter, 'LEGACY_SENTINEL_UNCHANGED');
+            assert(v2.version === 2, 'V2_VERSION_2');
+            assert(v2.stores.length === 11, 'V2_ELEVEN_STORES');
+            assert(Object.values(v2.indexes).reduce((sum, list) => sum + list.length, 0) === 9, 'V2_NINE_INDEXES');
+            assert(v2.counts.activities === 2, 'CANONICAL_ACTIVITY_COUNT');
+
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            const cacheNames = await caches.keys();
+            assert(registrations.length === 0, 'NO_SERVICE_WORKERS');
+            assert(cacheNames.length === 0, 'NO_CACHE_STORAGE');
+            assert(Object.values(metrics).every(value => value === 0), 'ZERO_UNSAFE_BROWSER_METRICS');
+
+            realFrame.remove();
+            demoFrame.remove();
+            await new Promise(resolve => setTimeout(resolve, 100));
+            const result = {
+                status: 'passed',
+                gates,
+                metrics,
+                externalDriverRequired: [
+                    'startup console warnings and errors',
+                    'uncaught exceptions and unhandled rejections'
+                ],
+                v2: {
+                    version: v2.version,
+                    stores: v2.stores,
+                    indexes: v2.indexes,
+                    counts: v2.counts
+                }
+            };
+            document.body.dataset.status = 'passed';
+            state.textContent = 'passed';
+            summary.textContent = JSON.stringify(result, null, 2);
+        } catch (error) {
+            realFrame?.remove();
+            demoFrame?.remove();
+            document.body.dataset.status = 'failed';
+            state.textContent = 'failed';
+            summary.textContent = JSON.stringify({
+                status: 'failed',
+                code: typeof error?.message === 'string' ? error.message : 'BROWSER_SMOKE_FAILED',
+                gates,
+                metrics
+            }, null, 2);
+        }
+    </script>
+</body>
+</html>
