@@ -5,6 +5,7 @@ import {
     V2_CANONICAL_SCHEMA_VERSION,
     V2_DATABASE_NAME,
     V2_DATABASE_VERSION,
+    V2_IMPORT_MIGRATION_ID,
     V2_METADATA_KEY,
     V2_SCHEMA_ID,
     V2_STORE_NAME
@@ -210,13 +211,29 @@ function validBootstrapMigration(value) {
     return migration !== null
         && migration.id === V2_BOOTSTRAP_MIGRATION_ID
         && migration.fromVersion === 0
-        && migration.toVersion === V2_DATABASE_VERSION
+        && migration.toVersion === 1
         && migration.status === 'completed'
         && isStrictUtcInstant(migration.startedAt)
         && migration.completedAt === migration.startedAt
         && isOpaqueString(migration.applicationVersion)
         && validSummary(migration.inputSummary, 0)
         && validSummary(migration.outputSummary, 8)
+        && migration.errorCode === null
+        && migration.retryCount === 0;
+}
+
+function validImportMigration(value) {
+    const migration = ownDataValues(value, MIGRATION_FIELDS);
+    return migration !== null
+        && migration.id === V2_IMPORT_MIGRATION_ID
+        && migration.fromVersion === 1
+        && migration.toVersion === 2
+        && migration.status === 'completed'
+        && isStrictUtcInstant(migration.startedAt)
+        && migration.completedAt === migration.startedAt
+        && isOpaqueString(migration.applicationVersion)
+        && validSummary(migration.inputSummary, 8)
+        && validSummary(migration.outputSummary, 11)
         && migration.errorCode === null
         && migration.retryCount === 0;
 }
@@ -295,6 +312,7 @@ function verifyDatabaseState(database) {
         let transaction;
         let metadataRequest;
         let migrationRequest;
+        let importMigrationRequest;
         let requestFailed = false;
 
         try {
@@ -308,6 +326,9 @@ function verifyDatabaseState(database) {
             migrationRequest = transaction
                 .objectStore(V2_STORE_NAME.MIGRATIONS)
                 .get(V2_BOOTSTRAP_MIGRATION_ID);
+            importMigrationRequest = transaction
+                .objectStore(V2_STORE_NAME.MIGRATIONS)
+                .get(V2_IMPORT_MIGRATION_ID);
         } catch {
             reject(storageError(
                 STORAGE_ERROR_CODE.SCHEMA_MISMATCH,
@@ -322,6 +343,9 @@ function verifyDatabaseState(database) {
         migrationRequest.onerror = () => {
             requestFailed = true;
         };
+        importMigrationRequest.onerror = () => {
+            requestFailed = true;
+        };
         transaction.onerror = () => {
             requestFailed = true;
         };
@@ -334,9 +358,11 @@ function verifyDatabaseState(database) {
         transaction.oncomplete = () => {
             let metadata;
             let migration;
+            let importMigration;
             try {
                 metadata = metadataRequest.result;
                 migration = migrationRequest.result;
+                importMigration = importMigrationRequest.result;
             } catch {
                 requestFailed = true;
             }
@@ -345,6 +371,7 @@ function verifyDatabaseState(database) {
                 requestFailed
                 || !validMetadata(metadata)
                 || !validBootstrapMigration(migration)
+                || !validImportMigration(importMigration)
             ) {
                 reject(storageError(
                     STORAGE_ERROR_CODE.SCHEMA_MISMATCH,

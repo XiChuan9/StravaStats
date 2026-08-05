@@ -11,6 +11,7 @@ import {
     STORAGE_ERROR_CODE,
     StorageError,
     V2_DATABASE_NAME,
+    V2_DATABASE_VERSION,
     createCanonicalStore
 } from '../../js/storage/index.js';
 import { runTransaction } from '../../js/storage/transaction.js';
@@ -28,7 +29,10 @@ function options(indexedDB) {
 
 function openDatabase(indexedDB) {
     return new Promise((resolve, reject) => {
-        const request = indexedDB.open(V2_DATABASE_NAME, 1);
+        const request = indexedDB.open(
+            V2_DATABASE_NAME,
+            V2_DATABASE_VERSION
+        );
         request.onerror = () => reject(request.error);
         request.onsuccess = () => resolve(request.result);
     });

@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta
+        http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'nonce-pr07-import-smoke'; connect-src 'self'; img-src data:; style-src 'unsafe-inline'; object-src 'none'; base-uri 'none'; worker-src 'self'"
+    >
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="data:,">
+    <title>PR-07 Import Core browser smoke</title>
+    <style>
+        body { font-family: system-ui, sans-serif; margin: 2rem; }
+        [data-status="passed"] { color: #126b31; }
+        [data-status="failed"] { color: #9d1c1c; }
+        pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+    </style>
+</head>
+<body data-status="running">
+    <main>
+        <h1>PR-07 Import Core browser smoke</h1>
+        <p id="state" data-testid="state">running</p>
+        <pre id="summary" data-testid="summary">{"status":"running"}</pre>
+    </main>
+    <script type="module" nonce="pr07-import-smoke">
+        const V2_NAME = 'strava-stats-v2';
+        const SENTINEL_NAME = 'synthetic-pr07-legacy-like-sentinel';
+        const RELOAD_KEY = 'pr07-import-browser-reload';
+        const MEDIA_TYPE = 'application/vnd.stravastats.synthetic+json';
+        const EXPECTED_STORES = [
+            'activities', 'activitySources', 'devices', 'events', 'importItems',
+            'importJobs', 'laps', 'metadata', 'migrations', 'rawArtifacts',
+            'streamSeries'
+        ];
+        const stateElement = document.querySelector('#state');
+        const summaryElement = document.querySelector('#summary');
+        const phase = sessionStorage.getItem(RELOAD_KEY) === 'first-complete'
+            ? 'reload'
+            : 'first-load';
+        const metrics = {
+            authorizationAttempts: 0,
+            consoleErrors: 0,
+            consoleWarnings: 0,
+            externalFetch: 0,
+            externalResources: 0,
+            providerEndpoints: 0,
+            uncaught: 0,
+            unhandled: 0,
+            xhr: 0,
+            webSocket: 0
+        };
+        const gates = [];
+        let service;
+
+        console.error = () => { metrics.consoleErrors += 1; };
+        console.warn = () => { metrics.consoleWarnings += 1; };
+        addEventListener('error', event => {
+            metrics.uncaught += 1;
+            event.preventDefault();
+        });
+        addEventListener('unhandledrejection', event => {
+            metrics.unhandled += 1;
+            event.preventDefault();
+        });
+        const nativeFetch = globalThis.fetch.bind(globalThis);
+        globalThis.fetch = (input, init) => {
+            const url = new URL(
+                typeof input === 'string' ? input : input.url,
+                location.href
+            );
+            try {
+                const headers = new Headers(init?.headers);
+                if (headers.has('authorization')) metrics.authorizationAttempts += 1;
+            } catch {
+                metrics.authorizationAttempts += 1;
+            }
+            if (url.origin !== location.origin) {
+                metrics.externalFetch += 1;
+                return Promise.reject(new TypeError('blocked'));
+            }
+            return nativeFetch(input, init);
+        };
+        XMLHttpRequest.prototype.open = function () {
+            metrics.xhr += 1;
+            throw new DOMException('blocked', 'SecurityError');
+        };
+        globalThis.WebSocket = class BlockedWebSocket {
+            constructor() {
+                metrics.webSocket += 1;
+                throw new DOMException('blocked', 'SecurityError');
+            }
+        };
+
+        function assert(condition, code) {
+            if (!condition) throw new Error(code);
+        }
+
+        async function gate(name, callback) {
+            await callback();
+            gates.push(name);
+        }
+
+        function requestResult(request) {
+            return new Promise((resolve, reject) => {
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = event => {
+                    event.preventDefault();
+                    reject(request.error);
+                };
+            });
+        }
+
+        function transactionDone(transaction) {
+            return new Promise((resolve, reject) => {
+                transaction.oncomplete = resolve;
+                transaction.onabort = () => reject(transaction.error);
+                transaction.onerror = event => event.preventDefault();
+            });
+        }
+
+        function openDatabase(name, version, upgrade) {
+            return new Promise((resolve, reject) => {
+                const request = version === undefined
+                    ? indexedDB.open(name)
+                    : indexedDB.open(name, version);
+                request.onupgradeneeded = event => {
+                    upgrade?.(request.result, request.transaction, event);
+                };
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = event => {
+                    event.preventDefault();
+                    reject(request.error);
+                };
+            });
+        }
+
+        async function ensureSentinel() {
+            const database = await openDatabase(SENTINEL_NAME, 1, db => {
+                db.createObjectStore('syntheticRecords', { keyPath: 'id' }).add({
+                    id: 'synthetic-sentinel',
+                    values: [null, 0, 'value']
+                });
+            });
+            database.close();
+        }
+
+        async function sentinelSnapshot() {
+            const database = await openDatabase(SENTINEL_NAME);
+            const transaction = database.transaction('syntheticRecords', 'readonly');
+            const records = await requestResult(
+                transaction.objectStore('syntheticRecords').getAll()
+            );
+            await transactionDone(transaction);
+            database.close();
+            const digest = await crypto.subtle.digest(
+                'SHA-256',
+                new TextEncoder().encode(JSON.stringify(records))
+            );
+            return {
+                version: 1,
+                stores: ['syntheticRecords'],
+                recordCount: records.length,
+                byteHash: [...new Uint8Array(digest)]
+                    .map(value => value.toString(16).padStart(2, '0'))
+                    .join('')
+            };
+        }
+
+        async function inspectV2() {
+            const database = await openDatabase(V2_NAME);
+            const stores = Array.from(database.objectStoreNames).sort();
+            const transaction = database.transaction(stores, 'readonly');
+            const counts = {};
+            const indexes = {};
+            for (const name of stores) {
+                const objectStore = transaction.objectStore(name);
+                counts[name] = await requestResult(objectStore.count());
+                indexes[name] = Array.from(objectStore.indexNames).sort();
+            }
+            const artifacts = await requestResult(
+                transaction.objectStore('rawArtifacts').getAll()
+            );
+            const sha256LookupCount = artifacts.length === 0
+                ? 0
+                : (await requestResult(
+                    transaction.objectStore('rawArtifacts')
+                        .index('bySha256')
+                        .getAll(artifacts[0].sha256)
+                )).length;
+            await transactionDone(transaction);
+            const version = database.version;
+            database.close();
+            return { version, stores, indexes, counts, sha256LookupCount };
+        }
+
+        try {
+            const [{ createImportStore }, importModule, fixtureResponse] =
+                await Promise.all([
+                    import('../../js/storage/index.js'),
+                    import('../../js/import/index.js'),
+                    fetch('../fixtures/synthetic/canonical/import-run-summary.json')
+                ]);
+            const content = await fixtureResponse.text();
+            assert(fixtureResponse.ok && content.length > 0, 'fixture-load');
+            await ensureSentinel();
+            const sentinelBefore = await sentinelSnapshot();
+            let idSequence = 0;
+            const importStore = createImportStore({
+                indexedDB,
+                IDBKeyRange,
+                now: () => Date.parse('2026-08-05T03:04:05.006Z'),
+                applicationVersion: 'pr07-browser-smoke@1'
+            });
+            const nativeWorker = new Worker(
+                new URL('../../js/import/synthetic-import-worker.js', import.meta.url),
+                { type: 'module' }
+            );
+            service = importModule.createImportService({
+                importStore,
+                worker: importModule.createBrowserImportWorker(nativeWorker),
+                crypto,
+                createId: kind => `browser-${phase}-${kind}-${++idSequence}`
+            });
+            await gate('initialize', () => service.initialize());
+
+            let report;
+            if (phase === 'first-load') {
+                await gate('synthetic-import', async () => {
+                    const run = await service.importArtifacts([{
+                        mediaType: MEDIA_TYPE,
+                        content
+                    }]);
+                    report = await service.waitForJob(run.jobId);
+                });
+                assert(report.status === 'completed', 'first-report');
+                sessionStorage.setItem(RELOAD_KEY, 'first-complete');
+            } else {
+                await gate('persistent-import-log', async () => {
+                    const jobs = await importStore.listImportJobs();
+                    assert(jobs.length === 1, 'persistent-job-count');
+                    report = await service.getReport(jobs[0].id);
+                });
+                assert(report.status === 'completed', 'reload-report');
+                await gate('exact-duplicate', async () => {
+                    const run = await service.importArtifacts([{
+                        mediaType: MEDIA_TYPE,
+                        content
+                    }]);
+                    report = await service.waitForJob(run.jobId);
+                });
+                assert(
+                    report.totals.skippedExactDuplicate === 1,
+                    'duplicate-report'
+                );
+            }
+
+            const preview = await service.previewActivities();
+            assert(preview.total === 1, 'preview-total');
+            assert(
+                preview.bySportCategory.length === 1
+                && preview.bySportCategory[0].sportCategory === 'run'
+                && preview.bySportCategory[0].count === 1,
+                'preview-sport'
+            );
+            const v2 = await inspectV2();
+            assert(v2.version === 2, 'v2-version');
+            assert(JSON.stringify(v2.stores) === JSON.stringify(EXPECTED_STORES), 'stores');
+            assert(v2.sha256LookupCount === 1, 'sha-index');
+            const sentinelAfter = await sentinelSnapshot();
+            assert(
+                JSON.stringify(sentinelAfter) === JSON.stringify(sentinelBefore),
+                'legacy-unaffected'
+            );
+            const jobs = await importStore.listImportJobs();
+            await service.close();
+            service = null;
+
+            const resources = performance.getEntriesByType('resource')
+                .map(entry => new URL(entry.name, location.href));
+            metrics.externalResources = resources
+                .filter(url => url.origin !== location.origin).length;
+            metrics.providerEndpoints = resources
+                .filter(url => /strava\.com|\/api\//i.test(url.href)).length;
+            const serviceWorkers = 'serviceWorker' in navigator
+                ? (await navigator.serviceWorker.getRegistrations()).length
+                : 0;
+            const cacheEntries = 'caches' in globalThis
+                ? (await caches.keys()).length
+                : 0;
+            assert(Object.values(metrics).every(value => value === 0), 'metrics');
+            assert(serviceWorkers === 0, 'service-workers');
+            assert(cacheEntries === 0, 'cache-storage');
+            const summary = {
+                status: 'passed',
+                phase,
+                gates,
+                report: {
+                    status: report.status,
+                    totals: report.totals
+                },
+                preview,
+                v2,
+                importLogCount: jobs.length,
+                legacyUnchanged: true,
+                metrics,
+                serviceWorkers,
+                cacheEntries
+            };
+            document.body.dataset.status = 'passed';
+            stateElement.textContent = `passed:${phase}`;
+            summaryElement.textContent = JSON.stringify(summary, null, 2);
+            globalThis.__PR07_BROWSER_RESULT__ = summary;
+        } catch {
+            if (service) await service.close().catch(() => {});
+            const summary = {
+                status: 'failed',
+                phase,
+                gateCount: gates.length,
+                metrics
+            };
+            document.body.dataset.status = 'failed';
+            stateElement.textContent = `failed:${phase}`;
+            summaryElement.textContent = JSON.stringify(summary, null, 2);
+            globalThis.__PR07_BROWSER_RESULT__ = summary;
+        }
+    </script>
+</body>
+</html>

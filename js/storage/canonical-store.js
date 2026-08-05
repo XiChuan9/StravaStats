@@ -380,29 +380,23 @@ function relationRange(keyRange, activityId, operation) {
     }
 }
 
-export function putCanonicalBundle(database, keyRange, bundle) {
-    let records;
-    try {
-        records = physicalRecords(validatedBundleSnapshot(bundle));
-    } catch (error) {
-        return Promise.reject(error);
-    }
-    let indexedRelations;
-    try {
-        indexedRelations = relationRange(
-            keyRange,
-            records.activityId,
-            STORAGE_OPERATION.PUT_BUNDLE
-        );
-    } catch (error) {
-        return Promise.reject(error);
-    }
+export function prepareCanonicalBundleWrite(keyRange, bundle) {
+    const records = physicalRecords(validatedBundleSnapshot(bundle));
+    const indexedRelations = relationRange(
+        keyRange,
+        records.activityId,
+        STORAGE_OPERATION.PUT_BUNDLE
+    );
+    return Object.freeze({ records, indexedRelations });
+}
+
+export function enqueueCanonicalBundleWrite(
+    context,
+    prepared,
+    shouldCommit = () => true
+) {
+    const { records, indexedRelations } = prepared;
     let result = null;
-    return runTransaction(database, {
-        storeNames: DATA_STORES,
-        mode: 'readwrite',
-        operation: STORAGE_OPERATION.PUT_BUNDLE
-    }, context => {
         const activity = context.get(
             V2_STORE_NAME.ACTIVITIES,
             records.activityId
@@ -441,6 +435,13 @@ export function putCanonicalBundle(database, keyRange, bundle) {
         ));
 
         context.afterReads(() => {
+            if (!shouldCommit()) {
+                result = Object.freeze({
+                    status: 'skipped',
+                    activityId: null
+                });
+                return;
+            }
             const existingActivity = activity.read();
             const relationSetsMatch = (
                 sameRecordSet(
@@ -544,8 +545,21 @@ export function putCanonicalBundle(database, keyRange, bundle) {
                 activityId: records.activityId
             });
         });
-        return () => result;
-    });
+    return () => result;
+}
+
+export function putCanonicalBundle(database, keyRange, bundle) {
+    let prepared;
+    try {
+        prepared = prepareCanonicalBundleWrite(keyRange, bundle);
+    } catch (error) {
+        return Promise.reject(error);
+    }
+    return runTransaction(database, {
+        storeNames: DATA_STORES,
+        mode: 'readwrite',
+        operation: STORAGE_OPERATION.PUT_BUNDLE
+    }, context => enqueueCanonicalBundleWrite(context, prepared));
 }
 
 function normalizeGetOptions(options) {

@@ -263,8 +263,22 @@ docs/tasks/pr-07-import-core.md
 tests/import/import-browser-smoke.html
 ```
 
-The cumulative maximum is the literal union of the paths above: 32 paths. A
-33rd path requires a necessity record in this Task Brief before modification.
+### B4: historical storage-freeze compatibility
+
+```text
+tests/shadow/shadow-boundaries.test.js
+```
+
+Necessity record: the PR-06 guard intentionally froze the then-current PR-05
+storage descriptor and public storage entry by exact hashes. PR-07 is the
+approved next owner of the additive physical v2 migration and the minimal
+storage-owned Import Store seam, so the historical fixed expectations must move
+to the reviewed PR-07 versions or the repository-wide gate rejects the approved
+migration. This update does not change Shadow behavior, loosen the guard, use a
+dynamic allowlist, or alter any Repository file/export.
+
+The cumulative maximum is the literal union of the paths above: 33 paths. A
+34th path requires a necessity record in this Task Brief before modification.
 Allowlist checks use this literal list, never current diff output, a dynamic
 directory allowlist, skip rules, or generated expectations.
 

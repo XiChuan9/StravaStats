@@ -1,10 +1,11 @@
 export const V2_DATABASE_NAME = 'strava-stats-v2';
-export const V2_DATABASE_VERSION = 1;
-export const V2_SCHEMA_ID = 'strava-stats-v2@1';
+export const V2_DATABASE_VERSION = 2;
+export const V2_SCHEMA_ID = 'strava-stats-v2@2';
 export const V2_CANONICAL_SCHEMA_VERSION = 1;
 
 export const V2_METADATA_KEY = 'database';
 export const V2_BOOTSTRAP_MIGRATION_ID = 'schema-0001-bootstrap';
+export const V2_IMPORT_MIGRATION_ID = 'schema-0002-import-core';
 
 export const V2_STORE_NAME = Object.freeze({
     METADATA: 'metadata',
@@ -14,7 +15,10 @@ export const V2_STORE_NAME = Object.freeze({
     STREAM_SERIES: 'streamSeries',
     LAPS: 'laps',
     EVENTS: 'events',
-    DEVICES: 'devices'
+    DEVICES: 'devices',
+    RAW_ARTIFACTS: 'rawArtifacts',
+    IMPORT_JOBS: 'importJobs',
+    IMPORT_ITEMS: 'importItems'
 });
 
 export const STORAGE_ERROR_CODE = Object.freeze({
@@ -42,5 +46,17 @@ export const STORAGE_OPERATION = Object.freeze({
     GET_BUNDLE: 'getBundle',
     LIST_ACTIVITIES: 'listActivities',
     CREATE_BACKUP_MANIFEST: 'createBackupManifest',
+    CREATE_IMPORT_STORE: 'createImportStore',
+    CREATE_IMPORT_JOB: 'createImportJob',
+    TRANSITION_IMPORT_JOB: 'transitionImportJob',
+    TRANSITION_IMPORT_ITEM: 'transitionImportItem',
+    CANCEL_IMPORT_JOB: 'cancelImportJob',
+    STORE_RAW_ARTIFACT: 'storeRawArtifact',
+    PERSIST_IMPORT_ITEM: 'persistImportItem',
+    GET_IMPORT_JOB: 'getImportJob',
+    GET_IMPORT_ITEM: 'getImportItem',
+    GET_RAW_ARTIFACT: 'getRawArtifact',
+    LIST_IMPORT_ITEMS: 'listImportItems',
+    LIST_IMPORT_JOBS: 'listImportJobs',
     CLOSE: 'close'
 });

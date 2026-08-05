@@ -5,6 +5,7 @@ import {
     V2_CANONICAL_SCHEMA_VERSION,
     V2_DATABASE_NAME,
     V2_DATABASE_VERSION,
+    V2_IMPORT_MIGRATION_ID,
     V2_METADATA_KEY,
     V2_SCHEMA_ID,
     V2_STORE_NAME
@@ -17,7 +18,29 @@ export const V2_MIGRATION_REGISTRY = Object.freeze([
         id: V2_BOOTSTRAP_MIGRATION_ID,
         fromVersion: 0,
         toVersion: 1
+    }),
+    Object.freeze({
+        id: V2_IMPORT_MIGRATION_ID,
+        fromVersion: 1,
+        toVersion: 2
     })
+]);
+
+const V1_SCHEMA_ID = 'strava-stats-v2@1';
+const V1_STORE_NAMES = Object.freeze([
+    V2_STORE_NAME.METADATA,
+    V2_STORE_NAME.MIGRATIONS,
+    V2_STORE_NAME.ACTIVITIES,
+    V2_STORE_NAME.ACTIVITY_SOURCES,
+    V2_STORE_NAME.STREAM_SERIES,
+    V2_STORE_NAME.LAPS,
+    V2_STORE_NAME.EVENTS,
+    V2_STORE_NAME.DEVICES
+]);
+const IMPORT_STORE_NAMES = Object.freeze([
+    V2_STORE_NAME.RAW_ARTIFACTS,
+    V2_STORE_NAME.IMPORT_JOBS,
+    V2_STORE_NAME.IMPORT_ITEMS
 ]);
 
 const DATA_MIGRATION_DEFINITION_FIELDS = Object.freeze([
@@ -107,8 +130,10 @@ function createStore(database, descriptor) {
     return store;
 }
 
-function ensurePhysicalSchema(database, transaction) {
-    for (const descriptor of V2_SCHEMA.stores) {
+function ensurePhysicalSchema(database, transaction, storeNames) {
+    for (const descriptor of V2_SCHEMA.stores.filter(candidate => (
+        storeNames.includes(candidate.name)
+    ))) {
         let store;
         if (database.objectStoreNames.contains(descriptor.name)) {
             store = transaction.objectStore(descriptor.name);
@@ -187,13 +212,13 @@ function applyBootstrapMigration(database, transaction, {
     applicationVersion,
     timestamp
 }) {
-    ensurePhysicalSchema(database, transaction);
+    ensurePhysicalSchema(database, transaction, V1_STORE_NAMES);
 
     const metadata = {
         key: V2_METADATA_KEY,
         databaseName: V2_DATABASE_NAME,
-        schemaId: V2_SCHEMA_ID,
-        indexedDbVersion: V2_DATABASE_VERSION,
+        schemaId: V1_SCHEMA_ID,
+        indexedDbVersion: 1,
         canonicalSchemaVersion: V2_CANONICAL_SCHEMA_VERSION,
         createdAt: timestamp,
         createdByApplicationVersion: applicationVersion
@@ -201,19 +226,83 @@ function applyBootstrapMigration(database, transaction, {
     const migration = {
         id: V2_BOOTSTRAP_MIGRATION_ID,
         fromVersion: 0,
-        toVersion: V2_DATABASE_VERSION,
+        toVersion: 1,
         status: 'completed',
         startedAt: timestamp,
         completedAt: timestamp,
         applicationVersion,
         inputSummary: { storeCount: 0 },
-        outputSummary: { storeCount: Object.keys(V2_STORE_NAME).length },
+        outputSummary: { storeCount: V1_STORE_NAMES.length },
         errorCode: null,
         retryCount: 0
     };
 
     transaction.objectStore(V2_STORE_NAME.METADATA).put(metadata);
     transaction.objectStore(V2_STORE_NAME.MIGRATIONS).put(migration);
+}
+
+function applyImportCoreMigration(database, transaction, {
+    applicationVersion,
+    timestamp
+}) {
+    ensurePhysicalSchema(database, transaction, [
+        ...V1_STORE_NAMES,
+        ...IMPORT_STORE_NAMES
+    ]);
+
+    const metadataStore = transaction.objectStore(V2_STORE_NAME.METADATA);
+    const metadataRequest = metadataStore.get(V2_METADATA_KEY);
+    metadataRequest.onsuccess = () => {
+        try {
+            const metadata = ownDataValues(metadataRequest.result, [
+                'key',
+                'databaseName',
+                'schemaId',
+                'indexedDbVersion',
+                'canonicalSchemaVersion',
+                'createdAt',
+                'createdByApplicationVersion'
+            ]);
+            if (
+                !metadata
+                || metadata.key !== V2_METADATA_KEY
+                || metadata.databaseName !== V2_DATABASE_NAME
+                || metadata.schemaId !== V1_SCHEMA_ID
+                || metadata.indexedDbVersion !== 1
+                || metadata.canonicalSchemaVersion !== V2_CANONICAL_SCHEMA_VERSION
+                || !isStrictUtcInstant(metadata.createdAt)
+                || typeof metadata.createdByApplicationVersion !== 'string'
+                || metadata.createdByApplicationVersion.length === 0
+            ) {
+                throw new TypeError('invalid prior metadata');
+            }
+            metadataStore.put({
+                ...metadata,
+                schemaId: V2_SCHEMA_ID,
+                indexedDbVersion: V2_DATABASE_VERSION
+            });
+        } catch {
+            try {
+                transaction.abort();
+            } catch {
+                // The versionchange terminal event remains authoritative.
+            }
+        }
+    };
+
+    transaction.objectStore(V2_STORE_NAME.MIGRATIONS).put({
+        id: V2_IMPORT_MIGRATION_ID,
+        fromVersion: 1,
+        toVersion: 2,
+        status: 'completed',
+        startedAt: timestamp,
+        completedAt: timestamp,
+        applicationVersion,
+        inputSummary: { storeCount: V1_STORE_NAMES.length },
+        outputSummary: { storeCount: V2_SCHEMA.stores.length },
+        errorCode: null,
+        retryCount: 0
+    });
 }
 
 export function applyStructuralMigrations(database, transaction, {
@@ -249,6 +338,11 @@ export function applyStructuralMigrations(database, transaction, {
 
         if (migration.id === V2_BOOTSTRAP_MIGRATION_ID) {
             applyBootstrapMigration(database, transaction, {
+                applicationVersion,
+                timestamp
+            });
+        } else if (migration.id === V2_IMPORT_MIGRATION_ID) {
+            applyImportCoreMigration(database, transaction, {
                 applicationVersion,
                 timestamp
             });
@@ -473,8 +567,10 @@ function validDataMigrationRecord(value, id) {
     }
     if (
         record.id !== id
-        || record.fromVersion !== V2_DATABASE_VERSION
-        || record.toVersion !== V2_DATABASE_VERSION
+        || record.fromVersion !== record.toVersion
+        || !Number.isInteger(record.fromVersion)
+        || record.fromVersion < 1
+        || record.fromVersion > V2_DATABASE_VERSION
         || !DATA_MIGRATION_STATUSES.includes(record.status)
         || !isStrictUtcInstant(record.startedAt)
         || (
