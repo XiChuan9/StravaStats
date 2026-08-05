@@ -116,6 +116,39 @@ export const V2_SCHEMA = deepFreeze({
             keyPath: 'id',
             autoIncrement: false,
             indexes: []
+        },
+        {
+            name: V2_STORE_NAME.RAW_ARTIFACTS,
+            keyPath: 'id',
+            autoIncrement: false,
+            indexes: [{
+                name: 'bySha256',
+                keyPath: 'sha256',
+                unique: false,
+                multiEntry: false
+            }]
+        },
+        {
+            name: V2_STORE_NAME.IMPORT_JOBS,
+            keyPath: 'id',
+            autoIncrement: false,
+            indexes: [{
+                name: 'byCreatedAt',
+                keyPath: 'createdAt',
+                unique: false,
+                multiEntry: false
+            }]
+        },
+        {
+            name: V2_STORE_NAME.IMPORT_ITEMS,
+            keyPath: 'id',
+            autoIncrement: false,
+            indexes: [{
+                name: 'byJobId',
+                keyPath: 'jobId',
+                unique: false,
+                multiEntry: false
+            }]
         }
     ]
 });

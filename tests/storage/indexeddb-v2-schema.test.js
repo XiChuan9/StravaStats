@@ -184,8 +184,8 @@ function assertDeepFrozenJson(value, seen = new Set()) {
 
 test('V2_SCHEMA is the exact deeply frozen JSON-safe physical descriptor', () => {
     assert.equal(V2_SCHEMA.databaseName, 'strava-stats-v2');
-    assert.equal(V2_SCHEMA.indexedDbVersion, 1);
-    assert.equal(V2_SCHEMA.stores.length, 8);
+    assert.equal(V2_SCHEMA.indexedDbVersion, 2);
+    assert.equal(V2_SCHEMA.stores.length, 11);
     assert.deepEqual(
         JSON.parse(JSON.stringify(V2_SCHEMA)),
         V2_SCHEMA
@@ -205,12 +205,15 @@ test('V2_SCHEMA is the exact deeply frozen JSON-safe physical descriptor', () =>
             },
             { name: 'laps', keyPath: 'id' },
             { name: 'events', keyPath: 'id' },
-            { name: 'devices', keyPath: 'id' }
+            { name: 'devices', keyPath: 'id' },
+            { name: 'rawArtifacts', keyPath: 'id' },
+            { name: 'importJobs', keyPath: 'id' },
+            { name: 'importItems', keyPath: 'id' }
         ]
     );
 });
 
-test('fresh initialization creates and reopens the exact v1 schema atomically', async () => {
+test('fresh initialization applies v1 then additive physical v2 atomically', async () => {
     const indexedDB = new IDBFactory();
     const storage = createCanonicalStore(options(indexedDB));
 
@@ -218,8 +221,8 @@ test('fresh initialization creates and reopens the exact v1 schema atomically', 
     assert.deepEqual(result, {
         status: 'ready',
         databaseName: V2_DATABASE_NAME,
-        indexedDbVersion: 1,
-        schemaId: 'strava-stats-v2@1',
+        indexedDbVersion: 2,
+        schemaId: 'strava-stats-v2@2',
         canonicalSchemaVersion: 1
     });
     assert.equal(Object.isFrozen(result), true);
@@ -235,8 +238,8 @@ test('fresh initialization creates and reopens the exact v1 schema atomically', 
     assert.deepEqual(metadata, {
         key: 'database',
         databaseName: 'strava-stats-v2',
-        schemaId: 'strava-stats-v2@1',
-        indexedDbVersion: 1,
+        schemaId: 'strava-stats-v2@2',
+        indexedDbVersion: 2,
         canonicalSchemaVersion: 1,
         createdAt: '2026-08-04T01:02:03.004Z',
         createdByApplicationVersion: 'test-app@1'
@@ -254,7 +257,151 @@ test('fresh initialization creates and reopens the exact v1 schema atomically', 
         errorCode: null,
         retryCount: 0
     });
+    assert.deepEqual(await readMigration(database, 'schema-0002-import-core'), {
+        id: 'schema-0002-import-core',
+        fromVersion: 1,
+        toVersion: 2,
+        status: 'completed',
+        startedAt: '2026-08-04T01:02:03.004Z',
+        completedAt: '2026-08-04T01:02:03.004Z',
+        applicationVersion: 'test-app@1',
+        inputSummary: { storeCount: 8 },
+        outputSummary: { storeCount: 11 },
+        errorCode: null,
+        retryCount: 0
+    });
     database.close();
+});
+
+async function createAcceptedV1(indexedDB, extraStore = false) {
+    return openDatabase(indexedDB, V2_DATABASE_NAME, 1, (database, transaction) => {
+        for (const descriptor of V2_SCHEMA.stores.slice(0, 8)) {
+            const objectStore = database.createObjectStore(descriptor.name, {
+                keyPath: descriptor.keyPath,
+                autoIncrement: descriptor.autoIncrement
+            });
+            for (const index of descriptor.indexes) {
+                objectStore.createIndex(index.name, index.keyPath, {
+                    unique: index.unique,
+                    multiEntry: index.multiEntry
+                });
+            }
+        }
+        if (extraStore) {
+            database.createObjectStore('unexpectedSyntheticStore', {
+                keyPath: 'id'
+            });
+        }
+        transaction.objectStore('metadata').put({
+            key: 'database',
+            databaseName: 'strava-stats-v2',
+            schemaId: 'strava-stats-v2@1',
+            indexedDbVersion: 1,
+            canonicalSchemaVersion: 1,
+            createdAt: '2026-08-04T01:02:03.004Z',
+            createdByApplicationVersion: 'accepted-v1@1'
+        });
+        transaction.objectStore('migrations').put({
+            id: 'schema-0001-bootstrap',
+            fromVersion: 0,
+            toVersion: 1,
+            status: 'completed',
+            startedAt: '2026-08-04T01:02:03.004Z',
+            completedAt: '2026-08-04T01:02:03.004Z',
+            applicationVersion: 'accepted-v1@1',
+            inputSummary: { storeCount: 0 },
+            outputSummary: { storeCount: 8 },
+            errorCode: null,
+            retryCount: 0
+        });
+        transaction.objectStore('activities').add({
+            activity: { id: 'opaque-v1-preserved-sentinel' }
+        });
+    });
+}
+
+test('accepted physical v1 upgrades additively and preserves all prior records', async () => {
+    const indexedDB = new IDBFactory();
+    const versionOne = await createAcceptedV1(indexedDB);
+    versionOne.close();
+
+    const storage = createCanonicalStore(options(indexedDB, 'upgrade-v2@1'));
+    await storage.initialize();
+    await storage.close();
+
+    const database = await openDatabase(indexedDB, V2_DATABASE_NAME, 2);
+    assertPhysicalSchema(database);
+    const transaction = database.transaction('activities', 'readonly');
+    assert.deepEqual(
+        await requestResult(
+            transaction.objectStore('activities').get('opaque-v1-preserved-sentinel')
+        ),
+        { activity: { id: 'opaque-v1-preserved-sentinel' } }
+    );
+    await transactionDone(transaction);
+    const [metadata] = await readBootstrap(database);
+    assert.equal(metadata.createdByApplicationVersion, 'accepted-v1@1');
+    assert.equal(metadata.schemaId, 'strava-stats-v2@2');
+    assert.equal((await readAllMigrations(database)).length, 2);
+    database.close();
+});
+
+test('failed physical v1-to-v2 upgrade rolls back and explicit retry preserves v1', async () => {
+    const indexedDB = new IDBFactory();
+    const versionOne = await createAcceptedV1(indexedDB);
+    versionOne.close();
+    const originalCreateObjectStore = IDBDatabase.prototype.createObjectStore;
+    IDBDatabase.prototype.createObjectStore = function (...args) {
+        if (args[0] === 'importJobs') {
+            throw new Error('synthetic v2 upgrade interruption');
+        }
+        return originalCreateObjectStore.apply(this, args);
+    };
+    try {
+        const interrupted = createCanonicalStore(options(indexedDB));
+        await assert.rejects(
+            interrupted.initialize(),
+            error => error.code === STORAGE_ERROR_CODE.MIGRATION_FAILED
+                && !JSON.stringify(error).includes('synthetic v2 upgrade interruption')
+        );
+    } finally {
+        IDBDatabase.prototype.createObjectStore = originalCreateObjectStore;
+    }
+
+    const afterFailure = await openDatabase(indexedDB, V2_DATABASE_NAME, 1);
+    assert.equal(afterFailure.version, 1);
+    assert.equal(afterFailure.objectStoreNames.contains('rawArtifacts'), false);
+    assert.equal(afterFailure.objectStoreNames.contains('importJobs'), false);
+    assert.equal(afterFailure.objectStoreNames.contains('importItems'), false);
+    afterFailure.close();
+
+    const retried = createCanonicalStore(options(indexedDB));
+    await retried.initialize();
+    await retried.close();
+    const database = await openDatabase(indexedDB, V2_DATABASE_NAME, 2);
+    assertPhysicalSchema(database);
+    const transaction = database.transaction('activities', 'readonly');
+    assert.ok(await requestResult(
+        transaction.objectStore('activities').get('opaque-v1-preserved-sentinel')
+    ));
+    await transactionDone(transaction);
+    database.close();
+});
+
+test('malformed physical v1 with an extra store fails before committing version 2', async () => {
+    const indexedDB = new IDBFactory();
+    const versionOne = await createAcceptedV1(indexedDB, true);
+    versionOne.close();
+    const storage = createCanonicalStore(options(indexedDB));
+    await assert.rejects(
+        storage.initialize(),
+        error => error.code === STORAGE_ERROR_CODE.MIGRATION_FAILED
+    );
+    const after = await openDatabase(indexedDB, V2_DATABASE_NAME, 1);
+    assert.equal(after.version, 1);
+    assert.equal(after.objectStoreNames.contains('unexpectedSyntheticStore'), true);
+    assert.equal(after.objectStoreNames.contains('rawArtifacts'), false);
+    after.close();
 });
 
 test('concurrent and repeated initialization is idempotent and read-only', async () => {
@@ -273,7 +420,7 @@ test('concurrent and repeated initialization is idempotent and read-only', async
     await second.initialize();
     await second.close();
 
-    const database = await openDatabase(indexedDB, V2_DATABASE_NAME, 1);
+    const database = await openDatabase(indexedDB, V2_DATABASE_NAME, V2_DATABASE_VERSION);
     const [metadata] = await readBootstrap(database);
     assert.equal(
         metadata.createdByApplicationVersion,
@@ -286,7 +433,10 @@ test('concurrent and repeated initialization is idempotent and read-only', async
         events: 0,
         laps: 0,
         metadata: 1,
-        migrations: 1,
+        importItems: 0,
+        importJobs: 0,
+        migrations: 2,
+        rawArtifacts: 0,
         streamSeries: 0
     });
     database.close();
@@ -297,7 +447,7 @@ test('same-version schema mismatch fails closed without repairing the database',
     const malformed = await openDatabase(
         indexedDB,
         V2_DATABASE_NAME,
-        1,
+        V2_DATABASE_VERSION,
         database => {
             database.createObjectStore('metadata', { keyPath: 'key' });
         }
@@ -310,8 +460,8 @@ test('same-version schema mismatch fails closed without repairing the database',
         return true;
     });
 
-    const after = await openDatabase(indexedDB, V2_DATABASE_NAME, 1);
-    assert.equal(after.version, 1);
+    const after = await openDatabase(indexedDB, V2_DATABASE_NAME, V2_DATABASE_VERSION);
+    assert.equal(after.version, V2_DATABASE_VERSION);
     assert.deepEqual(Array.from(after.objectStoreNames), ['metadata']);
     after.close();
 });
@@ -345,7 +495,7 @@ test('interrupted bootstrap aborts all structural work and explicit retry succee
     await retried.initialize();
     await retried.close();
 
-    const database = await openDatabase(indexedDB, V2_DATABASE_NAME, 1);
+    const database = await openDatabase(indexedDB, V2_DATABASE_NAME, V2_DATABASE_VERSION);
     assertPhysicalSchema(database);
     assert.deepEqual(await storeCounts(database), {
         activities: 0,
@@ -354,7 +504,10 @@ test('interrupted bootstrap aborts all structural work and explicit retry succee
         events: 0,
         laps: 0,
         metadata: 1,
-        migrations: 1,
+        importItems: 0,
+        importJobs: 0,
+        migrations: 2,
+        rawArtifacts: 0,
         streamSeries: 0
     });
     database.close();
@@ -366,8 +519,12 @@ test('multiple connections close on versionchange and reject unsupported reopen'
     const second = createCanonicalStore(options(indexedDB));
     await Promise.all([first.initialize(), second.initialize()]);
 
-    const upgraded = await openDatabase(indexedDB, V2_DATABASE_NAME, 2);
-    assert.equal(upgraded.version, 2);
+    const upgraded = await openDatabase(
+        indexedDB,
+        V2_DATABASE_NAME,
+        V2_DATABASE_VERSION + 1
+    );
+    assert.equal(upgraded.version, V2_DATABASE_VERSION + 1);
     upgraded.close();
 
     for (const storage of [first, second]) {
@@ -410,7 +567,7 @@ test('close before upgrade waits for a complete late schema and can recover', as
     });
     assert.deepEqual(await closing, { status: 'closed' });
 
-    const database = await openDatabase(indexedDB, V2_DATABASE_NAME, 1);
+    const database = await openDatabase(indexedDB, V2_DATABASE_NAME, V2_DATABASE_VERSION);
     assertPhysicalSchema(database);
     database.close();
     await storage.initialize();
@@ -466,7 +623,7 @@ test('close during upgrade ignores abort failure and settles after valid late su
         IDBDatabase.prototype.close = originalClose;
     }
 
-    const database = await openDatabase(indexedDB, V2_DATABASE_NAME, 1);
+    const database = await openDatabase(indexedDB, V2_DATABASE_NAME, V2_DATABASE_VERSION);
     assertPhysicalSchema(database);
     database.close();
     await storage.initialize();
@@ -478,7 +635,7 @@ test('data migration abort records failed and retries without partial output', a
     const storage = createCanonicalStore(options(indexedDB));
     await storage.initialize();
     await storage.close();
-    const database = await openDatabase(indexedDB, V2_DATABASE_NAME, 1);
+    const database = await openDatabase(indexedDB, V2_DATABASE_NAME, V2_DATABASE_VERSION);
     let shouldFail = true;
     let writes = 0;
     const definition = {
@@ -514,8 +671,8 @@ test('data migration abort records failed and retries without partial output', a
     });
     assert.deepEqual(await readMigration(database, definition.id), {
         id: definition.id,
-        fromVersion: 1,
-        toVersion: 1,
+        fromVersion: V2_DATABASE_VERSION,
+        toVersion: V2_DATABASE_VERSION,
         status: 'failed',
         startedAt: '2026-08-04T01:02:03.004Z',
         completedAt: '2026-08-04T01:02:03.004Z',
@@ -542,7 +699,7 @@ test('stale running migration is interrupted then idempotently retried', async (
     const storage = createCanonicalStore(options(indexedDB));
     await storage.initialize();
     await storage.close();
-    const database = await openDatabase(indexedDB, V2_DATABASE_NAME, 1);
+    const database = await openDatabase(indexedDB, V2_DATABASE_NAME, V2_DATABASE_VERSION);
     let writes = 0;
     const definition = {
         id: 'data-synthetic-crash-window-v1',
@@ -630,7 +787,7 @@ test('migration summaries preserve special own data keys without pollution', asy
     const storage = createCanonicalStore(options(indexedDB));
     await storage.initialize();
     await storage.close();
-    const database = await openDatabase(indexedDB, V2_DATABASE_NAME, 1);
+    const database = await openDatabase(indexedDB, V2_DATABASE_NAME, V2_DATABASE_VERSION);
     const inputSummary = specialSummary('input');
     let outputSummary;
     const inputDescriptors = Object.getOwnPropertyDescriptors(inputSummary);
@@ -673,7 +830,7 @@ test('migration summary accessors fail closed without getter execution', async (
     const storage = createCanonicalStore(options(indexedDB));
     await storage.initialize();
     await storage.close();
-    const database = await openDatabase(indexedDB, V2_DATABASE_NAME, 1);
+    const database = await openDatabase(indexedDB, V2_DATABASE_NAME, V2_DATABASE_VERSION);
     let getterCalls = 0;
     let executeCalls = 0;
     const accessorSummary = { recordCount: 0 };
@@ -733,7 +890,7 @@ test('invalid migration store arrays fail before all database I/O', async () => 
     const storage = createCanonicalStore(options(indexedDB));
     await storage.initialize();
     await storage.close();
-    const database = await openDatabase(indexedDB, V2_DATABASE_NAME, 1);
+    const database = await openDatabase(indexedDB, V2_DATABASE_NAME, V2_DATABASE_VERSION);
     const beforeCounts = await storeCounts(database);
     const beforeMigrations = await readAllMigrations(database);
     let getterCalls = 0;

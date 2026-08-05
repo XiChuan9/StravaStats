@@ -8,9 +8,9 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 const FROZEN_HASHES = new Map([
-    ['js/storage/schema.js', '89d88a0f8a7f15c649cde08cf171d001215e59d3b245f22a545d735e53cba947'],
-    ['js/storage/constants.js', '32edf0e38df756813898b98b8ccba2b74eb75c109238639c9dbb6954a9823e67'],
-    ['js/storage/index.js', '5961e3495cb67eaa53c539b6377f7d03cd58ec6dfb7bef963d27288ce555a19c'],
+    ['js/storage/schema.js', '79d88535aca65b0dbed06cf4bd3bb4d05abd8894f4bb3e895e4cf48875eefabf'],
+    ['js/storage/constants.js', 'c553247aa6e5a117dc2e804ef3260cb63644c84f146415d9ad1e2122297b89a7'],
+    ['js/storage/index.js', '2007866cce37a7d6fe6c8cecf100c131ebf126aeec9763c0a5fc03232701b09d'],
     ['js/repository/index.js', '9d967fa09ad649006b6da86dfd0e4de7b813a41b272da7de6da2fb856d57133c'],
     ['js/repository/factory.js', 'a0bcb162814e45d3619f45fc7c1f2da5ec3d65429cc8554b197682de1824ae5f']
 ]);
@@ -35,7 +35,7 @@ test('shadow entry exposes only the frozen internal M3 seam', async () => {
     ]);
 });
 
-test('PR-06 does not alter Repository public API or PR-05 schema/storage exports', async () => {
+test('PR-07 preserves Repository API and freezes approved import storage exports', async () => {
     for (const [relative, expected] of FROZEN_HASHES) {
         const content = await readFile(path.join(ROOT, relative));
         assert.equal(createHash('sha256').update(content).digest('hex'), expected, relative);

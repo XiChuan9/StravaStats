@@ -12,6 +12,7 @@ import {
 import {
     STORAGE_ERROR_CODE,
     V2_DATABASE_NAME,
+    V2_DATABASE_VERSION,
     createCanonicalStore
 } from '../../js/storage/index.js';
 
@@ -148,7 +149,7 @@ function bundle(id = 'opaque-activity-a', overrides = {}) {
     return { ...value, ...bundleOverrides };
 }
 
-function openDatabase(indexedDB, version = 1, upgrade) {
+function openDatabase(indexedDB, version = V2_DATABASE_VERSION, upgrade) {
     return new Promise((resolve, reject) => {
         const request = indexedDB.open(V2_DATABASE_NAME, version);
         request.onupgradeneeded = event => {
@@ -831,7 +832,7 @@ test('all data methods require an explicit current ready connection', async () =
     ));
 
     await storage.initialize();
-    const upgraded = await openDatabase(indexedDB, 2);
+    const upgraded = await openDatabase(indexedDB, V2_DATABASE_VERSION + 1);
     upgraded.close();
     await assert.rejects(storage.listActivities(), error => (
         error.code === STORAGE_ERROR_CODE.CONNECTION_STALE
