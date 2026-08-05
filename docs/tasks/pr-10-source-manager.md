@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Implementation, local/browser gates, and Final Review passed; exact-head CI and Ready transition pending |
+| Status | Implementation-head CI passed; closure ledger complete; closure-head CI and Ready transition pending |
 | Milestone | M7 |
 | Base branch | `integration/v2` |
 | Exact base SHA | `065dbd0475739a594ae1ce3dcf34b025a71b6318` |
@@ -528,11 +528,20 @@ same-origin data favicons now prevent that automatic request. Final independent
 re-review reported no actionable findings, Source Manager 16/16, and staged
 diff check PASS.
 
+### Implementation-head CI
+
+Implementation commit `ba8cf351e1f88694654f83e9ffff28cf0f6c0c17` is pushed
+to `origin/codex/v2/source-manager`. GitHub Actions CI run `30976514147`
+completed successfully for that exact head. This documentation-only closure
+commit records the verified head and final PR ledger; its own exact-head CI
+must pass before the Draft PR can move to Ready for review.
+
 ### Pending closure-only gates
 
-- push the implementation head and observe exact-head GitHub Actions success;
-- update the PR body/ledger, re-run exact-head closure CI if the ledger changes,
-  and move Draft PR #16 to Ready for review.
+- push this documentation-only closure ledger and observe exact-head GitHub
+  Actions success;
+- update the PR body with the implementation and closure CI evidence, then move
+  Draft PR #16 to Ready for review.
 
 ## Completion gate
 
