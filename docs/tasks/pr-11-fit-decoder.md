@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Implementation-head CI passed; closure-head CI and Ready transition pending |
+| Status | REVISE local/browser/SDK gates pass; exact-head CI, PR-body closure, and control-tower re-review pending |
 | Milestone | M8 |
 | Base branch | `integration/v2` |
 | Exact base SHA | `e9c5c6e531cf0d6349066480e49cd8d53b5622e4` |
@@ -155,9 +155,16 @@ The direct internal descriptor is exact:
 ```
 
 - The descriptor must be a non-array plain object whose own properties are
-  data properties. Accessors, symbols, unexpected keys, Proxies that throw or
-  mutate during inspection, inherited values, and non-string fields fail
-  closed without invoking an application getter.
+  data properties. Accessors, symbols, unexpected keys, inherited values,
+  non-string fields, and throwing or non-throwing Proxies fail closed without
+  invoking an application getter or value coercion. Only a structurally valid
+  descriptor with a different string media type maps to `UNSUPPORTED_FORMAT`.
+- Standard JavaScript has no portable zero-trap Proxy predicate. Validation
+  therefore performs bounded `getPrototypeOf`/`ownKeys`/property-descriptor
+  reflection before the native structured-clone Proxy rejection. A Proxy may
+  run those reflection traps, but is not accepted; its `get` trap, target
+  accessors, and value coercion are never invoked. Tests assert this narrower,
+  reproducible boundary and do not claim zero reflection-trap side effects.
 - Base64 must be canonical, padded, ASCII RFC 4648. Whitespace, URL-safe
   alphabet, unpadded encodings, and non-canonical encodings are rejected.
 - Input objects and strings are never modified.
@@ -182,8 +189,10 @@ The direct internal descriptor is exact:
 - Local message definitions are scoped to IDs 0-15 and may be redefined. A
   data record without a prior local definition fails closed.
 - Compressed-timestamp headers use local IDs 0-3 and the protocol five-bit time
-  offset. They require a prior full timestamp and a definition containing the
-  timestamp field; rollover is reconstructed deterministically.
+  offset. They require a prior full timestamp from any valid FIT data message,
+  including an unsupported global message, and a definition containing the
+  timestamp field; rollover is reconstructed with unsigned number arithmetic
+  across the full valid uint32 range.
 - Known base types are enum, signed/unsigned 8/16/32/64-bit integers, string,
   float32/64, zero-invalid integer forms, and byte. Type-number/endian-bit,
   size, multiplicity, offset, and message-length mismatches fail closed.
@@ -209,8 +218,10 @@ The direct internal descriptor is exact:
 | Events | 10,000 |
 | Devices | 64 |
 
-The Decoder checks a limit before allocation/append. Limit failures are
-`FILE_CORRUPTED`; no partial bundle is returned.
+Input limits are checked before input append. Output record and HR limits are
+checked on timestamp-folded/deduplicated points; equal split/duplicate inputs
+remain accepted while more than 200,000 final points fail closed. Limit
+failures are `FILE_CORRUPTED`; no partial bundle is returned.
 
 ### Supported Profile 21.208.0 mapping
 
@@ -542,8 +553,8 @@ privacy/redaction, scope/architecture, and rollback.
 - No production dependency, public export/API/schema, Registry/Worker/Source
   Manager, Storage, Service Worker, Legacy, provider, deployment, or M9 change
   exists. `package.json` and `package-lock.json` are unchanged.
-- No open Final Review finding remains. Rollback is an additive six-path
-  revert; migration and user-data repair are not applicable.
+- No open finding remained in that initial review. Rollback is an additive
+  six-path revert; migration and user-data repair are not applicable.
 
 ### Implementation-head CI and closure handoff
 
@@ -553,6 +564,59 @@ privacy/redaction, scope/architecture, and rollback.
   [30982102783](https://github.com/XiChuan9/StravaStats/actions/runs/30982102783),
   job `checks`.
 - PR: [#17](https://github.com/XiChuan9/StravaStats/pull/17), still Draft at
-  this ledger commit. The closure-head CI and Ready transition are the only
-  remaining gates; this document is not amended after those remote gates so
-  that their exact head remains auditable.
+  this ledger commit. At that time, closure-head CI and the Ready transition
+  were the only expected gates. The later A9 REVISE record supersedes that
+  conclusion after independent review found additional defects.
+
+## A9 independent Final Review REVISE
+
+Control-tower review returned PR #17 to Draft after finding five correctness
+gaps. Each was reproduced before implementation changes. The first focused
+run after adding the minimal cases was 53/63, with ten expected failures:
+
+1. An unknown global message carrying `start + 40` did not advance timestamp
+   state, so the following compressed record produced offsets `[0, 9]` rather
+   than `[0, 41]`.
+2. Compressed record and packed-HR rollover above `2^31` failed because
+   bitwise masks coerced valid uint32 values to signed 32-bit numbers.
+3. A record invalid-HR sentinel at offset 0 was filtered, producing only
+   `[10] / [150]` instead of `[0, 10] / [null, 150]`.
+4. Null/accessor/throwing-Proxy descriptors mapped to the wrong error, and a
+   non-throwing reflection Proxy was accepted. The control tower approved the
+   narrowed, portable Proxy boundary above: all such inputs now fail
+   `FILE_CORRUPTED`, no property get/accessor/value coercion runs, and allowed
+   reflection-trap execution is disclosed rather than denied.
+5. Raw record and HR counts rejected duplicate-equal inputs before final
+   folding/dedupe. Input data-record limits remain 250,000; the 200,000 record
+   and HR limits now apply to final output points.
+
+After the minimal fixes, all 63 focused tests pass.
+
+### A9 verification ledger
+
+| Gate | Result |
+| --- | --- |
+| Minimal reproductions before fixes | Expected RED; 53/63 passed, 10 finding-specific failures |
+| `npm ci` | PASS; 6 packages installed from the unchanged lockfile |
+| `npm run check:syntax` | PASS; 189 files |
+| `npm run check:privacy` | PASS |
+| FIT focused after fixes | PASS; 63/63 |
+| Import/Contract/Storage regressions | PASS; 405/405 |
+| `npm test` | PASS; 1,197/1,197 |
+| Garmin SDK/Profile 21.208 comparison | PASS; 10/10 non-compressed synthetic cases, zero SDK errors |
+| `git diff --check` | PASS after the final post-document rerun |
+
+The final disposable-profile CDP rerun used a fresh
+`/private/tmp/stravastats-fit-browser.*` profile and new localhost/CDP ports.
+It decoded two activities into 12 series, two laps, six events, and five
+warnings. The approved descriptor boundary produced `getterCalls=0`,
+`proxyReflectionTraps=4`, and `proxyValueReads=0`. Page fetch/Worker calls,
+external page requests, console errors, and runtime exceptions were all zero;
+Local Storage, IndexedDB, Cache Storage, and Service Worker counts remained
+zero before and after. The installed Chrome binary again emitted a separate
+GCM diagnostic outside the page target. The server, Chrome process, verifier,
+profile, temporary SDK, and SDK verifier were terminated and removed.
+
+Exact-head CI, PR-body closure, and a new independent control-tower review
+remain pending. The PR must stay Draft until the control tower explicitly
+decides otherwise.

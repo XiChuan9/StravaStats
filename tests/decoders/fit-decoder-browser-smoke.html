@@ -54,6 +54,51 @@
       const bundles = cases.map(bytes => fitDecoder.decode(
         fixture.syntheticFitDescriptor(bytes)
       ));
+      const expectCorrupted = descriptor => {
+        try {
+          fitDecoder.decode(descriptor);
+        } catch (error) {
+          if (error?.code === 'FILE_CORRUPTED') return;
+        }
+        throw new Error('descriptor did not fail closed');
+      };
+      let getterCalls = 0;
+      const accessorDescriptor = { mediaType: fitDecoder.mediaType };
+      Object.defineProperty(accessorDescriptor, 'content', {
+        enumerable: true,
+        get() {
+          getterCalls += 1;
+          return 'private-canary';
+        }
+      });
+      expectCorrupted(accessorDescriptor);
+      let proxyReflectionTraps = 0;
+      let proxyValueReads = 0;
+      const proxyDescriptor = new Proxy(
+        fixture.syntheticFitDescriptor(cases[0]),
+        {
+          getPrototypeOf(target) {
+            proxyReflectionTraps += 1;
+            return Reflect.getPrototypeOf(target);
+          },
+          ownKeys(target) {
+            proxyReflectionTraps += 1;
+            return Reflect.ownKeys(target);
+          },
+          getOwnPropertyDescriptor(target, key) {
+            proxyReflectionTraps += 1;
+            return Reflect.getOwnPropertyDescriptor(target, key);
+          },
+          get(target, key, receiver) {
+            proxyValueReads += 1;
+            return Reflect.get(target, key, receiver);
+          }
+        }
+      );
+      expectCorrupted(proxyDescriptor);
+      if (getterCalls !== 0 || proxyReflectionTraps === 0 || proxyValueReads !== 0) {
+        throw new Error('descriptor safety boundary mismatch');
+      }
       const after = await safeCounts();
       const result = {
         ok: true,
@@ -74,6 +119,9 @@
           (total, bundle) => total + bundle.warnings.length,
           0
         ),
+        getterCalls,
+        proxyReflectionTraps,
+        proxyValueReads,
         fetchCalls,
         workerCalls,
         before,

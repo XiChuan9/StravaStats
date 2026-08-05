@@ -451,12 +451,12 @@ function parseDataMessage(bytes, state, definition, compressedTimestamp = null) 
     fieldOffset += developerBytes;
     state.offset = fieldOffset;
 
+    if (message.timestamp !== undefined && message.timestamp !== null) {
+        state.previousTimestamp = message.timestamp;
+    }
     if (!SUPPORTED_GLOBAL_MESSAGES.has(definition.globalMessage)) {
         addWarning(state.warnings, 'FIT_UNKNOWN_MESSAGE_IGNORED');
         return;
-    }
-    if (message.timestamp !== undefined && message.timestamp !== null) {
-        state.previousTimestamp = message.timestamp;
     }
     message.encounter = state.encounter++;
     if (definition.globalMessage === 0) state.fileIds.push(message);
@@ -523,8 +523,10 @@ function parseFit(bytes) {
             const definition = state.definitions[localMessage];
             if (!definition || state.previousTimestamp === null) fail();
             const timeOffset = recordHeader & 0x1f;
-            let timestamp = (state.previousTimestamp & ~0x1f) + timeOffset;
+            let timestamp = Math.floor(state.previousTimestamp / 0x20) * 0x20
+                + timeOffset;
             if (timestamp < state.previousTimestamp) timestamp += 0x20;
+            if (timestamp > 0xffff_fffe) fail();
             parseDataMessage(bytes, state, definition, timestamp);
         } else if ((recordHeader & 0x40) !== 0) {
             parseDefinition(bytes, state, recordHeader);
@@ -644,7 +646,6 @@ function foldRecord(target, source) {
 }
 
 function buildRecordRows(records, sessionStart) {
-    if (records.length > FIT_LIMITS.maxRecordPoints) fail();
     const ordered = [...records].sort((left, right) =>
         requireNumber(left.timestamp) - requireNumber(right.timestamp)
         || left.encounter - right.encounter
@@ -656,6 +657,7 @@ function buildRecordRows(records, sessionStart) {
         const previous = rows.at(-1);
         if (previous && previous.offset === offset) foldRecord(previous, record);
         else {
+            if (rows.length >= FIT_LIMITS.maxRecordPoints) fail();
             const row = { offset, encounter: record.encounter };
             foldRecord(row, record);
             rows.push(row);
@@ -678,8 +680,10 @@ function unpackEventTimestamp12(bytes, previousRaw) {
             if (value === null) fail();
             if (accumulated === null) accumulated = value;
             else {
-                let candidate = (accumulated & ~0x0fff) + value;
+                let candidate = Math.floor(accumulated / 0x1000) * 0x1000
+                    + value;
                 if (candidate < accumulated) candidate += 0x1000;
+                if (candidate > 0xffff_fffe) fail();
                 accumulated = candidate;
             }
             result.push(accumulated);
@@ -689,7 +693,7 @@ function unpackEventTimestamp12(bytes, previousRaw) {
 }
 
 function expandHeartRateMessages(messages, sessionStart) {
-    const points = [];
+    const points = new Map();
     let anchorTimestamp = null;
     let anchorEventTimestamp = null;
     let previousEventRaw = null;
@@ -746,15 +750,21 @@ function expandHeartRateMessages(messages, sessionStart) {
             const timestamp = anchorTimestamp
                 + normalizedEventTimestamp
                 - anchorEventTimestamp;
-            points.push({
-                offset: activityOffset(timestamp, sessionStart),
-                value: heartRate,
-                encounter: message.encounter + index / 100
-            });
-            if (points.length > FIT_LIMITS.maxHeartRatePoints) fail();
+            const offset = activityOffset(timestamp, sessionStart);
+            const previous = points.get(offset);
+            if (previous) {
+                if (previous.value !== heartRate) fail();
+            } else {
+                if (points.size >= FIT_LIMITS.maxHeartRatePoints) fail();
+                points.set(offset, {
+                    offset,
+                    value: heartRate,
+                    encounter: message.encounter + index / 100
+                });
+            }
         }
     }
-    return points;
+    return [...points.values()];
 }
 
 function buildStreams(activityId, recordRows, hrMessages, sessionStart) {
@@ -788,10 +798,10 @@ function buildStreams(activityId, recordRows, hrMessages, sessionStart) {
     });
 
     const heartRatePoints = recordRows
-        .filter(row => typeof row.heartRate === 'number')
+        .filter(row => has(row, 'heartRate'))
         .map(row => ({
             offset: row.offset,
-            value: row.heartRate,
+            value: typeof row.heartRate === 'number' ? row.heartRate : null,
             encounter: row.encounter
         }));
     heartRatePoints.push(...expandHeartRateMessages(hrMessages, sessionStart));
@@ -802,10 +812,14 @@ function buildStreams(activityId, recordRows, hrMessages, sessionStart) {
     for (const point of heartRatePoints) {
         const previous = foldedHeartRate.at(-1);
         if (previous && previous.offset === point.offset) {
-            if (previous.value !== point.value) fail();
-        } else foldedHeartRate.push(point);
+            if (previous.value === null) previous.value = point.value;
+            else if (point.value !== null && previous.value !== point.value) fail();
+        } else {
+            if (foldedHeartRate.length >= FIT_LIMITS.maxHeartRatePoints) fail();
+            foldedHeartRate.push(point);
+        }
     }
-    if (foldedHeartRate.length > 0) {
+    if (foldedHeartRate.some(point => point.value !== null)) {
         series.push({
             streamType: 'heartRate',
             unit: 'bpm',
@@ -1027,7 +1041,18 @@ export const fitDecoder = Object.freeze({
     mediaType: FIT_MEDIA_TYPE,
     decode(input) {
         const values = ownDataValues(input, INPUT_FIELDS);
-        if (!values || values.mediaType !== FIT_MEDIA_TYPE) {
+        if (!values) fail();
+        if (
+            typeof values.mediaType !== 'string'
+            || typeof values.content !== 'string'
+            || values.content.length > Math.ceil(FIT_LIMITS.maxDecodedBytes / 3) * 4
+        ) fail();
+        try {
+            structuredClone(input);
+        } catch {
+            fail();
+        }
+        if (values.mediaType !== FIT_MEDIA_TYPE) {
             fail(IMPORT_ERROR_CODE.UNSUPPORTED_FORMAT);
         }
         try {

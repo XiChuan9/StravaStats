@@ -323,6 +323,20 @@ test('HR time256 supplies the fractional anchor when fractional_timestamp is abs
     );
 });
 
+test('record HR preserves an invalid sample before a later numeric sample', () => {
+    const records = createSyntheticFitRecords().map((record) => {
+        if (
+            record.kind === 'data'
+            && record.localMessage === 3
+            && record.values[253] === FIT_START_TIMESTAMP
+        ) return fitData(3, { ...record.values, 3: null });
+        return record;
+    });
+    const heartRate = series(decodeRecords(records), 'heartRate');
+    assert.deepEqual(heartRate.offsetsSeconds, [0, 10]);
+    assert.deepEqual(heartRate.values, [null, 150]);
+});
+
 test('packed 12-bit HR event timestamps accumulate across rollover', () => {
     const records = createSyntheticFitRecords({ includeHeartRate: false });
     const sessionIndex = records.findIndex(record =>
@@ -346,6 +360,47 @@ test('packed 12-bit HR event timestamps accumulate across rollover', () => {
         fitData(9, {
             6: [151, 152],
             10: [0xff, 0x0f, 0x00]
+        })
+    );
+    const heartRate = series(decodeRecords(records), 'heartRate');
+    assert.deepEqual(heartRate.values, [150, 151, 152]);
+    assert.deepEqual(heartRate.offsetsSeconds, [
+        5,
+        5 + 1 / 1024,
+        5 + 2 / 1024
+    ]);
+});
+
+test('packed 12-bit HR reconstruction preserves unsigned values above 2^31', () => {
+    const records = createSyntheticFitRecords({ includeHeartRate: false });
+    const sessionIndex = records.findIndex(record =>
+        record.kind === 'definition' && record.localMessage === 5
+    );
+    const previousRaw = 3_000_000_000;
+    const first = (previousRaw + 1) & 0x0fff;
+    const second = (previousRaw + 2) & 0x0fff;
+    records.splice(sessionIndex, 0,
+        fitDefinition(8, 132, [
+            fitField(253, 'uint32'),
+            fitField(6, 'uint8'),
+            fitField(9, 'uint32')
+        ]),
+        fitData(8, {
+            253: FIT_START_TIMESTAMP + 5,
+            6: 150,
+            9: previousRaw
+        }),
+        fitDefinition(9, 132, [
+            fitField(6, 'uint8', 2),
+            fitField(10, 'byte', 3)
+        ]),
+        fitData(9, {
+            6: [151, 152],
+            10: [
+                first & 0xff,
+                first >>> 8 & 0x0f | (second & 0x0f) << 4,
+                second >>> 4
+            ]
         })
     );
     const heartRate = series(decodeRecords(records), 'heartRate');
@@ -394,6 +449,43 @@ test('compressed timestamps decode and reconstruct five-bit rollover', () => {
     });
     const bundle = decodeRecords(records);
     assert.deepEqual(series(bundle, 'distance').offsetsSeconds, [0, 10]);
+});
+
+test('compressed timestamps use a full timestamp from an unknown message', () => {
+    const start = FIT_START_TIMESTAMP;
+    const records = createSyntheticFitRecords({ start });
+    const recordIndexes = records.flatMap((record, index) =>
+        record.kind === 'data' && record.localMessage === 3 ? [index] : []
+    );
+    const secondIndex = recordIndexes[1];
+    const secondRecord = records[secondIndex];
+    records.splice(secondIndex, 1,
+        fitDefinition(9, 999, [fitField(253, 'uint32')]),
+        fitData(9, { 253: start + 40 }),
+        fitCompressed(3, (start + 41) & 0x1f, secondRecord.values)
+    );
+    assert.deepEqual(
+        series(decodeRecords(records), 'distance').offsetsSeconds,
+        [0, 41]
+    );
+});
+
+test('compressed timestamps preserve the full uint32 range', () => {
+    const start = 3_000_000_000;
+    let recordDataCount = 0;
+    const records = createSyntheticFitRecords({ start }).map((record) => {
+        if (record.kind === 'data' && record.localMessage === 3) {
+            recordDataCount += 1;
+            if (recordDataCount === 2) {
+                return fitCompressed(3, (start + 1) & 0x1f, record.values);
+            }
+        }
+        return record;
+    });
+    assert.deepEqual(
+        series(decodeRecords(records), 'distance').offsetsSeconds,
+        [0, 1]
+    );
 });
 
 test('valid developer fields are byte-counted, ignored, and warned once', () => {
@@ -483,7 +575,7 @@ test('descriptor validation never executes accessors', () => {
     });
     assertImportError(
         () => fitDecoder.decode(descriptor),
-        IMPORT_ERROR_CODE.UNSUPPORTED_FORMAT
+        IMPORT_ERROR_CODE.FILE_CORRUPTED
     );
     assert.equal(executed, false);
 });
@@ -496,6 +588,50 @@ test('throwing Proxy descriptors fail closed with a redacted public error', () =
     });
     assertImportError(
         () => fitDecoder.decode(descriptor),
+        IMPORT_ERROR_CODE.FILE_CORRUPTED
+    );
+});
+
+test('non-throwing Proxy descriptors are rejected after bounded reflection', () => {
+    let reflectionTraps = 0;
+    let valueReads = 0;
+    const target = syntheticFitDescriptor(createSyntheticFitActivity());
+    const descriptor = new Proxy(target, {
+        getPrototypeOf(value) {
+            reflectionTraps += 1;
+            return Reflect.getPrototypeOf(value);
+        },
+        ownKeys(value) {
+            reflectionTraps += 1;
+            return Reflect.ownKeys(value);
+        },
+        getOwnPropertyDescriptor(value, key) {
+            reflectionTraps += 1;
+            return Reflect.getOwnPropertyDescriptor(value, key);
+        },
+        get(value, key, receiver) {
+            valueReads += 1;
+            return Reflect.get(value, key, receiver);
+        }
+    });
+    assertImportError(() => fitDecoder.decode(descriptor));
+    assert.ok(reflectionTraps > 0);
+    assert.equal(valueReads, 0);
+});
+
+test('only a different media type maps to unsupported format', () => {
+    for (const descriptor of [
+        null,
+        {},
+        { mediaType: FIT_MEDIA_TYPE, content: 'AA==', [Symbol('unsafe')]: true }
+    ]) {
+        assertImportError(() => fitDecoder.decode(descriptor));
+    }
+    assertImportError(
+        () => fitDecoder.decode({
+            mediaType: 'application/octet-stream',
+            content: 'AA=='
+        }),
         IMPORT_ERROR_CODE.UNSUPPORTED_FORMAT
     );
 });
@@ -753,6 +889,53 @@ test('data-record limit fails closed without retaining unknown payloads', () => 
     ]));
 });
 
+test('duplicate-equal record inputs are limited after timestamp folding', () => {
+    const raw = new Uint8Array(FIT_LIMITS.maxRecordPoints * 9);
+    for (let index = 0; index < FIT_LIMITS.maxRecordPoints; index += 1) {
+        const offset = index * 9;
+        raw[offset] = 9;
+        writeUint32Little(raw, offset + 1, FIT_START_TIMESTAMP);
+        writeUint32Little(raw, offset + 5, 0);
+    }
+    const bundle = decodeRecords([
+        fitDefinition(9, 20, [fitField(253, 'uint32'), fitField(5, 'uint32')]),
+        fitRawRecord(raw),
+        ...createSyntheticFitRecords()
+    ]);
+    assert.deepEqual(series(bundle, 'distance').offsetsSeconds, [0, 10]);
+});
+
+test('duplicate-equal HR inputs are limited after final dedupe', () => {
+    const records = createSyntheticFitRecords({ includeHeartRate: false });
+    const sessionIndex = records.findIndex(record =>
+        record.kind === 'definition' && record.localMessage === 5
+    );
+    const raw = new Uint8Array(FIT_LIMITS.maxHeartRatePoints * 6);
+    for (let index = 0; index < FIT_LIMITS.maxHeartRatePoints; index += 1) {
+        const offset = index * 6;
+        raw[offset] = 9;
+        raw[offset + 1] = 150;
+        writeUint32Little(raw, offset + 2, 4094);
+    }
+    records.splice(sessionIndex, 0,
+        fitDefinition(8, 132, [
+            fitField(253, 'uint32'),
+            fitField(6, 'uint8'),
+            fitField(9, 'uint32')
+        ]),
+        fitData(8, {
+            253: FIT_START_TIMESTAMP + 5,
+            6: 150,
+            9: 4094
+        }),
+        fitDefinition(9, 132, [fitField(6, 'uint8'), fitField(9, 'uint32')]),
+        fitRawRecord(raw)
+    );
+    const heartRate = series(decodeRecords(records), 'heartRate');
+    assert.deepEqual(heartRate.offsetsSeconds, [5]);
+    assert.deepEqual(heartRate.values, [150]);
+});
+
 test('record and HR output point over-limits fail before bundle allocation', () => {
     const recordBase = createSyntheticFitRecords();
     const recordCount = FIT_LIMITS.maxRecordPoints - 1;
@@ -760,8 +943,8 @@ test('record and HR output point over-limits fail before bundle allocation', () 
     for (let index = 0; index < recordCount; index += 1) {
         const offset = index * 9;
         recordBytes[offset] = 9;
-        writeUint32Little(recordBytes, offset + 1, FIT_START_TIMESTAMP + 15);
-        writeUint32Little(recordBytes, offset + 5, 0);
+        writeUint32Little(recordBytes, offset + 1, FIT_START_TIMESTAMP + 15 + index);
+        writeUint32Little(recordBytes, offset + 5, index);
     }
     assertImportError(() => decodeRecords([
         fitDefinition(9, 20, [fitField(253, 'uint32'), fitField(5, 'uint32')]),
@@ -778,7 +961,7 @@ test('record and HR output point over-limits fail before bundle allocation', () 
         const offset = index * 6;
         hrBytes[offset] = 9;
         hrBytes[offset + 1] = 150;
-        writeUint32Little(hrBytes, offset + 2, 4094);
+        writeUint32Little(hrBytes, offset + 2, 4095 + index);
     }
     hrBase.splice(sessionIndex, 0,
         fitDefinition(8, 132, [
