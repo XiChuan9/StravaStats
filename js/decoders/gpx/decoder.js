@@ -133,9 +133,12 @@ function decodeEntities(value) {
         const semicolon = value.indexOf(';', ampersand + 1);
         if (semicolon < 0) fail();
         const reference = value.slice(ampersand + 1, semicolon);
-        const predefined = {
-            amp: '&', lt: '<', gt: '>', apos: "'", quot: '"'
-        }[reference];
+        let predefined;
+        if (reference === 'amp') predefined = '&';
+        else if (reference === 'lt') predefined = '<';
+        else if (reference === 'gt') predefined = '>';
+        else if (reference === 'apos') predefined = "'";
+        else if (reference === 'quot') predefined = '"';
         if (predefined !== undefined) output += predefined;
         else {
             const match = /^#(?:x([0-9A-Fa-f]+)|(\d+))$/.exec(reference);

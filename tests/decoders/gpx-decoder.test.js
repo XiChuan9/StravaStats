@@ -438,6 +438,8 @@ test('XML security rejects DTD, ENTITY, XInclude, PI, CDATA, and namespace spoof
     const attacks = [
         `<!DOCTYPE gpx [<!ENTITY xxe SYSTEM "file:///private/canary">]>${valid.replace('<?xml version="1.0" encoding="UTF-8"?>', '')}`,
         valid.replace('<name>Synthetic GPX Activity</name>', '<name>&private;</name>'),
+        valid.replace('<name>Synthetic GPX Activity</name>', '<name>&constructor;</name>'),
+        valid.replace('<name>Synthetic GPX Activity</name>', '<name>&__proto__;</name>'),
         valid.replace('<name>Synthetic GPX Activity</name>', '<name><![CDATA[private]]></name>'),
         valid.replace('<name>Synthetic GPX Activity</name>', '<?private value?><name>Synthetic GPX Activity</name>'),
         valid.replace('xmlns:synthetic="urn:stravastats:synthetic:gpx"', 'xmlns:synthetic="http://www.w3.org/2001/XInclude"'),

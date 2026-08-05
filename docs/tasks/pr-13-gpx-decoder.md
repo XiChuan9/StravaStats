@@ -498,6 +498,32 @@ request CI.
   `git diff --check` passed. Final gate results are recorded in Closure after the
   independent review is closed.
 
+## A10 Final Review Closure
+
+The independent read-only review inspected exact base
+`a5b1c6942980458495777a5285536ef8be301d50` through implementation head
+`8c44fc152fe0fc83de01267fe0dfa44a84fde76b`. It confirmed the six-path
+allowlist and all requested review surfaces, then reported one actionable P1:
+the named-entity allowlist used an inherited ordinary-object lookup, allowing
+prototype names such as `constructor` and `__proto__` instead of failing closed.
+
+Closure followed the frozen test-first rule. Minimal `&constructor;` and
+`&__proto__;` cases were added to the XML-security matrix and first reproduced a
+missing expected `FILE_CORRUPTED` failure. The implementation was then changed
+to explicit comparisons for exactly `amp`, `lt`, `gt`, `apos`, and `quot`. The
+targeted regression and all 23 focused tests passed. Independent read-only
+re-review also directly checked `toString`, found the closure diff restricted to
+the Decoder and focused test, and returned **PASS / no actionable findings**.
+
+Implementation exact-head CI run `31003722128` passed at
+`8c44fc152fe0fc83de01267fe0dfa44a84fde76b`. After closure, the final local
+gates passed again: clean `npm ci`; syntax over 195 files; privacy; 23 focused
+GPX tests; 405 Import/Contract/Storage tests; 1,258 full tests; and
+`git diff --check`. The immutable closure head's exact CI run, GitHub state, and
+branch `0/0` evidence are recorded in the PR body after CI completes and before
+Draft removal, avoiding a documentation-only commit that would invalidate the
+head under test.
+
 ## Completion gate
 
 After implementation, a genuinely independent read-only reviewer inspects the
