@@ -11,11 +11,16 @@ import {
     createImportService,
     createInlineImportWorker
 } from '../../js/import/index.js';
-import { createImportStore } from '../../js/storage/index.js';
+import { ACTIVITIES_CSV_MEDIA_TYPE } from '../../js/import/activities-csv-decoder.js';
+import { createCanonicalStore, createImportStore } from '../../js/storage/index.js';
 
 const FIXED_TIME = Date.parse('2026-08-05T01:02:03.004Z');
 const fixtureUrl = new URL(
     '../fixtures/synthetic/canonical/import-run-summary.json',
+    import.meta.url
+);
+const csvFixtureUrl = new URL(
+    '../fixtures/synthetic/strava/activities.csv',
     import.meta.url
 );
 
@@ -50,6 +55,223 @@ async function artifact() {
         content: await readFile(fixtureUrl, 'utf8')
     };
 }
+
+async function csvArtifact(content = null) {
+    return {
+        mediaType: ACTIVITIES_CSV_MEDIA_TYPE,
+        content: content ?? await readFile(csvFixtureUrl, 'utf8')
+    };
+}
+
+test('activities.csv lexical failure happens before job creation', async () => {
+    const indexedDB = new IDBFactory();
+    const importStore = store(indexedDB);
+    const core = service(importStore);
+    await core.initialize();
+    await assert.rejects(
+        core.importArtifacts([await csvArtifact(
+            'Activity ID,Activity Date,Activity Type\nopaque,"unterminated,Run'
+        )]),
+        error => error.code === IMPORT_ERROR_CODE.CSV_MALFORMED
+    );
+    assert.deepEqual(await importStore.listImportJobs(), []);
+    assert.equal((await core.previewActivities()).total, 0);
+    await core.close();
+});
+
+test('activities.csv expands rows into durable ImportItems and summary-only preview', async () => {
+    const indexedDB = new IDBFactory();
+    const firstStore = store(indexedDB);
+    const first = service(firstStore);
+    await first.initialize();
+    const run = await first.importArtifacts([await csvArtifact()]);
+    const report = await first.waitForJob(run.jobId);
+    assert.equal(report.status, 'completed_with_warnings');
+    assert.deepEqual(report.totals, {
+        total: 2,
+        completed: 2,
+        skippedExactDuplicate: 0,
+        failed: 0,
+        cancelled: 0
+    });
+    assert.equal((await firstStore.listImportItems(run.jobId)).length, 2);
+    assert.deepEqual(await first.previewActivities(), {
+        total: 2,
+        bySportCategory: [
+            { sportCategory: 'other', count: 1 },
+            { sportCategory: 'run', count: 1 }
+        ]
+    });
+    assert.doesNotMatch(
+        JSON.stringify(report),
+        /00042|alpha\/beta|Synthetic Run|Average Heart Rate/
+    );
+    await first.close();
+
+    const canonical = createCanonicalStore({
+        indexedDB,
+        IDBKeyRange,
+        now: () => FIXED_TIME,
+        applicationVersion: 'csv-readback@1'
+    });
+    await canonical.initialize();
+    const bundle = await canonical.getBundle('strava-archive:00042');
+    assert.deepEqual(bundle.streams.series, []);
+    assert.deepEqual(bundle.laps, []);
+    assert.deepEqual(bundle.events, []);
+    assert.deepEqual(bundle.devices, []);
+    assert.equal(bundle.activity.capabilities.hasHeartRate, false);
+    assert.equal(bundle.activity.capabilities.hasPower, false);
+    assert.ok(bundle.warnings.some(warning => (
+        warning.code === 'CSV_EXTRA_HEADER_IGNORED'
+    )));
+    await canonical.close();
+
+    const reloadedStore = store(indexedDB);
+    const reloaded = service(reloadedStore);
+    await reloaded.initialize();
+    assert.deepEqual(await reloaded.getReport(run.jobId), report);
+    assert.equal((await reloaded.previewActivities()).total, 2);
+    await reloaded.close();
+});
+
+test('activities.csv semantic row failure is isolated between successful rows', async () => {
+    const indexedDB = new IDBFactory();
+    const importStore = store(indexedDB);
+    const core = service(importStore);
+    await core.initialize();
+    const content = 'Activity ID,Activity Date,Activity Type,Distance\n'
+        + 'valid-left,2026-01-01T00:00:00Z,Run,1\n'
+        + 'invalid-middle,2026-02-30T00:00:00Z,Run,2\n'
+        + 'valid-right,2026-01-03T00:00:00Z,Ride,3';
+    const run = await core.importArtifacts([await csvArtifact(content)]);
+    const report = await core.waitForJob(run.jobId);
+    assert.equal(report.status, 'completed_with_warnings');
+    assert.equal(report.totals.total, 3);
+    assert.equal(report.totals.completed, 2);
+    assert.equal(report.totals.failed, 1);
+    assert.equal(report.items[1].errorCode, IMPORT_ERROR_CODE.CSV_DATE_INVALID);
+    assert.equal((await core.previewActivities()).total, 2);
+    await core.close();
+});
+
+test('repeated and concurrent CSV imports preserve exact row SHA idempotency', async () => {
+    const indexedDB = new IDBFactory();
+    const importStore = store(indexedDB);
+    const core = service(importStore);
+    await core.initialize();
+    const input = await csvArtifact();
+    const [left, right] = await Promise.all([
+        core.importArtifacts([input]),
+        core.importArtifacts([input])
+    ]);
+    const reports = await Promise.all([
+        core.waitForJob(left.jobId),
+        core.waitForJob(right.jobId)
+    ]);
+    assert.equal(
+        reports.reduce((sum, report) => sum + report.totals.completed, 0),
+        2
+    );
+    assert.equal(
+        reports.reduce((sum, report) => (
+            sum + report.totals.skippedExactDuplicate
+        ), 0),
+        2
+    );
+    const repeated = await core.importArtifacts([input]);
+    assert.equal(
+        (await core.waitForJob(repeated.jobId)).totals.skippedExactDuplicate,
+        2
+    );
+    assert.equal((await core.previewActivities()).total, 2);
+    await core.close();
+});
+
+test('same Strava identity with lexically different raw row fails without merge', async () => {
+    const indexedDB = new IDBFactory();
+    const importStore = store(indexedDB);
+    const core = service(importStore);
+    await core.initialize();
+    const header = 'Activity ID,Activity Date,Activity Type,Distance';
+    const first = await core.importArtifacts([await csvArtifact(
+        `${header}\nopaque-same,2026-01-01T00:00:00Z,Run,1`
+    )]);
+    assert.equal((await core.waitForJob(first.jobId)).totals.completed, 1);
+    const second = await core.importArtifacts([await csvArtifact(
+        `${header}\nopaque-same,2026-01-01T00:00:00Z,"Run",1`
+    )]);
+    const report = await core.waitForJob(second.jobId);
+    assert.equal(report.totals.failed, 1);
+    assert.equal(
+        report.items[0].errorCode,
+        IMPORT_ERROR_CODE.EXACT_IDENTITY_CONFLICT
+    );
+    assert.equal((await core.previewActivities()).total, 1);
+    await core.close();
+});
+
+test('CSV Worker crash is persisted and explicit retry processes every framed row', async () => {
+    const indexedDB = new IDBFactory();
+    const importStore = store(indexedDB);
+    const inline = createInlineImportWorker();
+    let calls = 0;
+    const worker = {
+        async process(input) {
+            calls += 1;
+            if (calls === 1) throw new Error(`private ${input.content}`);
+            return inline.process(input);
+        },
+        close() { inline.close(); }
+    };
+    const core = service(importStore, { worker });
+    await core.initialize();
+    const run = await core.importArtifacts([await csvArtifact()]);
+    let report = await core.waitForJob(run.jobId);
+    assert.equal(report.status, 'failed_decode');
+    assert.equal(report.items[0].errorCode, IMPORT_ERROR_CODE.WORKER_CRASHED);
+    assert.doesNotMatch(JSON.stringify(report), /00042|Synthetic Run|private/);
+    await core.retryJob(run.jobId);
+    report = await core.waitForJob(run.jobId);
+    assert.equal(report.totals.completed, 2);
+    assert.equal((await core.previewActivities()).total, 2);
+    await core.close();
+});
+
+test('CSV cancellation retains no unfinished row and performs no Canonical write', async () => {
+    const indexedDB = new IDBFactory();
+    const importStore = store(indexedDB);
+    const inline = createInlineImportWorker();
+    let release;
+    let reached;
+    const gate = new Promise(resolve => { release = resolve; });
+    const reachedGate = new Promise(resolve => { reached = resolve; });
+    let first = true;
+    const worker = {
+        async process(input) {
+            if (first) {
+                first = false;
+                reached();
+                await gate;
+            }
+            return inline.process(input);
+        },
+        close() { inline.close(); }
+    };
+    const core = service(importStore, { worker });
+    await core.initialize();
+    const run = await core.importArtifacts([await csvArtifact()]);
+    await reachedGate;
+    assert.deepEqual(await core.cancelJob(run.jobId), {
+        status: 'cancellation-requested'
+    });
+    release();
+    const report = await core.waitForJob(run.jobId);
+    assert.equal(report.status, 'cancelled');
+    assert.equal(report.totals.cancelled, 2);
+    assert.equal((await core.previewActivities()).total, 0);
+    await core.close();
+});
 
 test('Synthetic JSON persists job, item, raw artifact, Canonical graph, report and reload preview', async () => {
     const indexedDB = new IDBFactory();

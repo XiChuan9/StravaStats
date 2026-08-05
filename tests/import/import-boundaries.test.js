@@ -5,7 +5,7 @@ import test from 'node:test';
 
 const importIndex = new URL('../../js/import/index.js', import.meta.url);
 
-test('Import Core public exports are exact and do not expand Repository', async () => {
+test('Import Core public exports stay frozen and do not expand Repository', async () => {
     const module = await import(`${importIndex.href}?boundary=${Date.now()}`);
     assert.deepEqual(Object.keys(module).sort(), [
         'IMPORT_ERROR_CODE',
@@ -28,7 +28,8 @@ test('Import Core public exports are exact and do not expand Repository', async 
 
 test('production Import Core has no provider, network, DOM, logging, or destructive storage seam', async () => {
     const files = [
-        'activities-preview.js', 'decoder-registry.js', 'errors.js', 'import-service.js',
+        'activities-csv-decoder.js', 'activities-preview.js', 'csv-tokenizer.js',
+        'decoder-registry.js', 'errors.js', 'import-service.js',
         'index.js', 'normalizer.js', 'safe-data.js', 'state-machine.js',
         'synthetic-import-worker.js', 'synthetic-json-decoder.js', 'worker-client.js'
     ];
@@ -41,7 +42,46 @@ test('production Import Core has no provider, network, DOM, logging, or destruct
         source,
         /console\.|document\.|localStorage|deleteDatabase|objectStore\([^)]*\)\.clear\s*\(/
     );
-    assert.doesNotMatch(source, /strava\.com|activities\.csv|application\/gpx|\.fit\b|\.tcx\b/i);
+    assert.doesNotMatch(source, /strava\.com|application\/gpx|\.fit\b|\.tcx\b|\.zip\b/i);
+});
+
+test('PR-08 keeps the deterministic CSV fixture and literal 18-path allowlist', async () => {
+    const fixture = await readFile(new URL(
+        '../fixtures/synthetic/strava/activities.csv',
+        import.meta.url
+    ));
+    assert.equal(
+        createHash('sha256').update(fixture).digest('hex'),
+        'e1a5927ae7e1bcc3f65c33f9f2dee7976b648a43981f8a1f85c7a51720cf9dec'
+    );
+    const brief = await readFile(new URL(
+        '../../docs/tasks/pr-08-activities-csv.md',
+        import.meta.url
+    ), 'utf8');
+    const allowed = [
+        'docs/tasks/pr-08-activities-csv.md',
+        'js/import/AGENTS.md',
+        'js/import/index.js',
+        'js/import/errors.js',
+        'js/import/csv-tokenizer.js',
+        'js/import/activities-csv-decoder.js',
+        'js/import/synthetic-import-worker.js',
+        'tests/fixtures/synthetic/strava/activities.csv',
+        'tests/fixtures/synthetic/strava/README.md',
+        'tests/import/activities-csv.test.js',
+        'tests/import/import-worker.test.js',
+        'js/import/import-service.js',
+        'js/storage/import-store.js',
+        'tests/import/import-core.test.js',
+        'tests/import/import-boundaries.test.js',
+        'tests/storage/indexeddb-v2-boundaries.test.js',
+        'tests/import/import-browser-smoke.html',
+        'tests/shadow/shadow-boundaries.test.js'
+    ];
+    assert.equal(new Set(allowed).size, 18);
+    for (const relative of allowed) assert.equal(brief.includes(relative), true);
+    assert.match(brief, /cumulative maximum[^\n]*18 paths/i);
+    assert.match(brief, /nineteenth path requires/i);
 });
 
 test('PR-07 keeps the deterministic fixture and literal 34-path allowlist', async () => {
