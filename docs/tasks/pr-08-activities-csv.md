@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | A3 scope frozen / Draft implementation authorized |
+| Status | Final Review complete / closure-head CI pending |
 | Milestone | M5 |
 | Base branch | `integration/v2` |
 | Exact base SHA | `8247c03fbaa57b614374b23bb196c44bb824b204` |
@@ -457,3 +457,86 @@ Closure, and exact-head CI success may the Draft PR move to Ready for review.
 
 Do not merge, modify `integration/v2`, clean the task branch/worktree, or start
 M6.
+
+## Final Review Closure
+
+### Delivered behavior
+
+- The frozen English `activities.csv` profile now enters the existing
+  DecoderRegistry/Worker/Normalizer pipeline as one lexically exact framed
+  artifact and ImportItem per logical data row.
+- UTF-8 fatal decoding, BOM, CRLF/LF, RFC-4180 quoting, escaped quotes, embedded
+  commas/newlines, forbidden characters, and every frozen byte/row/column/field
+  limit are deterministic and fail closed.
+- Header occurrence mapping, UTC-only date parsing, fixed time-zone metadata,
+  `KILOMETRES_TO_METRES = 1000`, finite numeric rules, missing/null/zero/value,
+  opaque external identity, sport taxonomy, and five stable warning classes are
+  frozen by tests.
+- Valid rows become Accepted summary-only ImportedActivityBundles with empty
+  streams/laps/events/devices and all-false detail capabilities. Invalid rows are
+  isolated; successful siblings remain committed.
+- Exact raw SHA repetition, concurrent first import, external-identity conflict,
+  cancel, Worker crash/retry, reload, quota/abort, Import Log, and Activities
+  Preview reuse the PR-07 contracts. No fuzzy match or automatic merge exists.
+
+### Review audit
+
+The exact-base implementation received a separate read-only Final Review over
+CSV framing, public boundaries, identity, mapping, storage, privacy, and browser
+state. Review findings were reproduced before repair:
+
+1. browser harness top-level control flow produced an illegal `return`;
+2. an all-empty comma-delimited record was incorrectly discarded as a blank
+   physical line;
+3. parse-and-reserialize framing collapsed lexically different rows to one raw
+   SHA;
+4. several sport variants did not reuse established source-neutral mappings;
+5. aggregate Import Core exports had expanded despite the frozen public API.
+
+Each was corrected locally and reverified. Final disposition: **No actionable
+findings**. The aggregate Import Core exports and Repository seven-method API
+remain exact; physical V2 remains eleven stores and nine indexes. Actual changes
+occupy fifteen of the literal eighteen allowed paths.
+
+### Verification evidence
+
+- `npm ci` — PASS, six packages installed from the existing lockfile.
+- `npm run check:syntax` — PASS, 177 files.
+- `npm run check:privacy` — PASS.
+- `node --test tests/import/*.test.js` — PASS, 57/57.
+- `node --test tests/storage/*.test.js` — PASS, 54/54.
+- `node --test tests/shadow/*.test.js` — PASS, 26/26.
+- `npm test` — PASS, 1,104/1,104.
+- `git diff --check` — PASS.
+- Implementation commit `4b1de117ae1bc740c35197ff58b37480e3645209`
+  — exact-head GitHub Actions CI run `30968842485` succeeded.
+
+The final disposable in-app-browser run used only the deterministic synthetic
+fixture, native `File`, fatal byte decode, module Worker, Web Crypto, and real
+IndexedDB on a fresh loopback origin. First load completed two of two rows with
+two summary activities; automatic reload preserved two Import Log entries and
+the Preview; exact re-import skipped two of two with activity/raw-artifact
+counts unchanged at two. Streams, laps, events, and devices stayed at zero.
+External/provider/auth requests, console warnings/errors, uncaught/unhandled
+failures, XHR, WebSocket, Service Workers, and Cache Storage were all zero. The
+synthetic Legacy-like sentinel was unchanged. All browser pages/connections and
+loopback servers/ports were closed.
+
+### Privacy, migration, rollback, and limitations
+
+No real archive, account, credential, Token, private activity, route, location,
+health history, screenshot, private fixture, or user browser profile was used or
+committed. Public errors, warnings, reports, logs, browser DOM, and evidence
+contain only stable codes and aggregate metadata.
+
+There is no physical/data migration, new store/index/version, Canonical schema
+change, Repository/public Import Core method, production dependency, page
+cutover, Service Worker, or Legacy database operation. Rollback remains
+code-only and retains every Legacy and V2 record; nothing is cleared,
+overwritten, reverse-copied, or downgraded.
+
+Intentional limitations are the frozen English header profile and summary-only
+activities. ZIP/FIT/TCX/GPX, additional locales, source UI, bootstrap/cutover,
+analysis enqueue, fuzzy duplicate, backup/restore, deployment, and M6 remain out
+of scope. The commit containing this Closure must receive exact-head CI success,
+and the PR body must record that immutable result before Ready for review.
