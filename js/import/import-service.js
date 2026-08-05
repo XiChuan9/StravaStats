@@ -19,12 +19,18 @@ import {
 import { SYNTHETIC_JSON_MEDIA_TYPE } from './synthetic-json-decoder.js';
 import { ACTIVITIES_CSV_MEDIA_TYPE } from './activities-csv-decoder.js';
 import { frameActivitiesCsv } from './csv-tokenizer.js';
+import {
+    STRAVA_ARCHIVE_ROW_MEDIA_TYPE,
+    STRAVA_ZIP_MEDIA_TYPE,
+    expandStravaZipArtifact
+} from './strava-zip.js';
 
 const OPTION_FIELDS = Object.freeze(['importStore', 'worker', 'crypto', 'createId']);
 const ARTIFACT_FIELDS = Object.freeze(['mediaType', 'content']);
 const ACCEPTED_MEDIA_TYPES = Object.freeze([
     SYNTHETIC_JSON_MEDIA_TYPE,
-    ACTIVITIES_CSV_MEDIA_TYPE
+    ACTIVITIES_CSV_MEDIA_TYPE,
+    STRAVA_ARCHIVE_ROW_MEDIA_TYPE
 ]);
 
 function normalizeOptions(options) {
@@ -56,7 +62,7 @@ function normalizeOptions(options) {
     });
 }
 
-function snapshotArtifacts(value) {
+async function snapshotArtifacts(value, isCancelled) {
     const values = denseArraySnapshot(value);
     if (!values || values.length === 0) {
         throw importError(IMPORT_ERROR_CODE.INVALID_REQUEST);
@@ -66,6 +72,9 @@ function snapshotArtifacts(value) {
         for (const item of values) {
             const artifact = ownDataValues(item, ARTIFACT_FIELDS);
             if (!artifact) throw new TypeError();
+            if (artifact.mediaType === STRAVA_ARCHIVE_ROW_MEDIA_TYPE) {
+                throw importError(IMPORT_ERROR_CODE.INVALID_REQUEST);
+            }
             if (
                 artifact.mediaType === ACTIVITIES_CSV_MEDIA_TYPE
                 && typeof artifact.content === 'string'
@@ -76,6 +85,14 @@ function snapshotArtifacts(value) {
                         content
                     }));
                 }
+            } else if (
+                artifact.mediaType === STRAVA_ZIP_MEDIA_TYPE
+                && typeof artifact.content === 'string'
+            ) {
+                artifacts.push(...await expandStravaZipArtifact(
+                    artifact.content,
+                    isCancelled
+                ));
             } else {
                 artifacts.push(frozenClone({
                     mediaType: artifact.mediaType,
@@ -466,7 +483,8 @@ export function createImportService(options) {
 
     async function importArtifacts(value) {
         if (closed) throw importError(IMPORT_ERROR_CODE.STORAGE_UNAVAILABLE);
-        const artifacts = snapshotArtifacts(value);
+        const artifacts = await snapshotArtifacts(value, () => closed);
+        if (closed) throw importError(IMPORT_ERROR_CODE.IMPORT_CANCELLED);
         const jobId = safeId(dependencies.createId, 'job', 0);
         const itemIds = artifacts.map((_, index) => (
             safeId(dependencies.createId, 'item', index)

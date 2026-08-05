@@ -8,3 +8,8 @@ known repeated headers, missing values, zero values, and an unknown sport.
 
 The fixture must never be replaced with a user export or copied from
 `tests/fixtures/private/`.
+
+`archive-fixture.js` code-generates deterministic synthetic ZIP bytes for
+PR-09. Its CSV rows and opaque child payloads are invented test data and are
+not valid FIT, TCX, or GPX recordings. No binary archive or athlete export is
+committed.

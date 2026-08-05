@@ -4,11 +4,11 @@
     <meta charset="utf-8">
     <meta
         http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self' 'nonce-pr08-import-smoke'; connect-src 'self'; img-src data:; style-src 'unsafe-inline'; object-src 'none'; base-uri 'none'; worker-src 'self'"
+        content="default-src 'self'; script-src 'self' 'nonce-pr09-import-smoke'; connect-src 'self'; img-src data:; style-src 'unsafe-inline'; object-src 'none'; base-uri 'none'; worker-src 'self'"
     >
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" href="data:,">
-    <title>PR-08 activities.csv browser smoke</title>
+    <title>PR-09 Strava ZIP browser smoke</title>
     <style>
         body { font-family: system-ui, sans-serif; margin: 2rem; }
         [data-status="passed"] { color: #126b31; }
@@ -18,16 +18,16 @@
 </head>
 <body data-status="running">
     <main>
-        <h1>PR-08 activities.csv browser smoke</h1>
+        <h1>PR-09 Strava ZIP browser smoke</h1>
         <p id="state" data-testid="state">running</p>
         <pre id="summary" data-testid="summary">{"status":"running"}</pre>
     </main>
-    <script type="module" nonce="pr08-import-smoke">
+    <script type="module" nonce="pr09-import-smoke">
         const V2_NAME = 'strava-stats-v2';
-        const SENTINEL_NAME = 'synthetic-pr08-legacy-like-sentinel';
-        const RELOAD_KEY = 'pr08-import-browser-reload';
-        const FIRST_RESULT_KEY = 'pr08-import-browser-first-result';
-        const MEDIA_TYPE = 'text/csv;profile=strava-activities';
+        const SENTINEL_NAME = 'synthetic-pr09-legacy-like-sentinel';
+        const RELOAD_KEY = 'pr09-import-browser-reload';
+        const FIRST_RESULT_KEY = 'pr09-import-browser-first-result';
+        const MEDIA_TYPE = 'application/zip;profile=strava-archive;base64';
         const EXPECTED_STORES = [
             'activities', 'activitySources', 'devices', 'events', 'importItems',
             'importJobs', 'laps', 'metadata', 'migrations', 'rawArtifacts',
@@ -53,6 +53,106 @@
         const gates = [];
         let failureCode = 'UNCLASSIFIED';
         let service;
+
+        const encoder = new TextEncoder();
+        const crcTable = Array.from({ length: 256 }, (_, index) => {
+            let value = index;
+            for (let bit = 0; bit < 8; bit += 1) {
+                value = (value >>> 1) ^ ((value & 1) ? 0xedb88320 : 0);
+            }
+            return value >>> 0;
+        });
+
+        function crc32(bytes) {
+            let crc = 0xffffffff;
+            for (const byte of bytes) {
+                crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+            }
+            return (crc ^ 0xffffffff) >>> 0;
+        }
+
+        function u16(value) {
+            return Uint8Array.of(value & 0xff, (value >>> 8) & 0xff);
+        }
+
+        function u32(value) {
+            return Uint8Array.of(
+                value & 0xff,
+                (value >>> 8) & 0xff,
+                (value >>> 16) & 0xff,
+                (value >>> 24) & 0xff
+            );
+        }
+
+        function join(parts) {
+            const output = new Uint8Array(
+                parts.reduce((total, part) => total + part.byteLength, 0)
+            );
+            let offset = 0;
+            for (const part of parts) {
+                output.set(part, offset);
+                offset += part.byteLength;
+            }
+            return output;
+        }
+
+        function syntheticZipBytes() {
+            const csv = [
+                'Activity ID,Activity Date,Activity Type,Activity Name,Elapsed Time,Moving Time,Distance,Activity Filename',
+                '00042,2026-07-01T01:02:03Z,Run,Synthetic Browser Run,3600,3500,10.5,activities/browser-run.fit',
+                'alpha/beta,2026-07-02T02:03:04Z,Ride,"Quoted, Browser Ride",4200,4000,25.25,activities/browser-ride.gpx',
+                ''
+            ].join('\n');
+            const sources = [
+                { name: 'activities.csv', content: encoder.encode(csv), directory: false },
+                { name: 'activities/', content: new Uint8Array(), directory: true },
+                { name: 'activities/browser-run.fit', content: encoder.encode('synthetic opaque fit bytes'), directory: false },
+                { name: 'activities/browser-ride.gpx', content: encoder.encode('synthetic opaque gpx bytes'), directory: false }
+            ];
+            const locals = [];
+            const central = [];
+            let localOffset = 0;
+            for (const source of sources) {
+                const name = encoder.encode(source.name);
+                const checksum = crc32(source.content);
+                const local = join([
+                    u32(0x04034b50), u16(10), u16(0x0800), u16(0),
+                    u16(0), u16(0), u32(checksum),
+                    u32(source.content.byteLength), u32(source.content.byteLength),
+                    u16(name.byteLength), u16(0), name, source.content
+                ]);
+                const mode = source.directory ? 0o040755 : 0o100644;
+                central.push(join([
+                    u32(0x02014b50), u16(0x0314), u16(10), u16(0x0800),
+                    u16(0), u16(0), u16(0), u32(checksum),
+                    u32(source.content.byteLength), u32(source.content.byteLength),
+                    u16(name.byteLength), u16(0), u16(0), u16(0), u16(0),
+                    u32((mode << 16) | (source.directory ? 0x10 : 0)),
+                    u32(localOffset), name
+                ]));
+                locals.push(local);
+                localOffset += local.byteLength;
+            }
+            const centralBytes = join(central);
+            return join([
+                ...locals,
+                centralBytes,
+                u32(0x06054b50), u16(0), u16(0),
+                u16(sources.length), u16(sources.length),
+                u32(centralBytes.byteLength), u32(localOffset), u16(0)
+            ]);
+        }
+
+        function base64(bytes) {
+            let binary = '';
+            for (let offset = 0; offset < bytes.byteLength; offset += 32768) {
+                binary += String.fromCharCode(...bytes.subarray(
+                    offset,
+                    Math.min(bytes.byteLength, offset + 32768)
+                ));
+            }
+            return btoa(binary);
+        }
 
         console.error = () => { metrics.consoleErrors += 1; };
         console.warn = () => { metrics.consoleWarnings += 1; };
@@ -201,39 +301,18 @@
         try {
             const [
                 { createImportStore },
-                importModule,
-                csvTokenizer,
-                fixtureResponse
+                importModule
             ] =
                 await Promise.all([
                     import('../../js/storage/index.js'),
-                    import('../../js/import/index.js'),
-                    import('../../js/import/csv-tokenizer.js'),
-                    fetch('../fixtures/synthetic/strava/activities.csv')
+                    import('../../js/import/index.js')
                 ]);
-            const fixtureBytes = new Uint8Array(await fixtureResponse.arrayBuffer());
-            assert(fixtureResponse.ok && fixtureBytes.byteLength > 0, 'fixture-load');
-            const syntheticFile = new File([fixtureBytes], 'synthetic-activities.csv', {
-                type: 'text/csv'
+            const zipBytes = syntheticZipBytes();
+            const syntheticFile = new File([zipBytes], 'synthetic-strava-archive.zip', {
+                type: 'application/zip'
             });
-            const content = csvTokenizer.decodeActivitiesCsvUtf8(
-                new Uint8Array(await syntheticFile.arrayBuffer())
-            );
-            assert(content.length > 0, 'fatal-utf8-file-read');
-            await gate('invalid-utf8-rejected', async () => {
-                const invalidFile = new File([
-                    Uint8Array.from([0xc3, 0x28])
-                ], 'synthetic-invalid.csv', { type: 'text/csv' });
-                let code = null;
-                try {
-                    csvTokenizer.decodeActivitiesCsvUtf8(
-                        new Uint8Array(await invalidFile.arrayBuffer())
-                    );
-                } catch (error) {
-                    code = error?.code;
-                }
-                assert(code === 'CSV_INVALID_ENCODING', 'fatal-utf8-code');
-            });
+            const content = base64(new Uint8Array(await syntheticFile.arrayBuffer()));
+            assert(content.length > 0, 'zip-file-read');
             await ensureSentinel();
             const sentinelBefore = await sentinelSnapshot();
             let idSequence = 0;
@@ -241,7 +320,7 @@
                 indexedDB,
                 IDBKeyRange,
                 now: () => Date.parse('2026-08-05T03:04:05.006Z'),
-                applicationVersion: 'pr08-browser-smoke@1'
+                applicationVersion: 'pr09-browser-smoke@1'
             });
             const nativeWorker = new Worker(
                 new URL('../../js/import/synthetic-import-worker.js', import.meta.url),
@@ -254,10 +333,29 @@
                 createId: kind => `browser-${phase}-${kind}-${++idSequence}`
             });
             await gate('initialize', () => service.initialize());
+            await gate('crc-failure-before-job', async () => {
+                const jobsBefore = (await importStore.listImportJobs()).length;
+                const corrupted = new Uint8Array(zipBytes);
+                corrupted[30 + encoder.encode('activities.csv').byteLength] ^= 0x01;
+                let code = null;
+                try {
+                    await service.importArtifacts([{
+                        mediaType: MEDIA_TYPE,
+                        content: base64(corrupted)
+                    }]);
+                } catch (error) {
+                    code = error?.code;
+                }
+                assert(code === 'ZIP_CRC_MISMATCH', 'crc-code');
+                assert(
+                    (await importStore.listImportJobs()).length === jobsBefore,
+                    'crc-no-job'
+                );
+            });
 
             let report;
             if (phase === 'first-load') {
-                await gate('activities-csv-import', async () => {
+                await gate('strava-zip-import', async () => {
                     const run = await service.importArtifacts([{
                         mediaType: MEDIA_TYPE,
                         content
@@ -295,7 +393,7 @@
             assert(preview.total === 2, 'preview-total');
             assert(
                 preview.bySportCategory.length === 2
-                && preview.bySportCategory[0].sportCategory === 'other'
+                && preview.bySportCategory[0].sportCategory === 'ride'
                 && preview.bySportCategory[0].count === 1
                 && preview.bySportCategory[1].sportCategory === 'run'
                 && preview.bySportCategory[1].count === 1,
@@ -406,7 +504,7 @@
                 document.body.dataset.status = 'passed';
                 stateElement.textContent = 'passed:reload';
                 summaryElement.textContent = JSON.stringify(summary, null, 2);
-                globalThis.__PR08_BROWSER_RESULT__ = summary;
+                globalThis.__PR09_BROWSER_RESULT__ = summary;
             }
         } catch {
             if (service) await service.close().catch(() => {});
@@ -420,7 +518,7 @@
             document.body.dataset.status = 'failed';
             stateElement.textContent = `failed:${phase}`;
             summaryElement.textContent = JSON.stringify(summary, null, 2);
-            globalThis.__PR08_BROWSER_RESULT__ = summary;
+            globalThis.__PR09_BROWSER_RESULT__ = summary;
         }
     </script>
 </body>
