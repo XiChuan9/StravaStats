@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | A3 frozen; implementation authorized inside literal allowlist |
+| Status | Implementation complete; Final Review closure in progress |
 | Milestone | M12 |
 | Base branch | `integration/v2` |
 | Exact base SHA | `52334bbc7671231745bad96327afa4fa31d1a73c` |
@@ -159,7 +159,7 @@ source audits cover each risk.
 
 ### Literal path allowlist
 
-Implementation and verification may change only these seven paths:
+Implementation and verification may change only these eight paths:
 
 ```text
 docs/tasks/pr-15-local-first-bootstrap.md
@@ -169,6 +169,7 @@ js/app/local-first-bootstrap.js
 tests/bootstrap/local-first-bootstrap.test.js
 tests/bootstrap/local-first-bootstrap-boundaries.test.js
 tests/bootstrap/local-first-bootstrap-browser-smoke.html
+tests/import/decoder-registry-wiring.test.js
 ```
 
 No allowlist glob, directory permission, or cumulative prior-PR path is implied.
@@ -303,7 +304,86 @@ deployment, merge, or destructive cleanup.
 
 ## Closure ledger
 
-Pending investigation, implementation, deterministic verification, browser
-evidence, independent review and re-review, exact-head CI, and Ready transition.
-Ready is not merge authorization. Do not merge, clean the branch/worktree,
-modify a protected long-lived branch, deploy/release, or start M13 / PR-16.
+### Implemented and verified inside the frozen scope
+
+- Startup now inspects V2 presence first, then the two Real Legacy Rescue
+  sources, before choosing Dashboard, First-run, blocked, or Demo.
+- V2-only startup exposes the Dashboard shell and Sources without entering the
+  Legacy Repository/provider path or rendering empty summary consumers. Both
+  tab clicks and history navigation are gated until PR-16 owns the consumer
+  cutover.
+- Legacy Rescue data is detached/frozen at the bootstrap boundary, cloned only
+  into the current mutable preprocessing session, and never shown in Source
+  Status or error copy. Missing, null, zero, negative zero, and opaque strings
+  remain distinct through the safe boundary.
+- Settings and session-mode reads now fail closed, so malformed or inaccessible
+  localStorage cannot preempt bootstrap. Strava remains an optional local Token
+  status; startup performs no OAuth, provider request, sync, or refresh.
+- Local gates run after implementation: `npm ci`; focused local-first and
+  repaired PR-14 coverage 29/29; staged depth-1-sensitive coverage 15/15;
+  syntax for 199 files; privacy; and `git diff --check`. The complete suite is
+  1,291/1,291. The unrelated Legacy restore race seen once in an earlier
+  concurrent full run passed twice in deterministic isolation and did not
+  recur in the final full run.
+
+### Browser/CDP evidence
+
+The actual served root and Source Manager paths ran in both the Codex in-app
+browser and a separate headless Chrome with a disposable temporary profile and
+an isolated loopback origin. Synthetic scenarios covered empty First-run,
+malformed settings, V2-only shell, Legacy-local Dashboard, and Demo/Real
+sentinel isolation. The in-app run passed every assertion, including inert V2
+consumer clicks/history and usable Sources.
+
+For the exact-code controller run, CDP Network/Runtime observation was enabled
+before navigation and provider/API URL blocking remained active. A test-only
+new-document script also made `dashboard_filters` reads and writes throw in
+every frame, proving the IndexedDB-backed Legacy Dashboard continues without
+optional filter persistence. The same five scenarios passed online and again
+after CDP offline emulation. Online/offline respectively observed 607/569
+requests, 75/75 external resource attempts, 12/15 loading failures, and 596/558
+Service Worker responses; both runs observed zero provider/API requests and
+zero Authorization headers. Controller evidence recorded one fixed safe
+empty-dashboard warning, zero console errors, and zero runtime exceptions.
+Final storage observation contained only the synthetic Legacy database, one
+existing app cache, and one existing Service Worker registration. No Service
+Worker, cache policy, release, or deployment path was changed. The offline
+rerun was cache-warmed by the preceding online run; a first-ever cold offline
+install was not run because it would exercise the existing Service Worker
+release strategy outside PR-15.
+
+### Independent findings-first review
+
+The first independent review reported four findings: V2 tabs could render
+empty consumers; settings parsing could preempt bootstrap; injected inspection
+state was not deeply detached; and the browser harness overstated its own
+offline/child-frame observation. Each received a focused failing regression
+before repair. A fresh re-review found two remaining bypasses: unsafe default
+localStorage acquisition before Demo selection and popstate bypass of disabled
+tabs. A later independent pass found optional filter persistence could still
+break degraded IndexedDB startup, Real inspection admitted a Demo-only status,
+and parent-only browser counters needed explicit names. Every finding received
+a failing regression and a bounded repair. The final fresh independent
+closure re-review reports no actionable findings in the original seven-path
+implementation diff.
+
+### A3.1 approved literal-scope repair
+
+The completed PR-14 test
+`tests/import/decoder-registry-wiring.test.js` hashes every tracked index entry
+outside PR-14's literal allowlist. Any later tracked file changes that global
+digest, so PR-15's already-approved Task Brief makes the otherwise unrelated
+test fail. The user authorized A3.1 to add exactly that test as the eighth path.
+The bounded repair removes only the future-hostile global protected-index
+digest and retains PR-14 assertions that its literal fifteen paths are unique,
+documented, present, that critical frozen hashes remain literal, and that its
+finalized browser harness is exactly one stage-0 tracked regular file. It does
+not derive expected values dynamically, loosen PR-14's `ALLOWED_PATHS`, edit
+the PR-14 brief, or change production/schema/API/auth/Service Worker/deployment
+paths.
+
+Implementation commit/push, exact-head CI, closure commit/CI, PR body update,
+and Ready transition remain pending. No post-A3 implementation commit has been
+made. Ready is not merge authorization.
+Do not merge, clean the branch/worktree, modify a protected long-lived branch,
+deploy/release, or start M13 / PR-16.

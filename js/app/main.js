@@ -30,6 +30,13 @@ import { isDemoMode } from '../demo/index.js';
 import { applyServiceWorkerPolicy } from './service-worker-policy.js';
 import { getFeatureFlags } from './feature-flags.js';
 import { getApplicationShadowWriter } from '../shadow/index.js';
+import {
+    LOCAL_FIRST_NETWORK_STATUS,
+    LOCAL_FIRST_STATUS,
+    STRAVA_SOURCE_STATUS,
+    inspectLocalFirstBootstrap,
+    runLocalFirstBootstrap
+} from './local-first-bootstrap.js';
 
 export const APP_SESSION_MODE = Object.freeze({
     DEMO: 'demo',
@@ -683,6 +690,16 @@ document.addEventListener('DOMContentLoaded', () => {
     let allActivities = [];
     let activeSessionMode = null;
     let sessionRepository = null;
+    const documentSessionMode = (() => {
+        try {
+            return isDemoMode()
+                ? APP_SESSION_MODE.DEMO
+                : APP_SESSION_MODE.REAL;
+        } catch {
+            return APP_SESSION_MODE.REAL;
+        }
+    })();
+    let consumerRenderingEnabled = true;
     let sessionAthlete = null;
     let sessionZones = null;
     let sessionGears = [];
@@ -721,6 +738,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const logoutButton = document.getElementById('logout-button');
     const refreshButton = document.getElementById('refresh-button');
     const kofiButton = document.getElementById('kofi-button');
+    const loginSection = document.getElementById('login-section');
+    const appSection = document.getElementById('app-section');
+    const localFirstError = document.getElementById('local-first-error');
+    const sourceStatus = document.getElementById('source-status');
 
     // Run Tab
     const applyFilterButton = document.getElementById('apply-date-filter');
@@ -775,7 +796,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function loadSettings() {
-        const saved = JSON.parse(localStorage.getItem('dashboard_settings') || '{}');
+        let saved;
+        try {
+            saved = readPlainDataRecord(
+                JSON.parse(localStorage.getItem('dashboard_settings') || '{}')
+            ) ?? {};
+        } catch {
+            saved = {};
+        }
         if (saved.units && unitSelect) unitSelect.value = saved.units;
         if (saved.hrMax && hrMaxInput) hrMaxInput.value = saved.hrMax;
         if (saved.age && ageInput) ageInput.value = saved.age;
@@ -991,6 +1019,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function activateTab(tabId, { updateUrl = false, replaceUrl = false } = {}) {
+        if (!consumerRenderingEnabled) return;
         if (tabId === activeTabId) {
             if (tabId === 'run-plus-tab' && tabConfig[tabId]) {
                 requestAnimationFrame(() => tabConfig[tabId].render());
@@ -1060,25 +1089,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- FILTER STATE PERSISTENCE ---
     function saveFilterState() {
-        localStorage.setItem('dashboard_filters', JSON.stringify({
-            dateFilterFrom,
-            dateFilterTo,
-            trendsSportFilter,
-            trendsDataType,
-            runGearFilter,
-            bikeGearFilter
-        }));
+        try {
+            localStorage.setItem('dashboard_filters', JSON.stringify({
+                dateFilterFrom,
+                dateFilterTo,
+                trendsSportFilter,
+                trendsDataType,
+                runGearFilter,
+                bikeGearFilter
+            }));
+        } catch {
+            // User-owned filter persistence is optional for local startup.
+        }
     }
 
     function loadFilterState() {
-        const saved = localStorage.getItem('dashboard_filters');
         let filters = {};
-        if (saved) {
-            try {
-                filters = JSON.parse(saved) || {};
-            } catch {
-                filters = {};
-            }
+        try {
+            const saved = localStorage.getItem('dashboard_filters');
+            filters = saved
+                ? readPlainDataRecord(JSON.parse(saved)) ?? {}
+                : {};
+        } catch {
+            filters = {};
         }
 
         // Always start with no date filter on app load.
@@ -1092,14 +1125,7 @@ document.addEventListener('DOMContentLoaded', () => {
         syncDateInputs();
 
         // Persist the reset so a hard refresh also starts unfiltered.
-        localStorage.setItem('dashboard_filters', JSON.stringify({
-            dateFilterFrom,
-            dateFilterTo,
-            trendsSportFilter,
-            trendsDataType,
-            runGearFilter,
-            bikeGearFilter
-        }));
+        saveFilterState();
     }
 
     // --- YEAR FILTER BUTTONS ---
@@ -1188,15 +1214,74 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function renderSourceStatus(state) {
+        if (!sourceStatus) return;
+        const localCopy = {
+            [LOCAL_FIRST_STATUS.READY]: 'Local Library ready',
+            [LOCAL_FIRST_STATUS.DEGRADED]: 'Local Library degraded',
+            [LOCAL_FIRST_STATUS.UNAVAILABLE]: 'Local Library unavailable',
+            [LOCAL_FIRST_STATUS.DEMO]: 'Demo Library'
+        }[state.localStatus] || 'Local Library unavailable';
+        const stravaCopy = {
+            [STRAVA_SOURCE_STATUS.CONNECTED]: 'Strava connected',
+            [STRAVA_SOURCE_STATUS.NOT_CONNECTED]: 'Strava not connected',
+            [STRAVA_SOURCE_STATUS.RECONNECT_REQUIRED]: 'Strava reconnect needed',
+            [STRAVA_SOURCE_STATUS.UNAVAILABLE]: 'Strava status unavailable',
+            [STRAVA_SOURCE_STATUS.DEMO]: 'Demo source'
+        }[state.stravaStatus] || 'Strava status unavailable';
+        const networkCopy = state.networkStatus === LOCAL_FIRST_NETWORK_STATUS.OFFLINE
+            ? 'offline'
+            : state.networkStatus === LOCAL_FIRST_NETWORK_STATUS.ONLINE
+                ? 'online'
+                : 'network unknown';
+        sourceStatus.textContent = `${localCopy} · ${stravaCopy} · ${networkCopy}`;
+    }
+
+    function showLocalDashboardShell(state) {
+        renderSourceStatus(state);
+        loginSection?.classList.add('hidden');
+        appSection?.classList.remove('hidden');
+        consumerRenderingEnabled = false;
+        tabLinks.forEach(link => {
+            link.disabled = true;
+            link.setAttribute('aria-disabled', 'true');
+        });
+        if (refreshButton) {
+            refreshButton.disabled = true;
+            refreshButton.title = 'Summary refresh becomes available from the compatible data path.';
+        }
+        const topline = document.getElementById('dashboard-topline');
+        if (topline) {
+            topline.textContent = 'Local Library is ready. Open Sources to import or manage local activities.';
+        }
+        hideLoading();
+    }
+
+    function showLocalFirstBlocked(state) {
+        renderSourceStatus(state);
+        appSection?.classList.add('hidden');
+        loginSection?.classList.remove('hidden');
+        if (localFirstError) localFirstError.hidden = false;
+        hideLoading();
+    }
+
+    async function initializeLocalDashboard(state) {
+        renderSourceStatus(state);
+        if (state.legacyActivities.length === 0) {
+            showLocalDashboardShell(state);
+            return;
+        }
+        await initializeApp(null, state.legacyActivities);
+    }
+
     // --- INITIALIZATION ---
-    async function initializeApp(tokenData) {
+    async function initializeApp(tokenData, localActivities = null) {
+        const localOnly = localActivities !== null;
         sessionAthlete = null;
         sessionZones = null;
         sessionGears = resetSummarySessionGears();
         setRunSessionGears(sessionGears);
-        const requestedSessionMode = isDemoMode()
-            ? APP_SESSION_MODE.DEMO
-            : APP_SESSION_MODE.REAL;
+        const requestedSessionMode = documentSessionMode;
         const t0 = Date.now();
         const elapsed = () => `${((Date.now() - t0) / 1000).toFixed(1)}s elapsed`;
         showLoading('Preparing dashboard...', 2, elapsed());
@@ -1232,18 +1317,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 elapsed()
             );
 
-            const activityLoad = await loadActivitiesForSession({
-                sessionRepository: repository,
-                refresh: false
-            });
+            let selectedActivityLoad;
+            if (localOnly) {
+                selectedActivityLoad = Object.freeze({
+                    data: structuredClone(localActivities),
+                    source: REPOSITORY_SOURCE.CACHE,
+                    warnings: Object.freeze([]),
+                    partial: false
+                });
+            } else {
+                const activityLoad = await loadActivitiesForSession({
+                    sessionRepository: repository,
+                    refresh: false
+                });
+                selectedActivityLoad = activityLoad;
+            }
+            const activityLoad = selectedActivityLoad;
             const activities = activityLoad.data;
             progress = 40;
             showLoading(
-                activityLoadingMessage(activityLoad.source, activities.length),
+                localOnly
+                    ? 'Loading local activities...'
+                    : activityLoadingMessage(activityLoad.source, activities.length),
                 progress,
                 elapsed()
             );
-            console.log(`Activities loaded (${activities.length})`);
+            if (!localOnly) console.log(`Activities loaded (${activities.length})`);
 
             // Phase 2: Load athlete, zones, and gears (40% -> 90%)
             // These are optional - if they fail, continue without them
@@ -1251,53 +1350,54 @@ document.addEventListener('DOMContentLoaded', () => {
             let zones = null;
             let gears = [];
 
-            progress = 52;
-            showLoading('Loading athlete profile and zones...', progress, elapsed());
+            if (!localOnly) {
+                progress = 52;
+                showLoading('Loading athlete profile and zones...', progress, elapsed());
 
-            const metadata = await loadInitializeAthleteAndZones(repository);
-            athlete = metadata.athlete;
-            zones = metadata.zones;
-            sessionAthlete = athlete;
-            sessionZones = zones;
+                const metadata = await loadInitializeAthleteAndZones(repository);
+                athlete = metadata.athlete;
+                zones = metadata.zones;
+                sessionAthlete = athlete;
+                sessionZones = zones;
 
-            if (metadata.athleteStatus === 'fulfilled') {
-                console.log('Athlete profile loaded');
-            } else {
-                sessionAthlete = null;
-                logOperationalWarning('Failed to load athlete data');
-            }
-            if (metadata.zonesStatus === 'fulfilled') {
-                console.log('Training zones loaded');
-            } else {
-                sessionZones = null;
-                logOperationalWarning('Failed to load zones data');
-            }
+                if (metadata.athleteStatus === 'fulfilled') {
+                    console.log('Athlete profile loaded');
+                } else {
+                    sessionAthlete = null;
+                    logOperationalWarning('Failed to load athlete data');
+                }
+                if (metadata.zonesStatus === 'fulfilled') {
+                    console.log('Training zones loaded');
+                } else {
+                    sessionZones = null;
+                    logOperationalWarning('Failed to load zones data');
+                }
 
-            if (athlete || zones) {
-                progress = 65;
-                showLoading('Athlete profile and zones ready', progress, elapsed());
-            } else {
-                showLoading('Athlete/zones unavailable (timeout or error), continuing...', 65, elapsed());
-            }
+                if (athlete || zones) {
+                    progress = 65;
+                    showLoading('Athlete profile and zones ready', progress, elapsed());
+                } else {
+                    showLoading('Athlete/zones unavailable (timeout or error), continuing...', 65, elapsed());
+                }
 
-            // Try to load gears - also optional
-            if (athlete) {
-                showLoading('Loading gear usage...', 72, elapsed());
-            }
-            const gearLoad = await loadOptionalSessionGears(
-                repository,
-                athlete
-            );
-            sessionGears = applySummarySessionGearLoad(gearLoad);
-            setRunSessionGears(sessionGears);
-            gears = sessionGears;
-            if (gearLoad.status === 'fulfilled') {
-                console.log(`Gears loaded (${gears.length})`);
-            } else if (gearLoad.status === 'rejected') {
-                logOperationalWarning(
-                    'Failed to load gears; continuing without gear metadata'
+                if (athlete) {
+                    showLoading('Loading gear usage...', 72, elapsed());
+                }
+                const gearLoad = await loadOptionalSessionGears(
+                    repository,
+                    athlete
                 );
-                showLoading('Gear unavailable, continuing...', 76, elapsed());
+                sessionGears = applySummarySessionGearLoad(gearLoad);
+                setRunSessionGears(sessionGears);
+                gears = sessionGears;
+                if (gearLoad.status === 'fulfilled') {
+                    console.log(`Gears loaded (${gears.length})`);
+                } else if (gearLoad.status === 'rejected') {
+                    logOperationalWarning(
+                        'Failed to load gears; continuing without gear metadata'
+                    );
+                    showLoading('Gear unavailable, continuing...', 76, elapsed());
+                }
             }
 
             progress = 90;
@@ -1315,7 +1415,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 gears
             );
             allActivities = preprocessed;
-            console.log(`Activities prepared (${allActivities.length})`);
+            if (!localOnly) console.log(`Activities prepared (${allActivities.length})`);
 
             progress = 100;
             showLoading('Finalizing UI...', progress, elapsed());
@@ -1572,8 +1672,25 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- APP ENTRY POINT ---
-    handleAuth(initializeApp).catch(error => {
+    runLocalFirstBootstrap({
+        sessionMode: documentSessionMode,
+        inspect: () => inspectLocalFirstBootstrap(),
+        startDemo: state => {
+            renderSourceStatus(state);
+            return handleAuth(initializeApp);
+        },
+        startDashboard: initializeLocalDashboard,
+        navigateFirstRun: () => {
+            window.location.assign('/source-manager.html?mode=real');
+        },
+        showBlocked: showLocalFirstBlocked
+    }).catch(error => {
         logOperationalWarning('App failed to start');
+        showLocalFirstBlocked(Object.freeze({
+            localStatus: LOCAL_FIRST_STATUS.UNAVAILABLE,
+            stravaStatus: STRAVA_SOURCE_STATUS.UNAVAILABLE,
+            networkStatus: LOCAL_FIRST_NETWORK_STATUS.UNKNOWN
+        }));
         hideLoading();
     });
 });
