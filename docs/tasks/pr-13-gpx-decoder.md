@@ -4,14 +4,14 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Approved for implementation after A1 exact-head CI |
+| Status | Ready for review |
 | Milestone | M10 |
 | Base branch | `integration/v2` |
 | Exact base SHA | `a5b1c6942980458495777a5285536ef8be301d50` |
 | Feature branch | `codex/v2/decoder-gpx` |
 | Worktree | `/Users/wangchuanliang/.codex/worktrees/9819/StravaStats` |
 | Owner | XiChuan9 / Codex execution |
-| Reviewer | Independent Final Review before Ready transition |
+| Reviewer | Independent Final Review PASS / no actionable findings |
 | Dependency | PR-12 / PR #18 merged into `integration/v2` |
 | Created | 2026-08-05 |
 
@@ -515,14 +515,26 @@ targeted regression and all 23 focused tests passed. Independent read-only
 re-review also directly checked `toString`, found the closure diff restricted to
 the Decoder and focused test, and returned **PASS / no actionable findings**.
 
-Implementation exact-head CI run `31003722128` passed at
-`8c44fc152fe0fc83de01267fe0dfa44a84fde76b`. After closure, the final local
-gates passed again: clean `npm ci`; syntax over 195 files; privacy; 23 focused
-GPX tests; 405 Import/Contract/Storage tests; 1,258 full tests; and
-`git diff --check`. The immutable closure head's exact CI run, GitHub state, and
-branch `0/0` evidence are recorded in the PR body after CI completes and before
-Draft removal, avoiding a documentation-only commit that would invalidate the
-head under test.
+Verified Closure state before this governance-only correction:
+
+- implementation head:
+  `8c44fc152fe0fc83de01267fe0dfa44a84fde76b`;
+- entity correction head:
+  `65ec01321e324fe4a827d62f746921ab5d1ea9d3`;
+- implementation exact-head CI run `31003722128`: SUCCESS;
+- entity correction exact-head CI run `31004660022`, job `92301534855`:
+  SUCCESS;
+- PR #19 at the entity correction head: `OPEN`, Draft `false`, `MERGEABLE`,
+  `CLEAN`, with exactly 6 changed files.
+
+After closure, the final local gates passed again: clean `npm ci`; syntax over
+195 files; privacy; 23 focused GPX tests; 405 Import/Contract/Storage tests;
+1,258 full tests; and `git diff --check`.
+
+The final docs-only correction commit SHA and its exact-head CI run/job are
+recorded in the PR body after that CI completes. They are intentionally not
+self-recorded in this file, because doing so would create a new documentation
+head and invalidate the exact-head evidence being cited.
 
 ## Completion gate
 
