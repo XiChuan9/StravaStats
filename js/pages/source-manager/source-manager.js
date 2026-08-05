@@ -7,6 +7,18 @@ import {
 } from '../../import/csv-tokenizer.js';
 import { STRAVA_ZIP_MEDIA_TYPE } from '../../import/strava-zip.js';
 import { STRAVA_ZIP_LIMITS } from '../../import/zip-inspector.js';
+import {
+    FIT_LIMITS,
+    FIT_MEDIA_TYPE
+} from '../../decoders/fit/decoder.js';
+import {
+    TCX_LIMITS,
+    TCX_MEDIA_TYPE
+} from '../../decoders/tcx/decoder.js';
+import {
+    GPX_LIMITS,
+    GPX_MEDIA_TYPE
+} from '../../decoders/gpx/decoder.js';
 
 export const SOURCE_MANAGER_SESSION_MODE = Object.freeze({
     REAL: 'real',
@@ -16,12 +28,15 @@ export const SOURCE_MANAGER_SESSION_MODE = Object.freeze({
 export const SOURCE_MANAGER_LIMITS = Object.freeze({
     maxFiles: 100,
     maxCsvBytes: ACTIVITIES_CSV_LIMITS.maxBytes,
-    maxZipBytes: STRAVA_ZIP_LIMITS.maxArchiveBytes
+    maxZipBytes: STRAVA_ZIP_LIMITS.maxArchiveBytes,
+    maxFitBytes: FIT_LIMITS.maxDecodedBytes,
+    maxTcxBytes: TCX_LIMITS.maxXmlBytes,
+    maxGpxBytes: GPX_LIMITS.maxXmlBytes
 });
 
 const PREFLIGHT_COPY = Object.freeze({
-    FILE_TYPE_UNSUPPORTED: 'This format is not supported yet. FIT, TCX, and GPX support will be added later.',
-    FILE_HEADER_INVALID: 'The file header is not a supported CSV or ZIP header.',
+    FILE_TYPE_UNSUPPORTED: 'This file format is not supported.',
+    FILE_HEADER_INVALID: 'The file header or root does not match its selected format.',
     FILE_TOO_LARGE: 'The file is larger than the supported import limit.',
     TOO_MANY_FILES: 'Select no more than 100 files at a time.',
     FILE_READ_FAILED: 'The file could not be read.',
@@ -96,10 +111,21 @@ function extension(name) {
 function fileSnapshot(value) {
     try {
         if (typeof File === 'function' && value instanceof File) {
+            const nameGetter = Object.getOwnPropertyDescriptor(File.prototype, 'name')?.get;
+            const sizeGetter = Object.getOwnPropertyDescriptor(Blob.prototype, 'size')?.get;
+            const typeGetter = Object.getOwnPropertyDescriptor(Blob.prototype, 'type')?.get;
+            const arrayBuffer = Blob.prototype.arrayBuffer;
+            if (
+                typeof nameGetter !== 'function'
+                || typeof sizeGetter !== 'function'
+                || typeof typeGetter !== 'function'
+                || typeof arrayBuffer !== 'function'
+            ) return null;
             return Object.freeze({
-                name: value.name,
-                size: value.size,
-                read: () => value.arrayBuffer()
+                name: Reflect.apply(nameGetter, value, []),
+                size: Reflect.apply(sizeGetter, value, []),
+                type: Reflect.apply(typeGetter, value, []),
+                read: () => Reflect.apply(arrayBuffer, value, [])
             });
         }
         if (value === null || typeof value !== 'object') return null;
@@ -116,6 +142,11 @@ function fileSnapshot(value) {
         return Object.freeze({
             name: descriptors.name.value,
             size: descriptors.size.value,
+            type: Object.hasOwn(descriptors, 'type')
+                && Object.hasOwn(descriptors.type, 'value')
+                && typeof descriptors.type.value === 'string'
+                ? descriptors.type.value
+                : '',
             read: () => descriptors.arrayBuffer.value.call(value)
         });
     } catch {
@@ -123,12 +154,137 @@ function fileSnapshot(value) {
     }
 }
 
-function zipBase64(bytes) {
+function binaryBase64(bytes) {
     const parts = [];
     for (let offset = 0; offset < bytes.byteLength; offset += 32_768) {
         parts.push(String.fromCharCode(...bytes.subarray(offset, offset + 32_768)));
     }
     return btoa(parts.join(''));
+}
+
+const FORMAT_MIME = Object.freeze({
+    'text/csv': 'csv',
+    'application/zip': 'zip',
+    'application/x-zip-compressed': 'zip',
+    'application/vnd.ant.fit': 'fit',
+    'application/vnd.garmin.tcx+xml': 'tcx',
+    'application/gpx+xml': 'gpx'
+});
+
+function recognizedMimeFormat(value) {
+    if (typeof value !== 'string') return null;
+    const normalized = value.trim().toLowerCase();
+    return FORMAT_MIME[normalized] || null;
+}
+
+function zipMagic(bytes) {
+    return bytes.byteLength >= 4
+        && bytes[0] === 0x50
+        && bytes[1] === 0x4b
+        && bytes[2] === 0x03
+        && bytes[3] === 0x04;
+}
+
+function fitMagic(bytes) {
+    return bytes.byteLength >= 12
+        && (bytes[0] === 12 || bytes[0] === 14)
+        && bytes[8] === 0x2e
+        && bytes[9] === 0x46
+        && bytes[10] === 0x49
+        && bytes[11] === 0x54;
+}
+
+const XML_ROOT_SCAN_LIMIT = 65_536;
+
+function isXmlSpace(code) {
+    return code === 0x09 || code === 0x0a || code === 0x0d || code === 0x20;
+}
+
+function xmlRootFormat(text) {
+    const limit = Math.min(text.length, XML_ROOT_SCAN_LIMIT);
+    let cursor = text.charCodeAt(0) === 0xfeff ? 1 : 0;
+    let declarationSeen = false;
+    while (cursor < limit) {
+        while (cursor < limit && isXmlSpace(text.charCodeAt(cursor))) cursor += 1;
+        if (text.startsWith('<!--', cursor)) {
+            const end = text.indexOf('-->', cursor + 4);
+            if (end < 0 || end + 3 > limit) return null;
+            cursor = end + 3;
+            continue;
+        }
+        if (!declarationSeen && text.startsWith('<?xml', cursor)) {
+            const end = text.indexOf('?>', cursor + 5);
+            if (end < 0 || end + 2 > limit) return null;
+            declarationSeen = true;
+            cursor = end + 2;
+            continue;
+        }
+        break;
+    }
+    if (text[cursor] !== '<') return null;
+    let quote = null;
+    let end = -1;
+    for (let index = cursor + 1; index < limit; index += 1) {
+        const character = text[index];
+        if (quote !== null) {
+            if (character === quote) quote = null;
+        } else if (character === '"' || character === "'") {
+            quote = character;
+        } else if (character === '>') {
+            end = index;
+            break;
+        }
+    }
+    if (end < 0) return null;
+    const tag = text.slice(cursor, end + 1);
+    const nameMatch = /^<([A-Za-z_][A-Za-z0-9_.-]*(?::[A-Za-z_][A-Za-z0-9_.-]*)?)(?=[\u0009\u000a\u000d\u0020/>])/.exec(tag);
+    if (!nameMatch) return null;
+    const parts = nameMatch[1].split(':');
+    const prefix = parts.length === 2 ? parts[0] : '';
+    const localName = parts.length === 2 ? parts[1] : parts[0];
+    const namespaces = new Map();
+    const namespacePattern = /[\u0009\u000a\u000d\u0020]+xmlns(?::([A-Za-z_][A-Za-z0-9_.-]*))?\s*=\s*(["'])(.*?)\2/gs;
+    for (const match of tag.matchAll(namespacePattern)) {
+        const key = match[1] || '';
+        if (namespaces.has(key)) return null;
+        namespaces.set(key, match[3]);
+    }
+    const namespace = namespaces.get(prefix);
+    if (
+        localName === 'TrainingCenterDatabase'
+        && namespace === 'http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2'
+    ) return 'tcx';
+    if (
+        localName === 'gpx'
+        && namespace === 'http://www.topografix.com/GPX/1/1'
+    ) return 'gpx';
+    return null;
+}
+
+function detectContent(bytes) {
+    if (zipMagic(bytes)) return Object.freeze({ format: 'zip', text: null, records: null });
+    if (fitMagic(bytes)) return Object.freeze({ format: 'fit', text: null, records: null });
+    let text;
+    try {
+        text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch {
+        return null;
+    }
+    const xml = xmlRootFormat(text);
+    if (xml) return Object.freeze({ format: xml, text, records: null });
+    try {
+        const decoded = decodeActivitiesCsvUtf8(bytes);
+        const records = parseActivitiesCsv(decoded);
+        const header = records[0] || [];
+        if (
+            records.length >= 2
+            && ['Activity ID', 'Activity Date', 'Activity Type']
+                .every(field => header.includes(field))
+        ) return Object.freeze({ format: 'csv', text: decoded, records });
+    } catch {
+        // An unrecognized text payload remains a fixed preflight failure.
+    }
+    return null;
 }
 
 function preflightFailure(code, ordinal) {
@@ -158,13 +314,22 @@ export async function preflightSourceFiles(values) {
             continue;
         }
         const kind = extension(file.name);
-        if (!['csv', 'zip'].includes(kind)) {
+        if (!['csv', 'zip', 'fit', 'tcx', 'gpx'].includes(kind)) {
             results.push(preflightFailure('FILE_TYPE_UNSUPPORTED', ordinal));
             continue;
         }
-        const maximum = kind === 'csv'
-            ? SOURCE_MANAGER_LIMITS.maxCsvBytes
-            : SOURCE_MANAGER_LIMITS.maxZipBytes;
+        const mimeFormat = recognizedMimeFormat(file.type);
+        if (mimeFormat !== null && mimeFormat !== kind) {
+            results.push(preflightFailure('FILE_HEADER_INVALID', ordinal));
+            continue;
+        }
+        const maximum = {
+            csv: SOURCE_MANAGER_LIMITS.maxCsvBytes,
+            zip: SOURCE_MANAGER_LIMITS.maxZipBytes,
+            fit: SOURCE_MANAGER_LIMITS.maxFitBytes,
+            tcx: SOURCE_MANAGER_LIMITS.maxTcxBytes,
+            gpx: SOURCE_MANAGER_LIMITS.maxGpxBytes
+        }[kind];
         if (file.size > maximum) {
             results.push(preflightFailure('FILE_TOO_LARGE', ordinal));
             continue;
@@ -180,15 +345,12 @@ export async function preflightSourceFiles(values) {
             results.push(preflightFailure('FILE_READ_FAILED', ordinal));
             continue;
         }
+        const detected = detectContent(bytes);
+        if (!detected || detected.format !== kind) {
+            results.push(preflightFailure('FILE_HEADER_INVALID', ordinal));
+            continue;
+        }
         if (kind === 'zip') {
-            if (
-                bytes.byteLength < 4
-                || bytes[0] !== 0x50 || bytes[1] !== 0x4b
-                || bytes[2] !== 0x03 || bytes[3] !== 0x04
-            ) {
-                results.push(preflightFailure('FILE_HEADER_INVALID', ordinal));
-                continue;
-            }
             results.push(Object.freeze({
                 ok: true,
                 label: `ZIP file ${ordinal + 1}`,
@@ -196,36 +358,47 @@ export async function preflightSourceFiles(values) {
                 rows: null,
                 artifact: Object.freeze({
                     mediaType: STRAVA_ZIP_MEDIA_TYPE,
-                    content: zipBase64(bytes)
+                    content: binaryBase64(bytes)
                 })
             }));
             continue;
         }
-        try {
-            const text = decodeActivitiesCsvUtf8(bytes);
-            const records = parseActivitiesCsv(text);
-            const header = records[0] || [];
-            if (
-                records.length < 2
-                || !['Activity ID', 'Activity Date', 'Activity Type']
-                    .every(field => header.includes(field))
-            ) {
-                results.push(preflightFailure('FILE_HEADER_INVALID', ordinal));
-                continue;
-            }
+        if (kind === 'fit') {
             results.push(Object.freeze({
                 ok: true,
-                label: `CSV file ${ordinal + 1}`,
-                format: 'csv',
-                rows: records.length - 1,
+                label: `FIT file ${ordinal + 1}`,
+                format: 'fit',
+                rows: null,
                 artifact: Object.freeze({
-                    mediaType: ACTIVITIES_CSV_MEDIA_TYPE,
-                    content: text
+                    mediaType: FIT_MEDIA_TYPE,
+                    content: binaryBase64(bytes)
                 })
             }));
-        } catch {
-            results.push(preflightFailure('FILE_HEADER_INVALID', ordinal));
+            continue;
         }
+        if (kind === 'tcx' || kind === 'gpx') {
+            results.push(Object.freeze({
+                ok: true,
+                label: `${kind.toUpperCase()} file ${ordinal + 1}`,
+                format: kind,
+                rows: null,
+                artifact: Object.freeze({
+                    mediaType: kind === 'tcx' ? TCX_MEDIA_TYPE : GPX_MEDIA_TYPE,
+                    content: detected.text
+                })
+            }));
+            continue;
+        }
+        results.push(Object.freeze({
+            ok: true,
+            label: `CSV file ${ordinal + 1}`,
+            format: 'csv',
+            rows: detected.records.length - 1,
+            artifact: Object.freeze({
+                mediaType: ACTIVITIES_CSV_MEDIA_TYPE,
+                content: detected.text
+            })
+        }));
     }
     return Object.freeze(results);
 }

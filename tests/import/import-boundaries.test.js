@@ -43,7 +43,11 @@ test('production Import Core has no provider, network, DOM, logging, or destruct
         source,
         /console\.|document\.|localStorage|deleteDatabase|objectStore\([^)]*\)\.clear\s*\(/
     );
-    assert.doesNotMatch(source, /strava\.com|application\/gpx|DOMParser|FileReader/);
+    assert.doesNotMatch(source, /strava\.com|DOMParser|FileReader/);
+    assert.doesNotMatch(
+        source,
+        /TrainingCenterDatabase|topografix|FIT_EPOCH|parseXml|\.FIT.{0,40}(DataView|Uint8Array)/i
+    );
     assert.doesNotMatch(source, /parseFit|decodeFit|parseTcx|decodeTcx|parseGpx|decodeGpx/i);
 });
 

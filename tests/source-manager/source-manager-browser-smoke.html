@@ -7,7 +7,7 @@
         content="default-src 'self'; script-src 'self' 'nonce-pr10-source-manager'; style-src 'unsafe-inline'; connect-src 'self'; frame-src 'self'; img-src data:; worker-src 'self'; object-src 'none'; base-uri 'none'"
     >
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>PR-10 Source Manager browser smoke</title>
+    <title>PR-14 Source Manager browser smoke</title>
     <link rel="icon" href="data:,">
     <style>
         body { margin: 2rem; font-family: system-ui, sans-serif; }
@@ -19,12 +19,19 @@
 </head>
 <body data-status="running">
     <main>
-        <h1>PR-10 Source Manager browser smoke</h1>
+        <h1>PR-14 Source Manager browser smoke</h1>
         <p id="state" data-testid="state">running</p>
         <pre id="summary" data-testid="summary">{"status":"running"}</pre>
         <div id="frames"></div>
     </main>
     <script type="module" nonce="pr10-source-manager">
+        import { createSyntheticFitActivity } from
+            '../fixtures/synthetic/fit/fit-fixture.js';
+        import { createSyntheticTcxActivity } from
+            '../fixtures/synthetic/tcx/tcx-fixture.js';
+        import { createSyntheticGpxActivity } from
+            '../fixtures/synthetic/gpx/gpx-fixture.js';
+
         const V2_NAME = 'strava-stats-v2';
         const SENTINEL_NAME = 'synthetic-pr10-legacy-like-sentinel';
         const state = document.getElementById('state');
@@ -311,10 +318,44 @@
             assert(!realDoc.body.textContent.includes('private-archive.zip'), 'NO_ZIP_FILENAME_DOM');
 
             realDoc.getElementById('dialog-close').click();
-            const fitDoc = await choose(realFrame, 'local', new File(['private'], 'private.fit'));
-            assert(fitDoc.getElementById('start-import').disabled, 'FIT_UNSUPPORTED_DISABLED');
-            assert(fitDoc.getElementById('selection-list').textContent.includes('FILE_TYPE_UNSUPPORTED'), 'FIT_UNSUPPORTED_COPY');
-            fitDoc.getElementById('dialog-close').click();
+            const formatFiles = [
+                new File([createSyntheticFitActivity()], 'private-athlete.fit', {
+                    type: 'application/vnd.ant.fit'
+                }),
+                new File([createSyntheticTcxActivity()], 'private-athlete.tcx', {
+                    type: 'application/vnd.garmin.tcx+xml'
+                }),
+                new File([createSyntheticGpxActivity()], 'private-athlete.gpx', {
+                    type: 'application/gpx+xml'
+                })
+            ];
+            const formatGates = ['FIT', 'TCX', 'GPX'];
+            for (let index = 0; index < formatFiles.length; index += 1) {
+                realDoc.getElementById('dialog-close').click();
+                await importFile(realFrame, 'local', formatFiles[index], 4 + index);
+                assert(
+                    realDoc.getElementById('preview-total').textContent === `${3 + index} activities`,
+                    `${formatGates[index]}_REGISTRY_STORAGE_PREVIEW`
+                );
+                assert(
+                    !realDoc.body.textContent.includes(formatFiles[index].name),
+                    `${formatGates[index]}_FILENAME_REDACTED`
+                );
+            }
+
+            realDoc.getElementById('dialog-close').click();
+            await importFile(realFrame, 'local', formatFiles[0], 7);
+            assert(realDoc.getElementById('preview-total').textContent === '5 activities', 'FIT_EXACT_DUPLICATE');
+
+            realDoc.getElementById('dialog-close').click();
+            const corruptFit = new File(
+                [createSyntheticFitActivity().subarray(0, 14)],
+                'private-corrupt.fit',
+                { type: 'application/vnd.ant.fit' }
+            );
+            await importFile(realFrame, 'local', corruptFit, 8);
+            assert(realDoc.getElementById('preview-total').textContent === '5 activities', 'MALFORMED_FIT_NO_WRITE');
+            assert(!realDoc.body.textContent.includes(corruptFit.name), 'MALFORMED_FIT_FILENAME_REDACTED');
 
             const invalidDoc = await choose(realFrame, 'archive', new File(['not zip'], 'invalid.zip'));
             assert(invalidDoc.getElementById('start-import').disabled, 'INVALID_ZIP_DISABLED');
@@ -336,13 +377,15 @@
             realFrame.contentWindow.location.reload();
             await new Promise(resolve => { realFrame.onload = resolve; });
             await waitFor(
-                () => realFrame.contentDocument.getElementById('preview-total').textContent === '2 activities',
+                () => realFrame.contentDocument.getElementById('preview-total').textContent === '5 activities',
                 'RELOAD_PREVIEW_TIMEOUT',
                 30_000
             );
-            assert(realFrame.contentDocument.querySelectorAll('.report-card').length >= 4, 'RELOAD_IMPORT_LOG');
+            assert(realFrame.contentDocument.querySelectorAll('.report-card').length >= 9, 'RELOAD_IMPORT_LOG');
             assert(
-                realFrame.contentDocument.querySelectorAll('.report-item').length <= 103,
+                Array.from(realFrame.contentDocument.querySelectorAll('.report-card')).every(
+                    card => card.querySelectorAll('.report-item').length <= 100
+                ),
                 'REPORT_RENDER_BOUNDED'
             );
             collectResources(realFrame);
@@ -361,7 +404,7 @@
             assert(v2.version === 2, 'V2_VERSION_2');
             assert(v2.stores.length === 11, 'V2_ELEVEN_STORES');
             assert(Object.values(v2.indexes).reduce((sum, list) => sum + list.length, 0) === 9, 'V2_NINE_INDEXES');
-            assert(v2.counts.activities === 2, 'CANONICAL_ACTIVITY_COUNT');
+            assert(v2.counts.activities === 5, 'CANONICAL_ACTIVITY_COUNT');
 
             const registrations = await navigator.serviceWorker.getRegistrations();
             const cacheNames = await caches.keys();

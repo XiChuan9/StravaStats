@@ -32,7 +32,7 @@
         <section id="first-run" class="first-run" aria-labelledby="first-run-title" hidden>
             <p class="eyebrow">First run</p>
             <h2 id="first-run-title">Start your local activity library</h2>
-            <p>Choose a CSV file or Strava archive. No account connection, migration, or deletion happens automatically.</p>
+            <p>Choose FIT, TCX, GPX, an English Strava CSV, or a Strava archive. No account connection, migration, or deletion happens automatically.</p>
         </section>
 
         <section aria-labelledby="source-cards-title">
@@ -51,9 +51,9 @@
                         <span class="status-badge" data-source-status="local">Available</span>
                     </div>
                     <h3 id="source-local-title">Local Files</h3>
-                    <p>Import an English Strava <code>activities.csv</code> file from this device.</p>
+                    <p>Import FIT, TCX, GPX, or an English Strava <code>activities.csv</code> file from this device.</p>
                     <button type="button" class="button button--primary" data-open-import="local">Choose local files</button>
-                    <p class="source-note">FIT, TCX, and GPX are not supported yet.</p>
+                    <p class="source-note">Files are decoded locally through the bounded Import pipeline.</p>
                 </article>
 
                 <article class="source-card" data-source-card="archive" data-status="available" aria-labelledby="source-archive-title">
@@ -136,12 +136,12 @@
                 </div>
                 <button type="submit" id="dialog-close-icon" class="icon-button" aria-label="Close import dialog">×</button>
             </header>
-            <p id="import-dialog-description">Choose or drop synthetic CSV/ZIP files. Exact duplicates are checked by the Import pipeline when import starts.</p>
+            <p id="import-dialog-description">Choose or drop FIT, TCX, GPX, CSV, or Strava ZIP files. Exact duplicates are checked by the Import pipeline when import starts.</p>
 
-            <label class="visually-hidden" for="file-input">Choose CSV or ZIP files</label>
+            <label class="visually-hidden" for="file-input">Choose CSV, ZIP, FIT, TCX, or GPX files</label>
             <input id="file-input" class="visually-hidden" type="file" multiple accept=".csv,.zip,.fit,.tcx,.gpx">
             <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-controls="file-input" aria-describedby="dropzone-help">
-                <strong>Drop CSV or ZIP files here</strong>
+                <strong>Drop FIT, TCX, GPX, CSV, or ZIP files here</strong>
                 <span id="dropzone-help">or use the keyboard-accessible file picker</span>
                 <button type="button" id="choose-files" class="button">Choose files</button>
             </div>

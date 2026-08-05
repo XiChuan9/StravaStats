@@ -4,11 +4,17 @@ import { ownDataValues } from './safe-data.js';
 import { syntheticJsonDecoder } from './synthetic-json-decoder.js';
 import { activitiesCsvDecoder } from './activities-csv-decoder.js';
 import { stravaArchiveRowDecoder } from './strava-zip.js';
+import { fitDecoder } from '../decoders/fit/decoder.js';
+import { tcxDecoder } from '../decoders/tcx/decoder.js';
+import { gpxDecoder } from '../decoders/gpx/decoder.js';
 
 const registry = createDecoderRegistry([
     syntheticJsonDecoder,
     activitiesCsvDecoder,
-    stravaArchiveRowDecoder
+    stravaArchiveRowDecoder,
+    fitDecoder,
+    tcxDecoder,
+    gpxDecoder
 ]);
 const INPUT_FIELDS = Object.freeze(['mediaType', 'content', 'rawArtifactId']);
 

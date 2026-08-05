@@ -65,13 +65,15 @@ test('same-origin page has four source cards and complete accessible import cont
     }
     assert.match(html, /<main[^>]+aria-labelledby=/);
     assert.match(html, /<dialog[^>]+aria-labelledby=[^>]+aria-describedby=/);
-    assert.match(html, /<label[^>]+for="file-input"[^>]*>Choose CSV or ZIP files<\/label>/);
+    assert.match(html, /<label[^>]+for="file-input"[^>]*>Choose CSV, ZIP, FIT, TCX, or GPX files<\/label>/);
     assert.match(html, /type="file"[^>]+multiple[^>]+accept="\.csv,\.zip,\.fit,\.tcx,\.gpx"/);
     assert.match(html, /id="dropzone"[^>]+role="button"[^>]+tabindex="0"/);
     assert.match(html, /id="import-live"[^>]+aria-live="polite"/);
     assert.match(html, /id="import-alert"[^>]+aria-live="assertive"/);
     assert.match(html, /<progress[^>]+aria-label=/);
     assert.match(html, /id="cancel-import"/);
+    assert.match(html, /Import FIT, TCX, GPX, or an English Strava/);
+    assert.doesNotMatch(html, /FIT, TCX, and GPX are not supported yet/);
     assert.match(html, /Disconnecting and deleting local data are separate actions/);
     assert.doesNotMatch(html, /https?:\/\//);
 });
@@ -86,6 +88,8 @@ test('page consumer does not select storage/provider/auth or disclose raw inputs
     assert.match(page, /SAFE_UI_CODES\.has\(descriptor\.value\)/);
     assert.match(page, /label: `CSV file \$\{ordinal \+ 1\}`/);
     assert.match(page, /label: `ZIP file \$\{ordinal \+ 1\}`/);
+    assert.match(page, /label: `FIT file \$\{ordinal \+ 1\}`/);
+    assert.match(page, /`\$\{kind\.toUpperCase\(\)\} file \$\{ordinal \+ 1\}`/);
 });
 
 test('composition root uses only existing public Import/V2 boundaries and keeps Demo isolated', async () => {
