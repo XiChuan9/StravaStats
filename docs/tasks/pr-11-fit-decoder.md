@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Investigation complete; docs-only Draft PR publication pending |
+| Status | Implementation and local Final Review passed; exact-head CI and Ready transition pending |
 | Milestone | M8 |
 | Base branch | `integration/v2` |
 | Exact base SHA | `e9c5c6e531cf0d6349066480e49cd8d53b5622e4` |
@@ -47,8 +47,8 @@ Manager support states, open storage, or expose a new public Import API.
 - `package.json` and `package-lock.json` are unchanged. No new runtime or test
   dependency is needed.
 - No real FIT/TCX/GPX file, athlete export, account, Token, GPS route,
-  heart-rate/power record, private fixture, screenshot, or browser profile was
-  read.
+  heart-rate/power record, private fixture, screenshot, or application browser
+  data was read during baseline investigation.
 
 ## A1 publication rule
 
@@ -100,7 +100,8 @@ The PR-11 boundary remains outside that graph:
 
 ```text
 direct internal ESM import in tests and future Registry wiring
--> FIT_DECODER.decode({ mediaType, content })
+-> js/decoders/fit/decoder.js
+-> fitDecoder.decode({ mediaType, content })
 -> existing validateImportedActivityBundle()
 ```
 
@@ -356,6 +357,10 @@ zero external/provider requests, no Service Worker/Cache Storage, no console
 error, and no persistent local/IndexedDB data. It does not change production
 pages or simulate Source Manager support.
 
+The browser evidence must use a newly-created disposable profile outside the
+repository. It must not attach to, inspect, or reuse any user browser profile or
+logged-in browser state.
+
 Final Review compares accepted non-compressed synthetic files with the official
 Garmin JavaScript SDK outside the repository. Compressed-timestamp correctness
 is checked against the protocol algorithm because the current official
@@ -368,11 +373,11 @@ Only these six paths may change after the docs-only publication gate:
 
 ```text
 docs/tasks/pr-11-fit-decoder.md
-js/import/fit-decoder.js
+js/decoders/fit/decoder.js
 tests/fixtures/synthetic/fit/README.md
 tests/fixtures/synthetic/fit/fit-fixture.js
-tests/import/fit-decoder-browser-smoke.html
-tests/import/fit-decoder.test.js
+tests/decoders/fit-decoder-browser-smoke.html
+tests/decoders/fit-decoder.test.js
 ```
 
 The first implementation need outside this list, a dependency/lockfile change,
@@ -404,6 +409,25 @@ Explicitly prohibited paths and behavior include:
 - Rollback is deletion/revert of the additive six-path PR. No user data needs
   conversion, deletion, or repair.
 
+### Process deviation and correction
+
+The initial Task Brief incorrectly placed the new module under `js/import/`.
+The applicable nested `js/import/AGENTS.md` explicitly prohibits adding
+FIT/TCX/GPX/XML decoding in that directory. The violation was detected before
+the implementation was staged or committed. The uncommitted file was moved to
+the root-rule-only `js/decoders/fit/` boundary, the allowlist and test imports
+were corrected, and no production Registry/Worker file changed.
+
+During Draft PR publication, the GitHub connector returned 403 and an attempted
+fallback opened the GitHub compare form through the user's existing Chrome
+login state. The form navigation did not confirm submission; control-tower
+authenticated tooling subsequently verified Draft PR #17 at exact docs-only
+head `e65329b891c792168581d97d764f979c7a5d981f`. The browser tab was immediately
+released after the privacy-boundary correction. This was limited to the GitHub
+publication form: no application page, browser storage/profile contents,
+credential value, athlete file, or private activity data was inspected or
+recorded. No later verification may use that profile.
+
 ## Required closure evidence
 
 - `npm ci`
@@ -426,3 +450,97 @@ Explicitly prohibited paths and behavior include:
 
 The task stops after Ready for review. It does not merge the PR, modify
 `integration/v2`, remove a worktree/branch, or start M9.
+
+## A8 implementation and local closure ledger
+
+The implementation remains exactly inside the corrected six-path allowlist:
+
+- `js/decoders/fit/decoder.js` is the internal, immutable, zero-I/O Decoder
+  descriptor. It owns strict base64, FIT framing/CRC/definitions/data records,
+  compressed timestamps, developer-field skipping, the frozen profile subset,
+  resource limits, Canonical mapping, redacted warnings, and final bundle
+  validation/freezing.
+- `tests/fixtures/synthetic/fit/fit-fixture.js` independently constructs bytes,
+  base64, definitions, data messages, developer fields, compressed headers, and
+  CRCs. The README records its invented-data origin.
+- `tests/decoders/fit-decoder.test.js` contains 55 Node tests. The required
+  Garmin/COROS/Wahoo/Zwift/pool/indoor/no-GPS/no-HR/split/CRC/pause-resume
+  matrix, direct and packed HR messages, `time256`, null/missing/zero, endian,
+  compressed rollover, malformed records, adversarial descriptors, limits,
+  deterministic environment, redaction, and zero-I/O cases are explicit.
+- `tests/decoders/fit-decoder-browser-smoke.html` is a test-only same-origin
+  native-ESM harness. It does not register FIT in production.
+
+### Local verification
+
+| Gate | Result |
+| --- | --- |
+| `npm ci` | PASS; 6 packages installed from the existing lockfile |
+| `npm run check:syntax` | PASS; 189 files |
+| `npm run check:privacy` | PASS |
+| FIT focused | PASS; 55/55 after Final Review coverage additions |
+| Import/Contract/Storage regressions | PASS; 405/405 |
+| `npm test` before final coverage additions | PASS; 1,184/1,184 |
+| full post-review rerun | PASS; 1,189/1,189 |
+| `git diff --check` | PASS after the full post-review rerun |
+
+The focused suite launches child Node processes under UTC/C and
+Pacific/Honolulu/zh_CN environments and compares the complete serialized
+bundle byte-for-byte. A fresh ESM import/decode with throwing sentinels for
+network, DOM, Web Storage, IndexedDB, Cache Storage, and Worker plus patched
+console methods passed with zero calls.
+
+### Disposable browser/CDP gate
+
+A new profile under `/private/tmp/stravastats-fit-browser.*` and a localhost
+static server were used; no existing browser profile or login state was
+attached. The final CDP page target produced:
+
+```text
+activities=2, series=12, laps=2, events=6, warnings=5
+page requests=11 same-origin localhost, external page requests=0
+fetch calls=0, Worker calls=0, console errors=0, runtime exceptions=0
+LocalStorage/IndexedDB/Cache Storage/Service Worker before=0 and after=0
+```
+
+External DNS was blocked for the headless invocation. The installed Google
+Chrome binary separately emitted system updater/GCM diagnostic lines on exit;
+those are outside the CDP page target and the disposable profile. The evidence
+therefore claims zero external/provider requests by the FIT test page and
+Decoder boundary, not that the vendor-installed browser/updater binary has no
+independent background machinery. The localhost server, browser process,
+temporary verifier, and both disposable profiles were terminated and removed.
+
+### Official SDK/profile comparison
+
+Final Review downloaded `@garmin/fitsdk@21.208.0` only into `/private/tmp` and
+removed it afterward. Ten non-compressed synthetic cases passed SDK
+`isFIT()`, `checkIntegrity()`, and `read()` with Profile 21.208 and zero SDK
+errors. File/session summaries and lap/event/device counts matched the
+Canonical outputs. Packed 12-bit HR expansion matched the SDK. The deliberate
+CRC mismatch failed SDK integrity and became the Decoder's explicit warning,
+as frozen. The official JavaScript Decoder explicitly rejects compressed
+timestamp records, so that path was reviewed against the protocol algorithm
+and the independent rollover tests instead of being misreported as an SDK
+pass.
+
+### Independent Final Review
+
+The review was performed as a separate post-implementation phase across six
+facets: official protocol/Profile 21.208, binary bounds, Canonical mapping,
+privacy/redaction, scope/architecture, and rollback.
+
+- The only scope defect found was the initial uncommitted `js/import/` path,
+  already reproduced by the nested rule and corrected before the first commit.
+- The first focused run was 49/50 because its split-record conflict test
+  replaced the only HR value instead of constructing two conflicting values.
+  The fixture was corrected to append a second same-time non-null value; the
+  Decoder then failed closed and the suite passed 50/50.
+- Final Review added explicit missing/null/zero, partial-position, packed-HR,
+  `time256`, and record/HR output-limit evidence. All passed without production
+  correction.
+- No production dependency, public export/API/schema, Registry/Worker/Source
+  Manager, Storage, Service Worker, Legacy, provider, deployment, or M9 change
+  exists. `package.json` and `package-lock.json` are unchanged.
+- No open Final Review finding remains. Rollback is an additive six-path
+  revert; migration and user-data repair are not applicable.

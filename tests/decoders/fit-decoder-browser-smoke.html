@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>FIT Decoder synthetic browser smoke</title>
+</head>
+<body>
+  <main>
+    <h1>FIT Decoder synthetic browser smoke</h1>
+    <output id="result">running</output>
+  </main>
+  <script type="module">
+    const output = document.querySelector('#result');
+    const safeCounts = async () => ({
+      localStorage: localStorage.length,
+      indexedDb: typeof indexedDB.databases === 'function'
+        ? (await indexedDB.databases()).length
+        : null,
+      caches: (await caches.keys()).length,
+      serviceWorkers: (await navigator.serviceWorker.getRegistrations()).length
+    });
+
+    const originalFetch = globalThis.fetch;
+    const OriginalWorker = globalThis.Worker;
+    let fetchCalls = 0;
+    let workerCalls = 0;
+    globalThis.fetch = () => {
+      fetchCalls += 1;
+      throw new Error('unexpected fetch');
+    };
+    globalThis.Worker = class {
+      constructor() {
+        workerCalls += 1;
+        throw new Error('unexpected Worker');
+      }
+    };
+
+    try {
+      const before = await safeCounts();
+      const [{ fitDecoder }, fixture] = await Promise.all([
+        import('../../js/decoders/fit/decoder.js'),
+        import('../fixtures/synthetic/fit/fit-fixture.js')
+      ]);
+      const cases = [
+        fixture.createSyntheticFitActivity(),
+        fixture.createSyntheticFitActivity({
+          includeHrMessage: true,
+          pauseResume: true,
+          corruptFileCrc: true
+        })
+      ];
+      const bundles = cases.map(bytes => fitDecoder.decode(
+        fixture.syntheticFitDescriptor(bytes)
+      ));
+      const after = await safeCounts();
+      const result = {
+        ok: true,
+        activityCount: bundles.length,
+        seriesCount: bundles.reduce(
+          (total, bundle) => total + bundle.streams.series.length,
+          0
+        ),
+        lapCount: bundles.reduce(
+          (total, bundle) => total + bundle.laps.length,
+          0
+        ),
+        eventCount: bundles.reduce(
+          (total, bundle) => total + bundle.events.length,
+          0
+        ),
+        warningCount: bundles.reduce(
+          (total, bundle) => total + bundle.warnings.length,
+          0
+        ),
+        fetchCalls,
+        workerCalls,
+        before,
+        after
+      };
+      globalThis.__fitDecoderSmokeResult = result;
+      output.textContent = JSON.stringify(result);
+    } catch {
+      const result = { ok: false, code: 'FIT_BROWSER_SMOKE_FAILED' };
+      globalThis.__fitDecoderSmokeResult = result;
+      output.textContent = JSON.stringify(result);
+      document.documentElement.dataset.smoke = 'failed';
+    } finally {
+      globalThis.fetch = originalFetch;
+      globalThis.Worker = OriginalWorker;
+    }
+  </script>
+</body>
+</html>
