@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Implementation and local Final Review passed; exact-head CI and Ready transition pending |
+| Status | Implementation-head CI passed; closure-head CI and Ready transition pending |
 | Milestone | M8 |
 | Base branch | `integration/v2` |
 | Exact base SHA | `e9c5c6e531cf0d6349066480e49cd8d53b5622e4` |
@@ -544,3 +544,15 @@ privacy/redaction, scope/architecture, and rollback.
   exists. `package.json` and `package-lock.json` are unchanged.
 - No open Final Review finding remains. Rollback is an additive six-path
   revert; migration and user-data repair are not applicable.
+
+### Implementation-head CI and closure handoff
+
+- Implementation commit: `0f1a3aeda58596be1f80a1987a243de7b7a2c302`
+  (`feat(v2): add bounded FIT decoder`).
+- Exact implementation-head CI: PASS, GitHub Actions run
+  [30982102783](https://github.com/XiChuan9/StravaStats/actions/runs/30982102783),
+  job `checks`.
+- PR: [#17](https://github.com/XiChuan9/StravaStats/pull/17), still Draft at
+  this ledger commit. The closure-head CI and Ready transition are the only
+  remaining gates; this document is not amended after those remote gates so
+  that their exact head remains auditable.
