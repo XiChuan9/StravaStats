@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | REVISE local/browser/SDK gates pass; exact-head CI, PR-body closure, and control-tower re-review pending |
+| Status | Second REVISE local gates pass; exact-head CI, PR-body closure, and third review pending |
 | Milestone | M8 |
 | Base branch | `integration/v2` |
 | Exact base SHA | `e9c5c6e531cf0d6349066480e49cd8d53b5622e4` |
@@ -620,3 +620,24 @@ profile, temporary SDK, and SDK verifier were terminated and removed.
 Exact-head CI, PR-body closure, and a new independent control-tower review
 remain pending. The PR must stay Draft until the control tower explicitly
 decides otherwise.
+
+## A10 second independent Final Review REVISE
+
+The second control-tower review left one P1: record HR construction retained
+only rows with an own `heartRate` property. A record definition that omitted
+HR at offset 0 followed by a normal HR record at offset 10 therefore produced
+`[10] / [150]` instead of the frozen `[0, 10] / [null, 150]` timeline.
+
+The minimal test was added before the product change and produced the expected
+RED result: 63/64 passed with only the omitted-definition case failing. The
+fix first detects whether any record row contributes an HR field. When true,
+every record timestamp participates in the record HR timeline and omitted or
+invalid values remain `null`; when false, no record HR points are created.
+Final non-null emission, same-timestamp folding/dedupe, and the 200,000 final
+point limit remain unchanged. Existing No HR and limit tests protect against
+unconditional stream creation.
+
+The focused suite is GREEN at 64/64. `npm ci`, syntax for 189 files, privacy,
+Import/Contract/Storage 405/405, full 1,198/1,198, and `git diff --check` all
+pass. Exact-head CI, PR-body closure, and the third independent control-tower
+review remain pending. PR #17 must stay Draft.

@@ -797,13 +797,14 @@ function buildStreams(activityId, recordRows, hrMessages, sessionStart) {
         return typeof row.speed === 'number' ? row.speed : null;
     });
 
-    const heartRatePoints = recordRows
-        .filter(row => has(row, 'heartRate'))
-        .map(row => ({
+    const hasRecordHeartRate = recordRows.some(row => has(row, 'heartRate'));
+    const heartRatePoints = hasRecordHeartRate
+        ? recordRows.map(row => ({
             offset: row.offset,
             value: typeof row.heartRate === 'number' ? row.heartRate : null,
             encounter: row.encounter
-        }));
+        }))
+        : [];
     heartRatePoints.push(...expandHeartRateMessages(hrMessages, sessionStart));
     heartRatePoints.sort((left, right) =>
         left.offset - right.offset || left.encounter - right.encounter

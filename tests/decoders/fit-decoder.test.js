@@ -337,6 +337,28 @@ test('record HR preserves an invalid sample before a later numeric sample', () =
     assert.deepEqual(heartRate.values, [null, 150]);
 });
 
+test('record HR preserves a timestamp whose definition omits the HR field', () => {
+    const records = createSyntheticFitRecords();
+    const definitionIndex = records.findIndex(record =>
+        record.kind === 'definition' && record.localMessage === 3
+    );
+    const definition = records[definitionIndex];
+    const firstRecord = records[definitionIndex + 1];
+    const secondRecord = records[definitionIndex + 2];
+    const firstValues = Object.fromEntries(
+        Object.entries(firstRecord.values).filter(([field]) => field !== '3')
+    );
+    records.splice(definitionIndex, 3,
+        fitDefinition(3, 20, definition.fields.filter(field => field.number !== 3)),
+        fitData(3, firstValues),
+        definition,
+        secondRecord
+    );
+    const heartRate = series(decodeRecords(records), 'heartRate');
+    assert.deepEqual(heartRate.offsetsSeconds, [0, 10]);
+    assert.deepEqual(heartRate.values, [null, 150]);
+});
+
 test('packed 12-bit HR event timestamps accumulate across rollover', () => {
     const records = createSyntheticFitRecords({ includeHeartRate: false });
     const sessionIndex = records.findIndex(record =>
