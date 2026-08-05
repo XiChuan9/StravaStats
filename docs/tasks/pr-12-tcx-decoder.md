@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Scope and contract frozen / Draft publication pending |
+| Status | Implementation complete / independent Final Review PASS |
 | Milestone | M9 |
 | Base branch | `integration/v2` |
 | Exact base SHA | `c428f44ed35ba5d60c10611c3d3370f210bea08f` |
@@ -52,6 +52,17 @@ The first branch commit contains only this Task Brief. It must be pushed before
 implementation, and it opens a Draft PR with
 `integration/v2 <- codex/v2/decoder-tcx`. No implementation path may be staged
 before that docs-only commit and Draft PR exist.
+
+Publication evidence:
+
+- the docs-only head was
+  `297eaca6b050ed196a0d8e0703752ac6f8bf7caa`;
+- Draft PR [#18](https://github.com/XiChuan9/StravaStats/pull/18) was
+  created with `integration/v2 <- codex/v2/decoder-tcx` before implementation;
+- its A1 exact-head CI run `30997027724` completed successfully;
+- the implementation head
+  `63c8ea8b213215dbbf0599889973e24206c3bf0e` also passed exact-head CI run
+  `30997802289` while the PR remained Draft.
 
 ## A2 authority and read-only findings
 
@@ -438,6 +449,109 @@ git diff --check
 ```
 
 Exact implementation and closure heads must pass pull-request CI.
+
+## Final Review Closure
+
+### Delivered scope
+
+The final exact-base diff remains the literal six-path allowlist. It adds one
+internal `tcxDecoder` descriptor, deterministic synthetic fixture builder and
+README, the focused Node boundary suite, the same-origin browser harness, and
+this closure ledger. It does not edit a package file, Registry, Worker, Source
+Manager, Repository, Canonical contract, Storage, Service Worker, page,
+deployment file, feature flag, or Legacy path.
+
+The implementation uses one synchronous native-ESM restricted XML tokenizer,
+namespace resolver, and bounded semantic tree. It emits one deeply frozen
+`ImportedActivityBundle`, invokes the existing bundle validator, performs no
+I/O, and remains unregistered in production.
+
+### Verification evidence
+
+The closure candidate passed the following locally on 2026-08-05:
+
+```text
+npm ci                                                        PASS
+npm run check:syntax                                          PASS (192 files)
+npm run check:privacy                                         PASS
+node --test tests/decoders/tcx-decoder.test.js                PASS (37/37)
+node --test tests/import/*.test.js tests/contracts/*.test.js
+  tests/storage/*.test.js                                     PASS (405/405)
+npm test                                                      PASS (1235/1235)
+git diff --check                                              PASS
+```
+
+Focused evidence includes default/prefixed namespaces, strict schema sequence,
+multiple Laps/Tracks, Polar missing speed, Suunto missing altitude, Garmin TPX
+power/cadence/speed, temperature extensions, summary-only and field-degraded
+activities, true zero, duplicate/decreasing/missing time, opaque IDs, strict
+Gregorian dates/offsets, hostile descriptors, redaction, input immutability,
+environment determinism, and zero application I/O.
+
+Every frozen resource has executable exact-limit and `+1` evidence. The
+high-count cases run in isolated child processes and reach 500,000 elements,
+500,000 attributes, 200,000 children, 200,000 final point rows, 400,000
+extension elements, 10,000 Laps, and 20,000 Tracks without one limit masking
+another. Lexical tests likewise cover exact and over-limit XML bytes, depth,
+QName bytes, text bytes, attribute-value bytes, per-element attributes, and
+direct Extension children.
+
+A core-only generated fixture validated against Garmin's authoritative
+`TrainingCenterDatabasev2.xsd` with `xmllint`. The downloaded schema remained
+in `/private/tmp`, was not committed, and is neither a runtime nor test
+dependency.
+
+The final isolated browser run loaded a synthetic TCX containing an inert
+external `xsi:schemaLocation` canary. It decoded one Activity and nine series;
+fetch, XHR, WebSocket, Worker, console warning/error, uncaught error, unhandled
+rejection, Local/Session Storage, IndexedDB, Cache Storage, and Service Worker
+counts were all zero. Loopback server evidence contained only the harness and
+local ESM graph; there was no request to the canary, provider, or auth surface.
+The browser tab/session and loopback server were closed.
+
+### Independent review and test-first correction
+
+An independent read-only reviewer inspected exact-base scope, XML security,
+namespace/path handling, mapping, limits, Canonical output, privacy, and test
+evidence without reusing the implementation conclusion. Its first review of
+`63c8ea8` returned NOT PASS. Every actionable finding was reproduced with a
+minimal failing test before repair:
+
+1. enforce TCX and selected Garmin XSD sibling sequence order;
+2. reject known AE/TPE elements outside their approved literal paths;
+3. reject raw `<` in attributes, literal `]]>` in text, a comment ending `-`,
+   and non-XML whitespace in markup/date boundaries;
+4. reject reserved case-insensitive XML prefixes, XInclude namespace
+   declarations, and XSI/XML elements;
+5. validate ignored Creator/Author namespace trees and reject unsupported
+   Training rather than treating it as an extension;
+6. distinguish Lap LX warnings from unknown extension warnings and require
+   singleton nested Garmin `Extensions`;
+7. reject controlled TCX/AE/TPE/XInclude/XSI/XML descendants hidden beneath an
+   unknown wildcard wrapper; and
+8. replace incomplete limit evidence with real exact and `+1` tests for every
+   frozen resource.
+
+The reviewer then rechecked all original findings and the corrected resource
+formulas, found one nested wildcard bypass, and again required a failing test
+before repair. A third read-only review exercised all six wildcard routes,
+valid unknown-only subtrees, Lap LX, nested Garmin Extensions, singleton
+guards, warning classification, and extension counting. Its final result was
+**PASS with no actionable findings**; its independent focused run was 37/37.
+
+### Migration, privacy, rollback, and limitations
+
+There is no migration or storage effect. Neither Legacy nor V2 persistence was
+opened or modified by the Decoder or browser harness. All committed TCX is
+generated from deterministic invented literals; no account, token, athlete
+export, route, health/power history, device serial, screenshot, provider call,
+private fixture, or user browser profile entered the work.
+
+Rollback remains an additive six-path revert with no data cleanup. Deliberate
+limitations are the frozen one-Activity contract, restricted XML 1.0 subset,
+selected TCX v2/AE/TPE fields, and absence of production Registry/Worker/Source
+Manager wiring. Those limitations are PR-12 boundaries, not incomplete work;
+production support remains a later authorized PR.
 
 ## Privacy, migration, and rollback
 

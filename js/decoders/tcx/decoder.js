@@ -37,6 +37,7 @@ const XINCLUDE_NS = 'http://www.w3.org/2001/XInclude';
 const NAME = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
 const INTEGER = /^(?:0|[1-9]\d*)$/;
 const DECIMAL = /^[+-]?(?:(?:\d+(?:\.\d*)?)|(?:\.\d+))(?:[eE][+-]?\d+)?$/;
+const XML_SPACE_ONLY = /^[\u0009\u000a\u000d\u0020]*$/;
 
 const WARNING_DEFINITIONS = deepFreeze({
     TCX_IMPORT_TIME_FALLBACK: {
@@ -132,6 +133,10 @@ function decodeEntities(value) {
     return output;
 }
 
+function trimXmlSpace(value) {
+    return value.replace(/^[\u0009\u000a\u000d\u0020]+|[\u0009\u000a\u000d\u0020]+$/g, '');
+}
+
 function parseXml(content) {
     if (content.length === 0 || content === '\ufeff') fail(IMPORT_ERROR_CODE.FILE_EMPTY);
     validateCharacters(content);
@@ -143,7 +148,7 @@ function parseXml(content) {
         const end = source.indexOf('?>');
         if (end < 0) fail();
         const declaration = source.slice(0, end + 2);
-        if (!/^<\?xml\s+version=(?:"1\.0"|'1\.0')(?:\s+encoding=(?:"UTF-8"|'UTF-8'|"utf-8"|'utf-8'))?(?:\s+standalone=(?:"(?:yes|no)"|'(?:yes|no)'))?\s*\?>$/.test(declaration)) fail();
+        if (!/^<\?xml[\u0009\u000a\u000d\u0020]+version=(?:"1\.0"|'1\.0')(?:[\u0009\u000a\u000d\u0020]+encoding=(?:"UTF-8"|'UTF-8'|"utf-8"|'utf-8'))?(?:[\u0009\u000a\u000d\u0020]+standalone=(?:"(?:yes|no)"|'(?:yes|no)'))?[\u0009\u000a\u000d\u0020]*\?>$/.test(declaration)) fail();
         cursor = end + 2;
     }
 
@@ -155,10 +160,11 @@ function parseXml(content) {
 
     function appendText(raw) {
         if (raw.length === 0) return;
+        if (raw.includes(']]>')) fail();
         if (utf8Length(raw) > TCX_LIMITS.maxTextNodeBytes) fail();
         const decoded = decodeEntities(raw);
         if (stack.length === 0) {
-            if (!/^\s*$/.test(decoded)) fail();
+            if (!XML_SPACE_ONLY.test(decoded)) fail();
             return;
         }
         stack[stack.length - 1].text += decoded;
@@ -174,7 +180,8 @@ function parseXml(content) {
         appendText(source.slice(cursor, open));
         if (source.startsWith('<!--', open)) {
             const end = source.indexOf('-->', open + 4);
-            if (end < 0 || source.slice(open + 4, end).includes('--')) fail();
+            const comment = end < 0 ? '' : source.slice(open + 4, end);
+            if (end < 0 || comment.includes('--') || comment.endsWith('-')) fail();
             cursor = end + 3;
             continue;
         }
@@ -196,6 +203,7 @@ function parseXml(content) {
         for (; end < source.length; end += 1) {
             const character = source[end];
             if (quote !== null) {
+                if (character === '<') fail();
                 if (character === quote) quote = null;
             } else if (character === '"' || character === "'") quote = character;
             else if (character === '>') break;
@@ -205,7 +213,7 @@ function parseXml(content) {
         let inside = source.slice(open + 1, end);
         const empty = inside.endsWith('/');
         if (empty) inside = inside.slice(0, -1);
-        const nameMatch = /^([^\s]+)([\s\S]*)$/.exec(inside);
+        const nameMatch = /^([^\u0009\u000a\u000d\u0020]+)([\s\S]*)$/.exec(inside);
         if (!nameMatch) fail();
         const qname = nameMatch[1];
         const name = splitQName(qname);
@@ -213,11 +221,11 @@ function parseXml(content) {
         const rawAttributes = [];
         const rawNames = new Set();
         while (rest.length > 0) {
-            const whitespace = /^\s+/.exec(rest);
+            const whitespace = /^[\u0009\u000a\u000d\u0020]+/.exec(rest);
             if (!whitespace) fail();
             rest = rest.slice(whitespace[0].length);
             if (rest.length === 0) break;
-            const match = /^([^\s=]+)\s*=\s*("[^"]*"|'[^']*')/.exec(rest);
+            const match = /^([^\u0009\u000a\u000d\u0020=]+)[\u0009\u000a\u000d\u0020]*=[\u0009\u000a\u000d\u0020]*("[^"]*"|'[^']*')/.exec(rest);
             if (!match) fail();
             const attributeQName = match[1];
             splitQName(attributeQName);
@@ -249,7 +257,9 @@ function parseXml(content) {
             if (declared.has(prefix) || attribute.value.length === 0) fail();
             if (
                 prefix === 'xmlns'
+                || (/^xml/i.test(prefix) && prefix !== 'xml')
                 || attribute.value === XMLNS_NS
+                || attribute.value === XINCLUDE_NS
                 || (prefix === 'xml' && attribute.value !== XML_NS)
                 || (prefix !== 'xml' && attribute.value === XML_NS)
             ) fail();
@@ -257,7 +267,13 @@ function parseXml(content) {
             namespaces[prefix] = attribute.value;
         }
         const uri = name.prefix === '' ? namespaces[''] : namespaces[name.prefix];
-        if (typeof uri !== 'string' || uri.length === 0 || uri === XINCLUDE_NS) fail();
+        if (
+            typeof uri !== 'string'
+            || uri.length === 0
+            || uri === XINCLUDE_NS
+            || uri === XSI_NS
+            || uri === XML_NS
+        ) fail();
         const resolvedAttributes = [];
         const resolvedNames = new Set();
         for (const attribute of rawAttributes) {
@@ -305,18 +321,22 @@ function core(element, local) {
 }
 
 function requireWhitespace(element) {
-    if (!/^\s*$/.test(element.text)) fail();
+    if (!XML_SPACE_ONLY.test(element.text)) fail();
 }
 
 function textValue(element) {
     if (element.children.length > 0) fail();
-    const value = element.text.trim();
+    const value = trimXmlSpace(element.text);
     if (value.length === 0) fail();
     return value;
 }
 
 function exactTextValue(element) {
-    if (element.children.length > 0 || element.text.length === 0 || element.text !== element.text.trim()) {
+    if (
+        element.children.length > 0
+        || element.text.length === 0
+        || element.text !== trimXmlSpace(element.text)
+    ) {
         fail();
     }
     return element.text;
@@ -352,8 +372,12 @@ function oneChild(element, local, required = true) {
 
 function assertCoreChildren(element, allowed) {
     requireWhitespace(element);
+    let previous = -1;
     for (const child of element.children) {
         if (child.uri !== TCX_NS || !allowed.includes(child.local)) fail();
+        const current = allowed.indexOf(child.local);
+        if (current < previous) fail();
+        previous = current;
     }
 }
 
@@ -422,15 +446,65 @@ function extensionSize(element, state) {
     for (const child of element.children) extensionSize(child, state);
 }
 
-function ignoreExtensions(element, state, warning) {
+function controlledNamespace(uri) {
+    return uri === ''
+        || uri === TCX_NS
+        || uri === ACTIVITY_EXT_NS
+        || uri === TRACKPOINT_EXT_NS
+        || uri === XINCLUDE_NS
+        || uri === XSI_NS
+        || uri === XML_NS;
+}
+
+function validateUnknownExtensionTree(element, state, count) {
+    if (controlledNamespace(element.uri)) fail();
+    if (count) {
+        state.extensionElements += 1;
+        if (state.extensionElements > TCX_LIMITS.maxExtensionElements) fail();
+    }
+    for (const child of element.children) {
+        validateUnknownExtensionTree(child, state, count);
+    }
+}
+
+function ignoreExtensions(
+    element,
+    state,
+    warning,
+    {
+        allowedKnown = [],
+        countChildren = true,
+        knownWarning = null,
+        ownerNamespace = element.uri
+    } = {}
+) {
     assertAttributes(element);
     requireWhitespace(element);
     if (element.children.length > TCX_LIMITS.maxExtensionChildren) fail();
+    let sawKnown = false;
+    let sawUnknown = false;
     for (const child of element.children) {
-        if (child.uri === '' || child.uri === TCX_NS || child.uri === XINCLUDE_NS) fail();
-        extensionSize(child, state);
+        if (
+            child.uri === ''
+            || child.uri === ownerNamespace
+            || child.uri === TCX_NS
+            || child.uri === XINCLUDE_NS
+        ) fail();
+        const key = `${child.uri}\u0000${child.local}`;
+        if (
+            (child.uri === ACTIVITY_EXT_NS || child.uri === TRACKPOINT_EXT_NS)
+            && !allowedKnown.includes(key)
+        ) fail();
+        if (allowedKnown.includes(key)) {
+            sawKnown = true;
+            if (countChildren) extensionSize(child, state);
+        } else {
+            sawUnknown = true;
+            validateUnknownExtensionTree(child, state, countChildren);
+        }
     }
-    if (element.children.length > 0) addWarning(state.warnings, warning);
+    if (sawUnknown) addWarning(state.warnings, warning);
+    if (sawKnown && knownWarning !== null) addWarning(state.warnings, knownWarning);
 }
 
 function parsePointExtensions(element, state) {
@@ -453,8 +527,14 @@ function parsePointExtensions(element, state) {
             sawTpx = true;
             assertAttributes(child);
             requireWhitespace(child);
+            let previous = -1;
+            let sawExtensions = false;
+            const order = ['Speed', 'RunCadence', 'Watts', 'Extensions'];
             for (const field of child.children) {
                 if (field.uri !== ACTIVITY_EXT_NS) fail();
+                const current = order.indexOf(field.local);
+                if (current < 0 || current < previous) fail();
+                previous = current;
                 if (field.local === 'Speed') {
                     if (result.speed !== null) fail();
                     result.speed = parseNumber(field, { min: 0 });
@@ -464,6 +544,15 @@ function parsePointExtensions(element, state) {
                 } else if (field.local === 'Watts') {
                     if (result.power !== null) fail();
                     result.power = parseNumber(field, { integer: true, min: 0, max: 65_535 });
+                } else if (field.local === 'Extensions') {
+                    if (sawExtensions) fail();
+                    sawExtensions = true;
+                    ignoreExtensions(
+                        field,
+                        state,
+                        'TCX_UNKNOWN_EXTENSION_IGNORED',
+                        { countChildren: false, ownerNamespace: ACTIVITY_EXT_NS }
+                    );
                 } else fail();
             }
         } else if (child.uri === TRACKPOINT_EXT_NS && child.local === 'TrackPointExtension') {
@@ -471,17 +560,34 @@ function parsePointExtensions(element, state) {
             sawTemperature = true;
             assertAttributes(child);
             requireWhitespace(child);
+            let previous = -1;
+            let sawExtensions = false;
+            const order = ['atemp', 'wtemp', 'Extensions'];
             for (const field of child.children) {
                 if (field.uri !== TRACKPOINT_EXT_NS) fail();
+                const current = order.indexOf(field.local);
+                if (current < 0 || current < previous) fail();
+                previous = current;
                 if (field.local === 'atemp') {
                     if (result.temperature !== null) fail();
                     result.temperature = parseNumber(field);
                 } else if (field.local === 'wtemp') {
                     if (result.waterTemperature !== null) fail();
                     result.waterTemperature = parseNumber(field);
+                } else if (field.local === 'Extensions') {
+                    if (sawExtensions) fail();
+                    sawExtensions = true;
+                    ignoreExtensions(
+                        field,
+                        state,
+                        'TCX_UNKNOWN_EXTENSION_IGNORED',
+                        { countChildren: false, ownerNamespace: TRACKPOINT_EXT_NS }
+                    );
                 } else fail();
             }
-        } else if (child.uri !== '' && child.uri !== TCX_NS && child.uri !== XINCLUDE_NS) {
+        } else if (child.uri === ACTIVITY_EXT_NS || child.uri === TRACKPOINT_EXT_NS) fail();
+        else if (child.uri !== '' && child.uri !== TCX_NS && child.uri !== XINCLUDE_NS) {
+            validateUnknownExtensionTree(child, state, false);
             addWarning(state.warnings, 'TCX_UNKNOWN_EXTENSION_IGNORED');
         } else fail();
     }
@@ -615,7 +721,12 @@ function parseLap(element, index, activityStart, state, previousEnd) {
     if (state.tracks > TCX_LIMITS.maxTracks) fail();
     for (const track of tracks) parseTrack(track, state);
     const extensions = oneChild(element, 'Extensions', false);
-    if (extensions) ignoreExtensions(extensions, state, 'TCX_LAP_EXTENSION_IGNORED');
+    if (extensions) {
+        ignoreExtensions(extensions, state, 'TCX_UNKNOWN_EXTENSION_IGNORED', {
+            allowedKnown: [`${ACTIVITY_EXT_NS}\u0000LX`],
+            knownWarning: 'TCX_LAP_EXTENSION_IGNORED'
+        });
+    }
     return {
         lap: {
             id: `${state.activityId}:lap:${index}`,
@@ -661,15 +772,28 @@ function buildStreams(activityId, rows, startEpochMs) {
     return { activityId, series };
 }
 
+function validateIgnoredCoreTree(element) {
+    if (element.uri !== TCX_NS) fail();
+    for (const attribute of element.attributes) {
+        if (
+            attribute.uri === ''
+            || (attribute.uri === XSI_NS
+                && (attribute.local === 'type' || attribute.local === 'schemaLocation'))
+        ) continue;
+        fail();
+    }
+    for (const child of element.children) validateIgnoredCoreTree(child);
+}
+
 function parseCreatorOrAuthor(element, state) {
-    extensionSize(element, state);
+    validateIgnoredCoreTree(element);
     addWarning(state.warnings, 'TCX_DEVICE_METADATA_IGNORED');
 }
 
 function buildBundle(root) {
     if (!core(root, 'TrainingCenterDatabase')) fail();
     assertAttributes(root);
-    assertCoreChildren(root, ['Activities', 'Author']);
+    assertCoreChildren(root, ['Activities', 'Author', 'Extensions']);
     const activitiesElement = oneChild(root, 'Activities');
     const authors = children(root, 'Author');
     if (authors.length > 1) fail();
@@ -680,7 +804,7 @@ function buildBundle(root) {
     const activityElement = activityElements[0];
     assertAttributes(activityElement, ['\u0000Sport']);
     const sport = mapSport(attribute(activityElement, '', 'Sport', true));
-    assertCoreChildren(activityElement, ['Id', 'Lap', 'Notes', 'Training', 'Creator', 'Extensions']);
+    assertCoreChildren(activityElement, ['Id', 'Lap', 'Notes', 'Creator', 'Extensions']);
     const idElement = oneChild(activityElement, 'Id');
     const sourceId = exactTextValue(idElement);
     assertAttributes(idElement);
@@ -709,13 +833,12 @@ function buildBundle(root) {
         assertAttributes(notes);
         textValue(notes);
     }
-    const training = oneChild(activityElement, 'Training', false);
-    if (training) {
-        extensionSize(training, state);
-        addWarning(warnings, 'TCX_UNKNOWN_EXTENSION_IGNORED');
-    }
     const extensions = oneChild(activityElement, 'Extensions', false);
     if (extensions) ignoreExtensions(extensions, state, 'TCX_UNKNOWN_EXTENSION_IGNORED');
+    const rootExtensions = oneChild(root, 'Extensions', false);
+    if (rootExtensions) {
+        ignoreExtensions(rootExtensions, state, 'TCX_UNKNOWN_EXTENSION_IGNORED');
+    }
     const streams = buildStreams(activityId, state.rows, activityStart.epochMs);
     const streamTypes = new Set(streams.series.map(series => series.streamType));
     addWarning(warnings, 'TCX_IMPORT_TIME_FALLBACK');

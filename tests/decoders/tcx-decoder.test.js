@@ -50,6 +50,18 @@ function validPoint(time, values = {}) {
     return { time, ...values };
 }
 
+function runBoundaryChild(source) {
+    return execFileSync(process.execPath, [
+        '--max-old-space-size=1024',
+        '--input-type=module',
+        '-e',
+        source
+    ], {
+        cwd: process.cwd(),
+        encoding: 'utf8'
+    });
+}
+
 test('TCX descriptor and limits are frozen internal boundaries', () => {
     assert.deepEqual(Object.keys(tcxDecoder), ['id', 'mediaType', 'decode']);
     assert.equal(tcxDecoder.id, 'tcx');
@@ -308,6 +320,44 @@ test('unknown wildcard, lap extension, and device trees add only static warnings
     assert.ok(bundle.warnings.every(warning => !JSON.stringify(warning).includes('Synthetic Device')));
 });
 
+test('approved root and Garmin extension wildcards ignore only bounded other namespaces', () => {
+    let content = createSyntheticTcxActivity();
+    content = content.replace(
+        '</TrainingCenterDatabase>',
+        '<Extensions><synthetic:Root/></Extensions></TrainingCenterDatabase>'
+    );
+    content = content.replace(
+        '</ae:TPX>',
+        '<ae:Extensions><synthetic:Tpx/></ae:Extensions></ae:TPX>'
+    );
+    content = content.replace(
+        '</tpe:TrackPointExtension>',
+        '<tpe:Extensions><synthetic:Temperature/></tpe:Extensions></tpe:TrackPointExtension>'
+    );
+    assert.deepEqual(warningCodes(decodeXml(content)), [
+        'TCX_IMPORT_TIME_FALLBACK',
+        'TCX_UNKNOWN_EXTENSION_IGNORED'
+    ]);
+});
+
+test('Lap wildcard distinguishes ignored LX summaries from unknown namespaces', () => {
+    const unknownLap = createSyntheticTcxActivity({
+        laps: [{
+            start: SYNTHETIC_TCX_START,
+            totalTime: 0,
+            distance: 0,
+            lapExtension: true
+        }]
+    }).replace(
+        '<ae:LX><ae:AvgSpeed>1</ae:AvgSpeed></ae:LX>',
+        '<synthetic:LapMetadata/>'
+    );
+    assert.deepEqual(warningCodes(decodeXml(unknownLap)), [
+        'TCX_IMPORT_TIME_FALLBACK',
+        'TCX_UNKNOWN_EXTENSION_IGNORED'
+    ]);
+});
+
 test('opaque source identity stays a string and offset normalization is host-independent', () => {
     const sourceId = '2031-04-05T14:07:08.000+08:00';
     const bundle = decode({
@@ -363,6 +413,73 @@ test('malformed XML, namespace spoofing, and multiple Activities fail closed', (
     for (const content of cases) assertImportError(() => decodeXml(content));
 });
 
+test('unknown namespaces outside approved Extensions and unsupported Training fail closed', () => {
+    const creator = createSyntheticTcxActivity({ creator: true });
+    assertImportError(() => decodeXml(creator.replace(
+        '</Creator>',
+        '<synthetic:Outside/></Creator>'
+    )));
+    assertImportError(() => decodeXml(createSyntheticTcxActivity().replace(
+        '</Lap>',
+        '</Lap><Training VirtualPartner="false"/>'
+    )));
+});
+
+test('known extension elements at unapproved wildcard paths fail closed', () => {
+    const valid = createSyntheticTcxActivity();
+    const cases = [
+        valid.replace('<ae:TPX>', '<ae:LX>').replace('</ae:TPX>', '</ae:LX>'),
+        valid.replace('<ae:TPX>', '<tpe:Unknown>').replace('</ae:TPX>', '</tpe:Unknown>'),
+        valid.replace('</TrainingCenterDatabase>', '<Extensions><ae:TPX/></Extensions></TrainingCenterDatabase>'),
+        valid.replace('</Activity>', '<Extensions><tpe:TrackPointExtension/></Extensions></Activity>'),
+        valid.replace('</tpe:TrackPointExtension>', '<tpe:Extensions><ae:TPX/></tpe:Extensions></tpe:TrackPointExtension>')
+    ];
+    for (const content of cases) assertImportError(() => decodeXml(content));
+});
+
+test('unknown wildcard wrappers cannot smuggle controlled descendants', () => {
+    const valid = createSyntheticTcxActivity();
+    const descendants = [
+        '<ae:TPX><ae:Watts>1</ae:Watts></ae:TPX>',
+        '<tpe:TrackPointExtension/>',
+        `<Id>${SYNTHETIC_TCX_START}</Id>`,
+        '<xsi:probe/>',
+        '<xml:probe/>'
+    ];
+    for (const descendant of descendants) {
+        const content = valid.replace(
+            '</Activity>',
+            `<Extensions><synthetic:Wrap>${descendant}</synthetic:Wrap></Extensions></Activity>`
+        );
+        assertImportError(() => decodeXml(content));
+    }
+});
+
+test('selected Garmin extension fields remain singleton schema members', () => {
+    const valid = createSyntheticTcxActivity();
+    const cases = [
+        valid.replace('</ae:TPX>', '<ae:Extensions/><ae:Extensions/></ae:TPX>'),
+        valid.replace(
+            '</tpe:TrackPointExtension>',
+            '<tpe:Extensions/><tpe:Extensions/></tpe:TrackPointExtension>'
+        )
+    ];
+    for (const content of cases) assertImportError(() => decodeXml(content));
+});
+
+test('TCX and selected extension schema sequences reject out-of-order fields', () => {
+    const valid = createSyntheticTcxActivity({ creator: true, author: true });
+    const cases = [
+        valid.replace(/(<Activities>[\s\S]*<\/Activities>)(<Author>[\s\S]*<\/Author>)/, '$2$1'),
+        valid.replace(/(<Id>[^<]+<\/Id>)(<Lap[\s\S]*<\/Lap>)/, '$2$1'),
+        valid.replace(/(<TotalTimeSeconds>[^<]+<\/TotalTimeSeconds>)(<DistanceMeters>[^<]+<\/DistanceMeters>)/, '$2$1'),
+        valid.replace(/(<Time>[^<]+<\/Time>)(<Position>[\s\S]*?<\/Position>)/, '$2$1'),
+        valid.replace(/(<ae:Speed>[^<]+<\/ae:Speed>)(<ae:RunCadence>[^<]+<\/ae:RunCadence>)/, '$2$1'),
+        valid.replace(/(<tpe:atemp>[^<]+<\/tpe:atemp>)(<tpe:wtemp>[^<]+<\/tpe:wtemp>)/, '$2$1')
+    ];
+    for (const content of cases) assertImportError(() => decodeXml(content));
+});
+
 test('DTD, entities, XInclude, processing instructions, and CDATA are rejected', () => {
     const valid = createSyntheticTcxActivity();
     const cases = [
@@ -372,6 +489,29 @@ test('DTD, entities, XInclude, processing instructions, and CDATA are rejected',
         valid.replace('<Activities>', '<Activities><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="file:///private"/>'),
         valid.replace('<Id>', '<?probe private?><Id>'),
         valid.replace(SYNTHETIC_TCX_START, `<![CDATA[${SYNTHETIC_TCX_START}]]>`)
+    ];
+    for (const content of cases) assertImportError(() => decodeXml(content));
+});
+
+test('raw attribute delimiters, forbidden text terminators, malformed comments, and non-XML whitespace fail closed', () => {
+    const valid = createSyntheticTcxActivity({ schemaLocation: true });
+    const cases = [
+        valid.replace('https://invalid.example/synthetic.xsd', 'https://invalid.example/<probe'),
+        valid.replace('</Activity>', '<Notes>bad]]>text</Notes></Activity>'),
+        valid.replace('<Activities>', '<!--bad---><Activities>'),
+        valid.replace(' Sport="Running"', '\u00a0Sport="Running"'),
+        valid.replace(`<Id>${SYNTHETIC_TCX_START}</Id>`, `<Id>\u00a0${SYNTHETIC_TCX_START}</Id>`)
+    ];
+    for (const content of cases) assertImportError(() => decodeXml(content));
+});
+
+test('reserved namespace prefixes and attribute-only namespaces cannot become elements', () => {
+    const valid = createSyntheticTcxActivity();
+    const cases = [
+        valid.replace(' xmlns:ae=', ' xmlns:XmLfoo="urn:reserved" xmlns:ae='),
+        valid.replace(' xmlns:ae=', ` xmlns:xi="http://www.w3.org/2001/XInclude" xmlns:ae=`),
+        valid.replace('</TrainingCenterDatabase>', '<Extensions><xsi:probe/></Extensions></TrainingCenterDatabase>'),
+        valid.replace('</TrainingCenterDatabase>', '<Extensions><xml:probe/></Extensions></TrainingCenterDatabase>')
     ];
     for (const content of cases) assertImportError(() => decodeXml(content));
 });
@@ -468,8 +608,180 @@ test('Lap and Track collection limits accept the boundary and reject one over', 
     }));
 });
 
-test('XML byte limit is checked before parsing', () => {
-    assertImportError(() => decodeXml(' '.repeat(TCX_LIMITS.maxXmlBytes + 1)));
+test('lexical and tree-shape limits accept exact boundaries and reject one over', () => {
+    const valid = createSyntheticTcxActivity();
+    const declarationEnd = valid.indexOf('?>') + 2;
+    const commentPayload = TCX_LIMITS.maxXmlBytes - valid.length - 7;
+    const atByteLimit = `${valid.slice(0, declarationEnd)}<!--${'x'.repeat(commentPayload)}-->${valid.slice(declarationEnd)}`;
+    assert.equal(new TextEncoder().encode(atByteLimit).length, TCX_LIMITS.maxXmlBytes);
+    assert.equal(decodeXml(atByteLimit).activity.sportCategory, 'run');
+    assertImportError(() => decodeXml(atByteLimit.replace('-->', 'x-->')));
+
+    const textAtLimit = valid.replace(
+        '</Activity>',
+        `<Notes>${'x'.repeat(TCX_LIMITS.maxTextNodeBytes)}</Notes></Activity>`
+    );
+    assert.equal(decodeXml(textAtLimit).activity.sportCategory, 'run');
+    assertImportError(() => decodeXml(textAtLimit.replace('</Notes>', 'x</Notes>')));
+
+    const attributeAtLimit = valid.replace(
+        ' xmlns:ae=',
+        ` xmlns:pad="${'u'.repeat(TCX_LIMITS.maxAttributeValueBytes)}" xmlns:ae=`
+    );
+    assert.equal(decodeXml(attributeAtLimit).activity.sportCategory, 'run');
+    assertImportError(() => decodeXml(attributeAtLimit.replace('" xmlns:ae=', 'u" xmlns:ae=')));
+
+    const localAtLimit = 'Q'.repeat(TCX_LIMITS.maxQNameBytes - 'synthetic:'.length);
+    const qnameAtLimit = valid.replace(
+        '</Activity>',
+        `<Extensions><synthetic:${localAtLimit}/></Extensions></Activity>`
+    );
+    assert.equal(decodeXml(qnameAtLimit).activity.sportCategory, 'run');
+    assertImportError(() => decodeXml(qnameAtLimit.replace(`${localAtLimit}/`, `${localAtLimit}Q/`)));
+
+    const nested = count => {
+        let value = '';
+        for (let index = 0; index < count; index += 1) {
+            value = `<synthetic:X>${value}</synthetic:X>`;
+        }
+        return valid.replace(
+            '</TrainingCenterDatabase>',
+            `<Extensions>${value}</Extensions></TrainingCenterDatabase>`
+        );
+    };
+    assert.equal(decodeXml(nested(TCX_LIMITS.maxDepth - 2)).activity.sportCategory, 'run');
+    assertImportError(() => decodeXml(nested(TCX_LIMITS.maxDepth - 1)));
+
+    const extensionChildren = count => valid.replace(
+        '</TrainingCenterDatabase>',
+        `<Extensions>${'<synthetic:E/>'.repeat(count)}</Extensions></TrainingCenterDatabase>`
+    );
+    assert.equal(decodeXml(extensionChildren(TCX_LIMITS.maxExtensionChildren)).activity.sportCategory, 'run');
+    assertImportError(() => decodeXml(extensionChildren(TCX_LIMITS.maxExtensionChildren + 1)));
+
+    const attributes = count => Array.from(
+        { length: count },
+        (_, index) => ` a${index}="x"`
+    ).join('');
+    const pointWithUnknown = createSyntheticTcxActivity({
+        laps: [{
+            start: SYNTHETIC_TCX_START,
+            totalTime: 0,
+            distance: 0,
+            tracks: [[validPoint(SYNTHETIC_TCX_START, { unknownExtension: true })]]
+        }]
+    });
+    const exactAttributes = pointWithUnknown.replace(
+        '<synthetic:Unknown synthetic:flag="bounded">',
+        `<synthetic:Unknown${attributes(TCX_LIMITS.maxAttributesPerElement)}>`
+    );
+    assert.equal(decodeXml(exactAttributes).activity.sportCategory, 'run');
+    assertImportError(() => decodeXml(exactAttributes.replace(
+        `${attributes(TCX_LIMITS.maxAttributesPerElement)}>`,
+        `${attributes(TCX_LIMITS.maxAttributesPerElement + 1)}>`
+    )));
+});
+
+test('high-count element, attribute, child, row, and extension guards accept exact limits and reject one over', () => {
+    const importLine = `import { tcxDecoder, TCX_MEDIA_TYPE } from './js/decoders/tcx/decoder.js';`;
+    const decodeLine = `const decode = content => tcxDecoder.decode({ mediaType: TCX_MEDIA_TYPE, content });`;
+    const baseStart = `const start = '${SYNTHETIC_TCX_START}';`;
+    const shell = body => `${importLine}${decodeLine}${baseStart}${body}`;
+
+    const collectionScript = over => shell(`
+        let pointIndex = 0;
+        const laps = [];
+        for (let lap = 0; lap < 10000; lap += 1) {
+            const tracks = [];
+            for (let track = 0; track < 2; track += 1) {
+                const points = [];
+                for (let point = 0; point < 10; point += 1) {
+                    const time = new Date(Date.parse(start) + pointIndex).toISOString();
+                    pointIndex += 1;
+                    points.push('<Trackpoint><Time>' + time + '</Time></Trackpoint>');
+                }
+                tracks.push('<Track>' + points.join('') + '</Track>');
+            }
+            const maximum = lap < 9998 ? '<MaximumSpeed>0</MaximumSpeed>' : '';
+            const cadence = lap < 9998 ? '<Cadence>0</Cadence>' : '';
+            const extra = ${over ? "lap === 9999 ? '<Notes>x</Notes>' : ''" : "''"};
+            laps.push('<Lap StartTime="' + start + '"><TotalTimeSeconds>0</TotalTimeSeconds><DistanceMeters>0</DistanceMeters>'
+                + maximum + '<Calories>0</Calories><Intensity>Active</Intensity>' + cadence
+                + '<TriggerMethod>Manual</TriggerMethod>' + tracks.join('') + extra + '</Lap>');
+        }
+        const xml = '<TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2"><Activities><Activity Sport="Running"><Id>'
+            + start + '</Id>' + laps.join('') + '</Activity></Activities></TrainingCenterDatabase>';
+        ${over
+            ? "try { decode(xml); throw new Error('accepted'); } catch (error) { if (error.code !== 'FILE_CORRUPTED') throw error; }"
+            : "const bundle = decode(xml); if (bundle.laps.length !== 10000 || pointIndex !== 200000) throw new Error('boundary');"}
+        process.stdout.write('ok');
+    `);
+    assert.equal(runBoundaryChild(collectionScript(false)), 'ok');
+    assert.equal(runBoundaryChild(collectionScript(true)), 'ok');
+
+    const rowScript = shell(`
+        let pointIndex = 0;
+        const tracks = [];
+        for (const count of [100000, 100001]) {
+            const points = [];
+            for (let point = 0; point < count; point += 1) {
+                const time = new Date(Date.parse(start) + pointIndex).toISOString();
+                pointIndex += 1;
+                points.push('<Trackpoint><Time>' + time + '</Time></Trackpoint>');
+            }
+            tracks.push('<Track>' + points.join('') + '</Track>');
+        }
+        const xml = '<TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2"><Activities><Activity Sport="Running"><Id>'
+            + start + '</Id><Lap StartTime="' + start + '"><TotalTimeSeconds>0</TotalTimeSeconds><DistanceMeters>0</DistanceMeters><Calories>0</Calories><Intensity>Active</Intensity><TriggerMethod>Manual</TriggerMethod>'
+            + tracks.join('') + '</Lap></Activity></Activities></TrainingCenterDatabase>';
+        try { decode(xml); throw new Error('accepted'); } catch (error) { if (error.code !== 'FILE_CORRUPTED') throw error; }
+        process.stdout.write('ok');
+    `);
+    assert.equal(runBoundaryChild(rowScript), 'ok');
+
+    const childrenScript = count => shell(`
+        const children = '<Name/>'.repeat(${count});
+        const xml = '<TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2"><Activities><Activity Sport="Running"><Id>'
+            + start + '</Id><Lap StartTime="' + start + '"><TotalTimeSeconds>0</TotalTimeSeconds><DistanceMeters>0</DistanceMeters><Calories>0</Calories><Intensity>Active</Intensity><TriggerMethod>Manual</TriggerMethod></Lap><Creator>'
+            + children + '</Creator></Activity></Activities></TrainingCenterDatabase>';
+        ${count > TCX_LIMITS.maxChildrenPerElement
+            ? "try { decode(xml); throw new Error('accepted'); } catch (error) { if (error.code !== 'FILE_CORRUPTED') throw error; }"
+            : "decode(xml);"}
+        process.stdout.write('ok');
+    `);
+    assert.equal(runBoundaryChild(childrenScript(TCX_LIMITS.maxChildrenPerElement)), 'ok');
+    assert.equal(runBoundaryChild(childrenScript(TCX_LIMITS.maxChildrenPerElement + 1)), 'ok');
+
+    const attributeScript = over => shell(`
+        const full = Array.from({ length: 32 }, (_, index) => ' a' + index + '="x"').join('');
+        const partialCount = ${over ? 30 : 29};
+        const partial = Array.from({ length: partialCount }, (_, index) => ' a' + index + '="x"').join('');
+        const children = ('<Name' + full + '/>').repeat(15624) + '<Name' + partial + '/>';
+        const xml = '<TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2"><Activities><Activity Sport="Running"><Id>'
+            + start + '</Id><Lap StartTime="' + start + '"><TotalTimeSeconds>0</TotalTimeSeconds><DistanceMeters>0</DistanceMeters><Calories>0</Calories><Intensity>Active</Intensity><TriggerMethod>Manual</TriggerMethod></Lap><Creator>'
+            + children + '</Creator></Activity></Activities></TrainingCenterDatabase>';
+        ${over
+            ? "try { decode(xml); throw new Error('accepted'); } catch (error) { if (error.code !== 'FILE_CORRUPTED') throw error; }"
+            : "decode(xml);"}
+        process.stdout.write('ok');
+    `);
+    assert.equal(runBoundaryChild(attributeScript(false)), 'ok');
+    assert.equal(runBoundaryChild(attributeScript(true)), 'ok');
+
+    const extensionScript = over => shell(`
+        const first = '<s:E/>'.repeat(199999);
+        const second = '<s:E/>'.repeat(${over ? 200000 : 199999});
+        const extensions = '<Extensions><s:G>' + first + '</s:G><s:G>' + second + '</s:G></Extensions>';
+        const xml = '<TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2" xmlns:s="urn:stravastats:synthetic:limit"><Activities><Activity Sport="Running"><Id>'
+            + start + '</Id><Lap StartTime="' + start + '"><TotalTimeSeconds>0</TotalTimeSeconds><DistanceMeters>0</DistanceMeters><Calories>0</Calories><Intensity>Active</Intensity><TriggerMethod>Manual</TriggerMethod></Lap></Activity></Activities>'
+            + extensions + '</TrainingCenterDatabase>';
+        ${over
+            ? "try { decode(xml); throw new Error('accepted'); } catch (error) { if (error.code !== 'FILE_CORRUPTED') throw error; }"
+            : "decode(xml);"}
+        process.stdout.write('ok');
+    `);
+    assert.equal(runBoundaryChild(extensionScript(false)), 'ok');
+    assert.equal(runBoundaryChild(extensionScript(true)), 'ok');
 });
 
 test('descriptor rejects accessors, symbols, special prototypes, extra keys, and reflection failures', () => {
