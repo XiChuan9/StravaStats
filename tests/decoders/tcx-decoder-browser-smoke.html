@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Synthetic TCX decoder browser smoke</title>
+</head>
+<body>
+  <main id="result" aria-live="polite">pending</main>
+  <script type="module">
+    const counters = {
+      fetch: 0,
+      xhr: 0,
+      websocket: 0,
+      worker: 0,
+      consoleWarningOrError: 0,
+      uncaught: 0,
+      unhandled: 0
+    };
+    const original = {
+      fetch: globalThis.fetch,
+      XMLHttpRequest: globalThis.XMLHttpRequest,
+      WebSocket: globalThis.WebSocket,
+      Worker: globalThis.Worker,
+      warn: console.warn,
+      error: console.error
+    };
+    globalThis.fetch = (...args) => {
+      counters.fetch += 1;
+      return original.fetch(...args);
+    };
+    globalThis.XMLHttpRequest = class extends original.XMLHttpRequest {
+      constructor(...args) {
+        counters.xhr += 1;
+        super(...args);
+      }
+    };
+    globalThis.WebSocket = class extends original.WebSocket {
+      constructor(...args) {
+        counters.websocket += 1;
+        super(...args);
+      }
+    };
+    globalThis.Worker = class extends original.Worker {
+      constructor(...args) {
+        counters.worker += 1;
+        super(...args);
+      }
+    };
+    console.warn = (...args) => {
+      counters.consoleWarningOrError += 1;
+      original.warn(...args);
+    };
+    console.error = (...args) => {
+      counters.consoleWarningOrError += 1;
+      original.error(...args);
+    };
+    addEventListener('error', () => { counters.uncaught += 1; });
+    addEventListener('unhandledrejection', () => { counters.unhandled += 1; });
+
+    try {
+      const [{ tcxDecoder }, { createSyntheticTcxActivity, syntheticTcxDescriptor }] = await Promise.all([
+        import('../../js/decoders/tcx/decoder.js'),
+        import('../fixtures/synthetic/tcx/tcx-fixture.js')
+      ]);
+      const bundle = tcxDecoder.decode(syntheticTcxDescriptor(
+        createSyntheticTcxActivity({ schemaLocation: true })
+      ));
+      const indexedDatabases = typeof indexedDB.databases === 'function'
+        ? await indexedDB.databases()
+        : [];
+      const cacheKeys = await caches.keys();
+      const registrations = 'serviceWorker' in navigator
+        ? await navigator.serviceWorker.getRegistrations()
+        : [];
+      const result = Object.freeze({
+        ok: bundle.activity.sportCategory === 'run'
+          && bundle.streams.series.length === 9,
+        activityCount: 1,
+        seriesCount: bundle.streams.series.length,
+        warningCodes: bundle.warnings.map(item => item.code),
+        fetch: counters.fetch,
+        xhr: counters.xhr,
+        websocket: counters.websocket,
+        worker: counters.worker,
+        consoleWarningOrError: counters.consoleWarningOrError,
+        uncaught: counters.uncaught,
+        unhandled: counters.unhandled,
+        localStorage: localStorage.length,
+        sessionStorage: sessionStorage.length,
+        indexedDB: indexedDatabases.length,
+        cacheStorage: cacheKeys.length,
+        serviceWorkers: registrations.length
+      });
+      globalThis.__TCX_BROWSER_RESULT__ = result;
+      document.querySelector('#result').textContent = JSON.stringify(result);
+    } catch {
+      globalThis.__TCX_BROWSER_RESULT__ = Object.freeze({ ok: false });
+      document.querySelector('#result').textContent = '{"ok":false}';
+    }
+  </script>
+</body>
+</html>
