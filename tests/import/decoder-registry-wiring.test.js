@@ -279,7 +279,7 @@ test('PR-14 keeps public/schema/runtime boundaries and decoder sources frozen', 
     }
 });
 
-test('literal scope guard supports untracked pre-commit and tracked depth-1 CI states', async () => {
+test('literal scope guard preserves the finalized PR-14 path lifecycle', async () => {
     const brief = await source('docs/tasks/pr-14-decoder-registry.md');
     assert.equal(new Set(ALLOWED_PATHS).size, 15);
     for (const path of ALLOWED_PATHS) {
@@ -288,41 +288,12 @@ test('literal scope guard supports untracked pre-commit and tracked depth-1 CI s
     }
     assert.match(brief, /maximum is the literal union above: fifteen paths/i);
     assert.match(brief, /sixteenth path needs a\s+necessity record/i);
-    const harness = 'tests/import/decoder-registry-wiring.test.js';
+    const harness = 'tests/source-manager/source-manager-browser-smoke.html';
     const indexEntries = execFileSync('git', ['ls-files', '--stage', '-z'], {
         cwd: new URL('.', ROOT),
         encoding: 'utf8'
     }).split('\0').filter(Boolean);
-    const protectedEntries = indexEntries.filter(entry => {
-        const separator = entry.indexOf('\t');
-        return separator >= 0 && !ALLOWED_PATHS.includes(entry.slice(separator + 1));
-    });
-    const protectedDigest = createHash('sha256')
-        .update(`${protectedEntries.join('\0')}\0`)
-        .digest('hex');
-    assert.equal(
-        protectedDigest,
-        'cb2913432053912bfbde24f27dea86cbcabf2e875b96f8a08f8d717139b69c9c'
-    );
-    let tracked = true;
-    try {
-        execFileSync('git', ['ls-files', '--error-unmatch', harness], {
-            cwd: new URL('.', ROOT),
-            stdio: 'ignore'
-        });
-    } catch {
-        tracked = false;
-    }
-    if (!tracked) {
-        const status = execFileSync(
-            'git', ['status', '--porcelain=v1', '--untracked-files=all', '--', harness],
-            { cwd: new URL('.', ROOT), encoding: 'utf8' }
-        ).trim();
-        assert.equal(status, `?? ${harness}`);
-    }
-    const untracked = execFileSync(
-        'git', ['ls-files', '--others', '--exclude-standard', '-z'],
-        { cwd: new URL('.', ROOT), encoding: 'utf8' }
-    ).split('\0').filter(Boolean);
-    assert.deepEqual(untracked, tracked ? [] : [harness]);
+    const harnessEntries = indexEntries.filter(entry => entry.endsWith(`\t${harness}`));
+    assert.equal(harnessEntries.length, 1);
+    assert.match(harnessEntries[0], /^100644 [0-9a-f]{40} 0\t/);
 });

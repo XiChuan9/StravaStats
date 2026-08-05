@@ -115,6 +115,12 @@
                 <strong>Privacy Notice:</strong> Your Strava data is processed in your browser only.
                 Nothing is stored or sent to any server.
             </div>
+            <div id="local-first-error" role="alert" hidden
+                style="margin-top:1rem; padding:1rem; border:1px solid #b91c1c; border-radius:8px; color:#7f1d1d;">
+                <strong>Local Library unavailable</strong>
+                <p>The local library could not be checked safely. No data was changed.</p>
+                <a href="/source-manager.html?mode=real">Open Sources for recovery options</a>
+            </div>
         </div>
 
         <!-- MAIN APP SECTION -->
@@ -147,6 +153,11 @@
                         Coach<span class="tab-wip-badge">SOON</span></button>
                 </nav>
                 <nav class="top-bar__actions">
+                    <span id="source-status" role="status" aria-live="polite"
+                        style="font-size:0.75rem; white-space:nowrap; color:var(--text-medium);">Local Library: checking</span>
+                    <a id="sources-button" class="action-btn" href="/source-manager.html?mode=real"
+                        aria-label="Open Sources" title="Sources"
+                        style="width:auto; padding:0 0.65rem; text-decoration:none;">Sources</a>
                     <button id="settings-button" class="action-btn" aria-label="Open settings" title="Settings">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
