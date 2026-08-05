@@ -128,12 +128,65 @@ fails that row with a stable header error. Unmapped extra headers are ignored
 with one stable warning and are never copied into Canonical extensions, errors,
 reports, logs, or the DOM.
 
+The registered sport mapping is literal and reuses the source-neutral variants
+already established by the Canonical/shadow contracts:
+
+```text
+Run -> run/null
+Trail Run -> run/trail-run
+Virtual Run -> run/virtual-run
+Ride -> ride/null
+Mountain Bike Ride -> ride/mountain-bike
+Gravel Ride -> ride/gravel
+Virtual Ride -> ride/virtual
+Indoor Ride -> ride/indoor
+E-Bike Ride -> ride/e-bike
+E-Mountain Bike Ride -> ride/e-mountain-bike
+Swim -> swim/null
+Pool Swim -> swim/pool
+Open Water Swim -> swim/open-water
+Walk -> walk/null
+Hike -> hike/null
+Workout -> workout/null
+Weight Training -> workout/strength
+Crossfit -> workout/cross-training
+Elliptical -> workout/elliptical
+Stair Stepper -> workout/stair-stepper
+Yoga -> workout/yoga
+Pilates -> workout/pilates
+High Intensity Interval Training -> workout/hiit
+Alpine Ski -> winter/alpine-ski
+Nordic Ski -> winter/nordic-ski
+Snowboard -> winter/snowboard
+Snowshoe -> winter/snowshoe
+Soccer -> team/football
+Football -> team/football
+Basketball -> team/basketball
+Volleyball -> team/volleyball
+Tennis -> racket/tennis
+Badminton -> racket/badminton
+Pickleball -> racket/pickleball
+Padel -> racket/padel
+Racquetball -> racket/racquetball
+Squash -> racket/squash
+Table Tennis -> racket/table-tennis
+```
+
 ### CSV grammar and safety limits
 
 The parser accepts UTF-8 text with an optional single leading BOM, LF or CRLF,
 RFC-4180-style quoted fields, escaped double quotes, embedded commas, and
 embedded CRLF/LF inside quoted fields. It does not evaluate formulas, dereference
 links, fetch URLs, interpret HTML, access the DOM, open storage, or log.
+
+Framing validates the whole file, then preserves lexical identity: each row
+artifact is the optional original BOM plus the original header record (including
+its line ending) plus the original logical data record (including its line
+ending when present). It never parse-and-reserializes a row before SHA-256.
+Therefore alternative quoting or line endings remain different raw hashes and
+reach the exact external-identity conflict path instead of becoming a fuzzy
+duplicate. Ignored blank physical records have no activity identity and are not
+attached to a framed row.
 
 The frozen limits are:
 
@@ -245,6 +298,10 @@ schema field, production dependency, production page, or feature default.
 Implementation is authorized under the literal allowlist below.
 
 ### B1: tokenizer, decoder, mapping, and Worker registry
+
+The CSV tokenizer/decoder remain import-submodule seams. The aggregate
+`js/import/index.js` export set stays byte-for-byte at the PR-07 contract; no new
+Repository method or public Import Core method is introduced.
 
 ```text
 docs/tasks/pr-08-activities-csv.md

@@ -26,6 +26,10 @@ const ARTIFACT_FIELDS = Object.freeze([
     'byteLength',
     'content'
 ]);
+const IMPORT_MEDIA_TYPES = Object.freeze([
+    'application/vnd.stravastats.synthetic+json',
+    'text/csv;profile=strava-activities'
+]);
 const TRANSITION_FIELDS = Object.freeze([
     'errorCode',
     'retryable',
@@ -404,7 +408,7 @@ function validArtifactInput(value) {
         && typeof artifact.sha256 === 'string'
         && /^[a-f0-9]{64}$/.test(artifact.sha256)
         && artifact.id === `raw:${artifact.sha256}`
-        && artifact.mediaType === 'application/vnd.stravastats.synthetic+json'
+        && IMPORT_MEDIA_TYPES.includes(artifact.mediaType)
         && Number.isSafeInteger(artifact.byteLength)
         && artifact.byteLength > 0
         && typeof artifact.content === 'string'
@@ -424,7 +428,7 @@ function validStoredArtifact(value) {
         && typeof artifact.sha256 === 'string'
         && /^[a-f0-9]{64}$/.test(artifact.sha256)
         && artifact.id === `raw:${artifact.sha256}`
-        && artifact.mediaType === 'application/vnd.stravastats.synthetic+json'
+        && IMPORT_MEDIA_TYPES.includes(artifact.mediaType)
         && Number.isSafeInteger(artifact.byteLength)
         && artifact.byteLength > 0
         && typeof artifact.content === 'string'

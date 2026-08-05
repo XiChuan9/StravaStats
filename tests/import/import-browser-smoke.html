@@ -4,11 +4,11 @@
     <meta charset="utf-8">
     <meta
         http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self' 'nonce-pr07-import-smoke'; connect-src 'self'; img-src data:; style-src 'unsafe-inline'; object-src 'none'; base-uri 'none'; worker-src 'self'"
+        content="default-src 'self'; script-src 'self' 'nonce-pr08-import-smoke'; connect-src 'self'; img-src data:; style-src 'unsafe-inline'; object-src 'none'; base-uri 'none'; worker-src 'self'"
     >
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" href="data:,">
-    <title>PR-07 Import Core browser smoke</title>
+    <title>PR-08 activities.csv browser smoke</title>
     <style>
         body { font-family: system-ui, sans-serif; margin: 2rem; }
         [data-status="passed"] { color: #126b31; }
@@ -18,15 +18,16 @@
 </head>
 <body data-status="running">
     <main>
-        <h1>PR-07 Import Core browser smoke</h1>
+        <h1>PR-08 activities.csv browser smoke</h1>
         <p id="state" data-testid="state">running</p>
         <pre id="summary" data-testid="summary">{"status":"running"}</pre>
     </main>
-    <script type="module" nonce="pr07-import-smoke">
+    <script type="module" nonce="pr08-import-smoke">
         const V2_NAME = 'strava-stats-v2';
-        const SENTINEL_NAME = 'synthetic-pr07-legacy-like-sentinel';
-        const RELOAD_KEY = 'pr07-import-browser-reload';
-        const MEDIA_TYPE = 'application/vnd.stravastats.synthetic+json';
+        const SENTINEL_NAME = 'synthetic-pr08-legacy-like-sentinel';
+        const RELOAD_KEY = 'pr08-import-browser-reload';
+        const FIRST_RESULT_KEY = 'pr08-import-browser-first-result';
+        const MEDIA_TYPE = 'text/csv;profile=strava-activities';
         const EXPECTED_STORES = [
             'activities', 'activitySources', 'devices', 'events', 'importItems',
             'importJobs', 'laps', 'metadata', 'migrations', 'rawArtifacts',
@@ -50,6 +51,7 @@
             webSocket: 0
         };
         const gates = [];
+        let failureCode = 'UNCLASSIFIED';
         let service;
 
         console.error = () => { metrics.consoleErrors += 1; };
@@ -92,7 +94,10 @@
         };
 
         function assert(condition, code) {
-            if (!condition) throw new Error(code);
+            if (!condition) {
+                failureCode = code;
+                throw new Error(code);
+            }
         }
 
         async function gate(name, callback) {
@@ -194,14 +199,41 @@
         }
 
         try {
-            const [{ createImportStore }, importModule, fixtureResponse] =
+            const [
+                { createImportStore },
+                importModule,
+                csvTokenizer,
+                fixtureResponse
+            ] =
                 await Promise.all([
                     import('../../js/storage/index.js'),
                     import('../../js/import/index.js'),
-                    fetch('../fixtures/synthetic/canonical/import-run-summary.json')
+                    import('../../js/import/csv-tokenizer.js'),
+                    fetch('../fixtures/synthetic/strava/activities.csv')
                 ]);
-            const content = await fixtureResponse.text();
-            assert(fixtureResponse.ok && content.length > 0, 'fixture-load');
+            const fixtureBytes = new Uint8Array(await fixtureResponse.arrayBuffer());
+            assert(fixtureResponse.ok && fixtureBytes.byteLength > 0, 'fixture-load');
+            const syntheticFile = new File([fixtureBytes], 'synthetic-activities.csv', {
+                type: 'text/csv'
+            });
+            const content = csvTokenizer.decodeActivitiesCsvUtf8(
+                new Uint8Array(await syntheticFile.arrayBuffer())
+            );
+            assert(content.length > 0, 'fatal-utf8-file-read');
+            await gate('invalid-utf8-rejected', async () => {
+                const invalidFile = new File([
+                    Uint8Array.from([0xc3, 0x28])
+                ], 'synthetic-invalid.csv', { type: 'text/csv' });
+                let code = null;
+                try {
+                    csvTokenizer.decodeActivitiesCsvUtf8(
+                        new Uint8Array(await invalidFile.arrayBuffer())
+                    );
+                } catch (error) {
+                    code = error?.code;
+                }
+                assert(code === 'CSV_INVALID_ENCODING', 'fatal-utf8-code');
+            });
             await ensureSentinel();
             const sentinelBefore = await sentinelSnapshot();
             let idSequence = 0;
@@ -209,7 +241,7 @@
                 indexedDB,
                 IDBKeyRange,
                 now: () => Date.parse('2026-08-05T03:04:05.006Z'),
-                applicationVersion: 'pr07-browser-smoke@1'
+                applicationVersion: 'pr08-browser-smoke@1'
             });
             const nativeWorker = new Worker(
                 new URL('../../js/import/synthetic-import-worker.js', import.meta.url),
@@ -225,14 +257,19 @@
 
             let report;
             if (phase === 'first-load') {
-                await gate('synthetic-import', async () => {
+                await gate('activities-csv-import', async () => {
                     const run = await service.importArtifacts([{
                         mediaType: MEDIA_TYPE,
                         content
                     }]);
                     report = await service.waitForJob(run.jobId);
                 });
-                assert(report.status === 'completed', 'first-report');
+                assert(report.status === 'completed_with_warnings', 'first-report');
+                assert(
+                    report.totals.total === 2
+                    && report.totals.completed === 2,
+                    'first-row-items'
+                );
                 sessionStorage.setItem(RELOAD_KEY, 'first-complete');
             } else {
                 await gate('persistent-import-log', async () => {
@@ -240,7 +277,7 @@
                     assert(jobs.length === 1, 'persistent-job-count');
                     report = await service.getReport(jobs[0].id);
                 });
-                assert(report.status === 'completed', 'reload-report');
+                assert(report.status === 'completed_with_warnings', 'reload-report');
                 await gate('exact-duplicate', async () => {
                     const run = await service.importArtifacts([{
                         mediaType: MEDIA_TYPE,
@@ -249,23 +286,35 @@
                     report = await service.waitForJob(run.jobId);
                 });
                 assert(
-                    report.totals.skippedExactDuplicate === 1,
+                    report.totals.skippedExactDuplicate === 2,
                     'duplicate-report'
                 );
             }
 
             const preview = await service.previewActivities();
-            assert(preview.total === 1, 'preview-total');
+            assert(preview.total === 2, 'preview-total');
             assert(
-                preview.bySportCategory.length === 1
-                && preview.bySportCategory[0].sportCategory === 'run'
-                && preview.bySportCategory[0].count === 1,
+                preview.bySportCategory.length === 2
+                && preview.bySportCategory[0].sportCategory === 'other'
+                && preview.bySportCategory[0].count === 1
+                && preview.bySportCategory[1].sportCategory === 'run'
+                && preview.bySportCategory[1].count === 1,
                 'preview-sport'
             );
             const v2 = await inspectV2();
             assert(v2.version === 2, 'v2-version');
             assert(JSON.stringify(v2.stores) === JSON.stringify(EXPECTED_STORES), 'stores');
             assert(v2.sha256LookupCount === 1, 'sha-index');
+            assert(v2.counts.activities === 2, 'summary-activity-count');
+            assert(v2.counts.rawArtifacts === 2, 'row-artifact-count');
+            assert(
+                v2.counts.importJobs === (phase === 'first-load' ? 1 : 2),
+                'job-count'
+            );
+            assert(
+                v2.counts.importItems === (phase === 'first-load' ? 2 : 4),
+                'item-count'
+            );
             const sentinelAfter = await sentinelSnapshot();
             assert(
                 JSON.stringify(sentinelAfter) === JSON.stringify(sentinelBefore),
@@ -290,8 +339,7 @@
             assert(Object.values(metrics).every(value => value === 0), 'metrics');
             assert(serviceWorkers === 0, 'service-workers');
             assert(cacheEntries === 0, 'cache-storage');
-            const summary = {
-                status: 'passed',
+            const phaseResult = {
                 phase,
                 gates,
                 report: {
@@ -306,22 +354,73 @@
                 serviceWorkers,
                 cacheEntries
             };
-            document.body.dataset.status = 'passed';
-            stateElement.textContent = `passed:${phase}`;
-            summaryElement.textContent = JSON.stringify(summary, null, 2);
-            globalThis.__PR07_BROWSER_RESULT__ = summary;
+            if (phase === 'first-load') {
+                sessionStorage.setItem(
+                    FIRST_RESULT_KEY,
+                    JSON.stringify(phaseResult)
+                );
+                document.body.dataset.status = 'reloading';
+                stateElement.textContent = 'reloading:first-load-complete';
+                summaryElement.textContent = JSON.stringify({
+                    status: 'reloading',
+                    firstLoad: phaseResult
+                }, null, 2);
+                location.reload();
+            } else {
+                const firstLoad = JSON.parse(
+                    sessionStorage.getItem(FIRST_RESULT_KEY) || 'null'
+                );
+                assert(firstLoad?.phase === 'first-load', 'first-result-persisted');
+                assert(
+                    Object.values(firstLoad.metrics).every(value => value === 0),
+                    'first-result-metrics'
+                );
+                const aggregateMetrics = {};
+                for (const name of Object.keys(metrics)) {
+                    aggregateMetrics[name] = firstLoad.metrics[name] + metrics[name];
+                }
+                const aggregateEnvironment = {
+                    metrics: aggregateMetrics,
+                    serviceWorkers: firstLoad.serviceWorkers + serviceWorkers,
+                    cacheEntries: firstLoad.cacheEntries + cacheEntries
+                };
+                assert(
+                    Object.values(aggregateMetrics).every(value => value === 0),
+                    'aggregate-metrics'
+                );
+                assert(
+                    aggregateEnvironment.serviceWorkers === 0,
+                    'aggregate-workers'
+                );
+                assert(
+                    aggregateEnvironment.cacheEntries === 0,
+                    'aggregate-caches'
+                );
+                const summary = {
+                    status: 'passed',
+                    phase: 'reload',
+                    firstLoad,
+                    reload: phaseResult,
+                    aggregateEnvironment
+                };
+                document.body.dataset.status = 'passed';
+                stateElement.textContent = 'passed:reload';
+                summaryElement.textContent = JSON.stringify(summary, null, 2);
+                globalThis.__PR08_BROWSER_RESULT__ = summary;
+            }
         } catch {
             if (service) await service.close().catch(() => {});
             const summary = {
                 status: 'failed',
                 phase,
                 gateCount: gates.length,
+                failureCode,
                 metrics
             };
             document.body.dataset.status = 'failed';
             stateElement.textContent = `failed:${phase}`;
             summaryElement.textContent = JSON.stringify(summary, null, 2);
-            globalThis.__PR07_BROWSER_RESULT__ = summary;
+            globalThis.__PR08_BROWSER_RESULT__ = summary;
         }
     </script>
 </body>

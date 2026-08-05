@@ -1,0 +1,4 @@
+Activity ID,Activity Date,Activity Name,Activity Type,Elapsed Time,Distance,Elapsed Time,Moving Time,Distance,Elevation Gain,Average Heart Rate,Average Watts,Average Cadence,Activity Time Zone,Synthetic Extra
+00042,"Jan 02, 2026, 1:05:06 PM","=SUM(1,2) ""Synthetic Run""",Trail Run,3661,5,3661,3600,5,120,150,250,80,"(GMT+00:00) Etc/UTC",ignored
+alpha/beta ?#%,2026-02-03T04:05:06Z,"Synthetic,
+Multiline",Unlisted Synthetic Sport,0,0,0,0,0,0,,,,,ignored

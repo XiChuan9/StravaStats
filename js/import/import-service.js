@@ -17,9 +17,15 @@ import {
     ownDataValues
 } from './safe-data.js';
 import { SYNTHETIC_JSON_MEDIA_TYPE } from './synthetic-json-decoder.js';
+import { ACTIVITIES_CSV_MEDIA_TYPE } from './activities-csv-decoder.js';
+import { frameActivitiesCsv } from './csv-tokenizer.js';
 
 const OPTION_FIELDS = Object.freeze(['importStore', 'worker', 'crypto', 'createId']);
 const ARTIFACT_FIELDS = Object.freeze(['mediaType', 'content']);
+const ACCEPTED_MEDIA_TYPES = Object.freeze([
+    SYNTHETIC_JSON_MEDIA_TYPE,
+    ACTIVITIES_CSV_MEDIA_TYPE
+]);
 
 function normalizeOptions(options) {
     const values = ownDataValues(options, OPTION_FIELDS);
@@ -56,15 +62,33 @@ function snapshotArtifacts(value) {
         throw importError(IMPORT_ERROR_CODE.INVALID_REQUEST);
     }
     try {
-        return Object.freeze(values.map(item => {
+        const artifacts = [];
+        for (const item of values) {
             const artifact = ownDataValues(item, ARTIFACT_FIELDS);
             if (!artifact) throw new TypeError();
-            return frozenClone({
-                mediaType: artifact.mediaType,
-                content: artifact.content
-            });
-        }));
-    } catch {
+            if (
+                artifact.mediaType === ACTIVITIES_CSV_MEDIA_TYPE
+                && typeof artifact.content === 'string'
+            ) {
+                for (const content of frameActivitiesCsv(artifact.content)) {
+                    artifacts.push(frozenClone({
+                        mediaType: artifact.mediaType,
+                        content
+                    }));
+                }
+            } else {
+                artifacts.push(frozenClone({
+                    mediaType: artifact.mediaType,
+                    content: artifact.content
+                }));
+            }
+        }
+        return Object.freeze(artifacts);
+    } catch (error) {
+        const code = ownErrorValue(error, 'code');
+        if (Object.values(IMPORT_ERROR_CODE).includes(code)) {
+            throw importError(code, false, 'decode');
+        }
         throw importError(IMPORT_ERROR_CODE.INVALID_REQUEST);
     }
 }
@@ -102,9 +126,15 @@ function ownErrorValue(error, field) {
     }
 }
 
-function mapStorageError(error) {
+function mapStorageError(error, allowIdentityConflict = false) {
     if (ownErrorValue(error, 'code') === STORAGE_ERROR_CODE.QUOTA_EXCEEDED) {
         return importError(IMPORT_ERROR_CODE.STORAGE_QUOTA_EXCEEDED, true, 'persist');
+    }
+    if (
+        allowIdentityConflict
+        && ownErrorValue(error, 'code') === STORAGE_ERROR_CODE.CONFLICT
+    ) {
+        return importError(IMPORT_ERROR_CODE.EXACT_IDENTITY_CONFLICT, false, 'persist');
     }
     return importError(IMPORT_ERROR_CODE.STORAGE_UNAVAILABLE, true, 'persist');
 }
@@ -254,13 +284,13 @@ export function createImportService(options) {
             const artifact = artifacts[index];
             if (
                 !artifact
-                || artifact.mediaType !== SYNTHETIC_JSON_MEDIA_TYPE
+                || !ACCEPTED_MEDIA_TYPES.includes(artifact.mediaType)
                 || typeof artifact.content !== 'string'
                 || artifact.content.length === 0
             ) {
                 const code = artifact?.content === ''
                     ? IMPORT_ERROR_CODE.FILE_EMPTY
-                    : artifact?.mediaType === SYNTHETIC_JSON_MEDIA_TYPE
+                    : ACCEPTED_MEDIA_TYPES.includes(artifact?.mediaType)
                         ? IMPORT_ERROR_CODE.FILE_CORRUPTED
                         : IMPORT_ERROR_CODE.UNSUPPORTED_FORMAT;
                 items[index] = await failItem(
@@ -411,7 +441,7 @@ export function createImportService(options) {
                 items[index] = await failItem(
                     items[index],
                     I.FAILED_STORAGE,
-                    mapStorageError(error)
+                    mapStorageError(error, true)
                 );
             }
         }
@@ -420,7 +450,7 @@ export function createImportService(options) {
         const hasWarnings = items.some(item => (
             item.status !== I.COMPLETED
             && item.status !== I.SKIPPED_EXACT_DUPLICATE
-        ));
+        )) || [...bundles.values()].some(bundle => bundle.warnings.length > 0);
         await transitionJob(
             jobId,
             jobStatus,

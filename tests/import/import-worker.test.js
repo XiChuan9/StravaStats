@@ -11,9 +11,15 @@ import {
     normalizeImportedActivity,
     syntheticJsonDecoder
 } from '../../js/import/index.js';
+import { ACTIVITIES_CSV_MEDIA_TYPE } from '../../js/import/activities-csv-decoder.js';
+import { frameActivitiesCsv } from '../../js/import/csv-tokenizer.js';
 
 const fixtureUrl = new URL(
     '../fixtures/synthetic/canonical/import-run-summary.json',
+    import.meta.url
+);
+const csvFixtureUrl = new URL(
+    '../fixtures/synthetic/strava/activities.csv',
     import.meta.url
 );
 
@@ -74,6 +80,20 @@ test('Worker decode result stays separate from the observable normalizing stage'
     assert.equal(result.ok, true);
     assert.ok(result.decoded);
     assert.equal(Object.hasOwn(result, 'bundle'), false);
+    assert.equal(Object.isFrozen(result.decoded), true);
+    worker.close();
+});
+
+test('inline Worker selects activities.csv through the registered media type', async () => {
+    const worker = createInlineImportWorker();
+    const [content] = frameActivitiesCsv(await readFile(csvFixtureUrl, 'utf8'));
+    const result = await worker.process({
+        mediaType: ACTIVITIES_CSV_MEDIA_TYPE,
+        content,
+        rawArtifactId: 'raw:synthetic-csv'
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.decoded.activity.id, 'strava-archive:00042');
     assert.equal(Object.isFrozen(result.decoded), true);
     worker.close();
 });

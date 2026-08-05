@@ -2,8 +2,12 @@ import { createDecoderRegistry } from './decoder-registry.js';
 import { IMPORT_ERROR_CODE } from './errors.js';
 import { ownDataValues } from './safe-data.js';
 import { syntheticJsonDecoder } from './synthetic-json-decoder.js';
+import { activitiesCsvDecoder } from './activities-csv-decoder.js';
 
-const registry = createDecoderRegistry([syntheticJsonDecoder]);
+const registry = createDecoderRegistry([
+    syntheticJsonDecoder,
+    activitiesCsvDecoder
+]);
 const INPUT_FIELDS = Object.freeze(['mediaType', 'content', 'rawArtifactId']);
 
 export function processSyntheticImport(input) {
