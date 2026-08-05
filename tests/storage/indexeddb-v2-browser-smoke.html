@@ -36,7 +36,10 @@
             'streamSeries',
             'laps',
             'events',
-            'devices'
+            'devices',
+            'rawArtifacts',
+            'importJobs',
+            'importItems'
         ];
         const EXPECTED_INDEXES = {
             metadata: [],
@@ -49,17 +52,23 @@
             streamSeries: ['byActivityId'],
             laps: ['byActivityIdAndIndex'],
             events: ['byActivityIdAndIndex'],
-            devices: []
+            devices: [],
+            rawArtifacts: ['bySha256'],
+            importJobs: ['byCreatedAt'],
+            importItems: ['byJobId']
         };
         const EXPECTED_FINAL_COUNTS = {
             metadata: 1,
-            migrations: 1,
+            migrations: 2,
             activities: 5,
             activitySources: 5,
             streamSeries: 10,
             laps: 0,
             events: 0,
-            devices: 3
+            devices: 3,
+            rawArtifacts: 0,
+            importJobs: 0,
+            importItems: 0
         };
 
         const stateElement = document.querySelector('#state');
@@ -235,6 +244,10 @@
                     transaction.objectStore('migrations')
                         .get('schema-0001-bootstrap')
                 );
+                const importMigration = await requestResult(
+                    transaction.objectStore('migrations')
+                        .get('schema-0002-import-core')
+                );
                 await done;
                 return {
                     version: database.version,
@@ -254,6 +267,13 @@
                         status: migration?.status,
                         retryCount: migration?.retryCount,
                         outputStoreCount: migration?.outputSummary?.storeCount
+                    },
+                    importMigration: {
+                        id: importMigration?.id,
+                        status: importMigration?.status,
+                        retryCount: importMigration?.retryCount,
+                        outputStoreCount:
+                            importMigration?.outputSummary?.storeCount
                     }
                 };
             } finally {
@@ -476,7 +496,7 @@
                 const ready = await storage.initialize();
                 assert(ready.status === 'ready', 'initialize-ready');
                 const inspected = await inspectV2();
-                assert(inspected.version === 1, 'database-version');
+                assert(inspected.version === 2, 'database-version');
                 assert(
                     JSON.stringify(inspected.stores) ===
                         JSON.stringify(EXPECTED_STORES.slice().sort()),
@@ -491,10 +511,10 @@
                 }
                 assert(inspected.metadata.databaseName === V2_NAME, 'metadata-name');
                 assert(
-                    inspected.metadata.schemaId === 'strava-stats-v2@1',
+                    inspected.metadata.schemaId === 'strava-stats-v2@2',
                     'metadata-schema'
                 );
-                assert(inspected.metadata.indexedDbVersion === 1, 'metadata-version');
+                assert(inspected.metadata.indexedDbVersion === 2, 'metadata-version');
                 assert(
                     inspected.metadata.canonicalSchemaVersion === 1,
                     'metadata-canonical'
@@ -510,6 +530,13 @@
                     && inspected.migration.retryCount === 0
                     && inspected.migration.outputStoreCount === 8,
                     'bootstrap-migration'
+                );
+                assert(
+                    inspected.importMigration.id === 'schema-0002-import-core'
+                    && inspected.importMigration.status === 'completed'
+                    && inspected.importMigration.retryCount === 0
+                    && inspected.importMigration.outputStoreCount === 11,
+                    'import-migration'
                 );
             });
 
@@ -792,7 +819,7 @@
                     );
                     assert(manifest.backupFormatVersion === 1, 'manifest-format');
                     assert(manifest.databaseName === V2_NAME, 'manifest-name');
-                    assert(manifest.indexedDbVersion === 1, 'manifest-version');
+                    assert(manifest.indexedDbVersion === 2, 'manifest-version');
                     assert(manifest.canonicalSchemaVersion === 1, 'manifest-canonical');
                     assert(manifest.applicationVersion === APPLICATION_VERSION, 'manifest-app');
                     assert(manifest.files.length === 0, 'manifest-files');
@@ -804,7 +831,7 @@
                     );
                     assert(payloadReads === 0, 'manifest-payload-read');
                     assert(metadataGets === 1, 'manifest-metadata-get');
-                    assert(counts === 8, 'manifest-count-calls');
+                    assert(counts === 11, 'manifest-count-calls');
                     manifestSummary = {
                         backupFormatVersion: manifest.backupFormatVersion,
                         databaseName: manifest.databaseName,
@@ -833,7 +860,7 @@
                 ));
                 await first.initialize();
                 await second.initialize();
-                const request = indexedDB.open(V2_NAME, 2);
+                const request = indexedDB.open(V2_NAME, 3);
                 const aborted = new Promise((resolve, reject) => {
                     request.onupgradeneeded = () => request.transaction.abort();
                     request.onsuccess = () => {
@@ -849,7 +876,7 @@
                 await expectCode(first.listActivities(), 'CONNECTION_STALE');
                 await expectCode(second.listActivities(), 'CONNECTION_STALE');
                 const inspected = await inspectV2();
-                assert(inspected.version === 1, 'aborted-version');
+                assert(inspected.version === 2, 'aborted-version');
                 assert(
                     JSON.stringify(inspected.counts) ===
                         JSON.stringify(EXPECTED_FINAL_COUNTS),
@@ -952,9 +979,9 @@
                 origin: location.origin,
                 database: {
                     name: V2_NAME,
-                    version: 1,
-                    stores: 8,
-                    indexes: 6
+                    version: 2,
+                    stores: 11,
+                    indexes: 9
                 },
                 inventory,
                 manifest: persisted.manifest,

@@ -273,7 +273,7 @@ test('fresh initialization applies v1 then additive physical v2 atomically', asy
     database.close();
 });
 
-async function createAcceptedV1(indexedDB) {
+async function createAcceptedV1(indexedDB, extraStore = false) {
     return openDatabase(indexedDB, V2_DATABASE_NAME, 1, (database, transaction) => {
         for (const descriptor of V2_SCHEMA.stores.slice(0, 8)) {
             const objectStore = database.createObjectStore(descriptor.name, {
@@ -286,6 +286,11 @@ async function createAcceptedV1(indexedDB) {
                     multiEntry: index.multiEntry
                 });
             }
+        }
+        if (extraStore) {
+            database.createObjectStore('unexpectedSyntheticStore', {
+                keyPath: 'id'
+            });
         }
         transaction.objectStore('metadata').put({
             key: 'database',
@@ -381,6 +386,22 @@ test('failed physical v1-to-v2 upgrade rolls back and explicit retry preserves v
     ));
     await transactionDone(transaction);
     database.close();
+});
+
+test('malformed physical v1 with an extra store fails before committing version 2', async () => {
+    const indexedDB = new IDBFactory();
+    const versionOne = await createAcceptedV1(indexedDB, true);
+    versionOne.close();
+    const storage = createCanonicalStore(options(indexedDB));
+    await assert.rejects(
+        storage.initialize(),
+        error => error.code === STORAGE_ERROR_CODE.MIGRATION_FAILED
+    );
+    const after = await openDatabase(indexedDB, V2_DATABASE_NAME, 1);
+    assert.equal(after.version, 1);
+    assert.equal(after.objectStoreNames.contains('unexpectedSyntheticStore'), true);
+    assert.equal(after.objectStoreNames.contains('rawArtifacts'), false);
+    after.close();
 });
 
 test('concurrent and repeated initialization is idempotent and read-only', async () => {

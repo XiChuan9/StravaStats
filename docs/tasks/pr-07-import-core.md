@@ -277,8 +277,21 @@ to the reviewed PR-07 versions or the repository-wide gate rejects the approved
 migration. This update does not change Shadow behavior, loosen the guard, use a
 dynamic allowlist, or alter any Repository file/export.
 
-The cumulative maximum is the literal union of the paths above: 33 paths. A
-34th path requires a necessity record in this Task Brief before modification.
+### B5: durable storage browser-harness compatibility
+
+```text
+tests/storage/indexeddb-v2-browser-smoke.html
+```
+
+Necessity record: PR-05's durable browser harness asserts physical version 1,
+eight stores, and one migration. Those expectations become false when PR-07's
+approved additive physical v2 is present. The harness must be advanced to the
+same eleven-store/two-migration contract so it remains a valid release artifact;
+its transaction, close, privacy, and synthetic Legacy-sentinel scenarios remain
+unchanged.
+
+The cumulative maximum is the literal union of the paths above: 34 paths. A
+35th path requires a necessity record in this Task Brief before modification.
 Allowlist checks use this literal list, never current diff output, a dynamic
 directory allowlist, skip rules, or generated expectations.
 

@@ -23,6 +23,7 @@ export function createBrowserImportWorker(worker) {
     }
     let sequence = 0;
     let closed = false;
+    let terminated = false;
     const pending = new Map();
     const failAll = () => {
         closed = true;
@@ -64,7 +65,14 @@ export function createBrowserImportWorker(worker) {
             });
         },
         close() {
-            if (!closed) terminate.call(worker);
+            if (!terminated) {
+                terminated = true;
+                try {
+                    terminate.call(worker);
+                } catch {
+                    // Worker termination is best-effort; pending work still fails safely.
+                }
+            }
             failAll();
         }
     });

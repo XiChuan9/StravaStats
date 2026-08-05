@@ -63,6 +63,7 @@ const ITEM_TRANSITIONS = Object.freeze({
         I.SKIPPED_EXACT_DUPLICATE,
         I.FAILED_VALIDATION,
         I.FAILED_STORAGE,
+        I.RETRYING,
         I.CANCELLED
     ]),
     [I.DECODING]: Object.freeze([

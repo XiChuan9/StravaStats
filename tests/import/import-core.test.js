@@ -81,7 +81,7 @@ test('Synthetic JSON persists job, item, raw artifact, Canonical graph, report a
         total: 1,
         bySportCategory: [{ sportCategory: 'run', count: 1 }]
     });
-    assert.equal((await reloaded.listImportJobs()).length, 1);
+    assert.equal((await reloadedStore.listImportJobs()).length, 1);
     await reloaded.close();
 });
 
@@ -168,6 +168,33 @@ test('worker crash is redacted, persisted, and explicitly retryable', async () =
     await core.close();
 });
 
+test('multi-item Worker crash retries every persisted unfinished item idempotently', async () => {
+    const indexedDB = new IDBFactory();
+    const importStore = store(indexedDB);
+    let calls = 0;
+    const inline = createInlineImportWorker();
+    const worker = {
+        async process(input) {
+            calls += 1;
+            if (calls === 1) throw new Error('synthetic worker interruption');
+            return inline.process(input);
+        },
+        close() { inline.close(); }
+    };
+    const core = service(importStore, { worker });
+    await core.initialize();
+    const input = await artifact();
+    const run = await core.importArtifacts([input, input]);
+    assert.equal((await core.waitForJob(run.jobId)).status, 'failed_decode');
+    await core.retryJob(run.jobId);
+    const report = await core.waitForJob(run.jobId);
+    assert.equal(report.status, 'completed');
+    assert.equal(report.totals.completed, 1);
+    assert.equal(report.totals.skippedExactDuplicate, 1);
+    assert.equal((await core.previewActivities()).total, 1);
+    await core.close();
+});
+
 test('hostile artifact accessors fail closed without execution or storage I/O', async () => {
     const indexedDB = new IDBFactory();
     const importStore = store(indexedDB);
@@ -188,7 +215,7 @@ test('hostile artifact accessors fail closed without execution or storage I/O', 
         error => error.code === IMPORT_ERROR_CODE.INVALID_REQUEST
     );
     assert.equal(calls, 0);
-    assert.equal((await core.listImportJobs()).length, 0);
+    assert.equal((await importStore.listImportJobs()).length, 0);
     await core.close();
 });
 
@@ -216,6 +243,51 @@ test('storage-owned import transitions reject illegal state changes without muta
     );
     assert.equal((await importStore.getImportJob('opaque-job-transition')).status, 'queued');
     assert.equal((await importStore.getImportItem('opaque-item-transition')).status, 'queued');
+    await importStore.close();
+});
+
+test('RawArtifact storage enforces digest-derived ID and exact UTF-8 byte length', async () => {
+    const indexedDB = new IDBFactory();
+    const importStore = store(indexedDB);
+    await importStore.initialize();
+    await importStore.createImportJob('opaque-job-artifact', ['opaque-item-artifact']);
+    await importStore.transitionImportJob(
+        'opaque-job-artifact', 'queued', 'validating'
+    );
+    await importStore.transitionImportItem(
+        'opaque-item-artifact', 'queued', 'validating'
+    );
+    await importStore.transitionImportJob(
+        'opaque-job-artifact', 'validating', 'hashing'
+    );
+    await importStore.transitionImportItem(
+        'opaque-item-artifact', 'validating', 'hashing'
+    );
+    const sha256 = 'a'.repeat(64);
+    await assert.rejects(
+        importStore.storeRawArtifact('opaque-item-artifact', {
+            id: 'raw:not-the-digest',
+            sha256,
+            mediaType: SYNTHETIC_JSON_MEDIA_TYPE,
+            byteLength: 1,
+            content: '{}'
+        }),
+        error => error.code === 'DATA_INVALID'
+    );
+    await assert.rejects(
+        importStore.storeRawArtifact('opaque-item-artifact', {
+            id: `raw:${sha256}`,
+            sha256,
+            mediaType: SYNTHETIC_JSON_MEDIA_TYPE,
+            byteLength: 1,
+            content: '{}'
+        }),
+        error => error.code === 'DATA_INVALID'
+    );
+    assert.equal(
+        (await importStore.getImportItem('opaque-item-artifact')).artifactId,
+        null
+    );
     await importStore.close();
 });
 
@@ -388,5 +460,31 @@ test('hostile Worker results do not execute getters and fail as redacted decode 
     assert.equal(getterCalls, 0);
     assert.equal(report.items[0].errorCode, IMPORT_ERROR_CODE.DECODER_FAILED);
     assert.doesNotMatch(JSON.stringify(report), /synthetic-import-activity/);
+    await core.close();
+});
+
+test('hostile storage errors are redacted without executing accessors', async () => {
+    const indexedDB = new IDBFactory();
+    const realStore = store(indexedDB);
+    let getterCalls = 0;
+    const hostile = {};
+    Object.defineProperty(hostile, 'code', {
+        enumerable: true,
+        get() {
+            getterCalls += 1;
+            return 'QUOTA_EXCEEDED';
+        }
+    });
+    const wrappedStore = {
+        ...realStore,
+        async persistImportItem() { throw hostile; }
+    };
+    const core = service(wrappedStore);
+    await core.initialize();
+    const run = await core.importArtifacts([await artifact()]);
+    const report = await core.waitForJob(run.jobId);
+    assert.equal(getterCalls, 0);
+    assert.equal(report.items[0].errorCode, IMPORT_ERROR_CODE.STORAGE_UNAVAILABLE);
+    assert.doesNotMatch(JSON.stringify(report), /QUOTA_EXCEEDED/);
     await core.close();
 });

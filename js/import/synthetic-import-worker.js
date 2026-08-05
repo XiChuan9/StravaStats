@@ -1,6 +1,5 @@
 import { createDecoderRegistry } from './decoder-registry.js';
 import { IMPORT_ERROR_CODE } from './errors.js';
-import { normalizeImportedActivity } from './normalizer.js';
 import { ownDataValues } from './safe-data.js';
 import { syntheticJsonDecoder } from './synthetic-json-decoder.js';
 
@@ -18,10 +17,7 @@ export function processSyntheticImport(input) {
         });
         return Object.freeze({
             ok: true,
-            bundle: normalizeImportedActivity({
-                decoded,
-                rawArtifactId: values.rawArtifactId
-            })
+            decoded
         });
     } catch (error) {
         return Object.freeze({

@@ -180,6 +180,12 @@ function ensurePhysicalSchema(database, transaction, storeNames) {
             );
         }
     }
+    if (!sameArray(listNames(database.objectStoreNames), storeNames.slice().sort())) {
+        throw storageError(
+            STORAGE_ERROR_CODE.MIGRATION_FAILED,
+            STORAGE_OPERATION.INITIALIZE
+        );
+    }
 }
 
 export function resolveMigrationTimestamp(now) {

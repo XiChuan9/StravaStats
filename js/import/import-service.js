@@ -1,6 +1,7 @@
 import { STORAGE_ERROR_CODE } from '../storage/index.js';
 import { readActivitiesPreview } from './activities-preview.js';
-import { IMPORT_ERROR_CODE, ImportError, importError } from './errors.js';
+import { IMPORT_ERROR_CODE, importError } from './errors.js';
+import { normalizeImportedActivity } from './normalizer.js';
 import {
     IMPORT_ITEM_STATUS as I,
     IMPORT_JOB_STATUS as J,
@@ -75,7 +76,7 @@ function safeId(createId, kind, ordinal) {
     } catch {
         throw importError(IMPORT_ERROR_CODE.INVALID_REQUEST);
     }
-    if (typeof id !== 'string' || id.length === 0) {
+    if (typeof id !== 'string' || id.trim().length === 0) {
         throw importError(IMPORT_ERROR_CODE.INVALID_REQUEST);
     }
     return id;
@@ -87,17 +88,44 @@ function hex(buffer) {
         .join('');
 }
 
+function ownErrorValue(error, field) {
+    try {
+        if (error === null || (typeof error !== 'object' && typeof error !== 'function')) {
+            return undefined;
+        }
+        const descriptor = Object.getOwnPropertyDescriptor(error, field);
+        return descriptor && Object.hasOwn(descriptor, 'value')
+            ? descriptor.value
+            : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
 function mapStorageError(error) {
-    if (error?.code === STORAGE_ERROR_CODE.QUOTA_EXCEEDED) {
+    if (ownErrorValue(error, 'code') === STORAGE_ERROR_CODE.QUOTA_EXCEEDED) {
         return importError(IMPORT_ERROR_CODE.STORAGE_QUOTA_EXCEEDED, true, 'persist');
     }
     return importError(IMPORT_ERROR_CODE.STORAGE_UNAVAILABLE, true, 'persist');
 }
 
+function safeImportFailure(error) {
+    const code = ownErrorValue(error, 'code');
+    if (Object.values(IMPORT_ERROR_CODE).includes(code)) {
+        const stage = ownErrorValue(error, 'stage');
+        return importError(
+            code,
+            ownErrorValue(error, 'retryable') === true,
+            typeof stage === 'string' && stage.length > 0 ? stage : null
+        );
+    }
+    return mapStorageError(error);
+}
+
 function itemDetails(error = null) {
     return Object.freeze({
-        errorCode: error?.code || null,
-        retryable: error?.retryable === true,
+        errorCode: ownErrorValue(error, 'code') || null,
+        retryable: ownErrorValue(error, 'retryable') === true,
         activityId: null
     });
 }
@@ -288,10 +316,10 @@ export function createImportService(options) {
             } catch (error) {
                 items[index] = await failItem(
                     items[index],
-                    error?.code === IMPORT_ERROR_CODE.HASH_COLLISION
+                    ownErrorValue(error, 'code') === IMPORT_ERROR_CODE.HASH_COLLISION
                         ? I.FAILED_VALIDATION
                         : I.FAILED_STORAGE,
-                    error instanceof ImportError ? error : mapStorageError(error)
+                    safeImportFailure(error)
                 );
             }
         }
@@ -300,7 +328,7 @@ export function createImportService(options) {
         jobStatus = J.DECODING;
         if (cancellation.has(jobId) && await cancelRemaining(jobId, jobStatus)) return;
 
-        const bundles = new Map();
+        const decodedItems = new Map();
         for (let index = 0; index < items.length; index += 1) {
             if (isTerminalImportItem(items[index].status)) continue;
             items[index] = await transitionItem(items[index], I.DECODING);
@@ -312,10 +340,10 @@ export function createImportService(options) {
                 });
                 const resultValues = ownDataValues(
                     result,
-                    ['ok', 'bundle', 'code', 'retryable'],
+                    ['ok', 'decoded', 'code', 'retryable'],
                     true
                 );
-                if (!resultValues || resultValues.ok !== true || !resultValues.bundle) {
+                if (!resultValues || resultValues.ok !== true || !resultValues.decoded) {
                     const error = importError(
                         typeof resultValues?.code === 'string'
                             ? resultValues.code
@@ -326,7 +354,7 @@ export function createImportService(options) {
                     items[index] = await failItem(items[index], I.FAILED_DECODE, error);
                     continue;
                 }
-                bundles.set(items[index].id, resultValues.bundle);
+                decodedItems.set(items[index].id, resultValues.decoded);
             } catch (error) {
                 const safe = importError(IMPORT_ERROR_CODE.WORKER_CRASHED, true, 'decode');
                 items[index] = await failItem(items[index], I.FAILED_DECODE, safe);
@@ -337,9 +365,26 @@ export function createImportService(options) {
 
         await transitionJob(jobId, jobStatus, J.NORMALIZING);
         jobStatus = J.NORMALIZING;
+        const bundles = new Map();
         for (let index = 0; index < items.length; index += 1) {
             if (isTerminalImportItem(items[index].status)) continue;
             items[index] = await transitionItem(items[index], I.NORMALIZING);
+            try {
+                bundles.set(items[index].id, normalizeImportedActivity({
+                    decoded: decodedItems.get(items[index].id),
+                    rawArtifactId: items[index].artifactId
+                }));
+            } catch {
+                items[index] = await failItem(
+                    items[index],
+                    I.FAILED_VALIDATION,
+                    importError(
+                        IMPORT_ERROR_CODE.NORMALIZATION_FAILED,
+                        false,
+                        'normalize'
+                    )
+                );
+            }
         }
         if (cancellation.has(jobId) && await cancelRemaining(jobId, jobStatus)) return;
 
@@ -455,7 +500,6 @@ export function createImportService(options) {
         cancelJob,
         retryJob,
         getReport,
-        listImportJobs: dependencies.store.listImportJobs,
         previewActivities: () => readActivitiesPreview(dependencies.store),
         async waitForJob(jobId) {
             const pending = active.get(jobId);
@@ -464,7 +508,11 @@ export function createImportService(options) {
         },
         async close() {
             closed = true;
-            dependencies.workerClose();
+            try {
+                dependencies.workerClose();
+            } catch {
+                // Storage closure remains mandatory when a Worker adapter misbehaves.
+            }
             await Promise.allSettled(active.values());
             await dependencies.store.close();
             return Object.freeze({ status: 'closed' });

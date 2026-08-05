@@ -64,12 +64,27 @@ test('inline worker redacts malformed input and closes terminally', async () => 
     );
 });
 
+test('Worker decode result stays separate from the observable normalizing stage', async () => {
+    const worker = createInlineImportWorker();
+    const result = await worker.process({
+        mediaType: SYNTHETIC_JSON_MEDIA_TYPE,
+        content: await readFile(fixtureUrl, 'utf8'),
+        rawArtifactId: 'raw:synthetic-stage-seam'
+    });
+    assert.equal(result.ok, true);
+    assert.ok(result.decoded);
+    assert.equal(Object.hasOwn(result, 'bundle'), false);
+    assert.equal(Object.isFrozen(result.decoded), true);
+    worker.close();
+});
+
 test('browser worker client maps raw error events to one stable crash', async () => {
+    let terminations = 0;
     const fake = {
         postMessage() {
             queueMicrotask(() => this.onerror({ message: 'secret raw cause' }));
         },
-        terminate() {}
+        terminate() { terminations += 1; }
     };
     const worker = createBrowserImportWorker(fake);
     await assert.rejects(
@@ -78,6 +93,7 @@ test('browser worker client maps raw error events to one stable crash', async ()
             && !JSON.stringify(error).includes('secret')
     );
     worker.close();
+    assert.equal(terminations, 1);
 });
 
 test('accessors and hostile decoder registry input fail without execution', () => {

@@ -102,7 +102,7 @@ const ITEM_TRANSITIONS = Object.freeze({
     validating: Object.freeze(['hashing', 'failed_validation', 'cancelled']),
     hashing: Object.freeze([
         'decoding', 'skipped_exact_duplicate', 'failed_validation',
-        'failed_storage', 'cancelled'
+        'failed_storage', 'retrying', 'cancelled'
     ]),
     decoding: Object.freeze([
         'normalizing', 'failed_decode', 'retrying', 'cancelled'
@@ -219,6 +219,14 @@ function findDataMethod(value, name) {
 
 function opaqueString(value) {
     return typeof value === 'string' && value.trim().length > 0;
+}
+
+function exactUtf8ByteLength(content, byteLength) {
+    try {
+        return new TextEncoder().encode(content).byteLength === byteLength;
+    } catch {
+        return false;
+    }
 }
 
 function strictUtc(value) {
@@ -393,13 +401,15 @@ function validItem(value) {
 function validArtifactInput(value) {
     const artifact = ownDataValues(value, ARTIFACT_FIELDS);
     return artifact
-        && opaqueString(artifact.id)
+        && typeof artifact.sha256 === 'string'
         && /^[a-f0-9]{64}$/.test(artifact.sha256)
+        && artifact.id === `raw:${artifact.sha256}`
         && artifact.mediaType === 'application/vnd.stravastats.synthetic+json'
         && Number.isSafeInteger(artifact.byteLength)
         && artifact.byteLength > 0
         && typeof artifact.content === 'string'
         && artifact.content.length > 0
+        && exactUtf8ByteLength(artifact.content, artifact.byteLength)
         ? artifact
         : null;
 }
@@ -411,17 +421,24 @@ function validStoredArtifact(value) {
     ];
     const artifact = ownDataValues(value, fields);
     return artifact
-        && opaqueString(artifact.id)
+        && typeof artifact.sha256 === 'string'
         && /^[a-f0-9]{64}$/.test(artifact.sha256)
+        && artifact.id === `raw:${artifact.sha256}`
         && artifact.mediaType === 'application/vnd.stravastats.synthetic+json'
         && Number.isSafeInteger(artifact.byteLength)
         && artifact.byteLength > 0
         && typeof artifact.content === 'string'
         && artifact.content.length > 0
+        && exactUtf8ByteLength(artifact.content, artifact.byteLength)
         && artifact.acquiredVia === 'local-file'
         && strictUtc(artifact.importedAt)
-        && (artifact.state === 'pending' || artifact.state === 'committed')
-        && (artifact.activityId === null || opaqueString(artifact.activityId))
+        && (
+            (artifact.state === 'pending' && artifact.activityId === null)
+            || (
+                artifact.state === 'committed'
+                && opaqueString(artifact.activityId)
+            )
+        )
         ? artifact
         : null;
 }
