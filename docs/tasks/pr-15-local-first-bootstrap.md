@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Implementation complete; Final Review closure in progress |
+| Status | Final Review closed; implementation CI passed; Closure CI pending |
 | Milestone | M12 |
 | Base branch | `integration/v2` |
 | Exact base SHA | `52334bbc7671231745bad96327afa4fa31d1a73c` |
@@ -367,6 +367,12 @@ a failing regression and a bounded repair. The final fresh independent
 closure re-review reports no actionable findings in the original seven-path
 implementation diff.
 
+After the approved A3.1 repair, a fresh independent review found one P2
+documentation inconsistency: metadata still said guard approval was pending.
+The stale status was corrected, the served Browser/CDP evidence was refreshed,
+and a fresh independent re-review reported no actionable findings across the
+complete eight-path staged diff.
+
 ### A3.1 approved literal-scope repair
 
 The completed PR-14 test
@@ -382,8 +388,10 @@ not derive expected values dynamically, loosen PR-14's `ALLOWED_PATHS`, edit
 the PR-14 brief, or change production/schema/API/auth/Service Worker/deployment
 paths.
 
-Implementation commit/push, exact-head CI, closure commit/CI, PR body update,
-and Ready transition remain pending. No post-A3 implementation commit has been
-made. Ready is not merge authorization.
+Implementation commit `1b4694e52cbeae416ab57e0e182b9daa62468177` was pushed,
+and GitHub Actions CI run 122 (`31055671506`) succeeded against that exact head.
+This docs-only Closure update records the durable final evidence. Closure
+exact-head CI, PR body publication, and the Ready transition remain pending.
+Ready is not merge authorization.
 Do not merge, clean the branch/worktree, modify a protected long-lived branch,
 deploy/release, or start M13 / PR-16.
