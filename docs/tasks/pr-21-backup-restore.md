@@ -281,6 +281,14 @@ WebCrypto without expanding the public API. The browser task space was closed. E
 depth-1, and CI gates run after this Task-Brief-only Closure commit; Ready, merge, cleanup,
 deploy/release, and PR-22 remain unauthorized.
 
+Publication trigger correction: GitHub accepted the original three-commit Closure head, recorded the
+clean mergeable PR and exact sixteen-file comparison, and kept the CI workflow active, but created no
+check suite for that head's `pull_request` synchronization. The old A1 docs-only run is not reused.
+This follow-up remains Task-Brief-only, does not alter the frozen implementation or review result,
+and supplies a new ordinary synchronization event without amend, rebase, force-push, workflow
+change, Ready transition, close/reopen, or scope expansion. All exact-head local, fresh depth-1, and
+GitHub CI gates are rerun against the resulting commit.
+
 ## A3 literal cumulative allowlist
 
 The cumulative hard maximum is exactly sixteen paths. A seventeenth path pauses implementation:
