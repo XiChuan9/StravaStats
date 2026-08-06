@@ -417,3 +417,50 @@ git diff --check
 All B1 fixtures are deterministic, inline, synthetic, and offline. No migration, write-path,
 schema, provider/auth, analysis, dependency, Service Worker, PR-18, or default-mode change was
 made. Browser/CDP, independent review, full suite, CI, and Closure remain pending.
+
+### B2: Router and detail composition cutover
+
+Status: **Completed locally / PASS**.
+
+- The Router and Generic, Run, Bike, and Swim composition roots now read the existing public
+  feature flags exactly once for a Real document and select Canonical only for the literal
+  `canonical` mode.
+- Literal `legacy` and `shadow` retain Legacy reads. Demo selects Demo first, never calls the
+  Real feature-flag reader, and still constructs the Factory with its safe Legacy mode input.
+- Each destination still creates exactly one Repository, one `DetailReadSession`, one memoized
+  load, and one renderer call. Exact stream sets and optional zones/athlete flags are unchanged.
+- Unsafe feature-flag accessors and shapes fail closed before Factory construction without
+  executing getters or exposing raw errors.
+- Composition roots and Router still perform no direct provider, Token, Authorization,
+  localStorage, IndexedDB, network, or implementation-specific Repository access.
+- The boundary suite now freezes the literal 17-path PR-17 allowlist and stable public/mode/
+  privacy assertions without adding whole-file or whole-tree hashes.
+
+Actual B2 local evidence:
+
+```text
+node --test tests/consumers/detail-consumers.test.js
+  tests/consumers/detail-boundaries.test.js
+  PASS 266/266
+node --test tests/repository/canonical-repository.test.js
+  tests/repository/repository-factory.test.js
+  tests/repository/repository-contract.test.js
+  tests/repository/dependency-boundaries.test.js
+  PASS 41/41
+node --test tests/consumers/summary-consumers.test.js
+  tests/consumers/summary-boundaries.test.js
+  tests/feature-flags.test.js
+  tests/legacy/demo-isolation.test.js
+  tests/shadow/shadow-app-integration.test.js
+  PASS 90/90
+npm run check:syntax
+  PASS 204 files
+npm run check:privacy
+  PASS
+git diff --check
+  PASS
+```
+
+No HTML/CSS, renderer, Store/schema, Import, analysis, dependency, Service Worker, release,
+global default, or PR-18 path changed in B2. Browser/CDP, renderer degradation, full suite,
+independent review, CI, and Closure remain pending.

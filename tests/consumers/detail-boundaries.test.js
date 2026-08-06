@@ -44,6 +44,25 @@ const B1_IMPLEMENTATION_PATHS = Object.freeze([
     'tests/repository/strava-api-connector.test.js',
     'tests/repository/dependency-boundaries.test.js'
 ]);
+const PR17_ALLOWLIST = Object.freeze([
+    'docs/tasks/pr-17-canonical-detail-cutover.md',
+    'js/pages/activity-router.js',
+    'js/pages/activity/index.js',
+    'js/pages/run/index.js',
+    'js/pages/bike/index.js',
+    'js/pages/swim/index.js',
+    'js/pages/activity/activity.js',
+    'js/pages/run/run.js',
+    'js/pages/bike/bike.js',
+    'js/pages/swim/swim.js',
+    'js/repository/canonical/canonical-repository.js',
+    'js/repository/canonical/detail-projection.js',
+    'tests/repository/canonical-repository.test.js',
+    'tests/repository/dependency-boundaries.test.js',
+    'tests/consumers/detail-consumers.test.js',
+    'tests/consumers/detail-boundaries.test.js',
+    'tests/consumers/canonical-detail-browser-smoke.html'
+]);
 
 function readTrackedPaths() {
     const output = execFileSync(
@@ -158,11 +177,17 @@ test('four page composition roots use only public Factory and DetailReadSession 
             value,
             /import\s*\{\s*createDetailReadSession\s*\}\s*from\s*['"]\.\.\/detail\/detail-read-session\.js['"]/
         );
+        assert.match(
+            value,
+            /import\s*\{\s*getFeatureFlags\s*\}\s*from\s*['"]\.\.\/\.\.\/app\/feature-flags\.js['"]/
+        );
         assert.equal((value.match(/demoModeReader\(\)/g) || []).length, 1, relativePath);
+        assert.equal((value.match(/featureFlagsReader\(\)/g) || []).length, 1, relativePath);
         assert.equal((value.match(/repositoryFactory\(\{/g) || []).length, 1, relativePath);
         assert.equal((value.match(/sessionFactory\(\{/g) || []).length, 1, relativePath);
         assert.equal((value.match(/session\.load\(\)/g) || []).length, 1, relativePath);
         assert.match(value, /allowExternalWeather:\s*!demo/, relativePath);
+        assert.match(value, /descriptor\.value\s*===\s*'canonical'\s*\?\s*'canonical'\s*:\s*'legacy'/, relativePath);
         assert.match(value, /Reflect\.ownKeys\(value\)/, relativePath);
         assert.match(value, /Object\.getOwnPropertyDescriptor\(value, key\)/, relativePath);
         assert.match(value, /REPOSITORY_SOURCES\.has\(record\.source\)/, relativePath);
@@ -336,7 +361,7 @@ test('Advanced Analysis consumes injected bundle data and contains no provider I
     assert.doesNotMatch(genericSource, /error\.message|console\.error/);
 });
 
-test('Router depends only on Demo mode and the Repository public Factory boundary', () => {
+test('Router depends only on Demo, feature flags, and the Repository public Factory boundary', () => {
     assert.match(
         routerSource,
         /import\s*\{\s*isDemoMode\s*\}\s*from\s*['"]\.\.\/demo\/index\.js['"]/
@@ -345,6 +370,12 @@ test('Router depends only on Demo mode and the Repository public Factory boundar
         routerSource,
         /import\s*\{\s*createRepository\s*\}\s*from\s*['"]\.\.\/repository\/index\.js['"]/
     );
+    assert.match(
+        routerSource,
+        /import\s*\{\s*getFeatureFlags\s*\}\s*from\s*['"]\.\.\/app\/feature-flags\.js['"]/
+    );
+    assert.equal((routerSource.match(/normalized\.featureFlagsReader\(\)/g) || []).length, 1);
+    assert.match(routerSource, /demoMode\s*\?\s*'legacy'/);
     for (const prohibited of [
         /from\s*['"][^'"]*services\//,
         /from\s*['"][^'"]*connectors\//,
@@ -500,6 +531,25 @@ test('completed PR-04B governance and public boundaries remain present without a
         'js/repository/demo/demo-repository.js'
     ]) {
         assert.equal(trackedPaths.has(relativePath), true, relativePath);
+    }
+});
+
+test('PR-17 freezes the literal 17-path allowlist and stable boundaries', async () => {
+    const brief = await source('docs/tasks/pr-17-canonical-detail-cutover.md');
+    const match = /modify exactly these 17 paths[\s\S]*?```text\n([\s\S]*?)\n```/.exec(brief);
+    assert.notEqual(match, null);
+    assert.deepEqual(match[1].split('\n'), PR17_ALLOWLIST);
+    for (const pattern of [
+        /no eighth Repository method/,
+        /DEFAULT_FEATURE_FLAGS\.dataRepositoryMode.*literal `legacy`/,
+        /Demo always selects Demo/,
+        /js\/storage\/\*\*/,
+        /js\/analysis\/\*\*/,
+        /js\/tabs\/\*\*/,
+        /tests\/fixtures\/\*\*/,
+        /Whole-tree manifests and whole-file\s+hashes.*prohibited/s
+    ]) {
+        assert.match(brief, pattern);
     }
 });
 

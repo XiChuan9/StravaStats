@@ -1,9 +1,11 @@
 import { isDemoMode } from '../demo/index.js';
 import { createRepository } from '../repository/index.js';
+import { getFeatureFlags } from '../app/feature-flags.js';
 
 const ROUTER_OPTION_KEYS = new Set([
     'search',
     'demoModeReader',
+    'featureFlagsReader',
     'repositoryFactory',
     'navigate',
     'errorRenderer'
@@ -12,6 +14,29 @@ const SAFE_ERROR_COPY = 'Activity details could not be loaded.';
 
 function invalidBoundary() {
     return new TypeError('The activity routing boundary is invalid.');
+}
+
+function repositoryModeFromFlags(value) {
+    try {
+        if (
+            value === null
+            || typeof value !== 'object'
+            || Array.isArray(value)
+            || Object.getPrototypeOf(value) !== Object.prototype
+        ) throw invalidBoundary();
+        const descriptor = Object.getOwnPropertyDescriptor(
+            value,
+            'dataRepositoryMode'
+        );
+        if (
+            !descriptor?.enumerable
+            || !Object.hasOwn(descriptor, 'value')
+            || !['legacy', 'shadow', 'canonical'].includes(descriptor.value)
+        ) throw invalidBoundary();
+        return descriptor.value === 'canonical' ? 'canonical' : 'legacy';
+    } catch {
+        throw invalidBoundary();
+    }
 }
 
 function readPlainRecord(value, allowedKeys) {
@@ -267,6 +292,7 @@ function normalizeRouterOptions(options) {
     const normalized = {
         search: Object.hasOwn(values, 'search') ? values.search : defaultSearch(),
         demoModeReader: values.demoModeReader ?? isDemoMode,
+        featureFlagsReader: values.featureFlagsReader ?? getFeatureFlags,
         repositoryFactory: values.repositoryFactory ?? createRepository,
         navigate: values.navigate ?? defaultNavigate,
         errorRenderer: values.errorRenderer ?? renderActivityRouterError
@@ -274,6 +300,7 @@ function normalizeRouterOptions(options) {
     if (
         typeof normalized.search !== 'string'
         || typeof normalized.demoModeReader !== 'function'
+        || typeof normalized.featureFlagsReader !== 'function'
         || typeof normalized.repositoryFactory !== 'function'
         || typeof normalized.navigate !== 'function'
         || typeof normalized.errorRenderer !== 'function'
@@ -294,10 +321,13 @@ export async function routeActivity(options = {}) {
 
         const demoMode = normalized.demoModeReader();
         if (typeof demoMode !== 'boolean') throw invalidBoundary();
+        const repositoryMode = demoMode
+            ? 'legacy'
+            : repositoryModeFromFlags(normalized.featureFlagsReader());
 
         const repository = normalized.repositoryFactory({
             sessionMode: demoMode ? 'demo' : 'real',
-            mode: 'legacy'
+            mode: repositoryMode
         });
         const listActivities = readCallable(repository, 'listActivities');
         if (listActivities === null) throw invalidBoundary();

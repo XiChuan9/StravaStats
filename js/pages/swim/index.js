@@ -1,4 +1,5 @@
 import { isDemoMode } from '../../demo/index.js';
+import { getFeatureFlags } from '../../app/feature-flags.js';
 import {
     createRepository,
     REPOSITORY_SOURCE
@@ -15,6 +16,26 @@ export const SWIM_STREAM_TYPES = Object.freeze([
 const BUNDLE_KEYS = Object.freeze(['activity', 'streams', 'zones', 'athlete']);
 const ENVELOPE_KEYS = Object.freeze(['data', 'source', 'warnings', 'partial']);
 const REPOSITORY_SOURCES = new Set(Object.values(REPOSITORY_SOURCE));
+
+function repositoryModeFromFlags(value) {
+    try {
+        if (
+            value === null
+            || typeof value !== 'object'
+            || Array.isArray(value)
+            || Object.getPrototypeOf(value) !== Object.prototype
+        ) throw new TypeError('Invalid feature flags.');
+        const descriptor = Object.getOwnPropertyDescriptor(value, 'dataRepositoryMode');
+        if (
+            !descriptor?.enumerable
+            || !Object.hasOwn(descriptor, 'value')
+            || !['legacy', 'shadow', 'canonical'].includes(descriptor.value)
+        ) throw new TypeError('Invalid feature flags.');
+        return descriptor.value === 'canonical' ? 'canonical' : 'legacy';
+    } catch {
+        throw new TypeError('Invalid feature flags.');
+    }
+}
 
 function readExactRecord(value, expectedKeys) {
     try {
@@ -125,6 +146,7 @@ async function defaultRenderer(input) {
 export async function initializeSwimPage({
     search = globalThis.location?.search || '',
     demoModeReader = isDemoMode,
+    featureFlagsReader = getFeatureFlags,
     repositoryFactory = createRepository,
     sessionFactory = createDetailReadSession,
     renderer = defaultRenderer,
@@ -137,9 +159,12 @@ export async function initializeSwimPage({
     }
     try {
         const demo = demoModeReader();
+        const repositoryMode = demo
+            ? 'legacy'
+            : repositoryModeFromFlags(featureFlagsReader());
         const repository = repositoryFactory({
             sessionMode: demo ? 'demo' : 'real',
-            mode: 'legacy'
+            mode: repositoryMode
         });
         const session = sessionFactory({
             repository,

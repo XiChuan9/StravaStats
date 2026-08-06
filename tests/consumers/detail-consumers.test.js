@@ -46,10 +46,12 @@ function createRouterHarness({
     activityId = 'synthetic-activity',
     activities = [{ id: activityId, sport_type: 'Run' }],
     demo = false,
+    canonical = false,
     listError = null
 } = {}) {
     const calls = {
         demoMode: 0,
+        featureFlags: 0,
         factory: [],
         listActivities: [],
         getActivity: 0,
@@ -80,6 +82,12 @@ function createRouterHarness({
         demoModeReader() {
             calls.demoMode += 1;
             return demo;
+        },
+        featureFlagsReader() {
+            calls.featureFlags += 1;
+            return Object.freeze({
+                dataRepositoryMode: canonical ? 'canonical' : 'legacy'
+            });
         },
         repositoryFactory(factoryOptions) {
             calls.factory.push(factoryOptions);
@@ -175,15 +183,20 @@ for (const search of ['', '?other=value', '?id=', '?id=%20%20%20']) {
     });
 }
 
-test('Router freezes mode, Factory, and list lookup exactly once', async t => {
-    for (const demo of [false, true]) {
-        await t.test(demo ? 'demo' : 'real', async () => {
-            const { calls, options } = createRouterHarness({ demo });
+test('Router freezes mode, flag, Factory, and list lookup exactly once', async t => {
+    for (const scenario of [
+        { name: 'real legacy', demo: false, canonical: false, mode: 'legacy' },
+        { name: 'real canonical', demo: false, canonical: true, mode: 'canonical' },
+        { name: 'demo ignores canonical', demo: true, canonical: true, mode: 'legacy' }
+    ]) {
+        await t.test(scenario.name, async () => {
+            const { calls, options } = createRouterHarness(scenario);
             assert.equal(await routeActivity(options), true);
             assert.equal(calls.demoMode, 1);
+            assert.equal(calls.featureFlags, scenario.demo ? 0 : 1);
             assert.deepEqual(calls.factory, [{
-                sessionMode: demo ? 'demo' : 'real',
-                mode: 'legacy'
+                sessionMode: scenario.demo ? 'demo' : 'real',
+                mode: scenario.mode
             }]);
             assert.deepEqual(calls.listActivities, [{ refresh: false }]);
             assert.equal(calls.getActivity, 0);
@@ -229,6 +242,7 @@ test('Demo Router performs zero real connector, Token, cache, or platform I/O', 
 
     assert.equal(forbiddenAccesses, 0);
     assert.equal(calls.demoMode, 1);
+    assert.equal(calls.featureFlags, 0);
     assert.deepEqual(calls.factory, [{ sessionMode: 'demo', mode: 'legacy' }]);
     assert.deepEqual(calls.listActivities, [{ refresh: false }]);
 });
@@ -679,9 +693,14 @@ const detailPageCases = [
     }
 ];
 
-function createDetailPageHarness({ demo = false, bundleOverride } = {}) {
+function createDetailPageHarness({
+    demo = false,
+    canonical = false,
+    bundleOverride
+} = {}) {
     const calls = {
         mode: 0,
+        featureFlags: 0,
         factory: [],
         session: [],
         load: 0,
@@ -701,6 +720,12 @@ function createDetailPageHarness({ demo = false, bundleOverride } = {}) {
             demoModeReader() {
                 calls.mode += 1;
                 return demo;
+            },
+            featureFlagsReader() {
+                calls.featureFlags += 1;
+                return Object.freeze({
+                    dataRepositoryMode: canonical ? 'canonical' : 'legacy'
+                });
             },
             repositoryFactory(options) {
                 calls.factory.push(options);
@@ -748,16 +773,21 @@ async function assertRejectedDetailBundle(page, bundle, secret = null) {
 }
 
 for (const page of detailPageCases) {
-    test(`${page.name} composition freezes mode, Factory, session, load, and render once`, async t => {
-        for (const demo of [false, true]) {
-            await t.test(demo ? 'demo' : 'real', async () => {
-                const { calls, options, repository } = createDetailPageHarness({ demo });
+    test(`${page.name} composition freezes mode, flag, Factory, session, load, and render once`, async t => {
+        for (const scenario of [
+            { name: 'real legacy', demo: false, canonical: false, mode: 'legacy' },
+            { name: 'real canonical', demo: false, canonical: true, mode: 'canonical' },
+            { name: 'demo ignores canonical', demo: true, canonical: true, mode: 'legacy' }
+        ]) {
+            await t.test(scenario.name, async () => {
+                const { calls, options, repository } = createDetailPageHarness(scenario);
                 options.search = '?id=000123';
                 assert.equal(await page.initialize(options), true);
                 assert.equal(calls.mode, 1);
+                assert.equal(calls.featureFlags, scenario.demo ? 0 : 1);
                 assert.deepEqual(calls.factory, [{
-                    sessionMode: demo ? 'demo' : 'real',
-                    mode: 'legacy'
+                    sessionMode: scenario.demo ? 'demo' : 'real',
+                    mode: scenario.mode
                 }]);
                 assert.equal(calls.session.length, 1);
                 assert.equal(calls.session[0].repository, repository);
@@ -768,7 +798,7 @@ for (const page of detailPageCases) {
                 assert.equal(calls.load, 1);
                 assert.equal(calls.render.length, 1);
                 assert.equal(calls.render[0].activityId, '000123');
-                assert.equal(calls.render[0].allowExternalWeather, !demo);
+                assert.equal(calls.render[0].allowExternalWeather, !scenario.demo);
                 assert.equal(calls.error.length, 0);
             });
         }
@@ -793,6 +823,7 @@ for (const page of detailPageCases) {
                 options.search = search;
                 assert.equal(await page.initialize(options), false);
                 assert.equal(calls.mode, 0);
+                assert.equal(calls.featureFlags, 0);
                 assert.equal(calls.factory.length, 0);
                 assert.equal(calls.session.length, 0);
                 assert.equal(calls.load, 0);
@@ -802,6 +833,31 @@ for (const page of detailPageCases) {
         }
     });
 }
+
+test('Router and four detail roots fail closed for unsafe Real feature flags', async () => {
+    let getterCalls = 0;
+    const unsafe = {};
+    Object.defineProperty(unsafe, 'dataRepositoryMode', {
+        enumerable: true,
+        get() {
+            getterCalls += 1;
+            return 'canonical';
+        }
+    });
+    const router = createRouterHarness();
+    router.options.featureFlagsReader = () => unsafe;
+    assert.equal(await routeActivity(router.options), false);
+    assert.equal(router.calls.factory.length, 0);
+
+    for (const page of detailPageCases) {
+        const harness = createDetailPageHarness();
+        harness.options.search = '?id=unsafe-flags';
+        harness.options.featureFlagsReader = () => unsafe;
+        assert.equal(await page.initialize(harness.options), false);
+        assert.equal(harness.calls.factory.length, 0);
+    }
+    assert.equal(getterCalls, 0);
+});
 
 test('required malformed detail envelopes fail once with no raw error disclosure or retry', async t => {
     for (const page of detailPageCases) {
