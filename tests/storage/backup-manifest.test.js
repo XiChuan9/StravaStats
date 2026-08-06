@@ -113,13 +113,13 @@ test('backup manifest has the exact frozen metadata-only shape and counts', asyn
     assert.deepEqual(await storage.createBackupManifest(), {
         backupFormatVersion: 1,
         databaseName: 'strava-stats-v2',
-        indexedDbVersion: 3,
+        indexedDbVersion: 4,
         canonicalSchemaVersion: 1,
         createdAt: '2026-08-04T10:11:12.013Z',
         applicationVersion: 'backup-manifest-test@1',
         stores: [
             { name: 'metadata', recordCount: 1 },
-            { name: 'migrations', recordCount: 3 },
+            { name: 'migrations', recordCount: 4 },
             { name: 'activities', recordCount: 0 },
             { name: 'activitySources', recordCount: 0 },
             { name: 'streamSeries', recordCount: 0 },
@@ -128,7 +128,9 @@ test('backup manifest has the exact frozen metadata-only shape and counts', asyn
             { name: 'devices', recordCount: 0 },
             { name: 'rawArtifacts', recordCount: 0 },
             { name: 'importJobs', recordCount: 0 },
-            { name: 'importItems', recordCount: 0 }
+            { name: 'importItems', recordCount: 0 },
+            { name: 'mergeCandidates', recordCount: 0 },
+            { name: 'mergeDecisions', recordCount: 0 }
         ],
         files: [],
         hashes: []
@@ -139,7 +141,7 @@ test('backup manifest has the exact frozen metadata-only shape and counts', asyn
     assertDeepFrozen(manifest);
     assert.deepEqual(manifest.stores, [
         { name: 'metadata', recordCount: 1 },
-        { name: 'migrations', recordCount: 3 },
+        { name: 'migrations', recordCount: 4 },
         { name: 'activities', recordCount: 1 },
         { name: 'activitySources', recordCount: 1 },
         { name: 'streamSeries', recordCount: 0 },
@@ -148,7 +150,9 @@ test('backup manifest has the exact frozen metadata-only shape and counts', asyn
         { name: 'devices', recordCount: 0 },
         { name: 'rawArtifacts', recordCount: 0 },
         { name: 'importJobs', recordCount: 0 },
-        { name: 'importItems', recordCount: 0 }
+        { name: 'importItems', recordCount: 0 },
+        { name: 'mergeCandidates', recordCount: 0 },
+        { name: 'mergeDecisions', recordCount: 0 }
     ]);
     assert.deepEqual(manifest.files, []);
     assert.deepEqual(manifest.hashes, []);
@@ -205,7 +209,9 @@ test('backup manifest reads metadata and counts without reading payloads', async
         'devices',
         'rawArtifacts',
         'importJobs',
-        'importItems'
+        'importItems',
+        'mergeCandidates',
+        'mergeDecisions'
     ]);
     await storage.close();
 });

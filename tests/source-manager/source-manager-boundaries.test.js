@@ -72,6 +72,12 @@ test('same-origin page has four source cards and complete accessible import cont
     assert.match(html, /id="import-alert"[^>]+aria-live="assertive"/);
     assert.match(html, /<progress[^>]+aria-label=/);
     assert.match(html, /id="cancel-import"/);
+    assert.match(html, /id="duplicate-review"[^>]+aria-labelledby=/);
+    assert.match(html, /id="duplicate-review-dialog"[^>]+aria-labelledby=[^>]+aria-describedby=/);
+    assert.match(html, /Confirm same activity/);
+    assert.match(html, /Keep separate/);
+    assert.match(html, />Later</);
+    assert.match(html, /does not merge, hide, replace, or delete either activity/);
     assert.match(html, /Import FIT, TCX, GPX, or an English Strava/);
     assert.doesNotMatch(html, /FIT, TCX, and GPX are not supported yet/);
     assert.match(html, /Disconnecting and deleting local data are separate actions/);
@@ -99,6 +105,9 @@ test('composition root uses only existing public Import/V2 boundaries and keeps 
     assert.match(app, /createImportStore/);
     assert.match(app, /listImportJobs\(\)/);
     assert.match(app, /service\.getReport\(job\.id\)/);
+    assert.match(app, /importStore\.listDuplicateReviewCandidates\(\)/);
+    assert.match(app, /importStore\.getDuplicateReviewCandidate\(id\)/);
+    assert.match(app, /importStore\.decideDuplicateReviewCandidate/);
     assert.doesNotMatch(app, /getRawArtifact|storeRawArtifact|persistImportItem|transaction|objectStore/);
     assert.doesNotMatch(app, /fetch\s*\(|\/api\/|Authorization|Token|localStorage|sessionStorage/);
     assert.match(app, /mode === SOURCE_MANAGER_SESSION_MODE\.DEMO\s*\? demoFacade\(\)/);
@@ -112,6 +121,10 @@ test('progress, duplicate, cancel, reload, and report UI are driven by real boun
     assert.match(page, /importFacade\.cancelJob\(activeJobId\)/);
     assert.match(page, /importFacade\.listPersistedReports\(\)/);
     assert.match(page, /importFacade\.previewActivities\(\)/);
+    assert.match(page, /importFacade\.listDuplicateReviews\(\)/);
+    assert.match(page, /importFacade\.getDuplicateReview\(token\)/);
+    assert.match(page, /importFacade\.decideDuplicateReview/);
+    assert.match(page, /Both activities remain in the library/);
     assert.match(page, /skippedExactDuplicate/);
     assert.match(page, /MAX_VISIBLE_REPORT_ITEMS = 100/);
     assert.match(page, /additional items are not shown/);

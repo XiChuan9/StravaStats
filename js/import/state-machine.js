@@ -27,6 +27,7 @@ export const IMPORT_ITEM_STATUS = Object.freeze({
     MATCHING: 'matching',
     PERSISTING: 'persisting',
     COMPLETED: 'completed',
+    REVIEW_REQUIRED: 'review_required',
     SKIPPED_EXACT_DUPLICATE: 'skipped_exact_duplicate',
     FAILED_VALIDATION: 'failed_validation',
     FAILED_DECODE: 'failed_decode',
@@ -81,6 +82,7 @@ const ITEM_TRANSITIONS = Object.freeze({
     [I.MATCHING]: Object.freeze([I.PERSISTING, I.RETRYING, I.CANCELLED]),
     [I.PERSISTING]: Object.freeze([
         I.COMPLETED,
+        I.REVIEW_REQUIRED,
         I.SKIPPED_EXACT_DUPLICATE,
         I.FAILED_STORAGE,
         I.RETRYING
@@ -90,6 +92,7 @@ const ITEM_TRANSITIONS = Object.freeze({
     [I.FAILED_STORAGE]: Object.freeze([I.RETRYING]),
     [I.RETRYING]: Object.freeze([I.VALIDATING]),
     [I.COMPLETED]: Object.freeze([]),
+    [I.REVIEW_REQUIRED]: Object.freeze([]),
     [I.SKIPPED_EXACT_DUPLICATE]: Object.freeze([]),
     [I.CANCELLED]: Object.freeze([])
 });
@@ -117,6 +120,7 @@ export function canCancelImportJob(status) {
 export function isTerminalImportItem(status) {
     return [
         I.COMPLETED,
+        I.REVIEW_REQUIRED,
         I.SKIPPED_EXACT_DUPLICATE,
         I.FAILED_VALIDATION,
         I.FAILED_DECODE,

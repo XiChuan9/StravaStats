@@ -7,7 +7,7 @@
         content="default-src 'self'; script-src 'self' 'nonce-pr10-source-manager'; style-src 'unsafe-inline'; connect-src 'self'; frame-src 'self'; img-src data:; worker-src 'self'; object-src 'none'; base-uri 'none'"
     >
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>PR-14 Source Manager browser smoke</title>
+    <title>PR-20 Source Manager duplicate review browser smoke</title>
     <link rel="icon" href="data:,">
     <style>
         body { margin: 2rem; font-family: system-ui, sans-serif; }
@@ -19,7 +19,7 @@
 </head>
 <body data-status="running">
     <main>
-        <h1>PR-14 Source Manager browser smoke</h1>
+        <h1>PR-20 Source Manager duplicate review browser smoke</h1>
         <p id="state" data-testid="state">running</p>
         <pre id="summary" data-testid="summary">{"status":"running"}</pre>
         <div id="frames"></div>
@@ -310,11 +310,45 @@
             assert(realDoc.getElementById('report-list').textContent.includes('skipped_exact_duplicate'), 'EXACT_DUPLICATE_REPORT');
 
             realDoc.getElementById('dialog-close').click();
+            const nearFile = new File(
+                [csv('browser-near-001')],
+                'private-near-activity.csv',
+                { type: 'text/csv' }
+            );
+            await importFile(realFrame, 'local', nearFile, 3);
+            assert(realDoc.getElementById('preview-total').textContent === '2 activities', 'REVIEW_RETAINS_TWO_ACTIVITIES');
+            assert(realDoc.getElementById('report-list').textContent.includes('review_required'), 'REVIEW_REQUIRED_REPORT');
+            realDoc.getElementById('dialog-close').click();
+            await waitFor(
+                () => realDoc.querySelector('.duplicate-review-card button'),
+                'REVIEW_QUEUE_TIMEOUT'
+            );
+            realDoc.querySelector('.duplicate-review-card button').click();
+            await waitFor(
+                () => realDoc.getElementById('duplicate-review-dialog').open,
+                'REVIEW_DIALOG_TIMEOUT'
+            );
+            assert(!realDoc.body.textContent.includes('browser-near-001'), 'NO_ACTIVITY_ID_DOM');
+            realDoc.getElementById('duplicate-review-later').click();
+            assert(realDoc.querySelectorAll('.duplicate-review-card').length === 1, 'LATER_WRITES_NOTHING');
+            realDoc.querySelector('.duplicate-review-card button').click();
+            await waitFor(
+                () => realDoc.getElementById('duplicate-review-dialog').open,
+                'REVIEW_REOPEN_TIMEOUT'
+            );
+            realDoc.getElementById('duplicate-review-confirm').click();
+            await waitFor(
+                () => realDoc.querySelectorAll('.duplicate-review-card').length === 0,
+                'REVIEW_DECISION_TIMEOUT'
+            );
+            assert(realDoc.getElementById('preview-total').textContent === '2 activities', 'CONFIRM_DOES_NOT_COALESCE');
+            assert(realDoc.getElementById('import-live').textContent.includes('Both activities remain'), 'CONFIRM_COPY_EXPLICIT');
+
             const zipFile = new File([storedZip(csv('browser-zip-001', 'Ride'))], 'private-archive.zip', {
                 type: 'application/zip'
             });
-            await importFile(realFrame, 'archive', zipFile, 3, true);
-            assert(realDoc.getElementById('preview-total').textContent === '2 activities', 'ZIP_SUCCESS_PREVIEW');
+            await importFile(realFrame, 'archive', zipFile, 4, true);
+            assert(realDoc.getElementById('preview-total').textContent === '3 activities', 'ZIP_SUCCESS_PREVIEW');
             assert(!realDoc.body.textContent.includes('private-archive.zip'), 'NO_ZIP_FILENAME_DOM');
 
             realDoc.getElementById('dialog-close').click();
@@ -332,9 +366,9 @@
             const formatGates = ['FIT', 'TCX', 'GPX'];
             for (let index = 0; index < formatFiles.length; index += 1) {
                 realDoc.getElementById('dialog-close').click();
-                await importFile(realFrame, 'local', formatFiles[index], 4 + index);
+                await importFile(realFrame, 'local', formatFiles[index], 5 + index);
                 assert(
-                    realDoc.getElementById('preview-total').textContent === `${3 + index} activities`,
+                    realDoc.getElementById('preview-total').textContent === `${4 + index} activities`,
                     `${formatGates[index]}_REGISTRY_STORAGE_PREVIEW`
                 );
                 assert(
@@ -344,8 +378,8 @@
             }
 
             realDoc.getElementById('dialog-close').click();
-            await importFile(realFrame, 'local', formatFiles[0], 7);
-            assert(realDoc.getElementById('preview-total').textContent === '5 activities', 'FIT_EXACT_DUPLICATE');
+            await importFile(realFrame, 'local', formatFiles[0], 8);
+            assert(realDoc.getElementById('preview-total').textContent === '6 activities', 'FIT_EXACT_DUPLICATE');
 
             realDoc.getElementById('dialog-close').click();
             const corruptFit = new File(
@@ -353,8 +387,8 @@
                 'private-corrupt.fit',
                 { type: 'application/vnd.ant.fit' }
             );
-            await importFile(realFrame, 'local', corruptFit, 8);
-            assert(realDoc.getElementById('preview-total').textContent === '5 activities', 'MALFORMED_FIT_NO_WRITE');
+            await importFile(realFrame, 'local', corruptFit, 9);
+            assert(realDoc.getElementById('preview-total').textContent === '6 activities', 'MALFORMED_FIT_NO_WRITE');
             assert(!realDoc.body.textContent.includes(corruptFit.name), 'MALFORMED_FIT_FILENAME_REDACTED');
 
             const invalidDoc = await choose(realFrame, 'archive', new File(['not zip'], 'invalid.zip'));
@@ -377,11 +411,11 @@
             realFrame.contentWindow.location.reload();
             await new Promise(resolve => { realFrame.onload = resolve; });
             await waitFor(
-                () => realFrame.contentDocument.getElementById('preview-total').textContent === '5 activities',
+                () => realFrame.contentDocument.getElementById('preview-total').textContent === '6 activities',
                 'RELOAD_PREVIEW_TIMEOUT',
                 30_000
             );
-            assert(realFrame.contentDocument.querySelectorAll('.report-card').length >= 9, 'RELOAD_IMPORT_LOG');
+            assert(realFrame.contentDocument.querySelectorAll('.report-card').length >= 10, 'RELOAD_IMPORT_LOG');
             assert(
                 Array.from(realFrame.contentDocument.querySelectorAll('.report-card')).every(
                     card => card.querySelectorAll('.report-item').length <= 100
@@ -396,15 +430,18 @@
             assert(demoDoc.getElementById('preview-total').textContent === '0 activities', 'DEMO_REAL_ISOLATION');
             assert(demoDoc.querySelector('[data-open-import="local"]').disabled, 'DEMO_IMPORT_DISABLED');
             assert(demoDoc.querySelector('[data-source-card="demo"]').dataset.status === 'available', 'DEMO_AVAILABLE_STATE');
+            assert(demoDoc.getElementById('duplicate-review-state').textContent.includes('unavailable in Demo mode'), 'DEMO_REVIEW_DISABLED');
             collectResources(demoFrame);
 
             const v2 = await v2Snapshot();
             const sentinelAfter = await sentinelSnapshot();
             assert(sentinelBefore === sentinelAfter, 'LEGACY_SENTINEL_UNCHANGED');
-            assert(v2.version === 2, 'V2_VERSION_2');
-            assert(v2.stores.length === 11, 'V2_ELEVEN_STORES');
-            assert(Object.values(v2.indexes).reduce((sum, list) => sum + list.length, 0) === 9, 'V2_NINE_INDEXES');
-            assert(v2.counts.activities === 5, 'CANONICAL_ACTIVITY_COUNT');
+            assert(v2.version === 4, 'V2_VERSION_4');
+            assert(v2.stores.length === 13, 'V2_THIRTEEN_STORES');
+            assert(Object.values(v2.indexes).reduce((sum, list) => sum + list.length, 0) === 13, 'V2_THIRTEEN_INDEXES');
+            assert(v2.counts.activities === 6, 'CANONICAL_ACTIVITY_COUNT');
+            assert(v2.counts.mergeCandidates >= 1, 'CANDIDATE_AUDIT_RETAINED');
+            assert(v2.counts.mergeDecisions >= 1, 'DECISION_AUDIT_RETAINED');
 
             const registrations = await navigator.serviceWorker.getRegistrations();
             const cacheNames = await caches.keys();

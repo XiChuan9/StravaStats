@@ -24,13 +24,18 @@ test('ImportJob follows the frozen PRD state machine and fails closed', () => {
     );
 });
 
-test('ImportItem permits item isolation, duplicate, cancellation, and retry', () => {
+test('ImportItem permits review, isolation, duplicate, cancellation, and retry', () => {
+    assert.equal(assertImportItemTransition(I.PERSISTING, I.REVIEW_REQUIRED), true);
     assert.equal(assertImportItemTransition(I.HASHING, I.SKIPPED_EXACT_DUPLICATE), true);
     assert.equal(assertImportItemTransition(I.DECODING, I.FAILED_DECODE), true);
     assert.equal(assertImportItemTransition(I.FAILED_STORAGE, I.RETRYING), true);
     assert.equal(assertImportItemTransition(I.MATCHING, I.CANCELLED), true);
     assert.throws(
         () => assertImportItemTransition(I.COMPLETED, I.CANCELLED),
+        error => error.code === IMPORT_ERROR_CODE.INVALID_TRANSITION
+    );
+    assert.throws(
+        () => assertImportItemTransition(I.REVIEW_REQUIRED, I.RETRYING),
         error => error.code === IMPORT_ERROR_CODE.INVALID_TRANSITION
     );
 });

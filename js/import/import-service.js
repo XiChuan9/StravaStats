@@ -147,6 +147,15 @@ function ownErrorValue(error, field) {
 }
 
 function mapStorageError(error, allowIdentityConflict = false) {
+    if (
+        ownErrorValue(error, 'code')
+        === STORAGE_ERROR_CODE.CANDIDATE_LIMIT_EXCEEDED
+    ) {
+        return Object.freeze({
+            code: STORAGE_ERROR_CODE.CANDIDATE_LIMIT_EXCEEDED,
+            retryable: false
+        });
+    }
     if (ownErrorValue(error, 'code') === STORAGE_ERROR_CODE.QUOTA_EXCEEDED) {
         return importError(IMPORT_ERROR_CODE.STORAGE_QUOTA_EXCEEDED, true, 'persist');
     }
@@ -185,16 +194,19 @@ function publicReport(job, items) {
     for (const item of items) {
         outcomes.set(item.status, (outcomes.get(item.status) || 0) + 1);
     }
+    const reviewRequired = outcomes.get(I.REVIEW_REQUIRED) || 0;
+    const totals = {
+        total: job.totalItems,
+        completed: outcomes.get(I.COMPLETED) || 0,
+        skippedExactDuplicate: outcomes.get(I.SKIPPED_EXACT_DUPLICATE) || 0,
+        failed: items.filter(item => item.status.startsWith('failed_')).length,
+        cancelled: outcomes.get(I.CANCELLED) || 0
+    };
+    if (reviewRequired > 0) totals.reviewRequired = reviewRequired;
     return Object.freeze({
         schemaVersion: 1,
         status: job.status,
-        totals: Object.freeze({
-            total: job.totalItems,
-            completed: outcomes.get(I.COMPLETED) || 0,
-            skippedExactDuplicate: outcomes.get(I.SKIPPED_EXACT_DUPLICATE) || 0,
-            failed: items.filter(item => item.status.startsWith('failed_')).length,
-            cancelled: outcomes.get(I.CANCELLED) || 0
-        }),
+        totals: Object.freeze(totals),
         items: Object.freeze(items.map(item => Object.freeze({
             ordinal: item.ordinal,
             outcome: item.status,
@@ -469,6 +481,7 @@ export function createImportService(options) {
         jobStatus = J.ANALYZING;
         const hasWarnings = items.some(item => (
             item.status !== I.COMPLETED
+            && item.status !== I.REVIEW_REQUIRED
             && item.status !== I.SKIPPED_EXACT_DUPLICATE
         )) || [...bundles.values()].some(bundle => bundle.warnings.length > 0);
         await transitionJob(

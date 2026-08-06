@@ -107,6 +107,18 @@
             </ul>
         </section>
 
+        <section id="duplicate-review" class="duplicate-review-section" aria-labelledby="duplicate-review-title">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Review only</p>
+                    <h2 id="duplicate-review-title">Possible duplicates</h2>
+                </div>
+                <p id="duplicate-review-state" class="duplicate-review-state" role="status">Loading review queue.</p>
+            </div>
+            <p>Similarity never merges activities automatically. A confirmation records identity intent only; both activities and every source remain in the library.</p>
+            <div id="duplicate-review-list" class="duplicate-review-list"></div>
+        </section>
+
         <section class="report-section" aria-labelledby="reports-title">
             <div class="section-heading">
                 <div>
@@ -174,6 +186,25 @@
                 <button type="button" id="start-import" class="button button--primary" disabled>Start import</button>
             </footer>
         </form>
+    </dialog>
+
+    <dialog id="duplicate-review-dialog" class="duplicate-review-dialog" aria-labelledby="duplicate-review-dialog-title" aria-describedby="duplicate-review-dialog-description">
+        <div class="dialog-shell">
+            <header class="dialog-header">
+                <div>
+                    <p class="eyebrow">Possible duplicate</p>
+                    <h2 id="duplicate-review-dialog-title" tabindex="-1">Compare activities</h2>
+                </div>
+                <span id="duplicate-review-confidence" class="status-badge">Possible similarity</span>
+            </header>
+            <p id="duplicate-review-dialog-description">Confirming records that these are the same activity. It does not merge, hide, replace, or delete either activity.</p>
+            <div id="duplicate-review-comparison" class="duplicate-review-comparison"></div>
+            <footer class="dialog-actions duplicate-review-actions">
+                <button type="button" id="duplicate-review-later" class="button">Later</button>
+                <button type="button" id="duplicate-review-separate" class="button">Keep separate</button>
+                <button type="button" id="duplicate-review-confirm" class="button button--primary">Confirm same activity</button>
+            </footer>
+        </div>
     </dialog>
 
     <script type="module" src="/js/source-manager.js"></script>
