@@ -31,7 +31,7 @@ const APPROVED_PATHS = Object.freeze([
     'source-manager.html',
     'styles/source-manager.css',
     'tests/storage/indexeddb-v2-schema.test.js',
-    'tests/storage/indexeddb-v2-boundaries.test.js',
+    'tests/import/strava-zip.test.js',
     'tests/storage/indexeddb-v2-browser-smoke.html',
     'tests/storage/backup-manifest.test.js',
     'tests/storage/duplicate-review.test.js',

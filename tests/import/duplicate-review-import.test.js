@@ -151,7 +151,7 @@ test('exact provider identity keeps PR-19 precedence and creates no fuzzy candid
     const report = await service.waitForJob(second.jobId);
 
     assert.equal(report.totals.completed, 1);
-    assert.equal(report.totals.reviewRequired, undefined);
+    assert.equal(report.totals.reviewRequired, 0);
     assert.equal((await service.previewActivities()).total, 1);
     assert.deepEqual(await importStore.listDuplicateReviewCandidates(), []);
     await service.close();
@@ -177,7 +177,7 @@ test('cross-sport and missing comparison values remain ordinary completed import
         await service.waitForJob(left.jobId);
         const right = await service.importArtifacts([artifact(secondValue)]);
         const report = await service.waitForJob(right.jobId);
-        assert.equal(report.totals.reviewRequired, undefined, variant);
+        assert.equal(report.totals.reviewRequired, 0, variant);
         assert.deepEqual(await importStore.listDuplicateReviewCandidates(), [], variant);
         await service.close();
     }

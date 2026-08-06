@@ -198,11 +198,11 @@ function publicReport(job, items) {
     const totals = {
         total: job.totalItems,
         completed: outcomes.get(I.COMPLETED) || 0,
+        reviewRequired,
         skippedExactDuplicate: outcomes.get(I.SKIPPED_EXACT_DUPLICATE) || 0,
         failed: items.filter(item => item.status.startsWith('failed_')).length,
         cancelled: outcomes.get(I.CANCELLED) || 0
     };
-    if (reviewRequired > 0) totals.reviewRequired = reviewRequired;
     return Object.freeze({
         schemaVersion: 1,
         status: job.status,

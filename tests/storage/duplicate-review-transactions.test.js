@@ -115,6 +115,10 @@ test('confirm and reject decisions are atomic, idempotent, and never coalesce ac
     const reviewed = await importStore.getDuplicateReviewCandidate(candidate.id);
     assert.equal(reviewed.status, 'confirmed_same');
     assert.equal(reviewed.activities.length, 2);
+    assert.ok(reviewed.activities.every(activity => (
+        activity.devicePresent === false
+        && activity.deviceLabel === 'No device details'
+    )));
     assert.doesNotMatch(JSON.stringify(reviewed.activities), /opaque-left|opaque-right/);
     await service.close();
 });
@@ -232,6 +236,91 @@ test('concurrent same and opposing decisions serialize to one append-only result
     );
     assert.equal((await opposing.service.previewActivities()).total, 2);
     await opposing.service.close();
+});
+
+test('candidate comparison maps source families and redacts every device model', async () => {
+    const { importStore, service } = createHarness();
+    await service.initialize();
+    const left = bundle('labels-left');
+    left.sources = [
+        {
+            ...left.sources[0],
+            id: 'labels-source-strava',
+            provider: 'strava',
+            deviceId: 'labels-device-one'
+        },
+        {
+            ...left.sources[0],
+            id: 'labels-source-gpx',
+            provider: 'gpx',
+            deviceId: 'labels-device-two'
+        },
+        {
+            ...left.sources[0],
+            id: 'labels-source-private',
+            provider: 'private-provider-value',
+            deviceId: null
+        }
+    ];
+    left.devices = [
+        {
+            id: 'labels-device-one',
+            manufacturer: 'private-manufacturer-one',
+            model: 'private-model-one'
+        },
+        {
+            id: 'labels-device-two',
+            manufacturer: 'private-manufacturer-two',
+            model: 'private-model-two'
+        }
+    ];
+    const right = bundle('labels-right', 10);
+    right.sources = [
+        {
+            ...right.sources[0],
+            id: 'labels-source-fit-one',
+            provider: 'fit',
+            deviceId: 'labels-device-three'
+        },
+        {
+            ...right.sources[0],
+            id: 'labels-source-tcx',
+            provider: 'tcx',
+            deviceId: null
+        },
+        {
+            ...right.sources[0],
+            id: 'labels-source-fit-two',
+            provider: 'fit',
+            deviceId: null
+        }
+    ];
+    right.devices = [{
+        id: 'labels-device-three',
+        manufacturer: null,
+        model: 'private-model-three'
+    }];
+    await importBundle(service, left);
+    await importBundle(service, right);
+    const [candidate] = await importStore.listDuplicateReviewCandidates();
+    const detail = await importStore.getDuplicateReviewCandidate(candidate.id);
+
+    assert.equal(detail.activities[0].sourceCount, 3);
+    assert.equal(
+        detail.activities[0].sourceLabel,
+        'GPX file, Local import, Strava · 3 sources'
+    );
+    assert.equal(detail.activities[0].devicePresent, true);
+    assert.equal(detail.activities[0].deviceLabel, '2 recorded devices');
+    assert.equal(detail.activities[1].sourceCount, 3);
+    assert.equal(detail.activities[1].sourceLabel, 'FIT file, TCX file · 3 sources');
+    assert.equal(detail.activities[1].devicePresent, true);
+    assert.equal(detail.activities[1].deviceLabel, 'Recorded device');
+    assert.doesNotMatch(
+        JSON.stringify(detail),
+        /private-provider|private-manufacturer|private-model|labels-device/
+    );
+    await service.close();
 });
 
 test('21st qualifying candidate aborts activity and every partial candidate atomically', async () => {

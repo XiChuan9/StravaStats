@@ -155,6 +155,11 @@ The decision owner then approved the only missing percentage formula verbatim:
 
 > 批准 M17 A3 百分比公式：距离和 moving duration 均采用对称 max-denominator；双零为 0%，正数与零为 100%，负数/缺失/null/非有限值不参与候选，阈值边界含等号。
 
+Independent review exposed two contract collisions. The decision owner approved the A3.1
+clarification verbatim:
+
+> 批准 M17 A3.1：采用 R-A，Import report 始终包含 reviewRequired（含 0），在 29 路径内以 tests/import/strava-zip.test.js 替换未使用的 indexeddb-v2-boundaries.test.js；采用 U-A，使用固定 provider-family 标签及脱敏设备数量标签，不暴露原始 provider/model。
+
 No implementation inference may expand those approvals. The frozen contract is:
 
 ### Review-only product and lifecycle contract
@@ -227,9 +232,10 @@ No implementation inference may expand those approvals. The frozen contract is:
   and decision append share one explicit readwrite transaction.
 - ImportItem gains terminal `review_required`. An unmatched import with one or more new or existing
   review candidates commits normally but ends `review_required`; it remains a completed item for
-  ImportJob progress. ImportService public report schema remains version 1 and adds only
-  `totals.reviewRequired` plus item outcome `review_required`; it never exposes candidate or
-  activity IDs. `CANDIDATE_LIMIT_EXCEEDED` maps to the existing safe storage-failure path.
+  ImportJob progress. ImportService public report schema remains version 1 and always includes
+  `totals.reviewRequired`, including zero, plus item outcome `review_required`; it never exposes
+  candidate or activity IDs. `CANDIDATE_LIMIT_EXCEEDED` maps to the existing safe storage-failure
+  path.
 - ImportStore's returned runtime object may add bounded `listDuplicateReviewCandidates`,
   `getDuplicateReviewCandidate`, and `decideDuplicateReviewCandidate` methods for the composition
   root. The top-level Storage ES export names, five Repository exports, seven Repository methods,
@@ -237,7 +243,10 @@ No implementation inference may expand those approvals. The frozen contract is:
 - Duplicate Review is embedded in Source Manager; no new route is added. Real mode lists a bounded
   review queue and loads approved comparison details on demand. It shows start, sport, distance,
   moving duration, capability availability, provider-safe source labels/count, device-present and
-  safe model label, and lap count. It omits route summary/geometry and numeric heart-rate/power
+  a redacted device-count label, and lap count. Provider-family labels are exactly `Strava`, `FIT
+  file`, `TCX file`, `GPX file`, or `Local import`, deduplicated and code-unit sorted. Device labels
+  are exactly `No device details`, `Recorded device`, or `N recorded devices`. Raw provider and
+  model strings are never exposed. It omits route summary/geometry and numeric heart-rate/power
   coverage. DOM and accessible messages never expose IDs, hashes, filenames, routes, payloads,
   internal causes, or credentials.
 - Demo mode exposes the section only as disabled/unavailable presentation and performs zero Real
@@ -266,7 +275,7 @@ js/pages/source-manager/source-manager.js
 source-manager.html
 styles/source-manager.css
 tests/storage/indexeddb-v2-schema.test.js
-tests/storage/indexeddb-v2-boundaries.test.js
+tests/import/strava-zip.test.js
 tests/storage/indexeddb-v2-browser-smoke.html
 tests/storage/backup-manifest.test.js
 tests/storage/duplicate-review.test.js

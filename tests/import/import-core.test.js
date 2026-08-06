@@ -90,6 +90,7 @@ test('activities.csv expands rows into durable ImportItems and summary-only prev
     assert.deepEqual(report.totals, {
         total: 2,
         completed: 2,
+        reviewRequired: 0,
         skippedExactDuplicate: 0,
         failed: 0,
         cancelled: 0
@@ -300,6 +301,7 @@ test('Synthetic JSON persists job, item, raw artifact, Canonical graph, report a
     assert.deepEqual(report.totals, {
         total: 1,
         completed: 1,
+        reviewRequired: 0,
         skippedExactDuplicate: 0,
         failed: 0,
         cancelled: 0

@@ -162,6 +162,28 @@ const IMPORT_TRANSACTION_STORES = Object.freeze([
     V2_STORE_NAME.MERGE_CANDIDATES,
     V2_STORE_NAME.MERGE_DECISIONS
 ]);
+const COMPARISON_SOURCE_FIELDS = Object.freeze([
+    'id',
+    'activityId',
+    'provider',
+    'externalId',
+    'rawArtifactId',
+    'acquisitionMethod',
+    'deviceId',
+    'importedAt'
+]);
+const COMPARISON_SOURCE_REQUIRED_FIELDS = Object.freeze([
+    'id',
+    'activityId',
+    'provider',
+    'acquisitionMethod',
+    'importedAt'
+]);
+const COMPARISON_DEVICE_FIELDS = Object.freeze([
+    'id',
+    'manufacturer',
+    'model'
+]);
 
 function sameArray(left, right) {
     return left.length === right.length
@@ -561,10 +583,117 @@ function ownValue(value, field) {
     }
 }
 
-function safeComparisonActivity(envelope, sourceCount, lapCount) {
+function codeUnitCompare(left, right) {
+    if (left === right) return 0;
+    return left < right ? -1 : 1;
+}
+
+function denseOpaqueIds(value) {
+    try {
+        if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) {
+            return null;
+        }
+        const keys = Reflect.ownKeys(value);
+        if (
+            keys.some(key => typeof key !== 'string')
+            || keys.some(key => key !== 'length' && !/^(0|[1-9]\d*)$/.test(key))
+            || keys.length !== value.length + 1
+        ) return null;
+        const ids = [];
+        for (let index = 0; index < value.length; index += 1) {
+            const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+            if (
+                !descriptor?.enumerable
+                || !Object.hasOwn(descriptor, 'value')
+                || !opaqueString(descriptor.value)
+            ) return null;
+            ids.push(descriptor.value);
+        }
+        if (
+            new Set(ids).size !== ids.length
+            || !sameArray(ids, ids.slice().sort(codeUnitCompare))
+        ) return null;
+        return ids;
+    } catch {
+        return null;
+    }
+}
+
+function providerFamilyLabel(provider) {
+    if (provider === 'strava') return 'Strava';
+    if (provider === 'fit') return 'FIT file';
+    if (provider === 'tcx') return 'TCX file';
+    if (provider === 'gpx') return 'GPX file';
+    return 'Local import';
+}
+
+function comparisonSource(value, activityId, deviceIds) {
+    const source = ownDataValues(value, COMPARISON_SOURCE_FIELDS, true);
+    if (
+        !source
+        || COMPARISON_SOURCE_REQUIRED_FIELDS.some(field => (
+            !Object.hasOwn(source, field)
+        ))
+        || !opaqueString(source.id)
+        || source.activityId !== activityId
+        || !opaqueString(source.provider)
+        || !opaqueString(source.acquisitionMethod)
+        || !strictUtc(source.importedAt)
+    ) return null;
+    for (const field of ['externalId', 'rawArtifactId', 'deviceId']) {
+        if (
+            Object.hasOwn(source, field)
+            && source[field] !== null
+            && !opaqueString(source[field])
+        ) return null;
+    }
+    if (
+        typeof source.deviceId === 'string'
+        && !deviceIds.includes(source.deviceId)
+    ) return null;
+    return {
+        id: source.id,
+        providerLabel: providerFamilyLabel(source.provider)
+    };
+}
+
+function validComparisonDevice(value, expectedId) {
+    const device = ownDataValues(value, COMPARISON_DEVICE_FIELDS, true);
+    if (!device || device.id !== expectedId || !opaqueString(device.id)) return false;
+    return ['manufacturer', 'model'].every(field => (
+        !Object.hasOwn(device, field)
+        || device[field] === null
+        || typeof device[field] === 'string'
+    ));
+}
+
+function safeComparisonActivity(envelope, sources, devices, laps) {
     const activity = ownValue(envelope, 'activity');
-    const deviceIds = ownValue(envelope, 'deviceIds');
+    const deviceIds = denseOpaqueIds(ownValue(envelope, 'deviceIds'));
     const capabilities = ownValue(activity, 'capabilities');
+    if (
+        deviceIds === null
+        || !Array.isArray(sources)
+        || sources.length === 0
+        || !Array.isArray(devices)
+        || devices.length !== deviceIds.length
+        || !Array.isArray(laps)
+    ) return null;
+    const safeSources = sources.map(source => (
+        comparisonSource(source, ownValue(activity, 'id'), deviceIds)
+    ));
+    if (
+        safeSources.some(source => source === null)
+        || new Set(safeSources.map(source => source.id)).size !== safeSources.length
+        || devices.some((device, index) => (
+            !validComparisonDevice(device, deviceIds[index])
+        ))
+    ) return null;
+    const sourceLabels = [...new Set(safeSources.map(source => (
+        source.providerLabel
+    )))].sort(codeUnitCompare);
+    const sourceCount = safeSources.length;
+    const lapCount = laps.length;
     const projection = {
         startTimeUtc: ownValue(activity, 'startTimeUtc'),
         sportCategory: ownValue(activity, 'sportCategory'),
@@ -578,10 +707,15 @@ function safeComparisonActivity(envelope, sourceCount, lapCount) {
             hasLaps: ownValue(capabilities, 'hasLaps')
         },
         sourceCount,
-        sourceLabel: sourceCount === 1 ? '1 local source' : `${sourceCount} local sources`,
-        devicePresent: Array.isArray(deviceIds) && deviceIds.length > 0,
-        deviceLabel: Array.isArray(deviceIds) && deviceIds.length > 0
-            ? 'Recorded device' : 'No device details',
+        sourceLabel: `${sourceLabels.join(', ')} · ${sourceCount} ${
+            sourceCount === 1 ? 'source' : 'sources'
+        }`,
+        devicePresent: deviceIds.length > 0,
+        deviceLabel: deviceIds.length === 0
+            ? 'No device details'
+            : deviceIds.length === 1
+                ? 'Recorded device'
+                : `${deviceIds.length} recorded devices`,
         lapCount
     };
     if (
@@ -596,12 +730,9 @@ function safeComparisonActivity(envelope, sourceCount, lapCount) {
         || !Object.values(projection.capabilities).every(value => (
             typeof value === 'boolean'
         ))
-        || !Number.isSafeInteger(sourceCount)
-        || sourceCount < 0
-        || !Number.isSafeInteger(lapCount)
-        || lapCount < 0
-        || !Array.isArray(deviceIds)
-        || deviceIds.some(id => !opaqueString(id))
+        || laps.some(lap => (
+            ownValue(lap, 'activityId') !== ownValue(activity, 'id')
+        ))
     ) {
         return null;
     }
@@ -1413,6 +1544,7 @@ export function createImportStore(options) {
                 V2_STORE_NAME.MERGE_CANDIDATES,
                 V2_STORE_NAME.ACTIVITIES,
                 V2_STORE_NAME.ACTIVITY_SOURCES,
+                V2_STORE_NAME.DEVICES,
                 V2_STORE_NAME.LAPS
             ],
             mode: 'readonly',
@@ -1425,7 +1557,9 @@ export function createImportStore(options) {
             let candidate;
             let activityTokens;
             let sourceTokens;
+            let deviceTokens;
             let lapTokens;
+            let comparisonRows;
             let result;
             context.afterReads(() => {
                 candidate = candidateToken.read();
@@ -1466,21 +1600,31 @@ export function createImportStore(options) {
             });
             context.afterReads(() => {
                 const ids = [candidate.activityAId, candidate.activityBId];
-                const activities = ids.map((id, index) => {
+                comparisonRows = ids.map((id, index) => {
                     const envelope = activityTokens[index].read();
                     const sources = sourceTokens[index].read();
                     const laps = lapTokens[index].read();
-                    if (
-                        envelope === undefined
-                        || sources.some(source => ownValue(source, 'activityId') !== id)
-                        || laps.some(lap => ownValue(lap, 'activityId') !== id)
-                    ) {
+                    const deviceIds = envelope === undefined
+                        ? null
+                        : denseOpaqueIds(ownValue(envelope, 'deviceIds'));
+                    if (deviceIds === null) throw schemaMismatch(operation);
+                    return { envelope, sources, laps, deviceIds };
+                });
+                deviceTokens = comparisonRows.map(row => row.deviceIds.map(id => (
+                    context.get(V2_STORE_NAME.DEVICES, id)
+                )));
+            });
+            context.afterReads(() => {
+                const activities = comparisonRows.map((row, index) => {
+                    const devices = deviceTokens[index].map(token => token.read());
+                    if (devices.some(device => device === undefined)) {
                         throw schemaMismatch(operation);
                     }
                     const projection = safeComparisonActivity(
-                        envelope,
-                        sources.length,
-                        laps.length
+                        row.envelope,
+                        row.sources,
+                        devices,
+                        row.laps
                     );
                     if (projection === null) throw schemaMismatch(operation);
                     return projection;
