@@ -435,6 +435,104 @@ network, telemetry, logging, UI, export, or public error field.
 
 ## Closure
 
-Not started. This section is updated only after implementation, focused and full verification,
-findings-first independent review, repair, fresh re-review, exact-head CI, and control-tower Ready
-handoff. Ready is not merge authorization.
+### Delivered contract and scope
+
+Implementation commit `6ac1d3628e3491792ed8bb8ab1c337ed275a12bf` delivers the approved
+A3.1/A3.2/A3.3 scope on the exact 19-path allowlist. Physical IndexedDB schema v3 adds only the
+non-unique `activitySources.byProviderAndExternalId` compound index over `[provider, externalId]`.
+Frozen v1, v2, and v3 physical descriptors attribute each migration exactly; the additive v2->v3
+upgrade preserves every record and an aborted upgrade retains physical v2 for explicit retry.
+
+The internal resolver accepts only the approved exact identities: established ActivitySource
+primary identity, exact provider plus opaque string external identity, committed RawArtifact
+identity, and trusted FIT file/session identity with existing source proof. Missing, `null`,
+numeric zero, string zero, and case differences remain distinct under their frozen validators.
+Time, distance, duration, filename-like text, route-like data, sport, statistics, and device labels
+never select a Canonical activity. Multiple exact signals that reach different activities, or one
+identity already associated with multiple activities, fail closed instead of choosing a target.
+
+Exact linking runs inside the existing per-item readwrite transaction. It validates the complete
+persisted Canonical envelope and referenced source/device records before adding provenance,
+associates a new RawArtifact/source with the existing activity atomically, and does not replace
+the Canonical payload, streams, laps, events, or metadata. Replays remain idempotent. Any
+validation, collision, constraint, quota, or abort failure rolls back source/device association,
+RawArtifact transition, ImportItem, and ImportJob changes together.
+
+No public Storage export, Repository export, Canonical contract, Canonical store, ImportService,
+decoder, Service Worker, dependency, UI, provider lifecycle, disconnect/delete behavior, Legacy
+path, Demo path, or default mode changed. PR-20 review UI and field-level merge/unmerge remain out
+of scope. The A3.3 Shadow guard now checks the stable seven-member Storage and five-member
+Repository public surfaces semantically instead of freezing mutable whole-file hashes.
+
+### Findings-first review and repairs
+
+The first independent findings-first review identified four issues, each reproduced with a
+failure-first test before repair:
+
+1. committed RawArtifact replay bypassed the unified candidate set and target validation;
+2. the generic IndexedDB browser harness still asserted physical-v2 success behavior;
+3. a generated source key could collide with another incoming source and surface as a late
+   constraint failure rather than a redacted exact conflict;
+4. an idempotently existing source skipped validation of its referenced device.
+
+The repairs unified committed-raw candidates, validated the target before writes, moved the
+generic harness to v3 with a non-destructive unsupported-v4 probe, preflighted generated source
+keys, and validated device references even for accepted existing sources. A fresh independent
+review then found one additional P1: target validation accepted a shallow but malformed Canonical
+envelope. Failure-first committed-replay and pending-link tests reproduced it; the repair now
+requires the exact Canonical schema, a valid CanonicalActivity, matching activity and version
+metadata schemas, descriptor-safe envelope values, dense warnings, and sorted unique opaque
+device IDs before any finalize/add/put operation.
+
+Fresh re-review verified all five findings closed and returned **no findings**. A final narrow
+review of the 10k/1k performance fixture and complete 19-path diff also returned **no findings**;
+it confirmed that the reduced seed shape still populates the real primary and compound indexes
+and does not weaken the recorded full-record decision benchmark.
+
+### Verification evidence
+
+- Baseline at the exact integration base: `npm ci`; syntax 205 files; privacy pass; full tests
+  1337/1337; diff check pass.
+- Final implementation worktree: `npm ci`; focused exact/migration/import/boundary/Shadow tests
+  79/79; syntax 211 files; privacy pass; full `npm test` 1363/1363; diff check pass; exact 19-path
+  gate; clean worktree and index (0/0).
+- Two earlier parallel full-suite attempts each exposed a different pre-existing Legacy timing
+  fluctuation. Both named cases passed in isolation; the subsequent implementation-worktree and
+  depth-1 full runs each passed 1363/1363.
+- Performance gate: 10,000 actual IndexedDB source records and 1,000 exact lookups issued exactly
+  1,000 compound-index requests, zero full-store scans, and materialized 500 bounded matches under
+  the five-second limit.
+- Deterministic synthetic same-origin browser evidence exercised the real ImportStore transaction:
+  physical-v2 seed upgraded to v3 with index backfill; the index remained non-unique and omitted
+  absent/null keys; exact provider identity linked provenance to one existing Canonical activity;
+  Canonical payload remained unchanged; fuzzy-only input remained separate; RawArtifact
+  association was atomic; the Legacy sentinel was unchanged. Network, authentication, console,
+  page-error, Service Worker, and cache counters were all zero.
+- The generic IndexedDB browser harness passed 19/19 on a fresh isolated origin with physical v3,
+  11 stores, nine indexes, reload and manifest checks, a rejected unsupported-v4 attempt that left
+  v3 intact, and an unchanged Legacy sentinel. No real account, Token, activity, profile, route,
+  health data, or user browser was used.
+- A true depth-1 clone at the implementation head had history count 1 and passed `npm ci`, focused
+  79/79, syntax 211 files, privacy, full tests 1363/1363, diff check, and clean 0/0.
+- GitHub implementation-head CI run
+  `https://github.com/XiChuan9/StravaStats/actions/runs/31095536385` (job
+  `92596533643`) concluded **SUCCESS** at exact head
+  `6ac1d3628e3491792ed8bb8ab1c337ed275a12bf`; install, syntax, privacy, and tests all succeeded.
+
+### Migration, privacy, rollback, and release state
+
+Migration is additive, idempotent, recoverable, and preserves all v1/v2 data. No destructive
+downgrade exists. Old physical-v2 code may return `VERSION_UNSUPPORTED` after a successful v3
+upgrade; returning to v3-capable code restores access to the retained data. Feature-flag rollback
+continues to select Legacy reads without deleting V2 or Legacy data, and disconnect remains
+separate from local deletion.
+
+Privacy impact is limited to a local index over already-stored source provenance. No new data is
+collected or transmitted, and public errors, reports, browser evidence, UI, console, and logs do
+not expose raw identity, digest, filename, route, payload, platform cause, or credential values.
+
+Draft PR #25 remained OPEN, Draft, unmerged, based on `integration/v2`, and contained exactly the
+19 approved files at the implementation CI head. Closure-commit push, PR-body finalization,
+closure exact-head CI, Ready transition, merge, cleanup, deploy, release, and PR-20 start were
+**Not run** when this Closure was written. The control tower owns those GitHub operations. Ready
+will indicate review readiness only and is not merge authorization.
