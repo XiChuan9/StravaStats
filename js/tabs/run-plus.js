@@ -468,6 +468,15 @@ function writeJsonStorage(key, value) {
     localStorage.setItem(key, JSON.stringify(value));
 }
 
+function setNsmActivityRecord(records, activityId, value) {
+    Object.defineProperty(records, activityId, {
+        value,
+        enumerable: true,
+        configurable: true,
+        writable: true
+    });
+}
+
 function parseNsmNumber(value, min, max, fallback = null) {
     if (value === '' || value === null || value === undefined) return fallback;
     const number = Number(value);
@@ -814,13 +823,13 @@ function getCachedNsmIntervalAnalysis(activityId, run) {
 function saveNsmIntervalAnalysis(activityId, run, analysis) {
     if (!activityId || !analysis) return;
     const cache = readNsmIntervalAnalysisCache();
-    cache[activityId] = {
+    setNsmActivityRecord(cache, activityId, {
         ...analysis,
         activityId,
         analyzerVersion: NSM_INTERVAL_ANALYZER_VERSION,
         fingerprint: getNsmActivityFingerprint(run),
         generatedAt: new Date().toISOString()
-    };
+    });
     writeNsmIntervalAnalysisCache(cache);
 }
 
@@ -5238,11 +5247,11 @@ function collectNsmRegistryPayload(root) {
         if (tag === 'auto' && includeInNsm) {
             delete tags[activityId];
         } else {
-            tags[activityId] = normalizeNsmActivityTag({
+            setNsmActivityRecord(tags, activityId, normalizeNsmActivityTag({
                 tag: includeInNsm ? tag : 'excluded',
                 includeInNsm,
                 updatedAt: new Date().toISOString()
-            });
+            }));
         }
 
         const input = normalizeNsmSessionInput({
@@ -5256,7 +5265,7 @@ function collectNsmRegistryPayload(root) {
             nextDayScore: row.querySelector('[data-nsm-field="nextDayScore"]')?.value,
             notes: row.querySelector('[data-nsm-field="notes"]')?.value
         });
-        if (hasNsmSessionInput(input)) inputs[activityId] = input;
+        if (hasNsmSessionInput(input)) setNsmActivityRecord(inputs, activityId, input);
         else delete inputs[activityId];
     });
 

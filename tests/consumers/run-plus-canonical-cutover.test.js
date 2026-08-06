@@ -366,6 +366,25 @@ test('Run Plus cutover freezes the injected reads and user-owned persistence con
     }
 });
 
+test('the valid opaque ID __proto__ survives every NSM user-state write and JSON round-trip', () => {
+    const helper = runPlusSource.match(
+        /function setNsmActivityRecord\(records, activityId, value\) \{[\s\S]*?\n\}/
+    );
+    assert.ok(helper, 'NSM state needs an own-data-property-safe writer');
+    const setNsmActivityRecord = Function(
+        `"use strict";${helper[0]};return setNsmActivityRecord;`
+    )();
+    const records = {};
+    setNsmActivityRecord(records, '__proto__', { tag: 'subt_long' });
+    const roundTrip = JSON.parse(JSON.stringify(records));
+    assert.equal(Object.hasOwn(records, '__proto__'), true);
+    assert.equal(Object.hasOwn(roundTrip, '__proto__'), true);
+    assert.deepEqual(roundTrip.__proto__, { tag: 'subt_long' });
+    assert.match(runPlusSource, /setNsmActivityRecord\(tags, activityId,/);
+    assert.match(runPlusSource, /setNsmActivityRecord\(inputs, activityId,/);
+    assert.match(runPlusSource, /setNsmActivityRecord\(cache, activityId,/);
+});
+
 test('Task Brief freezes the literal seven-path scope without future-hostile hashes', () => {
     const match = taskBrief.match(
         /Implementation, tests, findings-first repairs, and Closure may modify exactly these seven paths[\s\S]*?```text\n([\s\S]*?)\n```/
@@ -403,6 +422,8 @@ test('served browser seed freezes synthetic actual-route evidence without claimi
     }
     assert.match(browserHarness, /indexedDB\.databases/);
     assert.match(browserHarness, /createCanonicalStore/);
+    assert.match(browserHarness, /result\.status === 'committed'/);
+    assert.doesNotMatch(browserHarness, /result\.status === 'stored'/);
     assert.match(browserHarness, /document\.body\.dataset\.status = 'seeded'/);
     assert.doesNotMatch(browserHarness, /dataset\.status = 'passed'|status:\s*'passed'/);
     assert.doesNotMatch(browserHarness, /https?:\/\//);

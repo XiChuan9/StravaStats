@@ -295,7 +295,7 @@
             await store.initialize();
             for (const value of [fullBundle, missingBundle, zeroBundle, olderBundle]) {
                 const result = await store.putBundle(value);
-                assert(result.status === 'stored', 'CANONICAL_BUNDLE_STORED');
+                assert(result.status === 'committed', 'CANONICAL_BUNDLE_COMMITTED');
                 observations.seededBundles += 1;
             }
             await store.close();
