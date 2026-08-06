@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 M18 / PR-21 |
-| Status | A1 Task Brief; A2 investigation pending |
+| Status | A3 frozen; implementation and verification in progress |
 | Branch | `codex/v2/backup-restore` |
 | Base | `integration/v2` at `7c22c85bda85667921db6b0768c9b2f895b00991` |
 | Draft PR title | `feat(v2): add full backup and restore` |
@@ -116,32 +116,126 @@ Before production or test implementation changes, the evidence package must esta
 The evidence must prove what exists and what is absent. Proposed ADR language and historical
 discussion do not freeze an undecided contract.
 
-## Decisions required before implementation
+## A2 evidence and A3 material approval
 
-No value below is Accepted by this initial brief. Each material choice must be delegated to the
-control tower with authority citations, exact call-graph and storage evidence, A/B/C options,
-risks, reversibility, failure behavior, test consequences, and a recommendation. Production and
-test implementation remain untouched until A3 approval freezes:
+Read-only A2 proved that physical V4 has thirteen stores; the existing Backup Manifest is
+metadata/count-only; RawArtifact content is an exact string (including base64-backed binary media);
+durable settings are outside V4; overrides and analysis have no current physical stores; the
+existing Strava ZIP reader is import-only and whole-buffer; and the fixed database name has no
+activation, rename, or staging pointer. IndexedDB can atomically restore all V4 stores in one
+transaction but cannot rename a database, while WebCrypto SHA-256 is whole-buffer.
 
-- backup container, deterministic byte rules, path/framing rules, compression policy, entry order,
-  timestamps and metadata normalization, filename policy, hash algorithm and exact hashed bytes;
-- backup format/schema/application compatibility matrix, version negotiation, validation order,
-  maximum entries/sizes/ratios, reference-integrity checks, and safe public error taxonomy;
-- export memory model, streaming/chunking and backpressure, cancellation semantics, partial-file
-  handling, browser API fallback, and resumability or explicit non-resumability;
-- restore strategy: empty-target-only, staging database plus atomic activation, or direct batches;
-  exact database naming/activation model; current-nonempty protection; crash/quota/abort recovery;
-  staging retention/cleanup ownership; and whether activation needs any schema or public API change;
-- repeat-restore idempotency or explicit safe conflict result, restore concurrency, cancellation
-  boundaries, and any retry/resume contract;
-- exact representation and fidelity rules for every V4 store and record type, binary raw bytes,
-  missing/null/zero, opaque IDs, settings, feature flags, user-owned state, and unsupported or
-  absent PRD inventory categories;
-- Storage & Backup location, Source Manager relationship, download/file-picker UI, accessible copy,
-  progress/result presentation, and what the fresh-browser success path opens;
-- any new public API, schema/store/index/version, migration, database activation or rename seam,
-  dependency, algorithm, destructive/overwrite behavior, or path outside the later approved exact
-  literal allowlist.
+The material owner explicitly approved Option A through the control tower before implementation.
+The following contract is Accepted and frozen:
+
+- a dedicated deterministic stored ZIP32 profile with exactly seventeen regular entries in the
+  literal order below, fixed DOS epoch, UTF-8 names, no directory, symlink, comment, descriptor,
+  encryption, compression, nesting, or local extra fields, and one exact central-directory private
+  SHA-256 field per entry in addition to CRC32;
+- archive and individual entry hard limits are both exactly 268,435,456 bytes. Export, validation,
+  and restore are deliberately whole-buffer and non-resumable in PR-21, with cancellation checks
+  between bounded phases; an over-limit input fails closed;
+- collision-free lossless tagged JSONL, code-unit key sorting, IDB key order for records, exact raw
+  string bytes, and preservation of opaque strings, missing object keys, null, +0, -0, and special
+  own string keys. Accessors, Proxy traps, symbols, cycles, sparse arrays, custom prototypes, and
+  non-finite numbers fail closed;
+- backup format 1 accepts only the exact current physical V4 schema `strava-stats-v2@4` and
+  Canonical schema 1. Application version is informational; incompatible schemas cannot be forced;
+- restore accepts only an absent database or an exact empty V4 baseline. All V4 records are written
+  in one versionchange/readwrite transaction, with metadata/migrations replacing only an empty
+  baseline. No delete, clear, rename, database swap, or user-record overwrite exists;
+- an exact repeated restore returns `already_restored` with zero database writes. Any other
+  non-empty/different target returns `TARGET_NOT_EMPTY`;
+- approved durable settings are additive and idempotent. Conflicting existing values return
+  `TARGET_SETTINGS_CONFLICT` before database mutation. The database commits before missing settings;
+  a settings write failure returns `SETTINGS_PENDING`, and repeating the same backup resumes it;
+- a separate `js/backup` public surface exports exactly `BACKUP_ERROR_CODE`, `BackupError`, and
+  `createBackupService`; the service exposes exactly `exportLibrary`, `validateBackup`,
+  `restoreBackup`, and `close`;
+- a same-origin Storage & Backup page is linked from Sources. Demo performs zero Real I/O and keeps
+  backup/restore unavailable. No provider, auth, network telemetry, destructive action, storage
+  estimate, or default Repository switch is added.
+
+The fixed archive entries are:
+
+```text
+manifest.json
+activities.jsonl
+sources.jsonl
+streams/series.jsonl
+laps.jsonl
+events.jsonl
+devices.jsonl
+overrides.jsonl
+analysis/snapshots.jsonl
+settings.json
+raw/artifacts.jsonl
+system/metadata.jsonl
+system/migrations.jsonl
+imports/jobs.jsonl
+imports/items.jsonl
+review/candidates.jsonl
+review/decisions.jsonl
+```
+
+The manifest lists descriptors, counts, byte lengths, and SHA-256 over the exact uncompressed bytes
+of the other sixteen entries; the central-directory hashes protect all seventeen entries including
+the manifest. All thirteen V4 stores are exported. Overrides and analysis are mandatory zero-record
+entries. The durable settings allowlist is the ten established user-setting keys plus strict
+`gear-custom-*`; Tokens, credentials, provider state, Legacy activity caches, Demo data, API keys,
+routes, and transient UI state are excluded.
+
+Safe public error codes are limited to `INVALID_REQUEST`, `BACKUP_UNAVAILABLE`, `BACKUP_TOO_LARGE`,
+`BACKUP_CANCELLED`, `BACKUP_CONTAINER_INVALID`, `BACKUP_HASH_MISMATCH`,
+`BACKUP_SCHEMA_INCOMPATIBLE`, `BACKUP_DATA_INVALID`, `BACKUP_REFERENCE_INVALID`,
+`TARGET_NOT_EMPTY`, `TARGET_SETTINGS_CONFLICT`, `RESTORE_ABORTED`, `QUOTA_EXCEEDED`, and
+`SETTINGS_PENDING`. Status literals are `exported`, `validated`, `restored`, `already_restored`,
+`settings_pending`, and `closed`. Errors never carry raw cause, message, input, identifier, or path.
+
+The following topics remain outside the approval and require a new material decision:
+
+- a streamed, chunked, compressed, resumable, or partially retained archive profile;
+- forward/backward schema negotiation, conversion, or restore into any version other than exact V4;
+- staging databases, activation pointers, rename/swap, restore over a non-empty library, cleanup, or
+  any delete/clear/overwrite action;
+- settings overwrite/removal, broader settings or feature-flag capture, provider/account data,
+  Legacy cache import, or real overrides/analysis stores;
+- any new Repository, Canonical, Import, public Storage, or additional Backup API; schema, store,
+  index, version, migration, dependency, Service Worker, deploy/release, or seventeenth path.
+
+## Browser Gate evidence and approved baseline exception
+
+An actual served run used two fresh headless Chrome profiles with explicit temporary user-data
+directories and deterministic synthetic data only. The source profile began with zero databases,
+created only `strava-stats-v2`, produced and downloaded a 10,582-byte backup, and reported one
+activity. The second profile opened the production Storage & Backup page with the V2 database still
+absent (the page reported `Not created`), uploaded the actual downloaded file, created V4 only inside
+the restore transaction, restored successfully, and was inspected after commit:
+
+```text
+activities 1              activitySources 1
+streamSeries 0            laps 1
+events 0                  devices 0
+rawArtifacts 0            importJobs 0
+importItems 0             mergeCandidates 0
+mergeDecisions 0          metadata 1
+migrations 4
+```
+
+Both approved durable settings were present exactly. Repeating the same actual upload returned
+`already_restored`. The restored synthetic summary opened on `/`, `/activities`, `/calendar`, and
+`/run` in explicit Real Canonical mode with no blocking error. The source and target retained zero
+Cache Storage entries and zero Service Worker registrations; runtime exceptions, provider endpoint,
+OAuth, Token, and Authorization I/O were zero. Both browser processes, temporary profiles, and the
+temporary synthetic backup were removed after inspection.
+
+The honest run also observed pre-existing root-page third-party CDN/telemetry attempts and a generic
+404 console resource error. The material owner explicitly approved Browser Gate Option A: the fresh
+profile backup/restore/storage/Canonical-route evidence is accepted for PR-21, while those existing
+`index.html` external static/telemetry attempts and generic 404 remain recorded as out-of-scope
+observations. PR-21 does not claim fully offline or clean-console root navigation, does not treat the
+same-origin static Strava connector module load as provider endpoint I/O, and does not expand the
+sixteen-path maximum to change the root page, telemetry, or CDN dependencies.
 
 ## Non-negotiable verification and closure
 
@@ -163,12 +257,30 @@ test implementation remain untouched until A3 approval freezes:
 
 ## A3 literal cumulative allowlist
 
-Not frozen. A2 must perform a collision audit and propose the smallest exact literal path set.
-No production or test path is authorized by this initial Task Brief.
+The cumulative hard maximum is exactly sixteen paths. A seventeenth path pauses implementation:
+
+1. `docs/tasks/pr-21-backup-restore.md`
+2. `docs/migrations/indexeddb-v2.md`
+3. `docs/migrations/rollback-plan.md`
+4. `source-manager.html`
+5. `storage-backup.html`
+6. `js/storage-backup.js`
+7. `js/app/storage-backup.js`
+8. `js/pages/storage-backup/storage-backup.js`
+9. `js/backup/index.js`
+10. `js/backup/codec.js`
+11. `js/backup/backup-service.js`
+12. `tests/backup/codec.test.js`
+13. `tests/backup/backup-service.test.js`
+14. `tests/backup/backup-boundaries.test.js`
+15. `tests/backup/backup-browser-smoke.html`
+16. `tests/source-manager/source-manager-boundaries.test.js`
 
 ## Current authorization boundary
 
-Authorized now: this docs-only Task Brief, its commit and push, Draft PR creation, and read-only A2
-investigation. Not authorized now: implementation, test changes, schema/API/dependency changes,
-destructive restore, database deletion/overwrite, production Service Worker or deploy/release work,
-PR Ready, merge, branch/worktree/task cleanup, user data cleanup, or PR-22.
+Authorized now: implementation, tests, deterministic disposable-browser evidence, local/depth-1/CI
+gates, independent findings-first review, fresh re-review, Task-Brief-only Final Review Closure, and
+publication within the frozen contract and sixteen paths. Not authorized: any seventeenth path,
+schema/store/index/version/dependency/Repository/Import/public Storage API change, destructive
+restore, database deletion/clear/rename, Service Worker, deploy/release, PR Ready, merge,
+branch/worktree/task cleanup, user data cleanup, or PR-22.

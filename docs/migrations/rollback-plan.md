@@ -216,3 +216,19 @@ follow-up
 - 用户沟通负责人。
 
 个人项目中可以是同一人，但角色和确认动作仍需记录。
+
+## 9. PR-21 backup/restore rollback note
+
+PR-21 没有 schema、store、index、database version、Repository default、Service Worker 或
+deployment 变化。代码回滚使用普通 revert commit；已经成功写入的 V4 资料库和私人备份
+文件继续保留，不需要逆向 migration。
+
+本 PR 的恢复策略不是 staging/rename/swap。它只允许 absent 或 exact empty V4 target，并在
+单一 IndexedDB transaction 中提交全部 13 stores。失败、quota、取消和中断依赖 transaction
+abort 保留原目标；不同的 non-empty library 返回安全冲突，不提供 clear/delete/overwrite。
+同一备份重复执行幂等。数据库提交后若 durable settings 未全部添加，状态为
+`SETTINGS_PENDING`，应重复选择同一备份补齐；不得删除数据库或覆盖现有 setting 作为修复。
+
+Legacy `strava-dashboard-cache`、Legacy localStorage/cache、provider connection、Token、Cache
+Storage 和 Service Worker 不在备份/恢复边界内。切回 Legacy feature flag 仍是应用回滚路径，
+且不会删除已恢复的 V4 数据。

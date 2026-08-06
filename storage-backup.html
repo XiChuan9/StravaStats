@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#fc5200">
+    <meta
+        http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'"
+    >
+    <title>Storage &amp; Backup — StravaStats</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/styles/source-manager.css">
+</head>
+<body>
+    <main class="source-manager" aria-labelledby="backup-title">
+        <header class="page-header">
+            <a class="brand" href="/" aria-label="StravaStats home">StravaStats</a>
+            <div>
+                <p class="eyebrow">Private local library</p>
+                <h1 id="backup-title">Storage &amp; Backup</h1>
+                <p class="page-intro">Create or restore a private full-library backup. Files stay on this device.</p>
+            </div>
+        </header>
+
+        <section id="blocking-error" class="notice notice--error" role="alert" hidden>
+            <h2>Backup is unavailable</h2>
+            <p>The local library could not be opened safely.</p>
+            <code id="blocking-error-code">BACKUP_UNAVAILABLE</code>
+        </section>
+
+        <section class="library-section" aria-labelledby="storage-title">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Current browser</p>
+                    <h2 id="storage-title">Local storage</h2>
+                </div>
+                <p id="session-label" class="session-label">Checking local library</p>
+            </div>
+            <dl class="preview-list">
+                <div><dt>Physical database</dt><dd id="database-version">V4</dd></div>
+                <div><dt>Activities</dt><dd id="activity-count">—</dd></div>
+            </dl>
+        </section>
+
+        <section class="source-grid" aria-label="Backup actions">
+            <article class="source-card" aria-labelledby="create-title">
+                <div class="source-card__heading">
+                    <span class="source-icon" aria-hidden="true">BK</span>
+                    <span class="status-badge">Private file</span>
+                </div>
+                <h2 id="create-title">Create backup</h2>
+                <p>Exports all V4 records and approved durable settings into one integrity-checked file.</p>
+                <button type="button" id="create-backup" class="button button--primary">Create backup</button>
+                <p class="source-note">The current implementation is bounded to 256 MiB and uses whole-buffer processing.</p>
+            </article>
+
+            <article class="source-card" aria-labelledby="restore-title">
+                <div class="source-card__heading">
+                    <span class="source-icon" aria-hidden="true">RS</span>
+                    <span class="status-badge">Empty target only</span>
+                </div>
+                <h2 id="restore-title">Restore backup</h2>
+                <p>Validates the complete file before writing. A different non-empty library is never replaced.</p>
+                <label class="button" for="backup-file">Choose backup file</label>
+                <input id="backup-file" class="visually-hidden" type="file" accept=".stravastats-backup.zip,application/zip">
+                <button type="button" id="restore-backup" class="button button--primary" disabled>Validate and restore</button>
+                <p class="source-note">Legacy storage, provider connections, and browser caches are not changed.</p>
+            </article>
+        </section>
+
+        <section class="report-section" aria-labelledby="result-title">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Operation result</p>
+                    <h2 id="result-title">Status</h2>
+                </div>
+            </div>
+            <p id="operation-status" role="status" aria-live="polite">Ready.</p>
+            <p id="operation-detail"></p>
+            <p><a class="button" href="/">Open library</a> <a class="button" href="/source-manager.html?mode=real">Back to Sources</a></p>
+        </section>
+    </main>
+    <script type="module" src="/js/storage-backup.js"></script>
+</body>
+</html>
