@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 M15 / PR-18 |
-| Status | A3 frozen; Task Brief publication pending |
+| Status | Final Review Closure; Ready requires successful exact-head CI |
 | Branch | `codex/v2/cutover-run-plus-nsm` |
 | Base | `integration/v2` at `2d7176a3978a424d4ae8ff6bd2ee0f6c41579ad7` |
 | Draft PR title | `refactor(v2): cut over Run Plus and NSM to canonical data` |
@@ -345,4 +345,105 @@ pressure, crash durability, large-library performance, or migration unless that 
 
 ## Implementation ledger
 
-Pending after the Task Brief-only publication gate.
+### Commits and changed paths
+
+- `25a64bb2f0b93fe670bd2201328651c4430e09b2` — Task Brief-only A3 publication.
+- `d23d618ec721f47d9f75dcf5e6d7bc7f610dd4ec` — executable Store → Canonical
+  Repository → existing Run Plus facade regressions.
+- `3304a48f2358e1f69a98491f53947fa6652e96bb` — deterministic browser seed and
+  truthful served-navigation evidence gate.
+- `6a62be57e120754e9cadd3609e7bde977c618c6d` — failure-first opaque-key repair
+  plus correction of the browser seed's Canonical Store result assertion.
+
+The implementation head changed four of the seven allowed paths and no prohibited path:
+
+```text
+docs/tasks/pr-18-run-plus-nsm-cutover.md
+js/tabs/run-plus.js
+tests/consumers/run-plus-canonical-browser-smoke.html
+tests/consumers/run-plus-canonical-cutover.test.js
+```
+
+No `main.js` composition change was required. The merged PR-16 summary and PR-17 detail
+projections already satisfy the PR-04C injected facade. The only product repair makes activity-
+keyed NSM tags, session inputs, and interval cache writes define an own enumerable data property,
+so the valid opaque ID `__proto__` survives exact JSON/LocalStorage round-trip without changing
+key names, persisted shapes, algorithms, or public exports.
+
+### Browser evidence
+
+The in-app Browser was attempted first. Its persistent origin contained pre-existing state and
+lacked the required pre-navigation/CDP instrumentation, so the clean-origin seed failed closed;
+no prior browser data was read beyond redacted names/counts, changed, or cleared. The control
+tower obtained explicit approval for one bounded disposable Chrome/CDP equivalent.
+
+The approved disposable gate then passed on a fresh loopback origin and fresh temporary Chrome
+profile using only inline deterministic synthetic Canonical bundles and synthetic Demo/Legacy
+sentinels. CDP blocked every non-loopback request before navigation and observed Network,
+Fetch/XHR/WebSocket/EventSource, console/runtime, Local/Session Storage, IndexedDB, Cache Storage,
+and Service Workers. Results retained outside the repository contain only redacted counts, key
+names, and mode outcomes:
+
+- 36/36 browser assertions passed across explicit Canonical, Demo, Legacy, and Shadow.
+- Actual `/run-plus` and `/run-plus/nsm` routes rendered in all four applicable modes.
+- Canonical covered four bundles; settings and tags persistence; filter apply/reset; interval and
+  deep-HR analysis; Impact Load; TSS/CTL/ATL/TSB; missing GPS/HR/power; real zero; opaque ID
+  round-trip; and fixed safe failure degradation.
+- Canonical opened only `strava-stats-v2`; performed zero provider, Token/Auth, Legacy activity,
+  XHR, WebSocket, EventSource, or `/api/` I/O; and retained exactly the six user-owned keys.
+- Demo constructed no Real Repository database. Legacy and Shadow rendered the Legacy sentinel
+  and crossed the Legacy cache boundary with zero provider network.
+- Runtime exceptions: 0. Cache names: 0. Service Worker registrations: 0. Unsafe console values:
+  0. External UI/telemetry requests blocked before network: 56.
+- No screenshot, user profile, login, credential, provider response, real activity, private route,
+  GPS, heart-rate, or power history was used or retained.
+- Chrome and the server were stopped; the debug, application, and earlier test ports were verified
+  closed; the disposable profiles and external runner were removed. Only the redacted result JSON
+  remains at `/private/tmp/pr18-browser-gate-redacted.json`.
+
+### Review findings and repairs
+
+The first independent findings-first review identified two evidence gaps and one product defect:
+
+1. The committed seed and static Node test did not by themselves execute the served application.
+   The approved external CDP gate subsequently exercised the actual root routes and interactions.
+2. The injected regression did not execute all Run Plus/NSM UI behavior. The served route gate
+   supplied the missing independent UI, persistence, analysis, and I/O evidence.
+3. Ordinary-object assignment lost user-owned state for opaque ID `__proto__`. A focused
+   regression failed first, the own-data-property repair was applied to all three activity-keyed
+   stores, and the regression then passed.
+
+A fresh independent re-review at `6a62be57e120754e9cadd3609e7bde977c618c6d`
+reported no actionable findings. It independently passed focused Run Plus/Repository/Demo
+contract tests 70/70, feature-flag/Shadow tests 32/32, syntax for 205 files, privacy, full suite
+1,337/1,337, and `git diff --check`; confirmed four allowed paths and zero prohibited paths; and
+confirmed the seven-method/five-export Repository, default Legacy, Demo isolation, Shadow Legacy
+read/write behavior, no migration, and no provider/auth or destructive-storage regression.
+
+### Final local and CI evidence
+
+- `npm ci` — passed at the repaired implementation head.
+- `npm run check:syntax` — passed for 205 files.
+- `npm run check:privacy` — passed.
+- Focused Run Plus/NSM plus Repository/Storage/summary/detail/Legacy/Demo/Shadow suite — 374/374.
+- Full `npm test` — 1,337/1,337.
+- `git diff --check` — passed.
+- Literal cumulative allowlist/prohibited audit — four allowed paths, zero prohibited paths.
+- Fresh depth-1 clone at the pushed implementation head — `npm ci` and focused suite 348/348.
+- GitHub Actions CI run 145 at implementation head
+  `6a62be57e120754e9cadd3609e7bde977c618c6d` — completed successfully.
+- The Closure commit is Task Brief-only. Its exact-head CI must complete successfully before the
+  control tower moves Draft PR #24 to Ready for review.
+
+### Privacy, migration, rollback, and not-run statement
+
+Privacy remains synthetic and redacted. No schema, index, version, Store, Repository, import,
+provider/auth, dependency, Service Worker, deployment, release, identity, or data migration was
+added. All six existing user-owned LocalStorage key names and JSON shapes remain compatible.
+Default mode remains literal `legacy`; Demo remains isolated; Legacy and Shadow retain Legacy
+reads; both Local Libraries remain untouched and rollback does not require deletion or reverse
+copy.
+
+Not run and not claimed: real provider/auth, production Service Worker/deployment, production
+visual parity, Safari, Firefox, mobile, real quota pressure, crash durability, large-library
+performance, release, migration, merge, or PR-19 identity behavior.
