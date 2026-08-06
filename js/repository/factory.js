@@ -9,6 +9,8 @@ import {
     getCachedActivities,
     saveCachedActivities
 } from '../services/activity-cache.js';
+import { createCanonicalStore } from '../storage/index.js';
+import { CanonicalRepository } from './canonical/canonical-repository.js';
 import {
     REPOSITORY_ERROR_CODE,
     RepositoryError
@@ -30,6 +32,7 @@ const DEPENDENCY_KEYS = new Set([
     'activityCache',
     'metadataCacheFactory',
     'demoProvider',
+    'canonicalStoreFactory',
     'now',
     'cacheVersion',
     'activityMaxAgeMs',
@@ -57,6 +60,15 @@ function defaultConnectorFactory() {
 
 function defaultMetadataCacheFactory({ now, ttlMs }) {
     return new LegacyCacheAdapter({ now, ttlMs });
+}
+
+function defaultCanonicalStoreFactory() {
+    return createCanonicalStore({
+        indexedDB: globalThis.indexedDB,
+        IDBKeyRange: globalThis.IDBKeyRange,
+        now: () => Date.now(),
+        applicationVersion: 'strava-stats-v2-summary@1'
+    });
 }
 
 function repositoryError(code) {
@@ -108,7 +120,7 @@ function normalizeFactoryOptions(options) {
     }
 
     const mode = values.mode ?? 'legacy';
-    if (mode !== 'legacy') {
+    if (mode !== 'legacy' && mode !== 'canonical') {
         throw repositoryError(REPOSITORY_ERROR_CODE.UNSUPPORTED_MODE);
     }
     return {
@@ -130,6 +142,8 @@ function normalizeDependencies(dependencies) {
         metadataCacheFactory: values.metadataCacheFactory
             ?? defaultMetadataCacheFactory,
         demoProvider: values.demoProvider ?? DEFAULT_DEMO_PROVIDER,
+        canonicalStoreFactory: values.canonicalStoreFactory
+            ?? defaultCanonicalStoreFactory,
         now: values.now ?? defaultNow,
         cacheVersion: values.cacheVersion
             ?? LEGACY_ACTIVITY_CACHE_VERSION,
@@ -142,6 +156,7 @@ function normalizeDependencies(dependencies) {
     if (
         typeof normalized.connectorFactory !== 'function'
         || typeof normalized.metadataCacheFactory !== 'function'
+        || typeof normalized.canonicalStoreFactory !== 'function'
         || typeof normalized.now !== 'function'
         || typeof normalized.cacheVersion !== 'string'
         || normalized.cacheVersion.length === 0
@@ -165,6 +180,12 @@ export function createRepositoryWithDependencies(
     if (normalizedOptions.sessionMode === 'demo') {
         return new DemoRepository({
             provider: normalizedDependencies.demoProvider
+        });
+    }
+
+    if (normalizedOptions.mode === 'canonical') {
+        return new CanonicalRepository({
+            storeFactory: normalizedDependencies.canonicalStoreFactory
         });
     }
 

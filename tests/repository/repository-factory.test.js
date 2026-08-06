@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { DemoRepository } from '../../js/repository/demo/demo-repository.js';
+import { CanonicalRepository } from '../../js/repository/canonical/canonical-repository.js';
 import {
     REPOSITORY_ERROR_CODE,
     RepositoryError
@@ -56,6 +57,10 @@ function realDependencies(overrides = {}) {
         },
         metadataCacheFactory: () => metadataCache(),
         demoProvider: demoProvider(),
+        canonicalStoreFactory: () => ({
+            async initialize() {},
+            async listActivities() { return []; }
+        }),
         now: () => 1000,
         ...overrides
     };
@@ -85,9 +90,44 @@ test('Factory creates the real LegacyRepository for real/legacy', () => {
 test('Factory creates DemoRepository without constructing real dependencies', () => {
     let connectorConstructions = 0;
     let cacheConstructions = 0;
+    let canonicalConstructions = 0;
     const repository = createRepositoryWithDependencies(
-        { sessionMode: 'demo' },
+        { sessionMode: 'demo', mode: 'canonical' },
         realDependencies({
+            connectorFactory() {
+                connectorConstructions += 1;
+                throw new Error('must not construct connector');
+            },
+            metadataCacheFactory() {
+                cacheConstructions += 1;
+                throw new Error('must not construct cache');
+            },
+            canonicalStoreFactory() {
+                canonicalConstructions += 1;
+                throw new Error('must not construct canonical store');
+            }
+        })
+    );
+    assert.ok(repository instanceof DemoRepository);
+    assert.equal(connectorConstructions, 0);
+    assert.equal(cacheConstructions, 0);
+    assert.equal(canonicalConstructions, 0);
+});
+
+test('Factory creates a lazy CanonicalRepository for real/canonical', async () => {
+    let canonicalConstructions = 0;
+    let connectorConstructions = 0;
+    let cacheConstructions = 0;
+    const repository = createRepositoryWithDependencies(
+        { sessionMode: 'real', mode: 'canonical' },
+        realDependencies({
+            canonicalStoreFactory() {
+                canonicalConstructions += 1;
+                return {
+                    async initialize() {},
+                    async listActivities() { return []; }
+                };
+            },
             connectorFactory() {
                 connectorConstructions += 1;
                 throw new Error('must not construct connector');
@@ -98,7 +138,13 @@ test('Factory creates DemoRepository without constructing real dependencies', ()
             }
         })
     );
-    assert.ok(repository instanceof DemoRepository);
+    assert.ok(repository instanceof CanonicalRepository);
+    assert.equal(canonicalConstructions, 0);
+    assert.equal(connectorConstructions, 0);
+    assert.equal(cacheConstructions, 0);
+    const result = await repository.listActivities();
+    assert.equal(result.source, 'canonical');
+    assert.equal(canonicalConstructions, 1);
     assert.equal(connectorConstructions, 0);
     assert.equal(cacheConstructions, 0);
 });
@@ -123,8 +169,8 @@ test('Factory requires an explicit valid sessionMode', () => {
     }
 });
 
-test('Factory supports only legacy mode', () => {
-    for (const mode of ['v2', 'shadow', 'canonical', 'unknown']) {
+test('Factory supports only legacy and canonical modes', () => {
+    for (const mode of ['v2', 'shadow', 'unknown']) {
         assert.throws(
             () => createRepositoryWithDependencies(
                 { sessionMode: 'real', mode },
@@ -231,8 +277,13 @@ test('Factory import and default construction perform zero I/O', async () => {
         const module = await import(`${url.href}?lazy=${Date.now()}`);
         const demo = module.createRepository({ sessionMode: 'demo' });
         const real = module.createRepository({ sessionMode: 'real' });
+        const canonical = module.createRepository({
+            sessionMode: 'real',
+            mode: 'canonical'
+        });
         assert.ok(demo instanceof DemoRepository);
         assert.ok(real instanceof LegacyRepository);
+        assert.ok(canonical instanceof CanonicalRepository);
         assert.equal(accesses, 0);
     } finally {
         for (const [name, descriptor] of originals) {

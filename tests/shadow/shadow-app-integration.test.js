@@ -240,11 +240,10 @@ test('enabled shadow mode reports unavailable browser storage without blocking L
     });
 });
 
-test('Demo, Legacy, canonical, and unsafe modes keep page reads Legacy with zero writer', async () => {
+test('Demo, Legacy, unsafe, and disabled shadow modes keep page reads Legacy with zero writer', async () => {
     const scenarios = [
         { sessionMode: APP_SESSION_MODE.DEMO, mode: 'shadow', enabled: true },
         { sessionMode: APP_SESSION_MODE.REAL, mode: 'legacy', enabled: true },
-        { sessionMode: APP_SESSION_MODE.REAL, mode: 'canonical', enabled: true },
         { sessionMode: APP_SESSION_MODE.REAL, mode: 'unknown', enabled: true },
         { sessionMode: APP_SESSION_MODE.REAL, mode: 'shadow', enabled: false }
     ];
@@ -273,6 +272,34 @@ test('Demo, Legacy, canonical, and unsafe modes keep page reads Legacy with zero
             assert.equal(exportApplicationShadowParityReport(), null);
         });
     }
+});
+
+test('Explicit Real canonical reads canonical with zero shadow writer', async () => {
+    await withPlatform({
+        dataRepositoryMode: 'canonical',
+        canonicalShadowWriteEnabled: true
+    }, async () => {
+        const calls = { factory: [], list: [] };
+        const activities = [activity('opaque-canonical')];
+        const session = createSummaryRepositorySession({
+            sessionMode: APP_SESSION_MODE.REAL,
+            repositoryFactory: repositoryFactory({
+                data: activities,
+                source: 'canonical',
+                warnings: [],
+                partial: false
+            }, calls)
+        });
+        const result = await session.listActivities({ refresh: true });
+        assert.equal(result.data, activities);
+        assert.equal(result.source, 'canonical');
+        assert.deepEqual(calls.factory, [{
+            sessionMode: APP_SESSION_MODE.REAL,
+            mode: 'canonical'
+        }]);
+        assert.deepEqual(calls.list, [{ refresh: true }]);
+        assert.equal(exportApplicationShadowParityReport(), null);
+    });
 });
 
 test('direct application flag boundary rejects sparse, extra, symbol, and accessor shapes', async () => {
@@ -316,9 +343,12 @@ test('direct application flag boundary rejects sparse, extra, symbol, and access
     });
 });
 
-test('main insertion point is explicitly non-awaiting and keeps Legacy mode hard-coded', async () => {
+test('main insertion point is non-awaiting and changes read mode only for explicit canonical', async () => {
     const source = await readFile(new URL('../../js/app/main.js', import.meta.url), 'utf8');
-    assert.match(source, /mode:\s*'legacy'/);
+    assert.match(
+        source,
+        /mode:\s*featureFlags\?\.dataRepositoryMode === 'canonical'[\s\S]*?\? 'canonical'[\s\S]*?: 'legacy'/
+    );
     assert.match(source, /adapted\.source === REPOSITORY_SOURCE\.NETWORK/);
     assert.match(source, /shadowWriter\.enqueueLegacyActivities\(adapted\.data\)/);
     assert.doesNotMatch(source, /await\s+shadowWriter\.enqueueLegacyActivities/);

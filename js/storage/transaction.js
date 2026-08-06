@@ -242,6 +242,106 @@ export function runTransaction(database, options, enqueue) {
             });
         };
 
+        const queueCursorPage = (
+            createRequest,
+            limit,
+            select,
+            resumeKey,
+            resumePrimaryKey
+        ) => {
+            let request;
+            let ready = false;
+            const values = [];
+            let settled = false;
+
+            const finish = () => {
+                if (settled) return;
+                settled = true;
+                ready = true;
+                pendingRequests -= 1;
+                drainAfterReads();
+            };
+
+            try {
+                request = createRequest();
+            } catch (error) {
+                fail(error);
+                throw mapFailure(error, normalized.operation);
+            }
+            pendingRequests += 1;
+            request.onsuccess = () => {
+                if (settled) return;
+                try {
+                    const cursor = request.result;
+                    if (cursor === null) {
+                        finish();
+                        return;
+                    }
+                    const decision = select(
+                        cursor.key,
+                        cursor.primaryKey
+                    );
+                    if (decision === 'stop') {
+                        finish();
+                        return;
+                    }
+                    if (decision === 'seek') {
+                        if (
+                            resumeKey === undefined
+                            || resumePrimaryKey === undefined
+                            || typeof cursor.continuePrimaryKey !== 'function'
+                        ) {
+                            throw storageError(
+                                STORAGE_ERROR_CODE.INVALID_REQUEST,
+                                normalized.operation
+                            );
+                        }
+                        cursor.continuePrimaryKey(
+                            resumeKey,
+                            resumePrimaryKey
+                        );
+                        return;
+                    }
+                    if (decision !== 'include' && decision !== 'skip') {
+                        throw storageError(
+                            STORAGE_ERROR_CODE.INVALID_REQUEST,
+                            normalized.operation
+                        );
+                    }
+                    if (decision === 'include') values.push(cursor.value);
+                    if (values.length === limit) {
+                        finish();
+                        return;
+                    }
+                    cursor.continue();
+                } catch (error) {
+                    if (!settled) {
+                        settled = true;
+                        pendingRequests -= 1;
+                    }
+                    fail(error);
+                }
+            };
+            request.onerror = () => {
+                if (!settled) {
+                    settled = true;
+                    pendingRequests -= 1;
+                }
+                fail(requestFailure(request));
+            };
+            return Object.freeze({
+                read() {
+                    if (!ready) {
+                        throw storageError(
+                            STORAGE_ERROR_CODE.TRANSACTION_ABORTED,
+                            normalized.operation
+                        );
+                    }
+                    return values;
+                }
+            });
+        };
+
         const context = Object.freeze({
             get(storeName, key) {
                 return queueRequest(() => (
@@ -255,6 +355,36 @@ export function runTransaction(database, options, enqueue) {
                         ? source.getAll()
                         : source.getAll(query);
                 });
+            },
+            scanPage(
+                storeName,
+                indexName,
+                query,
+                direction,
+                limit,
+                select,
+                resumeKey = undefined,
+                resumePrimaryKey = undefined
+            ) {
+                if (
+                    (direction !== 'next' && direction !== 'prev')
+                    || !Number.isSafeInteger(limit)
+                    || limit < 1
+                    || typeof select !== 'function'
+                ) {
+                    throw storageError(
+                        STORAGE_ERROR_CODE.INVALID_REQUEST,
+                        normalized.operation
+                    );
+                }
+                return queueCursorPage(
+                    () => readSource(storeName, indexName)
+                        .openCursor(query, direction),
+                    limit,
+                    select,
+                    resumeKey,
+                    resumePrimaryKey
+                );
             },
             count(storeName) {
                 return queueRequest(() => (

@@ -11,8 +11,7 @@ const FROZEN_HASHES = new Map([
     ['js/storage/schema.js', '79d88535aca65b0dbed06cf4bd3bb4d05abd8894f4bb3e895e4cf48875eefabf'],
     ['js/storage/constants.js', 'c553247aa6e5a117dc2e804ef3260cb63644c84f146415d9ad1e2122297b89a7'],
     ['js/storage/index.js', '2007866cce37a7d6fe6c8cecf100c131ebf126aeec9763c0a5fc03232701b09d'],
-    ['js/repository/index.js', '9d967fa09ad649006b6da86dfd0e4de7b813a41b272da7de6da2fb856d57133c'],
-    ['js/repository/factory.js', 'a0bcb162814e45d3619f45fc7c1f2da5ec3d65429cc8554b197682de1824ae5f']
+    ['js/repository/index.js', '9d967fa09ad649006b6da86dfd0e4de7b813a41b272da7de6da2fb856d57133c']
 ]);
 
 async function shadowSources() {

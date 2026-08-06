@@ -18,7 +18,8 @@ export const REPOSITORY_SOURCE = Object.freeze({
     CACHE: 'cache',
     NETWORK: 'network',
     DEMO: 'demo',
-    MIXED: 'mixed'
+    MIXED: 'mixed',
+    CANONICAL: 'canonical'
 });
 
 export const REPOSITORY_WARNING_CODE = Object.freeze({
@@ -40,7 +41,7 @@ const ERROR_MESSAGES = Object.freeze({
     [REPOSITORY_ERROR_CODE.NOT_FOUND]: 'The requested resource was not found.',
     [REPOSITORY_ERROR_CODE.UNSUPPORTED_MODE]: 'The requested repository mode is unsupported.',
     [REPOSITORY_ERROR_CODE.INVALID_REQUEST]: 'The repository request is invalid.',
-    [REPOSITORY_ERROR_CODE.RESPONSE_INVALID]: 'The provider response is invalid.'
+    [REPOSITORY_ERROR_CODE.RESPONSE_INVALID]: 'The repository response is invalid.'
 });
 
 const ERROR_CODES = new Set(Object.values(REPOSITORY_ERROR_CODE));

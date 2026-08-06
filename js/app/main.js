@@ -149,7 +149,6 @@ function inspectDenseDataArray(value, collectValues = false) {
             || !Object.hasOwn(lengthDescriptor, 'value')
             || !Number.isSafeInteger(lengthDescriptor.value)
             || lengthDescriptor.value < 0
-            || lengthDescriptor.writable !== true
             || lengthDescriptor.enumerable !== false
             || lengthDescriptor.configurable !== false
             || keys.length !== lengthDescriptor.value + 1
@@ -293,12 +292,17 @@ export function createSummaryRepositorySession({
         throw safeOperationalError();
     }
 
+    const featureFlags = sessionMode === APP_SESSION_MODE.REAL
+        ? getFeatureFlags()
+        : null;
     const repository = repositoryFactory({
         sessionMode,
-        mode: 'legacy'
+        mode: featureFlags?.dataRepositoryMode === 'canonical'
+            ? 'canonical'
+            : 'legacy'
     });
     const shadowWriter = sessionMode === APP_SESSION_MODE.REAL
-        ? getApplicationShadowWriter(getFeatureFlags())
+        ? getApplicationShadowWriter(featureFlags)
         : null;
 
     return Object.freeze({
@@ -567,7 +571,8 @@ export function activityLoadingMessage(source, count) {
         [REPOSITORY_SOURCE.DEMO]: `Demo activities ready (${count})`,
         [REPOSITORY_SOURCE.CACHE]: `Activities loaded from cache (${count})`,
         [REPOSITORY_SOURCE.NETWORK]: `Activities downloaded (${count})`,
-        [REPOSITORY_SOURCE.MIXED]: `Activities ready (${count})`
+        [REPOSITORY_SOURCE.MIXED]: `Activities ready (${count})`,
+        [REPOSITORY_SOURCE.CANONICAL]: `Local activities ready (${count})`
     })[source];
 }
 
@@ -1267,6 +1272,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function initializeLocalDashboard(state) {
         renderSourceStatus(state);
+        if (getFeatureFlags().dataRepositoryMode === 'canonical') {
+            await initializeApp(null);
+            return;
+        }
         if (state.legacyActivities.length === 0) {
             showLocalDashboardShell(state);
             return;
@@ -1334,6 +1343,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const activityLoad = selectedActivityLoad;
             const activities = activityLoad.data;
+            if (
+                activityLoad.source === REPOSITORY_SOURCE.CANONICAL
+                && sourceStatus
+            ) {
+                sourceStatus.textContent = 'Local Library ready · Canonical summaries · provider offline';
+            }
             progress = 40;
             showLoading(
                 localOnly
@@ -1408,8 +1423,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 sessionMode,
                 athlete
             );
+            const preprocessingActivities = activityLoad.source === REPOSITORY_SOURCE.CANONICAL
+                ? structuredClone(activities)
+                : activities;
             const preprocessed = await preprocessActivities(
-                activities,
+                preprocessingActivities,
                 preprocessingAthlete,
                 zones,
                 gears
@@ -1441,6 +1459,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function refreshActivities() {
         const sessionMode = activeSessionMode;
+        const canonicalRefresh = sessionMode === APP_SESSION_MODE.REAL
+            && getFeatureFlags().dataRepositoryMode === 'canonical';
         sessionAthlete = null;
         sessionZones = null;
         sessionGears = resetSummarySessionGears();
@@ -1450,7 +1470,9 @@ document.addEventListener('DOMContentLoaded', () => {
         showLoading(
             sessionMode === APP_SESSION_MODE.DEMO
                 ? 'Refreshing Demo activities...'
-                : 'Refreshing activities from Strava...',
+                : canonicalRefresh
+                    ? 'Refreshing Canonical summaries from Local Library...'
+                    : 'Refreshing activities from Strava...',
             20,
             elapsed()
         );
@@ -1487,12 +1509,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 sessionMode,
                 athlete
             );
+            const preprocessingActivities = activityLoad.source === REPOSITORY_SOURCE.CANONICAL
+                ? structuredClone(activities)
+                : activities;
             allActivities = await preprocessActivities(
-                activities,
+                preprocessingActivities,
                 preprocessingAthlete,
                 zones,
                 gears
             );
+            if (
+                activityLoad.source === REPOSITORY_SOURCE.CANONICAL
+                && sourceStatus
+            ) {
+                sourceStatus.textContent = 'Local Library ready · Canonical summaries · provider offline';
+            }
             console.log(`Activities refreshed (${allActivities.length})`);
             showLoading(`Rebuilding views (${allActivities.length} activities)...`, 80, elapsed());
 
@@ -1672,7 +1703,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- APP ENTRY POINT ---
-    runLocalFirstBootstrap({
+    const applicationStart = (
+        documentSessionMode === APP_SESSION_MODE.REAL
+        && getFeatureFlags().dataRepositoryMode === 'canonical'
+    )
+        ? initializeApp(null)
+        : runLocalFirstBootstrap({
         sessionMode: documentSessionMode,
         inspect: () => inspectLocalFirstBootstrap(),
         startDemo: state => {
@@ -1684,7 +1720,8 @@ document.addEventListener('DOMContentLoaded', () => {
             window.location.assign('/source-manager.html?mode=real');
         },
         showBlocked: showLocalFirstBlocked
-    }).catch(error => {
+    });
+    applicationStart.catch(error => {
         logOperationalWarning('App failed to start');
         showLocalFirstBlocked(Object.freeze({
             localStatus: LOCAL_FIRST_STATUS.UNAVAILABLE,
