@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 M14 / PR-17 |
-| Status | A3 frozen; Task Brief publication pending |
+| Status | Final Review Closure prepared; Draft until exact-head CI and control-tower Ready transition |
 | Branch | `codex/v2/cutover-detail` |
 | Base | `integration/v2` at `1e0f36095f0c91f5c7625ce316c56818b1bf3403` |
 | Draft PR title | `refactor(v2): cut over detail consumers to canonical data` |
@@ -467,7 +467,7 @@ independent review, CI, and Closure remain pending.
 
 ### B3: renderer degradation and browser harness
 
-Status: **Implementation completed locally / Browser execution blocked by surface capability**.
+Status: **Completed / PASS**.
 
 - Generic, Run, Bike, and Swim maps now prefer an existing provider polyline and otherwise
   consume only the injected `latlng` stream. Coordinates are copied, finite/bounds-checked,
@@ -504,15 +504,153 @@ git diff --check
   PASS
 ```
 
-Browser/CDP did not pass and is not claimed. The control tower used policy-compliant fresh
-in-app Browser tabs at two isolated loopback ports. Both passed the loopback and explicit
-synthetic-mode preconditions and failed closed before seeding with redacted
-`StorageError / PR17_BROWSER_GATE_FAILED`; `seededBundles` remained zero. A bounded capability
-check on the fresh origin established that `indexedDB`, `IDBKeyRange`, `localStorage`, and
-`sessionStorage` are all unavailable in that execution surface. No Chrome/raw-CDP fallback
-was used. The actual Canonical Store/browser portion is **Blocked pending a separately approved
-equivalent execution surface**. No user profile, credential, Token, account, private fixture,
-real activity/location/health/power data, external provider request, or screenshot was used,
-and no Cache or Service Worker state was modified. Both temporary servers were stopped cleanly.
+The first two policy-compliant in-app Browser attempts remain truthful blocked capability
+evidence: that surface exposed none of `indexedDB`, `IDBKeyRange`, `localStorage`, or
+`sessionStorage`, so it failed closed before seeding. The user then explicitly approved one
+equivalent disposable Chrome/CDP execution surface for PR-17. The approved run used a fresh
+temporary Chrome profile and fresh origin `http://127.0.0.1:58199`, seeded four deterministic
+synthetic bundles through the actual Canonical Store, seeded the production Demo namespace,
+and exercised 12/12 actual served Router-to-detail routes:
 
-Independent review, full suite, depth-1 verification, exact-head CI, and Closure remain pending.
+```text
+Canonical: Generic / Run / Bike / Swim  PASS 4/4
+Demo:      Generic / Run / Bike / Swim  PASS 4/4
+Legacy:    Generic / Run / Bike / Swim  PASS 4/4
+```
+
+Canonical routes round-tripped opaque string IDs, opened only `strava-stats-v2`, performed
+zero `/api/strava-*`, Token, Authorization, or Legacy database operations, rendered finite
+laps and charts, rendered injected-position maps for Generic/Run/Bike, and truthfully hid the
+GPS-less Swim map. The Canonical Generic Advanced observation produced the five local sections
+with zero additional IndexedDB/API work; the separate focused two-click test proves repeated
+reuse with zero Repository/provider I/O. Demo routes performed zero Real IndexedDB/API/Token/
+Authorization work and used only Demo-owned keys. Legacy rollback used only the
+synthetic local auth/API/cache path, with every application API response locally fulfilled.
+All routes recorded zero external outbound requests, console warnings/errors, and runtime
+exceptions; the run began and ended with zero Cache Storage entries and Service Worker
+registrations. No user profile/login, credential, real Token/account, provider network,
+telemetry, private fixture, real/private user activity, precise route, health/power history,
+export, or screenshot was used; map/chart inputs were deterministic synthetic values only.
+
+The run stopped Chrome and the loopback server, verified both runtime ports closed, removed
+the disposable profile, and removed the external runner, disposable clones, and failed
+diagnostic artifacts. The only retained external artifact is the redacted key/count-only
+evidence at `/private/tmp/pr17-browser-evidence-1785992247060.json`.
+
+The capable-browser run also found two actionable fixture/consumer issues. A failure-first
+boundary assertion proved that missing heart-rate samples must be `null`, not synthetic zero;
+the three invalid harness samples were repaired without changing real-zero coverage for valid
+metrics. A failure-first four-page consumer test then proved that the exact successful
+Canonical optional envelope (`data: null`, `source: canonical`, empty warnings, non-partial)
+was rejected by all composition roots. Generic, Run, Bike, and Swim now accept `null` only for
+optional zones/athlete payloads after validating the complete envelope; required activity and
+streams remain fail-closed.
+
+### B4: Final Review Closure
+
+Status: **Closure evidence complete; final Task Brief-only commit, exact-head CI, and
+control-tower Ready operation follow in that order**.
+
+Exact integration base and implementation/review head before this self-describing Closure
+commit:
+
+```text
+base: 1e0f36095f0c91f5c7625ce316c56818b1bf3403
+implementation/review head: 178369131a33843e8b5e0abe1ff9529552a55d57
+```
+
+The final PR head is necessarily the commit containing this document and therefore is not
+self-embedded as a hash. It must be recorded in the PR body/control-tower handoff and verified
+by exact-head CI before Ready. Commits through the implementation/review head are:
+
+```text
+3c3234d1c04937f8a17d995b524ff2a139b6cc4c docs(v2): freeze canonical detail cutover scope
+e5483fa44c7c19326fbc4efa0f3bebdfec5f242d refactor(v2): project canonical activity details
+e48a87a8703590867d42c077ad363da6fa195202 refactor(v2): select canonical detail sessions
+cd0a94a170d46572f83c4978c712301cd41f7a65 refactor(v2): render canonical detail capabilities
+125b52a721e64633deb5bb038acd6e1416b8d178 fix(v2): close canonical detail review findings
+178369131a33843e8b5e0abe1ff9529552a55d57 fix(v2): accept canonical null detail metadata
+```
+
+Literal changed files relative to the exact base (16/17 allowed paths, zero prohibited paths):
+
+```text
+docs/tasks/pr-17-canonical-detail-cutover.md
+js/pages/activity-router.js
+js/pages/activity/activity.js
+js/pages/activity/index.js
+js/pages/bike/bike.js
+js/pages/bike/index.js
+js/pages/run/index.js
+js/pages/run/run.js
+js/pages/swim/index.js
+js/pages/swim/swim.js
+js/repository/canonical/canonical-repository.js
+js/repository/canonical/detail-projection.js
+tests/consumers/canonical-detail-browser-smoke.html
+tests/consumers/detail-boundaries.test.js
+tests/consumers/detail-consumers.test.js
+tests/repository/canonical-repository.test.js
+```
+
+Final local and depth-1 evidence at `178369131a33843e8b5e0abe1ff9529552a55d57`:
+
+```text
+npm ci                                        PASS; 6 packages
+npm run check:syntax                          PASS; 204 files
+npm run check:privacy                         PASS
+focused detail/Repository/Storage regressions PASS 429/429
+npm test                                      PASS 1331/1331
+git diff --check                              PASS
+literal allowlist/prohibited-path audit       PASS; 16 changed / 0 prohibited
+depth-1 clone commit count                    PASS; 1
+depth-1 npm ci / syntax / privacy / focused   PASS; 429/429; clean 0/0
+```
+
+Draft PR #23 exact-head CI for the implementation/review head passed:
+
+```text
+run: https://github.com/XiChuan9/StravaStats/actions/runs/31073195971
+job: https://github.com/XiChuan9/StravaStats/actions/runs/31073195971/job/92525279870
+result: SUCCESS (CI / checks)
+```
+
+Findings-first review and repair ledger:
+
+- The first independent review found that supporting `srcdoc` checks could be mistaken for
+  actual-navigation evidence, an activity accessor could be observed during projection, and
+  Canonical opaque IDs could be rendered as provider links. Failure-first tests and minimal
+  repairs relabelled the support harness and kept it fail-closed, descriptor-safely snapshotted
+  the projected activity, and hid provider links for Canonical Run/Bike/Swim.
+- Re-review found that a browser without `indexedDB.databases()` could not prove a clean
+  disposable origin. A failure-first boundary assertion now requires enumeration and zero
+  existing databases before Store initialization. The subsequent clean review reported no
+  actionable findings.
+- The approved capable-browser run found the invalid heart-rate zero fixture and optional
+  Canonical null-envelope rejection described in B3. Both received failure-first tests and
+  minimal repairs.
+- The fresh final read-only re-review passed its focused suite 306/306 and reported no
+  actionable product/test findings. Its sole finding was this Task Brief's stale blocked-
+  browser narrative; this Closure replaces that narrative rather than appending an ambiguous
+  claim.
+
+Privacy, migration, and rollback closure:
+
+- **Privacy:** all tests/browser data were inline deterministic synthetic data. Evidence is
+  redacted to modes, paths, counts, safe storage/database names, and cleanup state. No private
+  data, real credential/account/Token, provider request, user profile, or private fixture was
+  read, written, logged, or committed.
+- **Migration/storage:** none. No Canonical contract, schema, store, index, version, migration,
+  import API, or write-path behavior changed. Browser seeding existed only in a removed
+  disposable profile.
+- **Rollback:** `DEFAULT_FEATURE_FLAGS.dataRepositoryMode` remains literal `legacy`; explicit
+  `legacy` and `shadow` keep Legacy reads, and Demo remains isolated. Revert this PR or select
+  Legacy without deleting/repairing/reverse-copying either database.
+- **Scope:** the Repository remains exactly seven methods; no production dependency, analysis
+  algorithm, provider/auth, Service Worker, deployment, release, Run Plus/NSM, PR-18, M15,
+  `main`, `maintenance/v1`, or `integration/v2` change occurred.
+
+Not run and not claimed: full visual/screenshot parity, real provider/auth behavior, production
+Service Worker behavior, production deployment/release, Safari, Firefox, mobile, real quota or
+crash durability, large-library performance, real-data migration, PR-18 Run Plus/NSM, or M15.
+Ready for review remains a post-Closure control-tower transition and is not merge authorization.
