@@ -1,4 +1,5 @@
 import { isDemoMode } from '../../demo/index.js';
+import { getFeatureFlags } from '../../app/feature-flags.js';
 import {
     createRepository,
     REPOSITORY_SOURCE
@@ -10,11 +11,32 @@ export const SWIM_STREAM_TYPES = Object.freeze([
     'distance',
     'time',
     'heartrate',
-    'cadence'
+    'cadence',
+    'latlng'
 ]);
 const BUNDLE_KEYS = Object.freeze(['activity', 'streams', 'zones', 'athlete']);
 const ENVELOPE_KEYS = Object.freeze(['data', 'source', 'warnings', 'partial']);
 const REPOSITORY_SOURCES = new Set(Object.values(REPOSITORY_SOURCE));
+
+function repositoryModeFromFlags(value) {
+    try {
+        if (
+            value === null
+            || typeof value !== 'object'
+            || Array.isArray(value)
+            || Object.getPrototypeOf(value) !== Object.prototype
+        ) throw new TypeError('Invalid feature flags.');
+        const descriptor = Object.getOwnPropertyDescriptor(value, 'dataRepositoryMode');
+        if (
+            !descriptor?.enumerable
+            || !Object.hasOwn(descriptor, 'value')
+            || !['legacy', 'shadow', 'canonical'].includes(descriptor.value)
+        ) throw new TypeError('Invalid feature flags.');
+        return descriptor.value === 'canonical' ? 'canonical' : 'legacy';
+    } catch {
+        throw new TypeError('Invalid feature flags.');
+    }
+}
 
 function readExactRecord(value, expectedKeys) {
     try {
@@ -82,8 +104,13 @@ function readEnvelopeData(envelope, optional = false) {
         || !REPOSITORY_SOURCES.has(record.source)
         || typeof record.partial !== 'boolean'
         || !isDenseNativeArray(record.warnings)
-        || record.data === null
-        || typeof record.data !== 'object'
+    ) throw new TypeError('Invalid detail result.');
+    if (record.data === null) {
+        if (optional) return null;
+        throw new TypeError('Invalid detail result.');
+    }
+    if (
+        typeof record.data !== 'object'
         || Array.isArray(record.data)
         || Object.getPrototypeOf(record.data) !== Object.prototype
     ) throw new TypeError('Invalid detail result.');
@@ -125,6 +152,7 @@ async function defaultRenderer(input) {
 export async function initializeSwimPage({
     search = globalThis.location?.search || '',
     demoModeReader = isDemoMode,
+    featureFlagsReader = getFeatureFlags,
     repositoryFactory = createRepository,
     sessionFactory = createDetailReadSession,
     renderer = defaultRenderer,
@@ -137,9 +165,12 @@ export async function initializeSwimPage({
     }
     try {
         const demo = demoModeReader();
+        const repositoryMode = demo
+            ? 'legacy'
+            : repositoryModeFromFlags(featureFlagsReader());
         const repository = repositoryFactory({
             sessionMode: demo ? 'demo' : 'real',
-            mode: 'legacy'
+            mode: repositoryMode
         });
         const session = sessionFactory({
             repository,
@@ -151,8 +182,10 @@ export async function initializeSwimPage({
         const bundle = await session.load();
         const detail = readExactRecord(bundle, BUNDLE_KEYS);
         if (detail === null) throw new TypeError('Invalid detail bundle.');
+        const activity = readEnvelopeData(detail.activity);
         await renderer({
-            activity: readEnvelopeData(detail.activity),
+            activity,
+            activitySource: readExactRecord(detail.activity, ENVELOPE_KEYS).source,
             streams: readEnvelopeData(detail.streams),
             zones: readEnvelopeData(detail.zones, true),
             athlete: readEnvelopeData(detail.athlete, true),
