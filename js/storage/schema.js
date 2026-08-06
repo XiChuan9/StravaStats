@@ -168,6 +168,41 @@ const V3_STORES = V2_STORES.map(store => (
         : store
 ));
 
+const V4_DUPLICATE_REVIEW_STORES = [
+    {
+        name: V2_STORE_NAME.MERGE_CANDIDATES,
+        keyPath: 'id',
+        autoIncrement: false,
+        indexes: [
+            {
+                name: 'byActivityPair',
+                keyPath: ['activityAId', 'activityBId'],
+                unique: true,
+                multiEntry: false
+            },
+            {
+                name: 'byStatusAndCreatedAt',
+                keyPath: ['status', 'createdAt'],
+                unique: false,
+                multiEntry: false
+            }
+        ]
+    },
+    {
+        name: V2_STORE_NAME.MERGE_DECISIONS,
+        keyPath: 'id',
+        autoIncrement: false,
+        indexes: [{
+            name: 'byCandidateId',
+            keyPath: 'candidateId',
+            unique: false,
+            multiEntry: false
+        }]
+    }
+];
+
+const V4_STORES = [...V3_STORES, ...V4_DUPLICATE_REVIEW_STORES];
+
 export const V2_PHYSICAL_SCHEMA_BY_VERSION = deepFreeze({
     1: {
         databaseName: V2_DATABASE_NAME,
@@ -185,14 +220,21 @@ export const V2_PHYSICAL_SCHEMA_BY_VERSION = deepFreeze({
     },
     3: {
         databaseName: V2_DATABASE_NAME,
+        indexedDbVersion: 3,
+        schemaId: 'strava-stats-v2@3',
+        canonicalSchemaVersion: V2_CANONICAL_SCHEMA_VERSION,
+        stores: V3_STORES
+    },
+    4: {
+        databaseName: V2_DATABASE_NAME,
         indexedDbVersion: V2_DATABASE_VERSION,
         schemaId: V2_SCHEMA_ID,
         canonicalSchemaVersion: V2_CANONICAL_SCHEMA_VERSION,
-        stores: V3_STORES
+        stores: V4_STORES
     }
 });
 
-export const V2_SCHEMA = V2_PHYSICAL_SCHEMA_BY_VERSION[3];
+export const V2_SCHEMA = V2_PHYSICAL_SCHEMA_BY_VERSION[4];
 
 function names(list) {
     return Array.from(list).sort();

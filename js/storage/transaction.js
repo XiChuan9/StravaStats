@@ -279,7 +279,8 @@ export function runTransaction(database, options, enqueue) {
                     }
                     const decision = select(
                         cursor.key,
-                        cursor.primaryKey
+                        cursor.primaryKey,
+                        cursor.value
                     );
                     if (decision === 'stop') {
                         finish();

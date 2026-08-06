@@ -298,6 +298,14 @@ test('report item rendering allowlists persisted codes and rejects hostile value
         outcome: 'skipped_exact_duplicate',
         errorCode: null
     }), 'skipped_exact_duplicate');
+    assert.equal(sourceManagerReportItemCode({
+        outcome: 'review_required',
+        errorCode: null
+    }), 'review_required');
+    assert.equal(sourceManagerReportItemCode({
+        outcome: 'failed_storage',
+        errorCode: 'CANDIDATE_LIMIT_EXCEEDED'
+    }), 'CANDIDATE_LIMIT_EXCEEDED');
     let getters = 0;
     const hostile = {};
     Object.defineProperty(hostile, 'errorCode', {

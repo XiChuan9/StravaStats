@@ -5,6 +5,7 @@ import {
     V2_CANONICAL_SCHEMA_VERSION,
     V2_DATABASE_NAME,
     V2_DATABASE_VERSION,
+    V2_DUPLICATE_REVIEW_MIGRATION_ID,
     V2_EXACT_IDENTITY_MIGRATION_ID,
     V2_IMPORT_MIGRATION_ID,
     V2_METADATA_KEY,
@@ -255,6 +256,22 @@ function validExactIdentityMigration(value) {
         && migration.retryCount === 0;
 }
 
+function validDuplicateReviewMigration(value) {
+    const migration = ownDataValues(value, MIGRATION_FIELDS);
+    return migration !== null
+        && migration.id === V2_DUPLICATE_REVIEW_MIGRATION_ID
+        && migration.fromVersion === 3
+        && migration.toVersion === 4
+        && migration.status === 'completed'
+        && isStrictUtcInstant(migration.startedAt)
+        && migration.completedAt === migration.startedAt
+        && isOpaqueString(migration.applicationVersion)
+        && validSummary(migration.inputSummary, 11)
+        && validSummary(migration.outputSummary, 13)
+        && migration.errorCode === null
+        && migration.retryCount === 0;
+}
+
 function closeDatabase(database) {
     try {
         database.onversionchange = null;
@@ -331,6 +348,7 @@ function verifyDatabaseState(database) {
         let migrationRequest;
         let importMigrationRequest;
         let exactIdentityMigrationRequest;
+        let duplicateReviewMigrationRequest;
         let requestFailed = false;
 
         try {
@@ -350,6 +368,9 @@ function verifyDatabaseState(database) {
             exactIdentityMigrationRequest = transaction
                 .objectStore(V2_STORE_NAME.MIGRATIONS)
                 .get(V2_EXACT_IDENTITY_MIGRATION_ID);
+            duplicateReviewMigrationRequest = transaction
+                .objectStore(V2_STORE_NAME.MIGRATIONS)
+                .get(V2_DUPLICATE_REVIEW_MIGRATION_ID);
         } catch {
             reject(storageError(
                 STORAGE_ERROR_CODE.SCHEMA_MISMATCH,
@@ -370,6 +391,9 @@ function verifyDatabaseState(database) {
         exactIdentityMigrationRequest.onerror = () => {
             requestFailed = true;
         };
+        duplicateReviewMigrationRequest.onerror = () => {
+            requestFailed = true;
+        };
         transaction.onerror = () => {
             requestFailed = true;
         };
@@ -384,11 +408,13 @@ function verifyDatabaseState(database) {
             let migration;
             let importMigration;
             let exactIdentityMigration;
+            let duplicateReviewMigration;
             try {
                 metadata = metadataRequest.result;
                 migration = migrationRequest.result;
                 importMigration = importMigrationRequest.result;
                 exactIdentityMigration = exactIdentityMigrationRequest.result;
+                duplicateReviewMigration = duplicateReviewMigrationRequest.result;
             } catch {
                 requestFailed = true;
             }
@@ -399,6 +425,7 @@ function verifyDatabaseState(database) {
                 || !validBootstrapMigration(migration)
                 || !validImportMigration(importMigration)
                 || !validExactIdentityMigration(exactIdentityMigration)
+                || !validDuplicateReviewMigration(duplicateReviewMigration)
             ) {
                 reject(storageError(
                     STORAGE_ERROR_CODE.SCHEMA_MISMATCH,

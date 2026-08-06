@@ -1,6 +1,6 @@
 export const V2_DATABASE_NAME = 'strava-stats-v2';
-export const V2_DATABASE_VERSION = 3;
-export const V2_SCHEMA_ID = 'strava-stats-v2@3';
+export const V2_DATABASE_VERSION = 4;
+export const V2_SCHEMA_ID = 'strava-stats-v2@4';
 export const V2_CANONICAL_SCHEMA_VERSION = 1;
 
 export const V2_METADATA_KEY = 'database';
@@ -8,6 +8,8 @@ export const V2_BOOTSTRAP_MIGRATION_ID = 'schema-0001-bootstrap';
 export const V2_IMPORT_MIGRATION_ID = 'schema-0002-import-core';
 export const V2_EXACT_IDENTITY_MIGRATION_ID =
     'schema-0003-exact-identity-index';
+export const V2_DUPLICATE_REVIEW_MIGRATION_ID =
+    'schema-0004-duplicate-review';
 
 export const V2_STORE_NAME = Object.freeze({
     METADATA: 'metadata',
@@ -20,7 +22,9 @@ export const V2_STORE_NAME = Object.freeze({
     DEVICES: 'devices',
     RAW_ARTIFACTS: 'rawArtifacts',
     IMPORT_JOBS: 'importJobs',
-    IMPORT_ITEMS: 'importItems'
+    IMPORT_ITEMS: 'importItems',
+    MERGE_CANDIDATES: 'mergeCandidates',
+    MERGE_DECISIONS: 'mergeDecisions'
 });
 
 export const STORAGE_ERROR_CODE = Object.freeze({
@@ -38,7 +42,8 @@ export const STORAGE_ERROR_CODE = Object.freeze({
     QUOTA_EXCEEDED: 'QUOTA_EXCEEDED',
     CONSTRAINT_VIOLATION: 'CONSTRAINT_VIOLATION',
     CONFLICT: 'CONFLICT',
-    NOT_FOUND: 'NOT_FOUND'
+    NOT_FOUND: 'NOT_FOUND',
+    CANDIDATE_LIMIT_EXCEEDED: 'CANDIDATE_LIMIT_EXCEEDED'
 });
 
 export const STORAGE_OPERATION = Object.freeze({
@@ -60,5 +65,8 @@ export const STORAGE_OPERATION = Object.freeze({
     GET_RAW_ARTIFACT: 'getRawArtifact',
     LIST_IMPORT_ITEMS: 'listImportItems',
     LIST_IMPORT_JOBS: 'listImportJobs',
+    LIST_DUPLICATE_REVIEW_CANDIDATES: 'listDuplicateReviewCandidates',
+    GET_DUPLICATE_REVIEW_CANDIDATE: 'getDuplicateReviewCandidate',
+    DECIDE_DUPLICATE_REVIEW_CANDIDATE: 'decideDuplicateReviewCandidate',
     CLOSE: 'close'
 });

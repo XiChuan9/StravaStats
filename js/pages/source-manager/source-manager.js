@@ -41,6 +41,8 @@ const PREFLIGHT_COPY = Object.freeze({
     TOO_MANY_FILES: 'Select no more than 100 files at a time.',
     FILE_READ_FAILED: 'The file could not be read.',
     DEMO_IMPORT_UNAVAILABLE: 'Demo import is not available in this milestone.',
+    REVIEW_STALE: 'This review item changed. Refresh the review queue.',
+    REVIEW_DECISION_FAILED: 'The review decision could not be recorded.',
     INVALID_SESSION_MODE: 'The requested Source Manager session mode is invalid.',
     IMPORT_FAILED: 'The import could not be completed.'
 });
@@ -60,7 +62,8 @@ const IMPORT_COPY = Object.freeze({
     ZIP_BOMB_RISK: 'The archive exceeds the safe compression ratio.',
     ZIP_CRC_MISMATCH: 'The archive failed its integrity check.',
     ZIP_ACTIVITIES_CSV_MISSING: 'The archive does not contain the required root activities.csv.',
-    CSV_HEADER_INVALID: 'The CSV header is not supported.'
+    CSV_HEADER_INVALID: 'The CSV header is not supported.',
+    CANDIDATE_LIMIT_EXCEEDED: 'Too many possible duplicates were found. Nothing was imported.'
 });
 
 const SAFE_UI_CODES = new Set([
@@ -68,7 +71,10 @@ const SAFE_UI_CODES = new Set([
     ...Object.keys(IMPORT_COPY)
 ]);
 
-const IMPORT_REPORT_CODES = new Set(Object.values(IMPORT_ERROR_CODE));
+const IMPORT_REPORT_CODES = new Set([
+    ...Object.values(IMPORT_ERROR_CODE),
+    'CANDIDATE_LIMIT_EXCEEDED'
+]);
 
 const TERMINAL_JOB_STATUSES = new Set([
     'completed', 'completed_with_warnings', 'failed_validation',
@@ -76,7 +82,7 @@ const TERMINAL_JOB_STATUSES = new Set([
 ]);
 
 const TERMINAL_ITEM_OUTCOMES = new Set([
-    'completed', 'skipped_exact_duplicate', 'failed_validation',
+    'completed', 'review_required', 'skipped_exact_duplicate', 'failed_validation',
     'failed_decode', 'failed_storage', 'cancelled'
 ]);
 
@@ -412,6 +418,7 @@ function text(document, tag, value, className = '') {
 
 function reportCategory(outcome) {
     if (outcome === 'completed') return 'success';
+    if (outcome === 'review_required') return 'review';
     if (outcome === 'skipped_exact_duplicate') return 'skipped';
     if (outcome === 'cancelled') return 'cancelled';
     return outcome.startsWith('failed_') ? 'failed' : 'all';
@@ -459,6 +466,16 @@ export function createSourceManagerPage({ document, sessionMode, importFacade })
         previewTotal: document.getElementById('preview-total'),
         previewList: document.getElementById('preview-list'),
         reportList: document.getElementById('report-list'),
+        reviewSection: document.getElementById('duplicate-review'),
+        reviewState: document.getElementById('duplicate-review-state'),
+        reviewList: document.getElementById('duplicate-review-list'),
+        reviewDialog: document.getElementById('duplicate-review-dialog'),
+        reviewDialogTitle: document.getElementById('duplicate-review-dialog-title'),
+        reviewConfidence: document.getElementById('duplicate-review-confidence'),
+        reviewComparison: document.getElementById('duplicate-review-comparison'),
+        reviewConfirm: document.getElementById('duplicate-review-confirm'),
+        reviewSeparate: document.getElementById('duplicate-review-separate'),
+        reviewLater: document.getElementById('duplicate-review-later'),
         dialog: document.getElementById('import-dialog'),
         dialogTitle: document.getElementById('import-dialog-title'),
         fileInput: document.getElementById('file-input'),
@@ -484,6 +501,7 @@ export function createSourceManagerPage({ document, sessionMode, importFacade })
     let opener = null;
     let activeSource = null;
     let activeJobId = null;
+    let activeReviewToken = null;
     let importActive = false;
     let closed = false;
 
@@ -547,6 +565,7 @@ export function createSourceManagerPage({ document, sessionMode, importFacade })
             summary.append(
                 text(document, 'span', `Status: ${report.status}`),
                 text(document, 'span', `Success: ${report.totals.completed}`),
+                text(document, 'span', `Review: ${report.totals.reviewRequired || 0}`),
                 text(document, 'span', `Skipped: ${report.totals.skippedExactDuplicate}`),
                 text(document, 'span', `Failed: ${report.totals.failed}`),
                 text(document, 'span', `Cancelled: ${report.totals.cancelled}`)
@@ -580,6 +599,140 @@ export function createSourceManagerPage({ document, sessionMode, importFacade })
         });
     }
 
+    function metric(value, suffix = '') {
+        return typeof value === 'number' && Number.isFinite(value)
+            ? `${value}${suffix}`
+            : 'Unavailable';
+    }
+
+    function renderReviewActivity(activity, ordinal) {
+        const card = text(
+            document,
+            'article',
+            '',
+            'duplicate-review-comparison__activity'
+        );
+        card.append(text(document, 'h3', `Activity ${ordinal}`));
+        const list = text(document, 'dl', '', 'duplicate-review-facts');
+        const facts = [
+            ['Start', activity.startTimeUtc],
+            ['Sport', activity.sportCategory],
+            ['Distance', metric(activity.distanceMeters, ' m')],
+            ['Moving duration', metric(activity.movingTimeSeconds, ' s')],
+            ['GPS available', activity.capabilities?.hasGps ? 'Yes' : 'No'],
+            ['Heart-rate available', activity.capabilities?.hasHeartRate ? 'Yes' : 'No'],
+            ['Power available', activity.capabilities?.hasPower ? 'Yes' : 'No'],
+            ['Cadence available', activity.capabilities?.hasCadence ? 'Yes' : 'No'],
+            ['Sources', activity.sourceLabel],
+            ['Device', activity.deviceLabel],
+            ['Laps', metric(activity.lapCount)]
+        ];
+        for (const [label, value] of facts) {
+            list.append(
+                text(document, 'dt', label),
+                text(document, 'dd', typeof value === 'string' ? value : 'Unavailable')
+            );
+        }
+        card.append(list);
+        return card;
+    }
+
+    async function openDuplicateReview(event) {
+        const token = event.currentTarget?.dataset?.reviewToken;
+        if (typeof token !== 'string' || token.length === 0) return;
+        elements.reviewState.textContent = 'Loading comparison.';
+        try {
+            const detail = await importFacade.getDuplicateReview(token);
+            if (
+                !detail
+                || detail.token !== token
+                || !Array.isArray(detail.activities)
+                || detail.activities.length !== 2
+            ) {
+                throw Object.freeze({ code: 'REVIEW_STALE' });
+            }
+            activeReviewToken = token;
+            elements.reviewConfidence.textContent = detail.confidence === 'high'
+                ? 'High similarity' : 'Possible similarity';
+            elements.reviewComparison.replaceChildren(
+                renderReviewActivity(detail.activities[0], 1),
+                renderReviewActivity(detail.activities[1], 2)
+            );
+            elements.reviewDialog.showModal();
+            queueMicrotask(() => elements.reviewDialogTitle.focus());
+            elements.reviewState.textContent = 'Comparison ready.';
+        } catch (error) {
+            const code = safeCode(error, 'REVIEW_STALE');
+            elements.reviewState.textContent = safeCopy(code);
+            elements.alert.textContent = `${code}. ${safeCopy(code)}`;
+        }
+    }
+
+    function renderDuplicateReviews(reviews) {
+        elements.reviewList.replaceChildren();
+        const safeReviews = Array.isArray(reviews) ? reviews : [];
+        if (sessionMode !== SOURCE_MANAGER_SESSION_MODE.REAL) {
+            elements.reviewState.textContent = 'Duplicate review is unavailable in Demo mode.';
+            return;
+        }
+        if (safeReviews.length === 0) {
+            elements.reviewState.textContent = 'No possible duplicates need review.';
+            return;
+        }
+        elements.reviewState.textContent = `${safeReviews.length} possible ${
+            safeReviews.length === 1 ? 'duplicate needs' : 'duplicates need'
+        } review.`;
+        safeReviews.forEach((review, index) => {
+            const card = text(document, 'article', '', 'duplicate-review-card');
+            card.append(
+                text(document, 'h3', `Candidate ${index + 1}`),
+                text(
+                    document,
+                    'p',
+                    review.confidence === 'high'
+                        ? 'High similarity' : 'Possible similarity',
+                    'duplicate-review-card__confidence'
+                )
+            );
+            const button = text(document, 'button', 'Review comparison', 'button');
+            button.type = 'button';
+            button.dataset.reviewToken = review.token;
+            button.addEventListener('click', openDuplicateReview);
+            card.append(button);
+            elements.reviewList.append(card);
+        });
+    }
+
+    function closeDuplicateReview() {
+        activeReviewToken = null;
+        elements.reviewComparison.replaceChildren();
+        if (elements.reviewDialog.open) elements.reviewDialog.close();
+    }
+
+    async function decideDuplicateReview(decision) {
+        if (activeReviewToken === null) return;
+        elements.reviewConfirm.disabled = true;
+        elements.reviewSeparate.disabled = true;
+        try {
+            const result = await importFacade.decideDuplicateReview(
+                activeReviewToken,
+                decision
+            );
+            closeDuplicateReview();
+            elements.live.textContent = result.status === 'confirmed_same'
+                ? 'Same-activity intent recorded. Both activities remain in the library.'
+                : 'Keep-separate decision recorded. Both activities remain in the library.';
+            renderDuplicateReviews(await importFacade.listDuplicateReviews());
+        } catch (error) {
+            const code = safeCode(error, 'REVIEW_DECISION_FAILED');
+            elements.reviewState.textContent = safeCopy(code);
+            elements.alert.textContent = `${code}. ${safeCopy(code)}`;
+        } finally {
+            elements.reviewConfirm.disabled = false;
+            elements.reviewSeparate.disabled = false;
+        }
+    }
+
     function renderProgress(report) {
         const completed = report.items.filter(item => TERMINAL_ITEM_OUTCOMES.has(item.outcome)).length;
         elements.progress.hidden = false;
@@ -591,12 +744,14 @@ export function createSourceManagerPage({ document, sessionMode, importFacade })
     }
 
     async function refreshPublicReads() {
-        const [preview, reports] = await Promise.all([
+        const [preview, reports, reviews] = await Promise.all([
             importFacade.previewActivities(),
-            importFacade.listPersistedReports()
+            importFacade.listPersistedReports(),
+            importFacade.listDuplicateReviews()
         ]);
         renderPreview(preview);
         renderReports(reports);
+        renderDuplicateReviews(reviews);
     }
 
     function resetDialog() {
@@ -753,6 +908,17 @@ export function createSourceManagerPage({ document, sessionMode, importFacade })
         elements.dialog.addEventListener('cancel', event => {
             event.preventDefault();
             closeDialog();
+        });
+        elements.reviewConfirm.addEventListener('click', () => (
+            decideDuplicateReview('confirmed_same')
+        ));
+        elements.reviewSeparate.addEventListener('click', () => (
+            decideDuplicateReview('rejected')
+        ));
+        elements.reviewLater.addEventListener('click', closeDuplicateReview);
+        elements.reviewDialog.addEventListener('cancel', event => {
+            event.preventDefault();
+            closeDuplicateReview();
         });
         document.querySelectorAll('[data-report-filter]').forEach(button => {
             button.addEventListener('click', async () => {

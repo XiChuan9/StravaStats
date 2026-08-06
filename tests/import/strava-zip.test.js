@@ -441,6 +441,7 @@ test('ZIP ImportService slice is concurrent-idempotent, reload-idempotent, and r
     assert.deepEqual(replayReport.totals, {
         total: 2,
         completed: 0,
+        reviewRequired: 0,
         skippedExactDuplicate: 2,
         failed: 0,
         cancelled: 0
@@ -473,6 +474,7 @@ test('ZIP rows isolate semantic failures and preserve missing values without fab
     assert.deepEqual(report.totals, {
         total: 3,
         completed: 2,
+        reviewRequired: 0,
         skippedExactDuplicate: 0,
         failed: 1,
         cancelled: 0

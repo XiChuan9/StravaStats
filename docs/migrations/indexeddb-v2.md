@@ -6,7 +6,7 @@
 | Owner | XiChuan9 |
 | Created | 2026-07-28 |
 | Last updated | 2026-08-06 |
-| Target implementation | PR-05 IndexedDB v2 Schema、PR-19 Exact Identity Resolver |
+| Target implementation | PR-05 IndexedDB v2 Schema、PR-19 Exact Identity Resolver、PR-20 Duplicate Review |
 | Related ADRs | ADR-0001、ADR-0002、ADR-0005、ADR-0006 |
 
 ## 1. 核心决定
@@ -96,9 +96,11 @@ importItem status
 ```text
 mergeCandidate status
 mergeDecision
-activity source relations
-affected analysis invalidation
 ```
+
+PR-20 的 review-only decision 不移动 ActivitySource、不修改 Canonical graph，也不触发
+analysis invalidation。未来若批准真实 merge/Unmerge，必须以新的原子事务合同补充这些
+写入，不能复用 review-only transaction 暗中改变活动数据。
 
 ### Restore unit
 
@@ -283,3 +285,34 @@ v3 只增加上述复合索引。全新建库按 v1 -> v2 -> v3 顺序写入三�
 成功升级到 v3 后，旧 physical-v2 代码可返回 `VERSION_UNSUPPORTED`。禁止 destructive
 downgrade、清库或以重建方式“修复”；切回支持 v3 的代码即可重新读取保留的数据。
 Legacy 数据库、默认 Legacy 模式、disconnect 与本地删除生命周期均不受此迁移影响。
+
+## 17. PR-20 accepted physical v4 migration
+
+PR-20 将物理版本从 3 增加到 4，schema ID 为 `strava-stats-v2@4`，migration ID 为
+`schema-0004-duplicate-review`。V3 的 11 个 store 和全部记录保持原样，只新增：
+
+```text
+mergeCandidates
+  keyPath: id
+  byActivityPair: [activityAId, activityBId], unique
+  byStatusAndCreatedAt: [status, createdAt], non-unique
+
+mergeDecisions
+  keyPath: id
+  byCandidateId: candidateId, non-unique
+```
+
+`mergeCandidates` 保留有序 opaque activity pair、`high`/`possible` confidence、
+`review_required`/`confirmed_same`/`rejected` status、matcher version、时间、来源 ImportItem
+和冻结的安全差异快照。`mergeDecisions` 是 append-only identity-intent audit；PR-20 不含
+field choices、primary/secondary、alias、活动隐藏、来源移动、field/stream preference 或
+Unmerge。
+
+V3 -> V4 只在一个 versionchange transaction 中创建两个 store/index 集合、更新 metadata
+并写入第四条 migration。结构创建或 metadata 校验失败会回滚整个升级，V3 数据库保持
+可重试；成功后不重写或删除 Canonical、RawArtifact、ActivitySource、Import 或 Legacy
+记录。全新数据库按 v1 -> v2 -> v3 -> v4 顺序完成四条结构 migration。
+
+成功升级后，旧 physical-v3 代码以 `VERSION_UNSUPPORTED` 安全失败，不得降级、清库或
+重建。代码回滚必须使用支持 v4 的版本；应用数据回滚仍通过独立保留的 Legacy 数据库和
+既有 feature flag。候选/决策记录继续保留，不作为自动清理对象。

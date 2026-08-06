@@ -12,6 +12,16 @@ import {
     prepareCanonicalBundleWrite
 } from './canonical-store.js';
 import {
+    DUPLICATE_REVIEW_DECISION_VERSION,
+    DUPLICATE_REVIEW_MAX_CANDIDATES,
+    compareDuplicateReviewMatches,
+    createDuplicateReviewCandidate,
+    createDuplicateReviewMatch,
+    createDuplicateReviewTimeRange,
+    validDuplicateReviewCandidate,
+    validDuplicateReviewDecision
+} from './duplicate-review.js';
+import {
     enqueueExactIdentityLink,
     enqueueExactIdentityLookup,
     enqueueExactIdentityTargetValidation
@@ -70,6 +80,7 @@ const ITEM_STATUSES = Object.freeze([
     'matching',
     'persisting',
     'completed',
+    'review_required',
     'skipped_exact_duplicate',
     'failed_validation',
     'failed_decode',
@@ -87,6 +98,7 @@ const TERMINAL_JOB_STATUSES = Object.freeze([
 ]);
 const TERMINAL_ITEM_STATUSES = Object.freeze([
     'completed',
+    'review_required',
     'skipped_exact_duplicate',
     'failed_validation',
     'failed_decode',
@@ -125,13 +137,15 @@ const ITEM_TRANSITIONS = Object.freeze({
     ]),
     matching: Object.freeze(['persisting', 'retrying', 'cancelled']),
     persisting: Object.freeze([
-        'completed', 'skipped_exact_duplicate', 'failed_storage', 'retrying'
+        'completed', 'review_required', 'skipped_exact_duplicate',
+        'failed_storage', 'retrying'
     ]),
     failed_validation: Object.freeze(['retrying']),
     failed_decode: Object.freeze(['retrying']),
     failed_storage: Object.freeze(['retrying']),
     retrying: Object.freeze(['validating']),
     completed: Object.freeze([]),
+    review_required: Object.freeze([]),
     skipped_exact_duplicate: Object.freeze([]),
     cancelled: Object.freeze([])
 });
@@ -144,7 +158,31 @@ const IMPORT_TRANSACTION_STORES = Object.freeze([
     V2_STORE_NAME.DEVICES,
     V2_STORE_NAME.RAW_ARTIFACTS,
     V2_STORE_NAME.IMPORT_JOBS,
-    V2_STORE_NAME.IMPORT_ITEMS
+    V2_STORE_NAME.IMPORT_ITEMS,
+    V2_STORE_NAME.MERGE_CANDIDATES,
+    V2_STORE_NAME.MERGE_DECISIONS
+]);
+const COMPARISON_SOURCE_FIELDS = Object.freeze([
+    'id',
+    'activityId',
+    'provider',
+    'externalId',
+    'rawArtifactId',
+    'acquisitionMethod',
+    'deviceId',
+    'importedAt'
+]);
+const COMPARISON_SOURCE_REQUIRED_FIELDS = Object.freeze([
+    'id',
+    'activityId',
+    'provider',
+    'acquisitionMethod',
+    'importedAt'
+]);
+const COMPARISON_DEVICE_FIELDS = Object.freeze([
+    'id',
+    'manufacturer',
+    'model'
 ]);
 
 function sameArray(left, right) {
@@ -524,6 +562,183 @@ function cloneFrozen(value, operation) {
     }
 }
 
+function candidateLimitExceeded() {
+    return storageError(
+        STORAGE_ERROR_CODE.CANDIDATE_LIMIT_EXCEEDED,
+        STORAGE_OPERATION.PERSIST_IMPORT_ITEM
+    );
+}
+
+function ownValue(value, field) {
+    try {
+        if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+            return undefined;
+        }
+        const descriptor = Object.getOwnPropertyDescriptor(value, field);
+        return descriptor?.enumerable && Object.hasOwn(descriptor, 'value')
+            ? descriptor.value
+            : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+function codeUnitCompare(left, right) {
+    if (left === right) return 0;
+    return left < right ? -1 : 1;
+}
+
+function denseOpaqueIds(value) {
+    try {
+        if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) {
+            return null;
+        }
+        const keys = Reflect.ownKeys(value);
+        if (
+            keys.some(key => typeof key !== 'string')
+            || keys.some(key => key !== 'length' && !/^(0|[1-9]\d*)$/.test(key))
+            || keys.length !== value.length + 1
+        ) return null;
+        const ids = [];
+        for (let index = 0; index < value.length; index += 1) {
+            const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+            if (
+                !descriptor?.enumerable
+                || !Object.hasOwn(descriptor, 'value')
+                || !opaqueString(descriptor.value)
+            ) return null;
+            ids.push(descriptor.value);
+        }
+        if (
+            new Set(ids).size !== ids.length
+            || !sameArray(ids, ids.slice().sort(codeUnitCompare))
+        ) return null;
+        return ids;
+    } catch {
+        return null;
+    }
+}
+
+function providerFamilyLabel(provider) {
+    if (provider === 'strava') return 'Strava';
+    if (provider === 'fit') return 'FIT file';
+    if (provider === 'tcx') return 'TCX file';
+    if (provider === 'gpx') return 'GPX file';
+    return 'Local import';
+}
+
+function comparisonSource(value, activityId, deviceIds) {
+    const source = ownDataValues(value, COMPARISON_SOURCE_FIELDS, true);
+    if (
+        !source
+        || COMPARISON_SOURCE_REQUIRED_FIELDS.some(field => (
+            !Object.hasOwn(source, field)
+        ))
+        || !opaqueString(source.id)
+        || source.activityId !== activityId
+        || !opaqueString(source.provider)
+        || !opaqueString(source.acquisitionMethod)
+        || !strictUtc(source.importedAt)
+    ) return null;
+    for (const field of ['externalId', 'rawArtifactId', 'deviceId']) {
+        if (
+            Object.hasOwn(source, field)
+            && source[field] !== null
+            && !opaqueString(source[field])
+        ) return null;
+    }
+    if (
+        typeof source.deviceId === 'string'
+        && !deviceIds.includes(source.deviceId)
+    ) return null;
+    return {
+        id: source.id,
+        providerLabel: providerFamilyLabel(source.provider)
+    };
+}
+
+function validComparisonDevice(value, expectedId) {
+    const device = ownDataValues(value, COMPARISON_DEVICE_FIELDS, true);
+    if (!device || device.id !== expectedId || !opaqueString(device.id)) return false;
+    return ['manufacturer', 'model'].every(field => (
+        !Object.hasOwn(device, field)
+        || device[field] === null
+        || typeof device[field] === 'string'
+    ));
+}
+
+function safeComparisonActivity(envelope, sources, devices, laps) {
+    const activity = ownValue(envelope, 'activity');
+    const deviceIds = denseOpaqueIds(ownValue(envelope, 'deviceIds'));
+    const capabilities = ownValue(activity, 'capabilities');
+    if (
+        deviceIds === null
+        || !Array.isArray(sources)
+        || sources.length === 0
+        || !Array.isArray(devices)
+        || devices.length !== deviceIds.length
+        || !Array.isArray(laps)
+    ) return null;
+    const safeSources = sources.map(source => (
+        comparisonSource(source, ownValue(activity, 'id'), deviceIds)
+    ));
+    if (
+        safeSources.some(source => source === null)
+        || new Set(safeSources.map(source => source.id)).size !== safeSources.length
+        || devices.some((device, index) => (
+            !validComparisonDevice(device, deviceIds[index])
+        ))
+    ) return null;
+    const sourceLabels = [...new Set(safeSources.map(source => (
+        source.providerLabel
+    )))].sort(codeUnitCompare);
+    const sourceCount = safeSources.length;
+    const lapCount = laps.length;
+    const projection = {
+        startTimeUtc: ownValue(activity, 'startTimeUtc'),
+        sportCategory: ownValue(activity, 'sportCategory'),
+        distanceMeters: ownValue(activity, 'distanceMeters'),
+        movingTimeSeconds: ownValue(activity, 'movingTimeSeconds'),
+        capabilities: {
+            hasGps: ownValue(capabilities, 'hasGps'),
+            hasHeartRate: ownValue(capabilities, 'hasHeartRate'),
+            hasPower: ownValue(capabilities, 'hasPower'),
+            hasCadence: ownValue(capabilities, 'hasCadence'),
+            hasLaps: ownValue(capabilities, 'hasLaps')
+        },
+        sourceCount,
+        sourceLabel: `${sourceLabels.join(', ')} · ${sourceCount} ${
+            sourceCount === 1 ? 'source' : 'sources'
+        }`,
+        devicePresent: deviceIds.length > 0,
+        deviceLabel: deviceIds.length === 0
+            ? 'No device details'
+            : deviceIds.length === 1
+                ? 'Recorded device'
+                : `${deviceIds.length} recorded devices`,
+        lapCount
+    };
+    if (
+        !strictUtc(projection.startTimeUtc)
+        || !opaqueString(projection.sportCategory)
+        || typeof projection.distanceMeters !== 'number'
+        || !Number.isFinite(projection.distanceMeters)
+        || projection.distanceMeters < 0
+        || typeof projection.movingTimeSeconds !== 'number'
+        || !Number.isFinite(projection.movingTimeSeconds)
+        || projection.movingTimeSeconds < 0
+        || !Object.values(projection.capabilities).every(value => (
+            typeof value === 'boolean'
+        ))
+        || laps.some(lap => (
+            ownValue(lap, 'activityId') !== ownValue(activity, 'id')
+        ))
+    ) {
+        return null;
+    }
+    return projection;
+}
+
 export function createImportStore(options) {
     const dependencies = normalizeOptions(options);
     if (!dependencies) {
@@ -599,6 +814,95 @@ export function createImportStore(options) {
         state.operations.add(tracked);
         tracked.finally(() => state.operations.delete(tracked)).catch(() => {});
         return tracked;
+    }
+
+    function enqueueDuplicateReviewLookup(context, incomingActivity) {
+        const range = createDuplicateReviewTimeRange({
+            bound(lower, upper) {
+                return dependencies.bound.call(
+                    dependencies.IDBKeyRange,
+                    lower,
+                    upper
+                );
+            }
+        }, incomingActivity);
+        if (range === null) return () => [];
+        const token = context.scanPage(
+            V2_STORE_NAME.ACTIVITIES,
+            'bySportCategoryAndStartTimeUtc',
+            range,
+            'next',
+            DUPLICATE_REVIEW_MAX_CANDIDATES + 1,
+            (_indexKey, _primaryKey, envelope) => (
+                createDuplicateReviewMatch(incomingActivity, envelope) === null
+                    ? 'skip'
+                    : 'include'
+            )
+        );
+        return () => {
+            const matches = token.read().map(envelope => (
+                createDuplicateReviewMatch(incomingActivity, envelope)
+            ));
+            if (matches.some(match => match === null)) {
+                throw schemaMismatch(STORAGE_OPERATION.PERSIST_IMPORT_ITEM);
+            }
+            if (matches.length > DUPLICATE_REVIEW_MAX_CANDIDATES) {
+                throw candidateLimitExceeded();
+            }
+            return matches.sort(compareDuplicateReviewMatches);
+        };
+    }
+
+    function enqueueDuplicateReviewWrites(
+        context,
+        matches,
+        itemId,
+        createdAt
+    ) {
+        const existingTokens = matches.map(match => context.getAll(
+            V2_STORE_NAME.MERGE_CANDIDATES,
+            'byActivityPair',
+            [match.activityAId, match.activityBId]
+        ));
+        let result;
+        context.afterReads(() => {
+            let reviewRequired = false;
+            const candidates = [];
+            matches.forEach((match, index) => {
+                const existingRows = existingTokens[index].read();
+                if (existingRows.length > 1) {
+                    throw schemaMismatch(STORAGE_OPERATION.PERSIST_IMPORT_ITEM);
+                }
+                if (existingRows.length === 1) {
+                    const existing = existingRows[0];
+                    if (!validDuplicateReviewCandidate(existing)) {
+                        throw schemaMismatch(STORAGE_OPERATION.PERSIST_IMPORT_ITEM);
+                    }
+                    if (existing.status === 'review_required') {
+                        reviewRequired = true;
+                    }
+                    candidates.push(existing);
+                    return;
+                }
+                const candidate = createDuplicateReviewCandidate({
+                    id: `duplicate-candidate:${itemId}:${index}`,
+                    itemId,
+                    createdAt,
+                    match
+                });
+                if (!candidate) {
+                    throw schemaMismatch(STORAGE_OPERATION.PERSIST_IMPORT_ITEM);
+                }
+                context.add(V2_STORE_NAME.MERGE_CANDIDATES, candidate);
+                candidates.push(candidate);
+                reviewRequired = true;
+            });
+            result = Object.freeze({
+                reviewRequired,
+                candidates: Object.freeze(candidates.slice())
+            });
+        });
+        return () => result;
     }
 
     function createImportJob(jobId, itemIds) {
@@ -1024,22 +1328,43 @@ export function createImportStore(options) {
                     context.afterReads(() => {
                         const identity = identityResult();
                         if (identity.status === 'unmatched') {
-                            const canonicalResult = enqueueCanonicalBundleWrite(
+                            const candidateCreatedAt = timestamp(
+                                dependencies.now,
+                                STORAGE_OPERATION.PERSIST_IMPORT_ITEM
+                            );
+                            const candidateLookup = enqueueDuplicateReviewLookup(
                                 context,
-                                prepared
+                                prepared.records.activityEnvelope.activity
                             );
                             context.afterReads(() => {
-                                const canonical = canonicalResult();
-                                if (!canonical) {
-                                    throw schemaMismatch(
-                                        STORAGE_OPERATION.PERSIST_IMPORT_ITEM
+                                const matches = candidateLookup();
+                                const candidateResult =
+                                    enqueueDuplicateReviewWrites(
+                                        context,
+                                        matches,
+                                        itemId,
+                                        candidateCreatedAt
                                     );
-                                }
-                                finalize(
-                                    'completed',
-                                    canonical.activityId,
-                                    true
+                                const canonicalResult = enqueueCanonicalBundleWrite(
+                                    context,
+                                    prepared
                                 );
+                                context.afterReads(() => {
+                                    const candidates = candidateResult();
+                                    const canonical = canonicalResult();
+                                    if (!candidates || !canonical) {
+                                        throw schemaMismatch(
+                                            STORAGE_OPERATION.PERSIST_IMPORT_ITEM
+                                        );
+                                    }
+                                    finalize(
+                                        candidates.reviewRequired
+                                            ? 'review_required'
+                                            : 'completed',
+                                        canonical.activityId,
+                                        true
+                                    );
+                                });
                             });
                             return;
                         }
@@ -1162,6 +1487,244 @@ export function createImportStore(options) {
         ));
     }
 
+    function listDuplicateReviewCandidates() {
+        let range;
+        try {
+            range = dependencies.bound.call(
+                dependencies.IDBKeyRange,
+                ['review_required', ''],
+                ['review_required', '\uffff']
+            );
+        } catch {
+            return Promise.reject(dataInvalid(
+                STORAGE_OPERATION.LIST_DUPLICATE_REVIEW_CANDIDATES
+            ));
+        }
+        return runReady(
+            STORAGE_OPERATION.LIST_DUPLICATE_REVIEW_CANDIDATES,
+            database => runTransaction(database, {
+                storeNames: [V2_STORE_NAME.MERGE_CANDIDATES],
+                mode: 'readonly',
+                operation: STORAGE_OPERATION.LIST_DUPLICATE_REVIEW_CANDIDATES
+            }, context => {
+                const token = context.scanPage(
+                    V2_STORE_NAME.MERGE_CANDIDATES,
+                    'byStatusAndCreatedAt',
+                    range,
+                    'next',
+                    DUPLICATE_REVIEW_MAX_CANDIDATES,
+                    () => 'include'
+                );
+                return () => {
+                    const candidates = token.read();
+                    if (candidates.some(value => (
+                        !validDuplicateReviewCandidate(value)
+                        || value.status !== 'review_required'
+                    ))) {
+                        throw schemaMismatch(
+                            STORAGE_OPERATION.LIST_DUPLICATE_REVIEW_CANDIDATES
+                        );
+                    }
+                    return cloneFrozen(
+                        candidates,
+                        STORAGE_OPERATION.LIST_DUPLICATE_REVIEW_CANDIDATES
+                    );
+                };
+            })
+        );
+    }
+
+    function getDuplicateReviewCandidate(candidateId) {
+        const operation = STORAGE_OPERATION.GET_DUPLICATE_REVIEW_CANDIDATE;
+        if (!opaqueString(candidateId)) {
+            return Promise.reject(dataInvalid(operation));
+        }
+        return runReady(operation, database => runTransaction(database, {
+            storeNames: [
+                V2_STORE_NAME.MERGE_CANDIDATES,
+                V2_STORE_NAME.ACTIVITIES,
+                V2_STORE_NAME.ACTIVITY_SOURCES,
+                V2_STORE_NAME.DEVICES,
+                V2_STORE_NAME.LAPS
+            ],
+            mode: 'readonly',
+            operation
+        }, context => {
+            const candidateToken = context.get(
+                V2_STORE_NAME.MERGE_CANDIDATES,
+                candidateId
+            );
+            let candidate;
+            let activityTokens;
+            let sourceTokens;
+            let deviceTokens;
+            let lapTokens;
+            let comparisonRows;
+            let result;
+            context.afterReads(() => {
+                candidate = candidateToken.read();
+                if (candidate === undefined) throw notFound(operation);
+                if (!validDuplicateReviewCandidate(candidate)) {
+                    throw schemaMismatch(operation);
+                }
+                const activityIds = [
+                    candidate.activityAId,
+                    candidate.activityBId
+                ];
+                activityTokens = activityIds.map(id => context.get(
+                    V2_STORE_NAME.ACTIVITIES,
+                    id
+                ));
+                sourceTokens = activityIds.map(id => context.getAll(
+                    V2_STORE_NAME.ACTIVITY_SOURCES,
+                    'byActivityId',
+                    id
+                ));
+                lapTokens = activityIds.map(id => {
+                    let range;
+                    try {
+                        range = dependencies.bound.call(
+                            dependencies.IDBKeyRange,
+                            [id, 0],
+                            [id, Number.MAX_VALUE]
+                        );
+                    } catch {
+                        throw dataInvalid(operation);
+                    }
+                    return context.getAll(
+                        V2_STORE_NAME.LAPS,
+                        'byActivityIdAndIndex',
+                        range
+                    );
+                });
+            });
+            context.afterReads(() => {
+                const ids = [candidate.activityAId, candidate.activityBId];
+                comparisonRows = ids.map((id, index) => {
+                    const envelope = activityTokens[index].read();
+                    const sources = sourceTokens[index].read();
+                    const laps = lapTokens[index].read();
+                    const deviceIds = envelope === undefined
+                        ? null
+                        : denseOpaqueIds(ownValue(envelope, 'deviceIds'));
+                    if (deviceIds === null) throw schemaMismatch(operation);
+                    return { envelope, sources, laps, deviceIds };
+                });
+                deviceTokens = comparisonRows.map(row => row.deviceIds.map(id => (
+                    context.get(V2_STORE_NAME.DEVICES, id)
+                )));
+            });
+            context.afterReads(() => {
+                const activities = comparisonRows.map((row, index) => {
+                    const devices = deviceTokens[index].map(token => token.read());
+                    if (devices.some(device => device === undefined)) {
+                        throw schemaMismatch(operation);
+                    }
+                    const projection = safeComparisonActivity(
+                        row.envelope,
+                        row.sources,
+                        devices,
+                        row.laps
+                    );
+                    if (projection === null) throw schemaMismatch(operation);
+                    return projection;
+                });
+                result = {
+                    id: candidate.id,
+                    confidence: candidate.confidence,
+                    status: candidate.status,
+                    createdAt: candidate.createdAt,
+                    evidence: candidate.evidence,
+                    activities
+                };
+            });
+            return () => cloneFrozen(result, operation);
+        }));
+    }
+
+    function decideDuplicateReviewCandidate(candidateId, decision) {
+        const operation = STORAGE_OPERATION.DECIDE_DUPLICATE_REVIEW_CANDIDATE;
+        if (
+            !opaqueString(candidateId)
+            || (decision !== 'confirmed_same' && decision !== 'rejected')
+        ) {
+            return Promise.reject(dataInvalid(operation));
+        }
+        return runReady(operation, database => runTransaction(database, {
+            storeNames: [
+                V2_STORE_NAME.MERGE_CANDIDATES,
+                V2_STORE_NAME.MERGE_DECISIONS
+            ],
+            mode: 'readwrite',
+            operation
+        }, context => {
+            const candidateToken = context.get(
+                V2_STORE_NAME.MERGE_CANDIDATES,
+                candidateId
+            );
+            const decisionsToken = context.getAll(
+                V2_STORE_NAME.MERGE_DECISIONS,
+                'byCandidateId',
+                candidateId
+            );
+            let result;
+            context.afterReads(() => {
+                const candidate = candidateToken.read();
+                const decisions = decisionsToken.read();
+                if (candidate === undefined) throw notFound(operation);
+                if (
+                    !validDuplicateReviewCandidate(candidate)
+                    || decisions.some(value => !validDuplicateReviewDecision(value))
+                    || decisions.some(value => value.candidateId !== candidateId)
+                    || decisions.length > 1
+                ) {
+                    throw schemaMismatch(operation);
+                }
+                if (candidate.status !== 'review_required') {
+                    const existing = decisions[0];
+                    if (
+                        decisions.length !== 1
+                        || existing.decision !== candidate.status
+                    ) {
+                        throw schemaMismatch(operation);
+                    }
+                    if (decision !== candidate.status) throw conflict(operation);
+                    result = {
+                        status: candidate.status,
+                        decision: existing
+                    };
+                    return;
+                }
+                const decidedAt = timestamp(dependencies.now, operation);
+                if (decisions.length !== 0 || decidedAt < candidate.createdAt) {
+                    throw conflict(operation);
+                }
+                const record = {
+                    id: `duplicate-decision:${candidate.id}:${decision}`,
+                    candidateId,
+                    decision,
+                    decidedAt,
+                    decisionVersion: DUPLICATE_REVIEW_DECISION_VERSION
+                };
+                const nextCandidate = {
+                    ...candidate,
+                    status: decision,
+                    updatedAt: decidedAt
+                };
+                if (
+                    !validDuplicateReviewDecision(record)
+                    || !validDuplicateReviewCandidate(nextCandidate)
+                ) {
+                    throw schemaMismatch(operation);
+                }
+                context.add(V2_STORE_NAME.MERGE_DECISIONS, record);
+                context.put(V2_STORE_NAME.MERGE_CANDIDATES, nextCandidate);
+                result = { status: decision, decision: record };
+            });
+            return () => cloneFrozen(result, operation);
+        }));
+    }
+
     function close() {
         if (state.closing) return state.closing;
         state.stale = true;
@@ -1215,6 +1778,9 @@ export function createImportStore(options) {
         },
         listImportItems,
         listImportJobs,
+        listDuplicateReviewCandidates,
+        getDuplicateReviewCandidate,
+        decideDuplicateReviewCandidate,
         listActivities(optionsValue) {
             return canonicalStore.listActivities(optionsValue);
         },

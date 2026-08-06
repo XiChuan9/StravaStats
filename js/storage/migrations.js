@@ -5,6 +5,7 @@ import {
     V2_CANONICAL_SCHEMA_VERSION,
     V2_DATABASE_NAME,
     V2_DATABASE_VERSION,
+    V2_DUPLICATE_REVIEW_MIGRATION_ID,
     V2_EXACT_IDENTITY_MIGRATION_ID,
     V2_IMPORT_MIGRATION_ID,
     V2_METADATA_KEY,
@@ -32,11 +33,17 @@ export const V2_MIGRATION_REGISTRY = Object.freeze([
         id: V2_EXACT_IDENTITY_MIGRATION_ID,
         fromVersion: 2,
         toVersion: 3
+    }),
+    Object.freeze({
+        id: V2_DUPLICATE_REVIEW_MIGRATION_ID,
+        fromVersion: 3,
+        toVersion: 4
     })
 ]);
 
 const V1_SCHEMA_ID = 'strava-stats-v2@1';
 const V2_SCHEMA_ID_AT_VERSION_2 = 'strava-stats-v2@2';
+const V2_SCHEMA_ID_AT_VERSION_3 = 'strava-stats-v2@3';
 
 const DATA_MIGRATION_DEFINITION_FIELDS = Object.freeze([
     'id',
@@ -349,8 +356,8 @@ function applyExactIdentityMigration(database, transaction, {
             }
             metadataStore.put({
                 ...metadata,
-                schemaId: V2_SCHEMA_ID,
-                indexedDbVersion: V2_DATABASE_VERSION
+                schemaId: V2_SCHEMA_ID_AT_VERSION_3,
+                indexedDbVersion: 3
             });
         } catch {
             try {
@@ -374,6 +381,91 @@ function applyExactIdentityMigration(database, transaction, {
         errorCode: null,
         retryCount: 0
     });
+}
+
+function applyDuplicateReviewMigration(database, transaction, {
+    applicationVersion,
+    timestamp,
+    startingVersion
+}) {
+    const priorSchema = V2_PHYSICAL_SCHEMA_BY_VERSION[3];
+    const schema = V2_PHYSICAL_SCHEMA_BY_VERSION[4];
+    ensurePhysicalSchema(database, transaction, schema);
+
+    const metadataStore = transaction.objectStore(V2_STORE_NAME.METADATA);
+    const metadataRequest = metadataStore.get(V2_METADATA_KEY);
+    metadataRequest.onsuccess = () => {
+        try {
+            const metadata = ownDataValues(metadataRequest.result, [
+                'key',
+                'databaseName',
+                'schemaId',
+                'indexedDbVersion',
+                'canonicalSchemaVersion',
+                'createdAt',
+                'createdByApplicationVersion'
+            ]);
+            const priorVersionIsValid = metadata && (shouldAcceptPriorMetadata(
+                metadata,
+                startingVersion
+            ));
+            if (
+                !metadata
+                || metadata.key !== V2_METADATA_KEY
+                || metadata.databaseName !== V2_DATABASE_NAME
+                || !priorVersionIsValid
+                || metadata.canonicalSchemaVersion !== V2_CANONICAL_SCHEMA_VERSION
+                || !isStrictUtcInstant(metadata.createdAt)
+                || typeof metadata.createdByApplicationVersion !== 'string'
+                || metadata.createdByApplicationVersion.length === 0
+            ) {
+                throw new TypeError('invalid prior metadata');
+            }
+            metadataStore.put({
+                ...metadata,
+                schemaId: V2_SCHEMA_ID,
+                indexedDbVersion: V2_DATABASE_VERSION
+            });
+        } catch {
+            try {
+                transaction.abort();
+            } catch {
+                // The versionchange terminal event remains authoritative.
+            }
+        }
+    };
+
+    transaction.objectStore(V2_STORE_NAME.MIGRATIONS).put({
+        id: V2_DUPLICATE_REVIEW_MIGRATION_ID,
+        fromVersion: 3,
+        toVersion: 4,
+        status: 'completed',
+        startedAt: timestamp,
+        completedAt: timestamp,
+        applicationVersion,
+        inputSummary: { storeCount: priorSchema.stores.length },
+        outputSummary: { storeCount: schema.stores.length },
+        errorCode: null,
+        retryCount: 0
+    });
+}
+
+function shouldAcceptPriorMetadata(metadata, startingVersion) {
+    if (
+        metadata.schemaId === V2_SCHEMA_ID_AT_VERSION_3
+        && metadata.indexedDbVersion === 3
+    ) {
+        return true;
+    }
+    if (startingVersion >= 3) return false;
+    return (
+        metadata.schemaId === V2_SCHEMA_ID_AT_VERSION_2
+        && metadata.indexedDbVersion === 2
+    ) || (
+        startingVersion < 2
+        && metadata.schemaId === V1_SCHEMA_ID
+        && metadata.indexedDbVersion === 1
+    );
 }
 
 export function applyStructuralMigrations(database, transaction, {
@@ -419,6 +511,12 @@ export function applyStructuralMigrations(database, transaction, {
             });
         } else if (migration.id === V2_EXACT_IDENTITY_MIGRATION_ID) {
             applyExactIdentityMigration(database, transaction, {
+                applicationVersion,
+                timestamp,
+                startingVersion: oldVersion
+            });
+        } else if (migration.id === V2_DUPLICATE_REVIEW_MIGRATION_ID) {
+            applyDuplicateReviewMigration(database, transaction, {
                 applicationVersion,
                 timestamp,
                 startingVersion: oldVersion

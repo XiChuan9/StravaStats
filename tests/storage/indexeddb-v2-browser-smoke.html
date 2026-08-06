@@ -39,7 +39,9 @@
             'devices',
             'rawArtifacts',
             'importJobs',
-            'importItems'
+            'importItems',
+            'mergeCandidates',
+            'mergeDecisions'
         ];
         const EXPECTED_INDEXES = {
             metadata: [],
@@ -55,11 +57,13 @@
             devices: [],
             rawArtifacts: ['bySha256'],
             importJobs: ['byCreatedAt'],
-            importItems: ['byJobId']
+            importItems: ['byJobId'],
+            mergeCandidates: ['byActivityPair', 'byStatusAndCreatedAt'],
+            mergeDecisions: ['byCandidateId']
         };
         const EXPECTED_FINAL_COUNTS = {
             metadata: 1,
-            migrations: 3,
+            migrations: 4,
             activities: 5,
             activitySources: 5,
             streamSeries: 10,
@@ -68,7 +72,9 @@
             devices: 3,
             rawArtifacts: 0,
             importJobs: 0,
-            importItems: 0
+            importItems: 0,
+            mergeCandidates: 0,
+            mergeDecisions: 0
         };
 
         const stateElement = document.querySelector('#state');
@@ -252,6 +258,10 @@
                     transaction.objectStore('migrations')
                         .get('schema-0003-exact-identity-index')
                 );
+                const duplicateReviewMigration = await requestResult(
+                    transaction.objectStore('migrations')
+                        .get('schema-0004-duplicate-review')
+                );
                 await done;
                 return {
                     version: database.version,
@@ -285,6 +295,13 @@
                         retryCount: exactIdentityMigration?.retryCount,
                         outputStoreCount:
                             exactIdentityMigration?.outputSummary?.storeCount
+                    },
+                    duplicateReviewMigration: {
+                        id: duplicateReviewMigration?.id,
+                        status: duplicateReviewMigration?.status,
+                        retryCount: duplicateReviewMigration?.retryCount,
+                        outputStoreCount:
+                            duplicateReviewMigration?.outputSummary?.storeCount
                     }
                 };
             } finally {
@@ -507,7 +524,7 @@
                 const ready = await storage.initialize();
                 assert(ready.status === 'ready', 'initialize-ready');
                 const inspected = await inspectV2();
-                assert(inspected.version === 3, 'database-version');
+                assert(inspected.version === 4, 'database-version');
                 assert(
                     JSON.stringify(inspected.stores) ===
                         JSON.stringify(EXPECTED_STORES.slice().sort()),
@@ -522,10 +539,10 @@
                 }
                 assert(inspected.metadata.databaseName === V2_NAME, 'metadata-name');
                 assert(
-                    inspected.metadata.schemaId === 'strava-stats-v2@3',
+                    inspected.metadata.schemaId === 'strava-stats-v2@4',
                     'metadata-schema'
                 );
-                assert(inspected.metadata.indexedDbVersion === 3, 'metadata-version');
+                assert(inspected.metadata.indexedDbVersion === 4, 'metadata-version');
                 assert(
                     inspected.metadata.canonicalSchemaVersion === 1,
                     'metadata-canonical'
@@ -556,6 +573,14 @@
                     && inspected.exactIdentityMigration.retryCount === 0
                     && inspected.exactIdentityMigration.outputStoreCount === 11,
                     'exact-identity-migration'
+                );
+                assert(
+                    inspected.duplicateReviewMigration.id ===
+                        'schema-0004-duplicate-review'
+                    && inspected.duplicateReviewMigration.status === 'completed'
+                    && inspected.duplicateReviewMigration.retryCount === 0
+                    && inspected.duplicateReviewMigration.outputStoreCount === 13,
+                    'duplicate-review-migration'
                 );
             });
 
@@ -838,7 +863,7 @@
                     );
                     assert(manifest.backupFormatVersion === 1, 'manifest-format');
                     assert(manifest.databaseName === V2_NAME, 'manifest-name');
-                    assert(manifest.indexedDbVersion === 3, 'manifest-version');
+                    assert(manifest.indexedDbVersion === 4, 'manifest-version');
                     assert(manifest.canonicalSchemaVersion === 1, 'manifest-canonical');
                     assert(manifest.applicationVersion === APPLICATION_VERSION, 'manifest-app');
                     assert(manifest.files.length === 0, 'manifest-files');
@@ -850,7 +875,7 @@
                     );
                     assert(payloadReads === 0, 'manifest-payload-read');
                     assert(metadataGets === 1, 'manifest-metadata-get');
-                    assert(counts === 11, 'manifest-count-calls');
+                    assert(counts === 13, 'manifest-count-calls');
                     manifestSummary = {
                         backupFormatVersion: manifest.backupFormatVersion,
                         databaseName: manifest.databaseName,
@@ -879,7 +904,7 @@
                 ));
                 await first.initialize();
                 await second.initialize();
-                const request = indexedDB.open(V2_NAME, 4);
+                const request = indexedDB.open(V2_NAME, 5);
                 const aborted = new Promise((resolve, reject) => {
                     request.onupgradeneeded = () => request.transaction.abort();
                     request.onsuccess = () => {
@@ -895,7 +920,7 @@
                 await expectCode(first.listActivities(), 'CONNECTION_STALE');
                 await expectCode(second.listActivities(), 'CONNECTION_STALE');
                 const inspected = await inspectV2();
-                assert(inspected.version === 3, 'aborted-version');
+                assert(inspected.version === 4, 'aborted-version');
                 assert(
                     JSON.stringify(inspected.counts) ===
                         JSON.stringify(EXPECTED_FINAL_COUNTS),
@@ -998,9 +1023,9 @@
                 origin: location.origin,
                 database: {
                     name: V2_NAME,
-                    version: 3,
-                    stores: 11,
-                    indexes: 9
+                    version: 4,
+                    stores: 13,
+                    indexes: 13
                 },
                 inventory,
                 manifest: persisted.manifest,
