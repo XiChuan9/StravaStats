@@ -5,13 +5,17 @@ import {
     V2_CANONICAL_SCHEMA_VERSION,
     V2_DATABASE_NAME,
     V2_DATABASE_VERSION,
+    V2_EXACT_IDENTITY_MIGRATION_ID,
     V2_IMPORT_MIGRATION_ID,
     V2_METADATA_KEY,
     V2_SCHEMA_ID,
     V2_STORE_NAME
 } from './constants.js';
 import { storageError } from './errors.js';
-import { V2_SCHEMA } from './schema.js';
+import {
+    V2_PHYSICAL_SCHEMA_BY_VERSION,
+    V2_SCHEMA
+} from './schema.js';
 
 export const V2_MIGRATION_REGISTRY = Object.freeze([
     Object.freeze({
@@ -23,25 +27,16 @@ export const V2_MIGRATION_REGISTRY = Object.freeze([
         id: V2_IMPORT_MIGRATION_ID,
         fromVersion: 1,
         toVersion: 2
+    }),
+    Object.freeze({
+        id: V2_EXACT_IDENTITY_MIGRATION_ID,
+        fromVersion: 2,
+        toVersion: 3
     })
 ]);
 
 const V1_SCHEMA_ID = 'strava-stats-v2@1';
-const V1_STORE_NAMES = Object.freeze([
-    V2_STORE_NAME.METADATA,
-    V2_STORE_NAME.MIGRATIONS,
-    V2_STORE_NAME.ACTIVITIES,
-    V2_STORE_NAME.ACTIVITY_SOURCES,
-    V2_STORE_NAME.STREAM_SERIES,
-    V2_STORE_NAME.LAPS,
-    V2_STORE_NAME.EVENTS,
-    V2_STORE_NAME.DEVICES
-]);
-const IMPORT_STORE_NAMES = Object.freeze([
-    V2_STORE_NAME.RAW_ARTIFACTS,
-    V2_STORE_NAME.IMPORT_JOBS,
-    V2_STORE_NAME.IMPORT_ITEMS
-]);
+const V2_SCHEMA_ID_AT_VERSION_2 = 'strava-stats-v2@2';
 
 const DATA_MIGRATION_DEFINITION_FIELDS = Object.freeze([
     'id',
@@ -130,10 +125,9 @@ function createStore(database, descriptor) {
     return store;
 }
 
-function ensurePhysicalSchema(database, transaction, storeNames) {
-    for (const descriptor of V2_SCHEMA.stores.filter(candidate => (
-        storeNames.includes(candidate.name)
-    ))) {
+function ensurePhysicalSchema(database, transaction, schema) {
+    const storeNames = schema.stores.map(store => store.name);
+    for (const descriptor of schema.stores) {
         let store;
         if (database.objectStoreNames.contains(descriptor.name)) {
             store = transaction.objectStore(descriptor.name);
@@ -218,7 +212,8 @@ function applyBootstrapMigration(database, transaction, {
     applicationVersion,
     timestamp
 }) {
-    ensurePhysicalSchema(database, transaction, V1_STORE_NAMES);
+    const schema = V2_PHYSICAL_SCHEMA_BY_VERSION[1];
+    ensurePhysicalSchema(database, transaction, schema);
 
     const metadata = {
         key: V2_METADATA_KEY,
@@ -238,7 +233,7 @@ function applyBootstrapMigration(database, transaction, {
         completedAt: timestamp,
         applicationVersion,
         inputSummary: { storeCount: 0 },
-        outputSummary: { storeCount: V1_STORE_NAMES.length },
+        outputSummary: { storeCount: schema.stores.length },
         errorCode: null,
         retryCount: 0
     };
@@ -251,10 +246,9 @@ function applyImportCoreMigration(database, transaction, {
     applicationVersion,
     timestamp
 }) {
-    ensurePhysicalSchema(database, transaction, [
-        ...V1_STORE_NAMES,
-        ...IMPORT_STORE_NAMES
-    ]);
+    const priorSchema = V2_PHYSICAL_SCHEMA_BY_VERSION[1];
+    const schema = V2_PHYSICAL_SCHEMA_BY_VERSION[2];
+    ensurePhysicalSchema(database, transaction, schema);
 
     const metadataStore = transaction.objectStore(V2_STORE_NAME.METADATA);
     const metadataRequest = metadataStore.get(V2_METADATA_KEY);
@@ -284,8 +278,8 @@ function applyImportCoreMigration(database, transaction, {
             }
             metadataStore.put({
                 ...metadata,
-                schemaId: V2_SCHEMA_ID,
-                indexedDbVersion: V2_DATABASE_VERSION
+                schemaId: V2_SCHEMA_ID_AT_VERSION_2,
+                indexedDbVersion: 2
             });
         } catch {
             try {
@@ -304,8 +298,79 @@ function applyImportCoreMigration(database, transaction, {
         startedAt: timestamp,
         completedAt: timestamp,
         applicationVersion,
-        inputSummary: { storeCount: V1_STORE_NAMES.length },
-        outputSummary: { storeCount: V2_SCHEMA.stores.length },
+        inputSummary: { storeCount: priorSchema.stores.length },
+        outputSummary: { storeCount: schema.stores.length },
+        errorCode: null,
+        retryCount: 0
+    });
+}
+
+function applyExactIdentityMigration(database, transaction, {
+    applicationVersion,
+    timestamp,
+    startingVersion
+}) {
+    const priorSchema = V2_PHYSICAL_SCHEMA_BY_VERSION[2];
+    const schema = V2_PHYSICAL_SCHEMA_BY_VERSION[3];
+    ensurePhysicalSchema(database, transaction, schema);
+
+    const metadataStore = transaction.objectStore(V2_STORE_NAME.METADATA);
+    const metadataRequest = metadataStore.get(V2_METADATA_KEY);
+    metadataRequest.onsuccess = () => {
+        try {
+            const metadata = ownDataValues(metadataRequest.result, [
+                'key',
+                'databaseName',
+                'schemaId',
+                'indexedDbVersion',
+                'canonicalSchemaVersion',
+                'createdAt',
+                'createdByApplicationVersion'
+            ]);
+            const priorVersionIsValid = metadata && ((
+                metadata.schemaId === V2_SCHEMA_ID_AT_VERSION_2
+                && metadata.indexedDbVersion === 2
+            ) || (
+                startingVersion < 2
+                && metadata.schemaId === V1_SCHEMA_ID
+                && metadata.indexedDbVersion === 1
+            ));
+            if (
+                !metadata
+                || metadata.key !== V2_METADATA_KEY
+                || metadata.databaseName !== V2_DATABASE_NAME
+                || !priorVersionIsValid
+                || metadata.canonicalSchemaVersion !== V2_CANONICAL_SCHEMA_VERSION
+                || !isStrictUtcInstant(metadata.createdAt)
+                || typeof metadata.createdByApplicationVersion !== 'string'
+                || metadata.createdByApplicationVersion.length === 0
+            ) {
+                throw new TypeError('invalid prior metadata');
+            }
+            metadataStore.put({
+                ...metadata,
+                schemaId: V2_SCHEMA_ID,
+                indexedDbVersion: V2_DATABASE_VERSION
+            });
+        } catch {
+            try {
+                transaction.abort();
+            } catch {
+                // The versionchange terminal event remains authoritative.
+            }
+        }
+    };
+
+    transaction.objectStore(V2_STORE_NAME.MIGRATIONS).put({
+        id: V2_EXACT_IDENTITY_MIGRATION_ID,
+        fromVersion: 2,
+        toVersion: 3,
+        status: 'completed',
+        startedAt: timestamp,
+        completedAt: timestamp,
+        applicationVersion,
+        inputSummary: { storeCount: priorSchema.stores.length },
+        outputSummary: { storeCount: schema.stores.length },
         errorCode: null,
         retryCount: 0
     });
@@ -351,6 +416,12 @@ export function applyStructuralMigrations(database, transaction, {
             applyImportCoreMigration(database, transaction, {
                 applicationVersion,
                 timestamp
+            });
+        } else if (migration.id === V2_EXACT_IDENTITY_MIGRATION_ID) {
+            applyExactIdentityMigration(database, transaction, {
+                applicationVersion,
+                timestamp,
+                startingVersion: oldVersion
             });
         } else {
             throw storageError(

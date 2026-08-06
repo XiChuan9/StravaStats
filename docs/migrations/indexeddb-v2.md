@@ -5,8 +5,8 @@
 | Status | Proposed |
 | Owner | XiChuan9 |
 | Created | 2026-07-28 |
-| Last updated | 2026-07-28 |
-| Target implementation | PR-05 IndexedDB v2 Schema |
+| Last updated | 2026-08-06 |
+| Target implementation | PR-05 IndexedDB v2 Schema、PR-19 Exact Identity Resolver |
 | Related ADRs | ADR-0001、ADR-0002、ADR-0005、ADR-0006 |
 
 ## 1. 核心决定
@@ -257,3 +257,29 @@ PR-05 至少覆盖：
 - [ ] backup metadata 可以描述当前 schema；
 - [ ]数据库错误可诊断且不泄露隐私；
 - [ ]页面尚未被强制切换到 Canonical。
+
+## 16. PR-19 accepted physical v3 migration
+
+PR-19 将独立 V2 数据库的物理版本从 2 增加到 3，只在现有
+`activitySources` store 上增加一个索引：
+
+```text
+name: byProviderAndExternalId
+keyPath: [provider, externalId]
+unique: false
+multiEntry: false
+```
+
+`non-unique` 使升级能够保留历史重复 exact identity，并让 resolver 对多个不同
+activity 的结果 fail closed。IndexedDB 不会为缺失或 `null` externalId 建立有效复合
+key；非空 opaque string（包括字符串 `"0"`）按原值、区分大小写索引。
+
+物理描述按版本冻结：v1 只含 Canonical core，v2 增加 RawArtifact/ImportJob/ImportItem，
+v3 只增加上述复合索引。全新建库按 v1 -> v2 -> v3 顺序写入三条 migration 记录；
+已有 v1/v2 库在单个 versionchange transaction 内逐级验证、建索引并更新 metadata。
+升级中止时 IndexedDB 回滚整个 v3 结构变更，保留可重试的旧库；成功后不重写、删除或
+替换任何逻辑记录。
+
+成功升级到 v3 后，旧 physical-v2 代码可返回 `VERSION_UNSUPPORTED`。禁止 destructive
+downgrade、清库或以重建方式“修复”；切回支持 v3 的代码即可重新读取保留的数据。
+Legacy 数据库、默认 Legacy 模式、disconnect 与本地删除生命周期均不受此迁移影响。

@@ -11,6 +11,11 @@ import {
     enqueueCanonicalBundleWrite,
     prepareCanonicalBundleWrite
 } from './canonical-store.js';
+import {
+    enqueueExactIdentityLink,
+    enqueueExactIdentityLookup,
+    enqueueExactIdentityTargetValidation
+} from './exact-identity-resolver.js';
 import { runTransaction } from './transaction.js';
 
 const OPTION_FIELDS = Object.freeze([
@@ -948,9 +953,43 @@ export function createImportStore(options) {
                 const itemToken = context.get(V2_STORE_NAME.IMPORT_ITEMS, itemId);
                 let jobToken;
                 let artifactToken;
-                let duplicate = false;
                 let currentItem;
                 let currentJob;
+                let currentArtifact;
+                let result;
+
+                const finalize = (outcome, activityId, commitArtifact) => {
+                    if (
+                        !currentItem
+                        || !currentJob
+                        || !currentArtifact
+                        || !opaqueString(activityId)
+                    ) {
+                        throw schemaMismatch(
+                            STORAGE_OPERATION.PERSIST_IMPORT_ITEM
+                        );
+                    }
+                    if (commitArtifact) {
+                        context.put(V2_STORE_NAME.RAW_ARTIFACTS, {
+                            ...currentArtifact,
+                            state: 'committed',
+                            activityId
+                        });
+                    }
+                    context.put(V2_STORE_NAME.IMPORT_ITEMS, {
+                        ...currentItem,
+                        status: outcome,
+                        errorCode: null,
+                        retryable: false,
+                        activityId
+                    });
+                    context.put(V2_STORE_NAME.IMPORT_JOBS, {
+                        ...currentJob,
+                        completedItems: currentJob.completedItems + 1
+                    });
+                    result = Object.freeze({ status: outcome });
+                };
+
                 context.afterReads(() => {
                     currentItem = validItem(itemToken.read());
                     if (!currentItem) throw notFound(STORAGE_OPERATION.PERSIST_IMPORT_ITEM);
@@ -968,52 +1007,83 @@ export function createImportStore(options) {
                 });
                 context.afterReads(() => {
                     currentJob = validJob(jobToken.read());
-                    const artifact = validStoredArtifact(artifactToken.read());
-                    if (!currentJob || !artifact) {
+                    currentArtifact = validStoredArtifact(artifactToken.read());
+                    if (!currentJob || !currentArtifact) {
                         throw schemaMismatch(STORAGE_OPERATION.PERSIST_IMPORT_ITEM);
                     }
                     if (currentJob.status !== 'persisting') {
                         throw conflict(STORAGE_OPERATION.PERSIST_IMPORT_ITEM);
                     }
-                    duplicate = artifact.state === 'committed';
-                });
-                const canonicalResult = enqueueCanonicalBundleWrite(
-                    context,
-                    prepared,
-                    () => !duplicate
-                );
-                let result;
-                context.afterReads(() => {
-                    const artifact = validStoredArtifact(artifactToken.read());
-                    const canonical = canonicalResult();
-                    if (!artifact || !canonical || !currentItem || !currentJob) {
-                        throw schemaMismatch(STORAGE_OPERATION.PERSIST_IMPORT_ITEM);
-                    }
-                    const outcome = duplicate
-                        ? 'skipped_exact_duplicate'
-                        : 'completed';
-                    const activityId = duplicate
-                        ? artifact.activityId
-                        : prepared.records.activityId;
-                    if (!duplicate) {
-                        context.put(V2_STORE_NAME.RAW_ARTIFACTS, {
-                            ...artifact,
-                            state: 'committed',
-                            activityId
+                    const identityResult = enqueueExactIdentityLookup(
+                        context,
+                        prepared,
+                        currentArtifact.state === 'committed'
+                            ? currentArtifact.activityId
+                            : null
+                    );
+                    context.afterReads(() => {
+                        const identity = identityResult();
+                        if (identity.status === 'unmatched') {
+                            const canonicalResult = enqueueCanonicalBundleWrite(
+                                context,
+                                prepared
+                            );
+                            context.afterReads(() => {
+                                const canonical = canonicalResult();
+                                if (!canonical) {
+                                    throw schemaMismatch(
+                                        STORAGE_OPERATION.PERSIST_IMPORT_ITEM
+                                    );
+                                }
+                                finalize(
+                                    'completed',
+                                    canonical.activityId,
+                                    true
+                                );
+                            });
+                            return;
+                        }
+                        if (identity.status !== 'exact-match') {
+                            throw schemaMismatch(
+                                STORAGE_OPERATION.PERSIST_IMPORT_ITEM
+                            );
+                        }
+                        if (currentArtifact.state === 'committed') {
+                            const targetResult =
+                                enqueueExactIdentityTargetValidation(
+                                    context,
+                                    identity.activityId
+                                );
+                            context.afterReads(() => {
+                                const target = targetResult();
+                                finalize(
+                                    'skipped_exact_duplicate',
+                                    target.activityId,
+                                    false
+                                );
+                            });
+                            return;
+                        }
+                        const linkResult = enqueueExactIdentityLink(
+                            context,
+                            prepared,
+                            currentArtifact,
+                            identity.activityId
+                        );
+                        context.afterReads(() => {
+                            const linked = linkResult();
+                            if (!linked) {
+                                throw schemaMismatch(
+                                    STORAGE_OPERATION.PERSIST_IMPORT_ITEM
+                                );
+                            }
+                            finalize(
+                                'completed',
+                                linked.activityId,
+                                true
+                            );
                         });
-                    }
-                    context.put(V2_STORE_NAME.IMPORT_ITEMS, {
-                        ...currentItem,
-                        status: outcome,
-                        errorCode: null,
-                        retryable: false,
-                        activityId
                     });
-                    context.put(V2_STORE_NAME.IMPORT_JOBS, {
-                        ...currentJob,
-                        completedItems: currentJob.completedItems + 1
-                    });
-                    result = Object.freeze({ status: outcome });
                 });
                 return () => result;
             })

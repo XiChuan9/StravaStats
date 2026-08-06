@@ -184,7 +184,7 @@ function assertDeepFrozenJson(value, seen = new Set()) {
 
 test('V2_SCHEMA is the exact deeply frozen JSON-safe physical descriptor', () => {
     assert.equal(V2_SCHEMA.databaseName, 'strava-stats-v2');
-    assert.equal(V2_SCHEMA.indexedDbVersion, 2);
+    assert.equal(V2_SCHEMA.indexedDbVersion, 3);
     assert.equal(V2_SCHEMA.stores.length, 11);
     assert.deepEqual(
         JSON.parse(JSON.stringify(V2_SCHEMA)),
@@ -211,9 +211,26 @@ test('V2_SCHEMA is the exact deeply frozen JSON-safe physical descriptor', () =>
             { name: 'importItems', keyPath: 'id' }
         ]
     );
+    const sourceStore = V2_SCHEMA.stores.find(
+        store => store.name === 'activitySources'
+    );
+    assert.deepEqual(sourceStore.indexes, [
+        {
+            name: 'byActivityId',
+            keyPath: 'activityId',
+            unique: false,
+            multiEntry: false
+        },
+        {
+            name: 'byProviderAndExternalId',
+            keyPath: ['provider', 'externalId'],
+            unique: false,
+            multiEntry: false
+        }
+    ]);
 });
 
-test('fresh initialization applies v1 then additive physical v2 atomically', async () => {
+test('fresh initialization applies version-specific v1, v2, and v3 atomically', async () => {
     const indexedDB = new IDBFactory();
     const storage = createCanonicalStore(options(indexedDB));
 
@@ -221,8 +238,8 @@ test('fresh initialization applies v1 then additive physical v2 atomically', asy
     assert.deepEqual(result, {
         status: 'ready',
         databaseName: V2_DATABASE_NAME,
-        indexedDbVersion: 2,
-        schemaId: 'strava-stats-v2@2',
+        indexedDbVersion: 3,
+        schemaId: 'strava-stats-v2@3',
         canonicalSchemaVersion: 1
     });
     assert.equal(Object.isFrozen(result), true);
@@ -238,8 +255,8 @@ test('fresh initialization applies v1 then additive physical v2 atomically', asy
     assert.deepEqual(metadata, {
         key: 'database',
         databaseName: 'strava-stats-v2',
-        schemaId: 'strava-stats-v2@2',
-        indexedDbVersion: 2,
+        schemaId: 'strava-stats-v2@3',
+        indexedDbVersion: 3,
         canonicalSchemaVersion: 1,
         createdAt: '2026-08-04T01:02:03.004Z',
         createdByApplicationVersion: 'test-app@1'
@@ -270,6 +287,19 @@ test('fresh initialization applies v1 then additive physical v2 atomically', asy
         errorCode: null,
         retryCount: 0
     });
+    assert.deepEqual(await readMigration(database, 'schema-0003-exact-identity-index'), {
+        id: 'schema-0003-exact-identity-index',
+        fromVersion: 2,
+        toVersion: 3,
+        status: 'completed',
+        startedAt: '2026-08-04T01:02:03.004Z',
+        completedAt: '2026-08-04T01:02:03.004Z',
+        applicationVersion: 'test-app@1',
+        inputSummary: { storeCount: 11 },
+        outputSummary: { storeCount: 11 },
+        errorCode: null,
+        retryCount: 0
+    });
     database.close();
 });
 
@@ -280,7 +310,9 @@ async function createAcceptedV1(indexedDB, extraStore = false) {
                 keyPath: descriptor.keyPath,
                 autoIncrement: descriptor.autoIncrement
             });
-            for (const index of descriptor.indexes) {
+            for (const index of descriptor.indexes.filter(candidate => (
+                candidate.name !== 'byProviderAndExternalId'
+            ))) {
                 objectStore.createIndex(index.name, index.keyPath, {
                     unique: index.unique,
                     multiEntry: index.multiEntry
@@ -320,16 +352,78 @@ async function createAcceptedV1(indexedDB, extraStore = false) {
     });
 }
 
-test('accepted physical v1 upgrades additively and preserves all prior records', async () => {
+async function createAcceptedV2(indexedDB) {
+    return openDatabase(indexedDB, V2_DATABASE_NAME, 2, (database, transaction) => {
+        for (const descriptor of V2_SCHEMA.stores) {
+            const store = database.createObjectStore(descriptor.name, {
+                keyPath: descriptor.keyPath,
+                autoIncrement: descriptor.autoIncrement
+            });
+            for (const index of descriptor.indexes.filter(candidate => (
+                candidate.name !== 'byProviderAndExternalId'
+            ))) {
+                store.createIndex(index.name, index.keyPath, {
+                    unique: index.unique,
+                    multiEntry: index.multiEntry
+                });
+            }
+        }
+        transaction.objectStore('metadata').put({
+            key: 'database',
+            databaseName: 'strava-stats-v2',
+            schemaId: 'strava-stats-v2@2',
+            indexedDbVersion: 2,
+            canonicalSchemaVersion: 1,
+            createdAt: '2026-08-04T01:02:03.004Z',
+            createdByApplicationVersion: 'accepted-v2@1'
+        });
+        for (const migration of [
+            {
+                id: 'schema-0001-bootstrap',
+                fromVersion: 0,
+                toVersion: 1,
+                inputSummary: { storeCount: 0 },
+                outputSummary: { storeCount: 8 }
+            },
+            {
+                id: 'schema-0002-import-core',
+                fromVersion: 1,
+                toVersion: 2,
+                inputSummary: { storeCount: 8 },
+                outputSummary: { storeCount: 11 }
+            }
+        ]) {
+            transaction.objectStore('migrations').put({
+                ...migration,
+                status: 'completed',
+                startedAt: '2026-08-04T01:02:03.004Z',
+                completedAt: '2026-08-04T01:02:03.004Z',
+                applicationVersion: 'accepted-v2@1',
+                errorCode: null,
+                retryCount: 0
+            });
+        }
+        const sources = transaction.objectStore('activitySources');
+        for (const source of [
+            { id: 'source-a', activityId: 'activity-a', provider: 'provider-a', externalId: 'same' },
+            { id: 'source-b', activityId: 'activity-b', provider: 'provider-a', externalId: 'same' },
+            { id: 'source-null', activityId: 'activity-c', provider: 'provider-a', externalId: null },
+            { id: 'source-absent', activityId: 'activity-d', provider: 'provider-a' },
+            { id: 'source-zero', activityId: 'activity-e', provider: 'provider-a', externalId: '0' }
+        ]) sources.add(source);
+    });
+}
+
+test('accepted physical v1 upgrades through v2 and v3 and preserves all prior records', async () => {
     const indexedDB = new IDBFactory();
     const versionOne = await createAcceptedV1(indexedDB);
     versionOne.close();
 
-    const storage = createCanonicalStore(options(indexedDB, 'upgrade-v2@1'));
+    const storage = createCanonicalStore(options(indexedDB, 'upgrade-v3@1'));
     await storage.initialize();
     await storage.close();
 
-    const database = await openDatabase(indexedDB, V2_DATABASE_NAME, 2);
+    const database = await openDatabase(indexedDB, V2_DATABASE_NAME, 3);
     assertPhysicalSchema(database);
     const transaction = database.transaction('activities', 'readonly');
     assert.deepEqual(
@@ -341,12 +435,82 @@ test('accepted physical v1 upgrades additively and preserves all prior records',
     await transactionDone(transaction);
     const [metadata] = await readBootstrap(database);
     assert.equal(metadata.createdByApplicationVersion, 'accepted-v1@1');
-    assert.equal(metadata.schemaId, 'strava-stats-v2@2');
-    assert.equal((await readAllMigrations(database)).length, 2);
+    assert.equal(metadata.schemaId, 'strava-stats-v2@3');
+    assert.equal((await readAllMigrations(database)).length, 3);
     database.close();
 });
 
-test('failed physical v1-to-v2 upgrade rolls back and explicit retry preserves v1', async () => {
+test('accepted physical v2 adds the non-unique exact index with null-safe semantics', async () => {
+    const indexedDB = new IDBFactory();
+    const versionTwo = await createAcceptedV2(indexedDB);
+    versionTwo.close();
+
+    const storage = createCanonicalStore(options(indexedDB, 'upgrade-v3@1'));
+    await storage.initialize();
+    await storage.close();
+
+    const database = await openDatabase(indexedDB, V2_DATABASE_NAME, 3);
+    assertPhysicalSchema(database);
+    const transaction = database.transaction('activitySources', 'readonly');
+    const index = transaction.objectStore('activitySources')
+        .index('byProviderAndExternalId');
+    assert.equal(index.unique, false);
+    assert.deepEqual(
+        (await requestResult(index.getAll(['provider-a', 'same'])))
+            .map(source => source.activityId)
+            .sort(),
+        ['activity-a', 'activity-b']
+    );
+    assert.deepEqual(
+        (await requestResult(index.getAll(['provider-a', '0'])))
+            .map(source => source.activityId),
+        ['activity-e']
+    );
+    assert.equal(await requestResult(index.count()), 3);
+    await transactionDone(transaction);
+    assert.equal((await readAllMigrations(database)).length, 3);
+    database.close();
+});
+
+test('failed physical v2-to-v3 index upgrade rolls back and explicit retry preserves v2', async () => {
+    const indexedDB = new IDBFactory();
+    const versionTwo = await createAcceptedV2(indexedDB);
+    versionTwo.close();
+    const originalCreateIndex = IDBObjectStore.prototype.createIndex;
+    IDBObjectStore.prototype.createIndex = function (...args) {
+        if (args[0] === 'byProviderAndExternalId') {
+            throw new Error('synthetic v3 index interruption');
+        }
+        return originalCreateIndex.apply(this, args);
+    };
+    try {
+        const interrupted = createCanonicalStore(options(indexedDB));
+        await assert.rejects(interrupted.initialize(), error => (
+            error.code === STORAGE_ERROR_CODE.MIGRATION_FAILED
+            && !JSON.stringify(error).includes('synthetic v3 index interruption')
+        ));
+    } finally {
+        IDBObjectStore.prototype.createIndex = originalCreateIndex;
+    }
+
+    const afterFailure = await openDatabase(indexedDB, V2_DATABASE_NAME, 2);
+    assert.equal(
+        afterFailure.transaction('activitySources', 'readonly')
+            .objectStore('activitySources').indexNames
+            .contains('byProviderAndExternalId'),
+        false
+    );
+    afterFailure.close();
+
+    const retried = createCanonicalStore(options(indexedDB));
+    await retried.initialize();
+    await retried.close();
+    const database = await openDatabase(indexedDB, V2_DATABASE_NAME, 3);
+    assertPhysicalSchema(database);
+    database.close();
+});
+
+test('failed physical v1-to-v3 upgrade rolls back and explicit retry preserves v1', async () => {
     const indexedDB = new IDBFactory();
     const versionOne = await createAcceptedV1(indexedDB);
     versionOne.close();
@@ -378,7 +542,7 @@ test('failed physical v1-to-v2 upgrade rolls back and explicit retry preserves v
     const retried = createCanonicalStore(options(indexedDB));
     await retried.initialize();
     await retried.close();
-    const database = await openDatabase(indexedDB, V2_DATABASE_NAME, 2);
+    const database = await openDatabase(indexedDB, V2_DATABASE_NAME, 3);
     assertPhysicalSchema(database);
     const transaction = database.transaction('activities', 'readonly');
     assert.ok(await requestResult(
@@ -388,7 +552,7 @@ test('failed physical v1-to-v2 upgrade rolls back and explicit retry preserves v
     database.close();
 });
 
-test('malformed physical v1 with an extra store fails before committing version 2', async () => {
+test('malformed physical v1 with an extra store fails before committing version 3', async () => {
     const indexedDB = new IDBFactory();
     const versionOne = await createAcceptedV1(indexedDB, true);
     versionOne.close();
@@ -435,7 +599,7 @@ test('concurrent and repeated initialization is idempotent and read-only', async
         metadata: 1,
         importItems: 0,
         importJobs: 0,
-        migrations: 2,
+        migrations: 3,
         rawArtifacts: 0,
         streamSeries: 0
     });
@@ -506,7 +670,7 @@ test('interrupted bootstrap aborts all structural work and explicit retry succee
         metadata: 1,
         importItems: 0,
         importJobs: 0,
-        migrations: 2,
+        migrations: 3,
         rawArtifacts: 0,
         streamSeries: 0
     });

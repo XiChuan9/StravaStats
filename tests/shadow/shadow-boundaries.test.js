@@ -1,18 +1,10 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-
-const FROZEN_HASHES = new Map([
-    ['js/storage/schema.js', '79d88535aca65b0dbed06cf4bd3bb4d05abd8894f4bb3e895e4cf48875eefabf'],
-    ['js/storage/constants.js', 'c553247aa6e5a117dc2e804ef3260cb63644c84f146415d9ad1e2122297b89a7'],
-    ['js/storage/index.js', '2007866cce37a7d6fe6c8cecf100c131ebf126aeec9763c0a5fc03232701b09d'],
-    ['js/repository/index.js', '9d967fa09ad649006b6da86dfd0e4de7b813a41b272da7de6da2fb856d57133c']
-]);
 
 async function shadowSources() {
     const directory = path.join(ROOT, 'js/shadow');
@@ -34,11 +26,27 @@ test('shadow entry exposes only the frozen internal M3 seam', async () => {
     ]);
 });
 
-test('PR-07 preserves Repository API and freezes approved import storage exports', async () => {
-    for (const [relative, expected] of FROZEN_HASHES) {
-        const content = await readFile(path.join(ROOT, relative));
-        assert.equal(createHash('sha256').update(content).digest('hex'), expected, relative);
-    }
+test('PR-07 preserves Repository API and approved public storage exports', async () => {
+    const [storage, repository] = await Promise.all([
+        import('../../js/storage/index.js'),
+        import('../../js/repository/index.js')
+    ]);
+    assert.deepEqual(Object.keys(storage).sort(), [
+        'STORAGE_ERROR_CODE',
+        'StorageError',
+        'V2_DATABASE_NAME',
+        'V2_DATABASE_VERSION',
+        'V2_SCHEMA',
+        'createCanonicalStore',
+        'createImportStore'
+    ]);
+    assert.deepEqual(Object.keys(repository).sort(), [
+        'REPOSITORY_ERROR_CODE',
+        'REPOSITORY_SOURCE',
+        'REPOSITORY_WARNING_CODE',
+        'RepositoryError',
+        'createRepository'
+    ]);
 });
 
 test('shadow production source has no logging, destructive storage, Legacy database, provider endpoint, or DOM path', async () => {

@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta
+        http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'nonce-pr19-exact'; connect-src 'none'; img-src data:; style-src 'unsafe-inline'; object-src 'none'; base-uri 'none'; worker-src 'none'"
+    >
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="data:,">
+    <title>PR-19 exact identity browser smoke</title>
+    <style>
+        body { font-family: system-ui, sans-serif; margin: 2rem; }
+        [data-status="passed"] { color: #126b31; }
+        [data-status="failed"] { color: #9d1c1c; }
+        pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+    </style>
+</head>
+<body data-status="running">
+    <main>
+        <h1>PR-19 exact identity browser smoke</h1>
+        <p id="state" data-testid="state">running</p>
+        <pre id="summary" data-testid="summary">{"status":"running"}</pre>
+    </main>
+    <script type="module" nonce="pr19-exact">
+        const V2_NAME = 'strava-stats-v2';
+        const SENTINEL_NAME = 'synthetic-pr19-legacy-sentinel';
+        const FIXED_TIME = Date.parse('2026-08-05T01:02:03.004Z');
+        const stateElement = document.querySelector('#state');
+        const summaryElement = document.querySelector('#summary');
+        const gates = [];
+        const metrics = {
+            authorizationAttempts: 0,
+            consoleErrors: 0,
+            consoleWarnings: 0,
+            fetch: 0,
+            xhr: 0,
+            webSocket: 0,
+            uncaught: 0,
+            unhandled: 0,
+            externalResources: 0,
+            providerEndpoints: 0
+        };
+        let imports = null;
+        let canonical = null;
+        let failureCode = 'bootstrap';
+
+        console.error = () => { metrics.consoleErrors += 1; };
+        console.warn = () => { metrics.consoleWarnings += 1; };
+        addEventListener('error', event => {
+            metrics.uncaught += 1;
+            event.preventDefault();
+        });
+        addEventListener('unhandledrejection', event => {
+            metrics.unhandled += 1;
+            event.preventDefault();
+        });
+        globalThis.fetch = (...args) => {
+            metrics.fetch += 1;
+            try {
+                if (new Headers(args[1]?.headers).has('authorization')) {
+                    metrics.authorizationAttempts += 1;
+                }
+            } catch {
+                metrics.authorizationAttempts += 1;
+            }
+            return Promise.reject(new TypeError('blocked'));
+        };
+        XMLHttpRequest.prototype.open = function () {
+            metrics.xhr += 1;
+            throw new DOMException('blocked', 'SecurityError');
+        };
+        globalThis.WebSocket = class BlockedWebSocket {
+            constructor() {
+                metrics.webSocket += 1;
+                throw new DOMException('blocked', 'SecurityError');
+            }
+        };
+
+        function assert(condition, code) {
+            if (!condition) throw new Error(code);
+        }
+
+        async function gate(name, callback) {
+            failureCode = name;
+            await callback();
+            gates.push(name);
+        }
+
+        function requestResult(request) {
+            return new Promise((resolve, reject) => {
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = event => {
+                    event.preventDefault();
+                    reject(request.error);
+                };
+            });
+        }
+
+        function transactionDone(transaction) {
+            return new Promise((resolve, reject) => {
+                transaction.oncomplete = resolve;
+                transaction.onabort = () => reject(transaction.error);
+                transaction.onerror = event => event.preventDefault();
+            });
+        }
+
+        async function deleteDatabase(name) {
+            await requestResult(indexedDB.deleteDatabase(name));
+        }
+
+        async function openDatabase(name, version, upgrade) {
+            const request = version === undefined
+                ? indexedDB.open(name)
+                : indexedDB.open(name, version);
+            request.onupgradeneeded = () => upgrade?.(
+                request.result,
+                request.transaction
+            );
+            return requestResult(request);
+        }
+
+        async function ensureSentinel() {
+            const database = await openDatabase(SENTINEL_NAME, 1, db => {
+                db.createObjectStore('records', { keyPath: 'id' }).add({
+                    id: 'synthetic-sentinel',
+                    values: [null, 0, 'preserved']
+                });
+            });
+            database.close();
+        }
+
+        async function seedPhysicalV2(schema) {
+            const database = await openDatabase(V2_NAME, 2, (db, transaction) => {
+                for (const descriptor of schema.stores) {
+                    const store = db.createObjectStore(descriptor.name, {
+                        keyPath: descriptor.keyPath,
+                        autoIncrement: descriptor.autoIncrement
+                    });
+                    for (const index of descriptor.indexes) {
+                        store.createIndex(index.name, index.keyPath, {
+                            unique: index.unique,
+                            multiEntry: index.multiEntry
+                        });
+                    }
+                }
+                const metadata = transaction.objectStore('metadata');
+                metadata.add({
+                    key: 'database',
+                    databaseName: V2_NAME,
+                    schemaId: 'strava-stats-v2@2',
+                    indexedDbVersion: 2,
+                    canonicalSchemaVersion: 1,
+                    createdAt: '2026-08-05T01:02:03.004Z',
+                    createdByApplicationVersion: 'synthetic-physical-v2@1'
+                });
+                const migrations = transaction.objectStore('migrations');
+                migrations.add({
+                    id: 'schema-0001-bootstrap',
+                    fromVersion: 0,
+                    toVersion: 1,
+                    status: 'completed',
+                    startedAt: '2026-08-05T01:02:03.004Z',
+                    completedAt: '2026-08-05T01:02:03.004Z',
+                    applicationVersion: 'synthetic-physical-v2@1',
+                    inputSummary: { storeCount: 0 },
+                    outputSummary: { storeCount: 8 },
+                    errorCode: null,
+                    retryCount: 0
+                });
+                migrations.add({
+                    id: 'schema-0002-import-core',
+                    fromVersion: 1,
+                    toVersion: 2,
+                    status: 'completed',
+                    startedAt: '2026-08-05T01:02:03.004Z',
+                    completedAt: '2026-08-05T01:02:03.004Z',
+                    applicationVersion: 'synthetic-physical-v2@1',
+                    inputSummary: { storeCount: 8 },
+                    outputSummary: { storeCount: 11 },
+                    errorCode: null,
+                    retryCount: 0
+                });
+                const sources = transaction.objectStore('activitySources');
+                const base = {
+                    provider: 'synthetic-seed',
+                    rawArtifactId: null,
+                    acquisitionMethod: 'synthetic-test',
+                    deviceId: null,
+                    importedAt: '2026-08-05T01:02:03.004Z'
+                };
+                sources.add({
+                    ...base,
+                    id: 'seed-indexed-left',
+                    activityId: 'seed-activity-left',
+                    externalId: '0'
+                });
+                sources.add({
+                    ...base,
+                    id: 'seed-indexed-right',
+                    activityId: 'seed-activity-right',
+                    externalId: '0'
+                });
+                sources.add({
+                    ...base,
+                    id: 'seed-null',
+                    activityId: 'seed-activity-null',
+                    externalId: null
+                });
+                sources.add({
+                    ...base,
+                    id: 'seed-absent',
+                    activityId: 'seed-activity-absent'
+                });
+            });
+            database.close();
+        }
+
+        async function sentinelSnapshot() {
+            const database = await openDatabase(SENTINEL_NAME);
+            const transaction = database.transaction('records', 'readonly');
+            const records = await requestResult(
+                transaction.objectStore('records').getAll()
+            );
+            await transactionDone(transaction);
+            database.close();
+            return JSON.stringify(records);
+        }
+
+        async function artifact(sequence) {
+            const content = `synthetic-browser-artifact-${sequence}`;
+            const bytes = new TextEncoder().encode(content);
+            const digest = await crypto.subtle.digest('SHA-256', bytes);
+            const sha256 = [...new Uint8Array(digest)]
+                .map(value => value.toString(16).padStart(2, '0'))
+                .join('');
+            return {
+                id: `raw:${sha256}`,
+                sha256,
+                mediaType: 'application/vnd.stravastats.synthetic+json',
+                byteLength: bytes.byteLength,
+                content
+            };
+        }
+
+        function bundle({
+            activityId,
+            sourceId,
+            rawArtifactId,
+            externalId,
+            name,
+            distanceMeters
+        }) {
+            return {
+                schemaVersion: 1,
+                activity: {
+                    schemaVersion: 1,
+                    id: activityId,
+                    sportCategory: 'run',
+                    sportVariant: 'road',
+                    startTimeUtc: '2026-01-15T06:30:00.000Z',
+                    timeZone: { ianaName: 'Etc/UTC', utcOffsetMinutes: 0 },
+                    capabilities: {
+                        hasGps: false,
+                        hasHeartRate: false,
+                        hasPower: false,
+                        hasCadence: false,
+                        hasLaps: false
+                    },
+                    name,
+                    distanceMeters,
+                    movingTimeSeconds: 1500,
+                    elapsedTimeSeconds: 1530,
+                    elevationGainMeters: 0
+                },
+                streams: { activityId, series: [] },
+                laps: [],
+                events: [],
+                sources: [{
+                    id: sourceId,
+                    activityId,
+                    provider: 'synthetic-provider',
+                    externalId,
+                    rawArtifactId,
+                    acquisitionMethod: 'local-file',
+                    deviceId: null,
+                    importedAt: '2026-01-15T07:00:00.000Z'
+                }],
+                devices: [],
+                warnings: [],
+                versionMetadata: {
+                    schemaVersion: 1,
+                    parserVersion: 'synthetic-json@1',
+                    normalizerVersion: 'import-normalizer@1',
+                    analysisVersion: null,
+                    settingsVersion: null,
+                    inputHash: rawArtifactId.slice(4)
+                }
+            };
+        }
+
+        async function preparePersisting(sequence) {
+            const jobId = `browser-job-${sequence}`;
+            const itemId = `browser-item-${sequence}`;
+            const raw = await artifact(sequence);
+            await imports.createImportJob(jobId, [itemId]);
+            for (const [current, next] of [
+                ['queued', 'validating'],
+                ['validating', 'hashing']
+            ]) {
+                await imports.transitionImportJob(jobId, current, next);
+                await imports.transitionImportItem(itemId, current, next);
+            }
+            await imports.storeRawArtifact(itemId, raw);
+            for (const [current, next] of [
+                ['hashing', 'decoding'],
+                ['decoding', 'normalizing'],
+                ['normalizing', 'matching'],
+                ['matching', 'persisting']
+            ]) {
+                await imports.transitionImportJob(jobId, current, next);
+                await imports.transitionImportItem(itemId, current, next);
+            }
+            return { itemId, raw };
+        }
+
+        async function persist(sequence, values) {
+            const prepared = await preparePersisting(sequence);
+            const input = bundle({
+                ...values,
+                rawArtifactId: prepared.raw.id
+            });
+            const result = await imports.persistImportItem(
+                prepared.itemId,
+                input
+            );
+            return { ...prepared, result };
+        }
+
+        try {
+            const [
+                { createCanonicalStore, createImportStore },
+                { V2_PHYSICAL_SCHEMA_BY_VERSION }
+            ] = await Promise.all([
+                import('../../js/storage/index.js'),
+                import('../../js/storage/schema.js')
+            ]);
+            await gate('reset-synthetic-v2', () => deleteDatabase(V2_NAME));
+            await gate('legacy-sentinel', () => ensureSentinel());
+            const sentinelBefore = await sentinelSnapshot();
+            await gate('seed-physical-v2', () => seedPhysicalV2(
+                V2_PHYSICAL_SCHEMA_BY_VERSION[2]
+            ));
+            imports = createImportStore({
+                indexedDB,
+                IDBKeyRange,
+                now: () => FIXED_TIME,
+                applicationVersion: 'pr19-browser-smoke@1'
+            });
+            canonical = createCanonicalStore({
+                indexedDB,
+                IDBKeyRange,
+                now: () => FIXED_TIME,
+                applicationVersion: 'pr19-browser-smoke@1'
+            });
+            await gate('initialize-v3', () => imports.initialize());
+            await gate('v2-to-v3-index-backfill', async () => {
+                const database = await openDatabase(V2_NAME);
+                const transaction = database.transaction(
+                    ['activitySources', 'migrations'],
+                    'readonly'
+                );
+                const index = transaction.objectStore('activitySources')
+                    .index('byProviderAndExternalId');
+                const allIndexed = await requestResult(index.getAll());
+                const duplicateKey = await requestResult(index.getAll([
+                    'synthetic-seed',
+                    '0'
+                ]));
+                const migration = await requestResult(
+                    transaction.objectStore('migrations')
+                        .get('schema-0003-exact-identity-index')
+                );
+                await transactionDone(transaction);
+                assert(database.version === 3, 'upgraded-version');
+                assert(index.unique === false, 'upgraded-non-unique');
+                assert(allIndexed.length === 2, 'null-absent-not-indexed');
+                assert(duplicateKey.length === 2, 'duplicate-backfill');
+                assert(migration?.status === 'completed', 'upgraded-migration');
+                database.close();
+            });
+
+            let first;
+            let second;
+            await gate('exact-provider-link', async () => {
+                first = await persist(1, {
+                    activityId: 'browser-activity-original',
+                    sourceId: 'browser-source-original',
+                    externalId: 'browser-external-0',
+                    name: 'Original Synthetic Browser Payload',
+                    distanceMeters: 5000
+                });
+                second = await persist(2, {
+                    activityId: 'browser-activity-incoming',
+                    sourceId: 'browser-source-incoming',
+                    externalId: 'browser-external-0',
+                    name: 'Incoming Synthetic Browser Payload',
+                    distanceMeters: 5000.01
+                });
+            });
+            assert(first.result.status === 'completed', 'first-completed');
+            assert(second.result.status === 'completed', 'second-completed');
+            assert(
+                (await imports.getRawArtifact(second.raw.id)).activityId
+                    === 'browser-activity-original',
+                'raw-linked-to-original'
+            );
+
+            await gate('fuzzy-negative', () => persist(3, {
+                activityId: 'browser-activity-nearby',
+                sourceId: 'browser-source-nearby',
+                externalId: 'browser-external-nearby',
+                name: 'Original Synthetic Browser Payload',
+                distanceMeters: 5000.001
+            }));
+
+            await canonical.initialize();
+            const original = await canonical.getBundle(
+                'browser-activity-original'
+            );
+            const incoming = await canonical.getBundle(
+                'browser-activity-incoming'
+            );
+            const activities = await canonical.listActivities();
+            assert(original.activity.name === 'Original Synthetic Browser Payload', 'payload');
+            assert(original.activity.distanceMeters === 5000, 'distance');
+            assert(original.sources.length === 2, 'source-links');
+            assert(incoming === null, 'incoming-not-created');
+            assert(activities.length === 2, 'fuzzy-retained');
+
+            const database = await openDatabase(V2_NAME);
+            const transaction = database.transaction(
+                ['activitySources', 'migrations'],
+                'readonly'
+            );
+            const sourceStore = transaction.objectStore('activitySources');
+            const index = sourceStore.index('byProviderAndExternalId');
+            const exactRows = await requestResult(index.getAll([
+                'synthetic-provider',
+                'browser-external-0'
+            ]));
+            const migration = await requestResult(
+                transaction.objectStore('migrations')
+                    .get('schema-0003-exact-identity-index')
+            );
+            await transactionDone(transaction);
+            const version = database.version;
+            database.close();
+            assert(version === 3, 'physical-version');
+            assert(index.unique === false, 'index-non-unique');
+            assert(exactRows.length === 2, 'indexed-source-count');
+            assert(
+                exactRows.every(row => row.activityId === 'browser-activity-original'),
+                'one-canonical-target'
+            );
+            assert(migration?.status === 'completed', 'migration-completed');
+            assert(await sentinelSnapshot() === sentinelBefore, 'legacy-unchanged');
+
+            await imports.close();
+            imports = null;
+            await canonical.close();
+            canonical = null;
+            const resources = performance.getEntriesByType('resource')
+                .map(entry => new URL(entry.name, location.href));
+            metrics.externalResources = resources.filter(
+                url => url.origin !== location.origin
+            ).length;
+            metrics.providerEndpoints = resources.filter(
+                url => /strava\.com|\/api\//i.test(url.href)
+            ).length;
+            const serviceWorkers = 'serviceWorker' in navigator
+                ? (await navigator.serviceWorker.getRegistrations()).length
+                : 0;
+            const cacheEntries = 'caches' in globalThis
+                ? (await caches.keys()).length
+                : 0;
+            assert(Object.values(metrics).every(value => value === 0), 'metrics');
+            assert(serviceWorkers === 0, 'service-workers');
+            assert(cacheEntries === 0, 'cache-storage');
+
+            const summary = {
+                status: 'passed',
+                gates,
+                evidence: {
+                    physicalVersion: version,
+                    physicalV2Upgrade: true,
+                    migrationCompleted: true,
+                    indexNonUnique: true,
+                    backfilledDuplicateRows: 2,
+                    nullAbsentOmitted: true,
+                    exactRows: exactRows.length,
+                    canonicalActivities: activities.length,
+                    exactCanonicalActivities: 1,
+                    linkedSources: original.sources.length,
+                    canonicalPayloadPreserved: true,
+                    fuzzyPairRetained: true,
+                    atomicRawAssociation: true,
+                    legacyUnchanged: true
+                },
+                environment: { metrics, serviceWorkers, cacheEntries }
+            };
+            document.body.dataset.status = 'passed';
+            stateElement.textContent = 'passed';
+            summaryElement.textContent = JSON.stringify(summary, null, 2);
+            globalThis.__PR19_EXACT_IDENTITY_RESULT__ = summary;
+        } catch {
+            if (imports) await imports.close().catch(() => {});
+            if (canonical) await canonical.close().catch(() => {});
+            const summary = {
+                status: 'failed',
+                gateCount: gates.length,
+                failureCode,
+                metrics
+            };
+            document.body.dataset.status = 'failed';
+            stateElement.textContent = `failed:${failureCode}`;
+            summaryElement.textContent = JSON.stringify(summary, null, 2);
+            globalThis.__PR19_EXACT_IDENTITY_RESULT__ = summary;
+        }
+    </script>
+</body>
+</html>

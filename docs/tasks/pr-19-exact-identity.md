@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 M16 / PR-19 |
-| Status | Paused after A2; material schema/index decision required before A3 |
+| Status | A3.3 test-only expansion approved for implementation; Draft PR #25 |
 | Branch | `codex/v2/exact-identity` |
 | Base | `integration/v2` at `2f0bff0dc483e73f226437d63f3f10d08cd86d65` |
 | Draft PR title | `feat(v2): add exact identity resolver` |
@@ -69,8 +69,9 @@ then implementation details. Relevant accepted/frozen boundaries are:
   `activityId` association;
 - ImportJob, ImportItem, the state machine, public ImportService, Canonical Store, Repository,
   and seven-method Repository surface remain unchanged;
-- V2 database name, physical version 2, stores, indexes, migrations, and Legacy physical
-  isolation remain unchanged;
+- V2 database name, stores, key paths, and Legacy physical isolation remain unchanged; physical
+  version 3 adds only the approved non-unique compound source-identity index and version-specific
+  migration snapshot;
 - all application IDs are non-empty opaque strings. No numeric parse, coercion, fallback,
   arithmetic, normalization, or truthiness matching is allowed. Missing, `null`, string `"0"`,
   and numeric zero remain distinct under their existing validators.
@@ -257,7 +258,7 @@ IndexedDB lifecycle and would abandon per-item commit/recovery. Adding a cross-c
 or batch API is itself new schema/public-contract work. Therefore C is performant but incomplete
 or race-unsafe and is **not recommended and not Accepted**.
 
-### Common identity/link semantics proposed for the approved option
+### A3.1 approved common identity/link semantics
 
 - Existing Source Reference lookup is its exact opaque primary ID. If that reference and another
   exact signal identify different Canonical activities, the transaction fails; it never chooses.
@@ -278,28 +279,92 @@ or race-unsafe and is **not recommended and not Accepted**.
   PR-22 retains general diagnostics and large-scale performance gates, but does not excuse PR-19
   from choosing and verifying a bounded identity lookup now.
 
-### Recommendation and approval request
+### A3.1 approval record
 
-Recommend **B**, conditional on explicit approval of physical IndexedDB version 3, schema ID 3,
-one non-unique compound index, its additive migration/verification tests, the expanded literal
-allowlist, and the documented old-code `VERSION_UNSUPPORTED` rollback limitation. If that rollback
-limitation is unacceptable, PR-19 needs a new material design decision rather than falling back to
-A or unsafe C.
+The user explicitly approved Candidate B through the control tower after reviewing the A/B/C
+evidence and rollback trade-off. The accepted material boundary is:
 
-## A3 HOLD — no implementation allowlist frozen
+- physical IndexedDB version `3` and schema ID `strava-stats-v2@3`;
+- one non-unique compound `activitySources` index with exact key path
+  `["provider", "externalId"]`;
+- version-specific v1, v2, and v3 physical descriptors/snapshots so each structural migration is
+  attributed to the version that introduced it;
+- the successful-upgrade rollback limitation that old physical-v2 code returns
+  `VERSION_UNSUPPORTED`; no destructive downgrade, data deletion, store replacement, or record
+  rewrite is allowed;
+- the initial 17-path cumulative allowlist below. A new path or material contract requires a new decision
+  package and pause.
 
-The earlier eight-path/schema-unchanged idea is withdrawn. Until the control tower/user selects a
-material option, the only writable path is this Task Brief for candidate/Paused accounting. No
-implementation or test file is authorized. After approval, A3 must freeze a fresh literal
-cumulative allowlist and the chosen physical/API/transaction boundary before failure-first tests.
+### A3.2 test-only expansion approval record
+
+The existing ImportService regression at `tests/import/import-core.test.js` encoded the superseded
+behavior that different raw bytes with the same exact Strava provider/external identity must
+conflict. After the A3.1 implementation, that was the sole failure in the 27-test existing import
+suite: 26 passed and the old conflict assertion failed because the item correctly completed.
+Leaving the test unchanged made the full-suite gate impossible; restoring the old behavior would
+violate the approved exact-link contract.
+
+The user explicitly approved one test-only expansion through the control tower: add that existing
+test file as the eighteenth literal path, change only the affected test name and assertions to
+require one completed item, zero failed items, a null error code, one preview activity, and an
+unchanged original Canonical activity payload. ImportService, public APIs, Canonical contracts,
+and all other frozen boundaries remain unchanged.
+
+### A3.3 test-only expansion approval record
+
+The first full regression passed 1,356 of 1,357 tests. Its only failure was the PR-07 Shadow
+boundary test's mutable whole-file SHA freeze over the approved `schema.js` and `constants.js`
+changes. The public Storage and Repository entry files themselves remained byte-identical. Merely
+refreshing hashes would retain a future-hostile gate and contradict this brief's stable-boundary
+rule.
+
+The user explicitly approved one further test-only expansion through the control tower: add
+`tests/shadow/shadow-boundaries.test.js` as the nineteenth literal path, remove its `node:crypto`
+hash dependency and whole-file map, and replace only that hash test with exact semantic assertions
+over the existing seven Storage exports and five Repository exports. Shadow production code,
+public APIs, Canonical contracts, and all other frozen boundaries remain unchanged.
+
+## A3.3 frozen implementation boundary
+
+Implementation, failure-first tests, review repairs, browser evidence, and Closure may modify
+exactly these 19 cumulative paths and no twentieth path:
+
+```text
+docs/tasks/pr-19-exact-identity.md
+docs/migrations/indexeddb-v2.md
+js/storage/constants.js
+js/storage/schema.js
+js/storage/migrations.js
+js/storage/database.js
+js/storage/exact-identity-resolver.js
+js/storage/import-store.js
+tests/storage/indexeddb-v2-schema.test.js
+tests/storage/indexeddb-v2-browser-smoke.html
+tests/storage/backup-manifest.test.js
+tests/storage/exact-identity-resolver.test.js
+tests/storage/exact-identity-transactions.test.js
+tests/storage/exact-identity-boundaries.test.js
+tests/storage/exact-identity-performance.test.js
+tests/import/exact-identity-import.test.js
+tests/import/import-core.test.js
+tests/storage/exact-identity-browser-smoke.html
+tests/shadow/shadow-boundaries.test.js
+```
+
+This is a literal allowlist, not a directory glob. Public `js/storage/index.js`, production
+`backup-manifest.js`, Canonical contracts, `canonical-store.js`, Repository, ImportService,
+decoders, Service Worker, dependencies, and every UI path stay unchanged. Stable public-boundary
+and literal-source assertions are required. Whole-tree manifests and mutable whole-file hashes are
+prohibited.
 
 ### Prohibited changes
 
 - `package.json`, lockfile, dependency, production build, Service Worker, page, tab, CSS, UI,
   route, source-manager, decoder, contract, Repository, feature-flag, auth, provider, disconnect,
   deletion, backup, deployment, release, or Legacy path changes;
-- IndexedDB name, version, schema, store, key path, index, migration, database open/close, delete,
-  clear, overwrite-as-recovery, or destructive helper changes;
+- IndexedDB database name, store/key-path changes, indexes other than the one approved compound
+  index, migrations other than the version-specific additive v3 migration, database open/close,
+  delete, clear, downgrade, overwrite-as-recovery, or destructive helper changes;
 - CanonicalActivity, ImportedActivityBundle, ActivitySource, RawArtifact, Import state, public API,
   export, status, error code, report shape, or Repository surface changes;
 - fuzzy/high-confidence matching, thresholds, candidates, review UI, confirm/keep-separate,
@@ -307,7 +372,7 @@ cumulative allowlist and the chosen physical/API/transaction boundary before fai
 - real data, user browser/profile, credential, provider network, merge, cleanup, deploy, release,
   or PR-20 start.
 
-If evidence shows that a prohibited schema/index/version, public API, Canonical contract,
+If evidence shows that another schema/index/version, public API, Canonical contract,
 production dependency, disconnect/delete lifecycle, fuzzy threshold, or PR-20 change is required,
 implementation pauses with a material decision package for the control tower. No such change is
 silently added.
@@ -344,6 +409,7 @@ npm run check:privacy
 node --test tests/storage/exact-identity-resolver.test.js
 node --test tests/storage/exact-identity-transactions.test.js
 node --test tests/storage/exact-identity-boundaries.test.js
+node --test tests/storage/exact-identity-performance.test.js
 node --test tests/import/exact-identity-import.test.js
 npm test
 git diff --check
@@ -355,15 +421,17 @@ not claim a browser pass. A pass may be recorded only after the served harness a
 
 ## Rollback, migration, and privacy
 
-Rollback is a code revert or switching the existing read mode to Legacy. It requires no data
-migration and deletes nothing. Existing V2 Canonical data, source relations, RawArtifacts, import
-logs, Demo data, and Legacy IndexedDB remain intact. An exact source association created by this
-PR is additive provenance and is not removed by rollback. Disconnect and local-data deletion
-remain separate existing concerns.
+Rollback uses the existing Feature Flag to select Legacy reads; it deletes nothing. A code revert
+to physical-v2 logic after a successful v3 upgrade returns `VERSION_UNSUPPORTED` for the V2
+database and must not downgrade, repair, clear, or recreate it. Returning to v3-capable code makes
+the retained V2 records readable again. Existing Canonical data, source relations, RawArtifacts,
+import logs, Demo data, and Legacy IndexedDB remain intact. An exact source association is additive
+provenance and is not removed by rollback. Disconnect and local-data deletion remain separate.
 
-Migration impact is `None`: physical version, schema ID, stores, indexes, migrations, and
-Canonical schema do not change. Privacy impact is bounded to existing local-only provenance;
-there is no new collection, network, telemetry, logging, UI, export, or public error field.
+Migration impact is one additive physical v2->v3 index migration with exact version-specific
+descriptors. It adds no store and rewrites no logical record. Privacy impact is bounded to an
+existing local-only compound index over already-stored provenance; there is no new collection,
+network, telemetry, logging, UI, export, or public error field.
 
 ## Closure
 
