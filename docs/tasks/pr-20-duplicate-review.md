@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 M17 / PR-20 |
-| Status | A3 contract frozen; implementation authorized within literal allowlist |
+| Status | Final Review Closure prepared; exact-head publication and CI pending |
 | Branch | `codex/v2/duplicate-review` |
 | Base | `integration/v2` at `a686b19a6f2ab6ecb2c724cc940db3ab5c09eafe` |
 | Draft PR title | `feat(v2): add duplicate review workflow` |
@@ -374,3 +374,98 @@ by a fresh independent re-review. The final Task Brief-only Closure commit recor
 contracts, false-positive defenses, reversibility, tests, browser evidence, privacy, migration,
 rollback, commit/PR/CI state, clean worktree/index counts, and every `Not run` item. The control
 tower owns the final Ready transition; Ready is not merge authorization.
+
+## Final Review Closure
+
+### Scope and exact contracts
+
+- The implementation diff from the exact base contains exactly the 29 literal paths listed in
+  this brief. There is no thirtieth path. A3.1 replaced the unused
+  `tests/storage/indexeddb-v2-boundaries.test.js` entry with
+  `tests/import/strava-zip.test.js` one-for-one.
+- PR-19 exact identity lookup remains first and unchanged. Duplicate discovery runs only after an
+  exact `unmatched` result, uses the existing same-sport compound index within inclusive +/-120
+  seconds, and stops at the twenty-first qualifying row with
+  `CANDIDATE_LIMIT_EXCEEDED`. No full activity scan or automatic merge exists.
+- High and possible bands, inclusive thresholds, symmetric max-denominator ratios, strict
+  missing/null/non-finite/negative rejection, cross-sport rejection, opaque code-unit ID ordering,
+  and deterministic ranking match the frozen A3 contract. These are review categories, not an
+  accuracy claim.
+- Physical V4 adds only `mergeCandidates` and `mergeDecisions`. Candidate pair uniqueness is the
+  concurrency authority; decisions are append-only. `Confirm same activity` and `Keep separate`
+  update only candidate/decision audit state. `Later` writes nothing. Both Canonical graphs,
+  sources, raw artifacts, import logs, streams, laps, events, devices, and Legacy data remain.
+- ImportItem may end `review_required`; schema-version-1 reports always contain
+  `totals.reviewRequired`, including zero. Source Manager embeds the review surface without a new
+  route. Provider labels use only the five frozen families and device labels use only the frozen
+  0/1/N redacted forms; raw provider/model values and IDs never enter the returned projection or
+  DOM. Demo remains disabled and isolated.
+
+### False-positive, concurrency, and reversibility evidence
+
+- Synthetic tests cover inclusive band edges, same-sport requirements, cross-sport rejection,
+  missing versus true zero, positive-versus-zero, non-finite and negative values, near-but-distinct
+  activities, opaque and numeric-looking IDs, deterministic ties, retry/idempotency, malformed
+  records, and the twenty-first-candidate atomic abort.
+- The first independent findings-first review reported four P1 gaps: terminal replay depended on a
+  fresh clock; zero-count report shape varied; source/device labels missed the frozen comparison
+  contract; and Reject/concurrency/Keep-separate evidence was incomplete. The clock failure and the
+  seven A3.1 expectation failures were reproduced failure-first. The fixes add broken-clock replay,
+  first Reject and replay, same/opposing concurrent decisions, actual served Keep separate,
+  fixed-shape reports, referenced-device validation, provider-family sorting/deduplication, and raw
+  model/provider non-disclosure. Fresh independent re-review of
+  `e459d76fcd83a9f33c1ceaa89ee1911e991bb310..2333a9d` returned **No findings**.
+- Reversal is non-destructive by construction: PR-20 records identity intent but does not coalesce,
+  hide, overwrite, alias, delete, or move an ActivitySource. A future Unmerge is neither needed nor
+  simulated. Any future real merge/Unmerge still requires separate approval and additive recovery
+  state.
+
+### Verification evidence
+
+- `npm ci`: Pass; lockfile and dependency manifests were unchanged.
+- Focused A3/A3.1 storage, import-core, Strava ZIP, report-shape, boundary, transaction, concurrency,
+  label, and privacy tests: Pass, including the combined 53/53 correction run.
+- `npm run check:syntax`: Pass for 217 files.
+- `npm run check:privacy`: Pass.
+- `npm test`: Pass, 1,385/1,385 with zero failures, skips, cancellations, or todos.
+- `git diff --check`: Pass.
+- Bounded-performance evidence: the final full run completed 1,000 compound-index queries over
+  10,000 synthetic summaries in 2,108.8 ms, with zero activity-store `getAll`, zero compound-index
+  `getAll`, and exactly 1,000 bounded cursor calls; the 5,000 ms gate passed.
+- Actual served Storage smoke at clean `http://localhost:3003` origin: Pass, 19 gates on Chromium
+  150, physical V4 with 13 stores and 13 indexes, additive manifest counts, retained synthetic
+  Legacy-like sentinel, reload/reopen equivalence, zero external/network/auth/Service Worker/cache
+  activity, and zero internal or external-driver console warnings/errors. A prior non-clean
+  `127.0.0.1:3003` attempt correctly failed only `fresh-origin` with all safe counters zero and was
+  not counted as a pass.
+- Actual served Source Manager smoke at clean `http://localhost:3002` origin: Pass, 58 gates,
+  including exact duplicate precedence, review-required retention, Later no-write, Confirm and Keep
+  separate no-coalescing copy, two retained candidate/decision audit rows, seven retained Canonical
+  activities, fixed report counts, Demo/Legacy isolation, bounded report DOM, zero raw ID/filename
+  disclosure, zero provider/telemetry/auth/network activity, and zero external-driver console
+  warnings/errors. No `srcdoc`, source-only, Node-only, real account, Token, private fixture, user
+  profile, or identifiable screenshot was used.
+
+### Migration, privacy, rollback, commits, and publication state
+
+- V3 -> V4 is structural and additive. Tests prove V3 data preservation, failed-upgrade rollback
+  and retry, and old V3 open behavior failing safely as `VERSION_UNSUPPORTED`. Legacy and V2 remain
+  physically separate and retained; the existing feature flag remains the application rollback.
+- Local privacy impact is limited to redacted numeric difference snapshots and append-only identity
+  intent. There is no new provider request, telemetry, credential path, route output, numeric
+  health/power output, destructive cleanup, or real-data fixture.
+- Commits before this Task-Brief-only Closure are `3f09e0d` (initial brief), `e459d76` (A3 freeze),
+  `59f2ccb` (implementation), `eb9a3ea` (decision repair/evidence), and `2333a9d` (A3.1 contract
+  corrections). Immediately before Closure authoring, worktree and index counts were clean `0/0`;
+  the Closure commit stages only this file and must leave post-commit counts at `0/0`.
+- Draft PR #26 remains OPEN/Draft with base/head `integration/v2` <-
+  `codex/v2/duplicate-review`. The last published remote head is `e459d76`; implementation and
+  Closure publication are delegated to the control tower.
+
+### Not run at Closure-authoring time
+
+- True remote depth-1 checkout at the exact Closure head: **Not run** pending publication.
+- Exact-head GitHub CI: **Not run** pending publication.
+- Draft-to-Ready transition: **Not run**; it is delegated only after depth-1 and exact-head CI pass.
+- Merge, cleanup, deploy, release, backup/restore, diagnostics/default switch, and PR-21:
+  **Not run** and not authorized. Ready, when later requested, is not merge authorization.
