@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+        http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'nonce-pr18-run-plus'; style-src 'unsafe-inline'; connect-src 'self'; img-src data: 'self'; object-src 'none'; base-uri 'none'"
+    >
+    <link rel="icon" href="data:,">
+    <title>PR-18 Run Plus / NSM Canonical Browser Seed</title>
+    <style>
+        body { font: 14px/1.5 system-ui, sans-serif; margin: 24px; }
+        pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+    </style>
+</head>
+<body data-status="running">
+    <h1>PR-18 Run Plus / NSM Canonical Browser Seed</h1>
+    <p id="status" role="status">Preparing a deterministic disposable Local Library.</p>
+    <pre id="result">{"status":"running"}</pre>
+
+    <script type="module" nonce="pr18-run-plus">
+        const FIXED_NOW = Date.parse('2026-08-06T08:00:00.000Z');
+        const V2_DATABASE = 'strava-stats-v2';
+        const FULL_ID = '0007/opaque ?#%';
+        const MISSING_ID = 'missing-capabilities/opaque';
+        const ZERO_ID = 'zero-metrics/opaque';
+        const status = document.getElementById('status');
+        const output = document.getElementById('result');
+        const assertions = [];
+        const observations = {
+            assertions,
+            cleanOrigin: {
+                serviceWorkers: null,
+                caches: null,
+                databases: null,
+                localStorageEntries: null,
+                sessionStorageEntries: null
+            },
+            seededBundles: 0,
+            userStorageKeys: []
+        };
+
+        function assert(condition, code) {
+            if (!condition) throw new Error(code);
+            assertions.push(code);
+        }
+
+        function activity(id, date, overrides = {}) {
+            return {
+                schemaVersion: 1,
+                id,
+                sportCategory: 'run',
+                sportVariant: null,
+                startTimeUtc: `${date}T06:00:00.000Z`,
+                timeZone: { ianaName: null, utcOffsetMinutes: 0 },
+                capabilities: {
+                    hasGps: false,
+                    hasHeartRate: false,
+                    hasPower: false,
+                    hasCadence: false,
+                    hasLaps: false
+                },
+                name: `Synthetic run ${date}`,
+                distanceMeters: 10_000,
+                elevationGainMeters: 0,
+                movingTimeSeconds: 3_000,
+                elapsedTimeSeconds: 3_060,
+                ...overrides
+            };
+        }
+
+        function stream(streamType, unit, values) {
+            return {
+                streamType,
+                unit,
+                offsetsSeconds: values.map((_, index) => index * 600),
+                values
+            };
+        }
+
+        function lap(activityId, index, distanceMeters, movingTimeSeconds) {
+            return {
+                id: `synthetic-lap:${activityId}:${index}`,
+                activityId,
+                index,
+                startOffsetSeconds: index * movingTimeSeconds,
+                elapsedTimeSeconds: movingTimeSeconds,
+                movingTimeSeconds,
+                distanceMeters
+            };
+        }
+
+        function bundle(canonicalActivity, series = [], laps = []) {
+            return {
+                schemaVersion: 1,
+                activity: canonicalActivity,
+                streams: { activityId: canonicalActivity.id, series },
+                laps,
+                events: [],
+                sources: [{
+                    id: `synthetic-source:${canonicalActivity.id}`,
+                    activityId: canonicalActivity.id,
+                    provider: 'synthetic',
+                    externalId: null,
+                    rawArtifactId: null,
+                    acquisitionMethod: 'synthetic-browser-test',
+                    deviceId: null,
+                    importedAt: canonicalActivity.startTimeUtc
+                }],
+                devices: [],
+                warnings: [],
+                versionMetadata: {
+                    schemaVersion: 1,
+                    parserVersion: 'synthetic-browser-parser@1',
+                    normalizerVersion: 'synthetic-browser-normalizer@1',
+                    analysisVersion: null,
+                    settingsVersion: null,
+                    inputHash: null
+                }
+            };
+        }
+
+        const fullActivity = activity(FULL_ID, '2026-08-05', {
+            name: 'Synthetic SubT 6x6',
+            averageHeartRateBpm: 148,
+            averagePowerWatts: 0,
+            averageCadence: 84,
+            capabilities: {
+                hasGps: false,
+                hasHeartRate: true,
+                hasPower: false,
+                hasCadence: true,
+                hasLaps: true
+            }
+        });
+        const fullBundle = bundle(
+            fullActivity,
+            [
+                stream('distance', 'm', [0, 2_000, 4_000, 6_000, 8_000, 10_000]),
+                stream('speed', 'm/s', [0, 3.2, 3.5, 3.6, 3.4, 0]),
+                stream('heartRate', 'bpm', [null, 132, 145, 151, 143, null]),
+                stream('cadence', 'rpm', [0, 82, 84, 86, 83, 0]),
+                stream('altitude', 'm', [0, 0, 1, 1, 0, 0])
+            ],
+            [
+                lap(FULL_ID, 0, 2_000, 600),
+                lap(FULL_ID, 1, 2_000, 600),
+                lap(FULL_ID, 2, 2_000, 600),
+                lap(FULL_ID, 3, 2_000, 600),
+                lap(FULL_ID, 4, 2_000, 600)
+            ]
+        );
+        const missingBundle = bundle(activity(MISSING_ID, '2026-08-03', {
+            name: 'Synthetic easy missing capabilities',
+            distanceMeters: 6_000,
+            movingTimeSeconds: 2_400,
+            elapsedTimeSeconds: 2_460
+        }));
+        const zeroBundle = bundle(activity(ZERO_ID, '2026-08-01', {
+            name: 'Synthetic zero metrics',
+            distanceMeters: 0,
+            elevationGainMeters: 0,
+            movingTimeSeconds: 0,
+            elapsedTimeSeconds: 0,
+            averageHeartRateBpm: null,
+            averagePowerWatts: 0,
+            averageCadence: 0
+        }));
+        const olderBundle = bundle(activity('older-run/opaque', '2026-07-25', {
+            name: 'Synthetic long run',
+            distanceMeters: 18_000,
+            movingTimeSeconds: 6_000,
+            elapsedTimeSeconds: 6_060,
+            averageHeartRateBpm: 136
+        }));
+
+        const userState = Object.freeze({
+            run_plus_capacity_inputs_v1: {
+                painScore: 1,
+                nextDayScore: 2,
+                sleepScore: 4,
+                energyScore: 4,
+                strengthSessions: 2
+            },
+            run_plus_nsm_settings_v1: {
+                easyHrCapPct: 70,
+                thresholdHrPct: 87,
+                currentBlockStart: '2026-07-01',
+                currentBlockEnd: '2026-08-06',
+                targetRace: 'Synthetic target',
+                weeklyTemplate: 'standard'
+            },
+            run_plus_nsm_activity_tags_v1: {
+                [FULL_ID]: {
+                    tag: 'subt_medium',
+                    includeInNsm: true,
+                    updatedAt: '2026-08-06T00:00:00.000Z'
+                },
+                [MISSING_ID]: {
+                    tag: 'easy',
+                    includeInNsm: true,
+                    updatedAt: '2026-08-06T00:00:00.000Z'
+                }
+            },
+            run_plus_nsm_session_inputs_v1: {
+                [FULL_ID]: {
+                    template: '6x6',
+                    workPaceSec: 300,
+                    workHr: 150,
+                    workMinutes: 36,
+                    rpe: 6,
+                    lactate: null,
+                    painScore: 1,
+                    nextDayScore: 2,
+                    notes: 'Synthetic only'
+                }
+            },
+            run_plus_nsm_tests_v1: [{
+                id: 'synthetic-test-anchor',
+                date: '2026-08-02',
+                type: '5K TT',
+                distanceKm: 5,
+                timeSec: 1_200,
+                sourceActivityId: '',
+                notes: 'Synthetic only'
+            }],
+            run_plus_nsm_interval_analysis_v1: {}
+        });
+
+        globalThis.__PR18_RUN_PLUS_BROWSER_PLAN__ = Object.freeze({
+            modes: Object.freeze(['canonical', 'demo', 'legacy', 'shadow']),
+            routes: Object.freeze(['/run-plus', '/run-plus/nsm']),
+            canonicalIds: Object.freeze([FULL_ID, MISSING_ID, ZERO_ID, 'older-run/opaque']),
+            expectedUserStorageKeys: Object.freeze(Object.keys(userState)),
+            expectedCanonicalDatabase: V2_DATABASE,
+            requiredEvidence: Object.freeze([
+                'actual-served-navigation',
+                'settings-and-tags-persist',
+                'filter-rerender',
+                'interval-analysis',
+                'deep-hr-analysis',
+                'impact-load',
+                'tss-ctl-atl-tsb',
+                'missing-gps-hr-power',
+                'opaque-id-round-trip',
+                'zero-provider-token-auth-legacy-io',
+                'safe-repository-failure',
+                'console-runtime-storage-idb-cache-sw-observation'
+            ])
+        });
+
+        async function run() {
+            assert(
+                location.hostname === '127.0.0.1'
+                    || location.hostname === 'localhost',
+                'DISPOSABLE_LOOPBACK_ORIGIN_REQUIRED'
+            );
+            assert(
+                new URLSearchParams(location.search).get('synthetic') === 'pr18',
+                'EXPLICIT_SYNTHETIC_MODE_REQUIRED'
+            );
+            assert(typeof indexedDB.databases === 'function', 'INDEXEDDB_ENUMERATION_REQUIRED');
+
+            const serviceWorkers = navigator.serviceWorker?.getRegistrations
+                ? await navigator.serviceWorker.getRegistrations()
+                : [];
+            const cacheNames = globalThis.caches?.keys ? await caches.keys() : [];
+            const databases = await indexedDB.databases();
+            const localEntries = Object.keys(localStorage);
+            const sessionEntries = Object.keys(sessionStorage);
+            observations.cleanOrigin = {
+                serviceWorkers: serviceWorkers.length,
+                caches: cacheNames.length,
+                databases: databases.map(value => ({
+                    name: value.name,
+                    version: value.version
+                })),
+                localStorageEntries: localEntries,
+                sessionStorageEntries: sessionEntries
+            };
+            assert(serviceWorkers.length === 0, 'CLEAN_ORIGIN_SERVICE_WORKERS');
+            assert(cacheNames.length === 0, 'CLEAN_ORIGIN_CACHES');
+            assert(databases.length === 0, 'CLEAN_ORIGIN_DATABASES');
+            assert(localEntries.length === 0, 'CLEAN_ORIGIN_LOCAL_STORAGE');
+            assert(sessionEntries.length === 0, 'CLEAN_ORIGIN_SESSION_STORAGE');
+
+            const storageModule = await import('../../js/storage/index.js');
+            const store = storageModule.createCanonicalStore({
+                indexedDB,
+                IDBKeyRange,
+                now: () => FIXED_NOW,
+                applicationVersion: 'pr18-run-plus-browser-seed@1'
+            });
+            await store.initialize();
+            for (const value of [fullBundle, missingBundle, zeroBundle, olderBundle]) {
+                const result = await store.putBundle(value);
+                assert(result.status === 'committed', 'CANONICAL_BUNDLE_COMMITTED');
+                observations.seededBundles += 1;
+            }
+            await store.close();
+
+            for (const [key, value] of Object.entries(userState)) {
+                localStorage.setItem(key, JSON.stringify(value));
+            }
+            observations.userStorageKeys = Object.keys(localStorage).sort();
+            assert(
+                JSON.stringify(observations.userStorageKeys)
+                    === JSON.stringify(Object.keys(userState).sort()),
+                'USER_STORAGE_KEYS_SEEDED'
+            );
+
+            document.body.dataset.status = 'seeded';
+            status.textContent = 'Synthetic state seeded; actual served navigation is required.';
+            output.textContent = JSON.stringify({
+                status: 'seeded',
+                observations,
+                plan: globalThis.__PR18_RUN_PLUS_BROWSER_PLAN__,
+                blocker: 'ACTUAL_SERVED_NAVIGATION_REQUIRED'
+            }, null, 2);
+        }
+
+        run().catch(() => {
+            document.body.dataset.status = 'failed';
+            status.textContent = 'Synthetic seed failed; inspect safe assertion codes.';
+            output.textContent = JSON.stringify({
+                status: 'failed',
+                observations
+            }, null, 2);
+        });
+    </script>
+</body>
+</html>
