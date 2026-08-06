@@ -465,6 +465,16 @@
                     () => child.requestAnimationFrame(resolve)
                 ));
                 root.routes.push(route);
+                if (route === '/dashboard') {
+                    const elevationCard = Array.from(
+                        childDocument.querySelectorAll('#dashboard-summary .card')
+                    ).find(card => card.querySelector('h3')?.textContent
+                        === 'Total Elevation Gain');
+                    assert(
+                        elevationCard?.textContent.includes('123 m'),
+                        'ACTUAL_ROOT_CANONICAL_ELEVATION_VISIBLE'
+                    );
+                }
             }
 
             assert(
@@ -543,6 +553,8 @@
                 elapsedTimeSeconds: 360 + index,
                 averagePowerWatts: index === 3 ? null : 0
             };
+            if (index === 0) activity.elevationGainMeters = 123;
+            if (index === 1) activity.elevationGainMeters = 0;
             if (index === 4) {
                 activity.extensions = {
                     shadowCanonicalWriterV1: {
@@ -640,6 +652,8 @@
             assert(new Set(result.data.map(value => value.id)).size === ACTIVITY_COUNT, 'CANONICAL_NO_DUPLICATES');
             assert(result.data.some(value => value.id === 'alpha/beta ?#%'), 'OPAQUE_ID_PRESERVED');
             assert(result.data.some(value => Object.is(value.distance, 0)), 'REAL_ZERO_PRESERVED');
+            assert(result.data.some(value => Object.is(value.total_elevation_gain, 0)), 'ELEVATION_ZERO_PRESERVED');
+            assert(result.data.some(value => value.total_elevation_gain === 123), 'ELEVATION_GAIN_PROJECTED');
             assert(result.data.some(value => value.name === null), 'NULL_PRESERVED');
             assert(result.data.some(value => !Object.hasOwn(value, 'average_heartrate')), 'MISSING_PRESERVED');
             assert(result.data.every(value => !Object.hasOwn(value, 'map')), 'MAP_NOT_FABRICATED');

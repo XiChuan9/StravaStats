@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+    IDBCursor,
     IDBDatabase,
     IDBFactory,
     IDBKeyRange
@@ -125,6 +126,57 @@ async function readAll(storage, {
     }
 }
 
+async function assertBoundedContinuation(storage, {
+    direction,
+    firstLimit,
+    pageLimit,
+    sportCategory
+}) {
+    const firstOptions = { direction, limit: firstLimit };
+    if (sportCategory !== undefined) {
+        firstOptions.sportCategory = sportCategory;
+    }
+    const first = await storage.listActivities(firstOptions);
+    assert.equal(first.length, firstLimit);
+
+    const originalContinue = IDBCursor.prototype.continue;
+    const originalContinuePrimaryKey = IDBCursor.prototype.continuePrimaryKey;
+    let continueCalls = 0;
+    let continuePrimaryKeyCalls = 0;
+    IDBCursor.prototype.continue = function (...args) {
+        continueCalls += 1;
+        return originalContinue.apply(this, args);
+    };
+    IDBCursor.prototype.continuePrimaryKey = function (...args) {
+        continuePrimaryKeyCalls += 1;
+        return originalContinuePrimaryKey.apply(this, args);
+    };
+
+    let page;
+    try {
+        const options = {
+            direction,
+            limit: pageLimit,
+            cursor: {
+                startTimeUtc: first.at(-1).startTimeUtc,
+                id: first.at(-1).id
+            }
+        };
+        if (sportCategory !== undefined) options.sportCategory = sportCategory;
+        page = await storage.listActivities(options);
+    } finally {
+        IDBCursor.prototype.continue = originalContinue;
+        IDBCursor.prototype.continuePrimaryKey = originalContinuePrimaryKey;
+    }
+
+    assert.equal(page.length, pageLimit);
+    assert.equal(continuePrimaryKeyCalls, 1);
+    assert.ok(
+        continueCalls <= pageLimit,
+        `cursor continuation visited ${continueCalls} records for limit ${pageLimit}`
+    );
+}
+
 test('keyset traversal returns 503 same-time opaque IDs without gaps or duplicates', async () => {
     const indexedDB = new IDBFactory();
     const storage = createCanonicalStore(options(indexedDB));
@@ -175,6 +227,23 @@ test('keyset traversal returns 503 same-time opaque IDs without gaps or duplicat
         runValues.map(value => value.id),
         expectedRuns.map(value => value.id)
     );
+
+    await assertBoundedContinuation(storage, {
+        direction: 'asc',
+        firstLimit: 500,
+        pageLimit: 3
+    });
+    await assertBoundedContinuation(storage, {
+        direction: 'desc',
+        firstLimit: 500,
+        pageLimit: 3
+    });
+    await assertBoundedContinuation(storage, {
+        direction: 'asc',
+        firstLimit: 200,
+        pageLimit: 3,
+        sportCategory: 'run'
+    });
 
     const first = await storage.listActivities({
         direction: 'asc',

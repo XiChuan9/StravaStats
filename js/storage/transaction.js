@@ -245,7 +245,9 @@ export function runTransaction(database, options, enqueue) {
         const queueCursorPage = (
             createRequest,
             limit,
-            select
+            select,
+            resumeKey,
+            resumePrimaryKey
         ) => {
             let request;
             let ready = false;
@@ -281,6 +283,23 @@ export function runTransaction(database, options, enqueue) {
                     );
                     if (decision === 'stop') {
                         finish();
+                        return;
+                    }
+                    if (decision === 'seek') {
+                        if (
+                            resumeKey === undefined
+                            || resumePrimaryKey === undefined
+                            || typeof cursor.continuePrimaryKey !== 'function'
+                        ) {
+                            throw storageError(
+                                STORAGE_ERROR_CODE.INVALID_REQUEST,
+                                normalized.operation
+                            );
+                        }
+                        cursor.continuePrimaryKey(
+                            resumeKey,
+                            resumePrimaryKey
+                        );
                         return;
                     }
                     if (decision !== 'include' && decision !== 'skip') {
@@ -343,7 +362,9 @@ export function runTransaction(database, options, enqueue) {
                 query,
                 direction,
                 limit,
-                select
+                select,
+                resumeKey = undefined,
+                resumePrimaryKey = undefined
             ) {
                 if (
                     (direction !== 'next' && direction !== 'prev')
@@ -360,7 +381,9 @@ export function runTransaction(database, options, enqueue) {
                     () => readSource(storeName, indexName)
                         .openCursor(query, direction),
                     limit,
-                    select
+                    select,
+                    resumeKey,
+                    resumePrimaryKey
                 );
             },
             count(storeName) {

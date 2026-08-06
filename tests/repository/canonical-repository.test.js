@@ -112,6 +112,7 @@ test('summary projection preserves missing, null, zero, opaque IDs, and known ty
             sportVariant: 'trail-run',
             name: null,
             distanceMeters: 0,
+            elevationGainMeters: -0,
             movingTimeSeconds: -0,
             elapsedTimeSeconds: null,
             averageHeartRateBpm: null,
@@ -136,6 +137,7 @@ test('summary projection preserves missing, null, zero, opaque IDs, and known ty
         start_date_local: '2026-08-05T18:00:00.000',
         name: null,
         distance: 0,
+        total_elevation_gain: -0,
         moving_time: -0,
         elapsed_time: null,
         average_heartrate: null,
@@ -145,6 +147,7 @@ test('summary projection preserves missing, null, zero, opaque IDs, and known ty
     assert.equal(Object.hasOwn(projected, 'average_cadence'), false);
     assert.equal(Object.hasOwn(projected, 'map'), false);
     assert.equal(Object.is(projected.moving_time, -0), true);
+    assert.equal(Object.is(projected.total_elevation_gain, -0), true);
     assert.equal(Object.isFrozen(projected), true);
 
     const utcFallback = projectCanonicalSummaryActivity(canonicalActivity(
@@ -157,6 +160,19 @@ test('summary projection preserves missing, null, zero, opaque IDs, and known ty
     ));
     assert.equal(utcFallback.type, 'Ride');
     assert.equal(utcFallback.start_date_local, utcFallback.start_date);
+
+    for (const [sportCategory, sportVariant, expected] of [
+        ['team', 'basketball', 'Basketball'],
+        ['team', 'volleyball', 'Volleyball'],
+        ['racket', 'table-tennis', 'TableTennis']
+    ]) {
+        const variant = projectCanonicalSummaryActivity(canonicalActivity(
+            `opaque-${sportVariant}`,
+            { sportCategory, sportVariant }
+        ));
+        assert.equal(variant.type, expected);
+        assert.equal(variant.sport_type, expected);
+    }
 });
 
 test('summary projection fails closed for accessors, sparse arrays, and Proxies', () => {

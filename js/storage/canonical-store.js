@@ -979,9 +979,18 @@ export function listCanonicalActivities(database, keyRange, options) {
                 );
                 const order = tupleOrder(tuple, normalized.cursor);
                 return normalized.direction === 'asc'
-                    ? (order > 0 ? 'include' : 'skip')
-                    : (order < 0 ? 'include' : 'skip');
-            }
+                    ? (order > 0 ? 'include' : order < 0 ? 'seek' : 'skip')
+                    : (order < 0 ? 'include' : order > 0 ? 'seek' : 'skip');
+            },
+            normalized.cursor === null
+                ? undefined
+                : normalized.sportCategory === null
+                    ? normalized.cursor.startTimeUtc
+                    : [
+                        normalized.sportCategory,
+                        normalized.cursor.startTimeUtc
+                    ],
+            normalized.cursor?.id
         );
         return () => {
             const activities = records.read().map(listActivity);

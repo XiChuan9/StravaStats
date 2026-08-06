@@ -34,7 +34,10 @@ const VARIANT_NAMES = new Map([
     ['winter\u0000snowboard', 'Snowboard'],
     ['winter\u0000snowshoe', 'Snowshoe'],
     ['team\u0000football', 'Soccer'],
+    ['team\u0000basketball', 'Basketball'],
+    ['team\u0000volleyball', 'Volleyball'],
     ['racket\u0000tennis', 'Tennis'],
+    ['racket\u0000table-tennis', 'TableTennis'],
     ['racket\u0000badminton', 'Badminton'],
     ['racket\u0000pickleball', 'Pickleball'],
     ['racket\u0000padel', 'Padel'],
@@ -175,6 +178,7 @@ export function projectCanonicalSummaryActivity(value) {
     for (const [canonicalField, legacyField] of [
         ['name', 'name'],
         ['distanceMeters', 'distance'],
+        ['elevationGainMeters', 'total_elevation_gain'],
         ['movingTimeSeconds', 'moving_time'],
         ['elapsedTimeSeconds', 'elapsed_time'],
         ['averageHeartRateBpm', 'average_heartrate'],

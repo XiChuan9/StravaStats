@@ -242,9 +242,12 @@ CanonicalActivity array contract.
 
 The Store implementation performs a bounded cursor scan through the existing
 start-time index, applies the opaque-ID tie-break and optional sport filter,
-and stops after `limit`. The private transaction context may add only the
-bounded cursor-read primitive required by this Store implementation; it does
-not expose an IndexedDB handle or add public Storage surface.
+seeks directly to a supplied same-timestamp primary-key boundary with
+`continuePrimaryKey`, and stops after `limit`. A continuation page may visit at
+most `limit + O(1)` cursor records even when every activity has the same
+timestamp. The private transaction context may add only this bounded
+cursor-read primitive; it does not expose an IndexedDB handle or add public
+Storage surface.
 
 Pagination provides monotonic, duplicate-free, read-committed traversal, not a
 strict snapshot, MVCC view, or first-page watermark. Concurrent inserts in the
@@ -316,6 +319,7 @@ id                      <- id, unchanged opaque string
 type / sport_type       <- stable category/known-variant compatibility name
 name                    <- name when present, including null
 distance                <- distanceMeters when present, including null/0
+total_elevation_gain    <- elevationGainMeters when present, including null/0
 moving_time             <- movingTimeSeconds when present, including null/0
 elapsed_time            <- elapsedTimeSeconds when present, including null/0
 start_date              <- startTimeUtc
@@ -330,13 +334,17 @@ gear_id                 <- documented shadow extension value when explicitly
 
 Known category/variant pairs map to the current compatibility vocabulary (for
 example `run/null -> Run`, `run/trail-run -> TrailRun`,
-`ride/mountain-bike -> MountainBikeRide`, and `swim/null -> Swim`). An unknown
-variant safely falls back to its category compatibility name instead of
-inventing a provider type. A missing optional Canonical field remains missing;
+`ride/mountain-bike -> MountainBikeRide`, `swim/null -> Swim`,
+`team/basketball -> Basketball`, `team/volleyball -> Volleyball`, and
+`racket/table-tennis -> TableTennis`). An unknown variant safely falls back to
+its category compatibility name instead of inventing a provider type. A
+missing optional Canonical field remains missing;
 `null`, `0`, and negative zero remain distinct values. No polyline is present
 in CanonicalActivity summary storage, so the projection does not fabricate a
-`map`, coordinates, gear, streams, laps, events, speed, elevation analysis, or
-provider-owned field.
+`map`, coordinates, gear, streams, laps, events, speed, derived elevation
+analysis, or provider-owned field. The raw `elevationGainMeters` summary value
+above is truthful stored data used by the existing Dashboard and Wrapped
+consumers; it is not derived analysis.
 
 ### Mode orchestration and rollback contract
 
