@@ -708,11 +708,12 @@ function createDetailPageHarness({
         error: []
     };
     const repository = Object.freeze({ synthetic: true });
+    const source = demo ? 'demo' : canonical ? 'canonical' : 'network';
     const bundle = bundleOverride ?? {
-        activity: envelope({ id: 'synthetic-detail', laps: [] }),
-        streams: envelope({}),
-        zones: envelope({ heart_rate: { zones: [] } }),
-        athlete: envelope({ id: 'synthetic-athlete' })
+        activity: envelope({ id: 'synthetic-detail', laps: [] }, source),
+        streams: envelope({}, source),
+        zones: envelope({ heart_rate: { zones: [] } }, source),
+        athlete: envelope({ id: 'synthetic-athlete' }, source)
     };
     return {
         calls,
@@ -798,6 +799,10 @@ for (const page of detailPageCases) {
                 assert.equal(calls.load, 1);
                 assert.equal(calls.render.length, 1);
                 assert.equal(calls.render[0].activityId, '000123');
+                assert.equal(
+                    calls.render[0].activitySource,
+                    scenario.demo ? 'demo' : scenario.canonical ? 'canonical' : 'network'
+                );
                 assert.equal(calls.render[0].allowExternalWeather, !scenario.demo);
                 assert.equal(calls.error.length, 0);
             });
@@ -1792,12 +1797,158 @@ test('four renderers accept canonical latlng streams without requiring provider 
                 [],
                 directory
             );
+            assert.deepEqual(
+                module.getActivityRouteCoordinates({ map: { summary_polyline: '??' } }, {}),
+                [[0, 0]],
+                directory
+            );
         }
     } finally {
         if (priorDocument) Object.defineProperty(globalThis, 'document', priorDocument);
         else delete globalThis.document;
         if (priorWindow) Object.defineProperty(globalThis, 'window', priorWindow);
         else delete globalThis.window;
+    }
+});
+
+test('Swim keeps its existing hidden map behavior when all route inputs are absent', async () => {
+    const priorDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+    const priorWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+    try {
+        const classes = new Set();
+        const section = {
+            classList: {
+                add: value => classes.add(value),
+                remove: value => classes.delete(value)
+            }
+        };
+        const map = { innerHTML: 'synthetic-map-sentinel' };
+        Object.defineProperty(globalThis, 'document', {
+            configurable: true,
+            value: {
+                title: '',
+                body: {},
+                getElementById: id => {
+                    if (id === 'activity-map') return map;
+                    if (id === 'activity-map-container') return section;
+                    return null;
+                },
+                querySelector: () => null,
+                querySelectorAll: () => []
+            }
+        });
+        Object.defineProperty(globalThis, 'window', {
+            configurable: true,
+            value: { L: {} }
+        });
+        const module = await import(
+            `../../js/pages/swim/swim.js?missing-route=${Date.now()}`
+        );
+        await module.renderSwimPage({
+            activity: {
+                id: 'missing-route',
+                name: 'Synthetic Swim',
+                sport_type: 'Swim',
+                start_date_local: '2026-01-01T00:00:00Z',
+                distance: 0,
+                moving_time: 0,
+                elapsed_time: 0,
+                laps: [],
+                splits_metric: [],
+                segment_efforts: [],
+                best_efforts: []
+            },
+            streams: {},
+            zones: null,
+            athlete: null,
+            activityId: 'missing-route',
+            activitySource: 'canonical',
+            allowExternalWeather: false
+        });
+        assert.equal(classes.has('hidden'), true);
+        assert.equal(map.innerHTML, 'synthetic-map-sentinel');
+    } finally {
+        if (priorDocument) Object.defineProperty(globalThis, 'document', priorDocument);
+        else delete globalThis.document;
+        if (priorWindow) Object.defineProperty(globalThis, 'window', priorWindow);
+        else delete globalThis.window;
+    }
+});
+
+test('Run, Bike, and Swim hide provider links for canonical opaque IDs', async () => {
+    const priorDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+    const priorWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+    const priorClassifier = Object.getOwnPropertyDescriptor(globalThis, 'classifyRun');
+    try {
+        for (const [directory, exportName, sportType] of [
+            ['run', 'renderRunPage', 'Run'],
+            ['bike', 'renderBikePage', 'Ride'],
+            ['swim', 'renderSwimPage', 'Swim']
+        ]) {
+            const heroLink = {
+                href: 'about:blank',
+                hidden: false,
+                removeAttribute(name) {
+                    if (name === 'href') this.href = '';
+                }
+            };
+            Object.defineProperty(globalThis, 'document', {
+                configurable: true,
+                value: {
+                    title: '',
+                    body: {},
+                    getElementById: id => (
+                        id === 'activity-hero-strava-link' ? heroLink : null
+                    ),
+                    querySelector: () => null,
+                    querySelectorAll: () => []
+                }
+            });
+            Object.defineProperty(globalThis, 'window', {
+                configurable: true,
+                value: {}
+            });
+            Object.defineProperty(globalThis, 'classifyRun', {
+                configurable: true,
+                value: () => []
+            });
+            const module = await import(
+                `../../js/pages/${directory}/${directory}.js?provider-link=${Date.now()}-${directory}`
+            );
+            const activity = {
+                id: '000123/opaque ?#%',
+                name: 'Synthetic Activity',
+                sport_type: sportType,
+                start_date_local: '2026-01-01T00:00:00Z',
+                distance: 0,
+                moving_time: 0,
+                elapsed_time: 0,
+                laps: [],
+                splits_metric: [],
+                segment_efforts: [],
+                best_efforts: []
+            };
+            await module[exportName]({
+                activity,
+                streams: {},
+                zones: null,
+                athlete: null,
+                activityId: activity.id,
+                activitySource: 'canonical',
+                allowExternalWeather: false
+            });
+            assert.equal(heroLink.href, '', directory);
+            assert.equal(heroLink.hidden, true, directory);
+        }
+    } finally {
+        for (const [name, descriptor] of [
+            ['document', priorDocument],
+            ['window', priorWindow],
+            ['classifyRun', priorClassifier]
+        ]) {
+            if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+            else delete globalThis[name];
+        }
     }
 });
 

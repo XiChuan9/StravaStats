@@ -178,7 +178,7 @@ export function getActivityRouteCoordinates(activity, streams) {
     const polyline = activity?.map?.summary_polyline || activity?.map?.polyline;
     if (typeof polyline === 'string' && polyline.length > 0) {
         const decoded = decodePolyline(polyline);
-        if (decoded.length >= 2) return decoded;
+        if (decoded.length > 0) return decoded;
     }
 
     const positions = streams?.latlng?.data;
@@ -282,7 +282,14 @@ function renderActivityMap(activity, streams) {
     const section = document.getElementById('activity-map-container');
     if (!DOM.map || !section) return;
 
-    if (!window.L) {
+    const polyline = activity?.map?.summary_polyline || activity?.map?.polyline;
+    const positions = streams?.latlng?.data;
+    const hasRouteInput = (
+        typeof polyline === 'string' && polyline.length > 0
+    ) || (
+        Array.isArray(positions) && positions.length > 0
+    );
+    if (!hasRouteInput || !window.L) {
         section.classList.add('hidden');
         if (allowExternalWeatherForPage) renderWeatherAnalysis(activity, []);
         return;
@@ -604,7 +611,19 @@ function initSmoothingControl() {
 /**
  * Renders basic activity information for swimming
  */
-function renderActivityInfo(activity) {
+function providerActivityUrl(activity, activitySource) {
+    const id = activity?.id;
+    const numericId = (
+        typeof id === 'number' && Number.isSafeInteger(id) && id >= 0
+    ) || (
+        typeof id === 'string' && /^(?:0|[1-9]\d*)$/.test(id)
+    );
+    return ['cache', 'network', 'mixed', 'demo'].includes(activitySource) && numericId
+        ? `https://www.strava.com/activities/${encodeURIComponent(String(id))}`
+        : null;
+}
+
+function renderActivityInfo(activity, activitySource) {
 
     const name = activity.name;
     const pageTitle = document.getElementById('activity-page-title');
@@ -620,7 +639,7 @@ function renderActivityInfo(activity) {
     const kudos = Number.isFinite(kudosValue) ? kudosValue : null;
     const commentCount = Number.isFinite(commentValue) ? commentValue : null;
     const tempStr = activity.average_temp !== undefined && activity.average_temp !== null ? `${activity.average_temp}°C` : null;
-    const stravaUrl = activity.id ? `https://www.strava.com/activities/${activity.id}` : null;
+    const stravaUrl = providerActivityUrl(activity, activitySource);
     const heroDate = document.getElementById('activity-hero-date');
     const heroDescription = document.getElementById('activity-hero-description');
     const heroType = document.getElementById('activity-hero-type');
@@ -639,7 +658,11 @@ function renderActivityInfo(activity) {
     }
     if (heroKudos) heroKudos.textContent = `❤️ ${kudos !== null ? kudos : '—'}`;
     if (heroComments) heroComments.textContent = `💬 ${commentCount !== null ? commentCount : '—'}`;
-    if (heroLink && stravaUrl) heroLink.href = stravaUrl;
+    if (heroLink) {
+        heroLink.hidden = stravaUrl === null;
+        if (stravaUrl === null) heroLink.removeAttribute('href');
+        else heroLink.href = stravaUrl;
+    }
 }
 
 /**
@@ -1033,7 +1056,7 @@ function renderStreamCharts(streams, activity) {
 /**
  * Main initialization and rendering logic
  */
-export async function renderSwimPage({ activity, streams, zones, athlete, activityId, allowExternalWeather }) {
+export async function renderSwimPage({ activity, streams, zones, athlete, activityId, activitySource, allowExternalWeather }) {
     allowExternalWeatherForPage = allowExternalWeather === true;
     const activityData = maybeCorrectIndoorSwimForAlex(structuredClone(activity), athlete);
     const streamData = structuredClone(streams);
@@ -1048,7 +1071,7 @@ export async function renderSwimPage({ activity, streams, zones, athlete, activi
         }
 
         // Render all sections
-        renderActivityInfo(activityData);
+        renderActivityInfo(activityData, activitySource);
         renderActivityStats(activityData);
         renderActivityAdvanced(activityData);
         renderActivityMap(activityData, streamData);

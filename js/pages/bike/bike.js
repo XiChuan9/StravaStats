@@ -137,7 +137,7 @@ export function getActivityRouteCoordinates(activity, streams) {
     const polyline = activity?.map?.summary_polyline || activity?.map?.polyline;
     if (typeof polyline === 'string' && polyline.length > 0) {
         const decoded = decodePolyline(polyline);
-        if (decoded.length >= 2) return decoded;
+        if (decoded.length > 0) return decoded;
     }
 
     const positions = streams?.latlng?.data;
@@ -392,7 +392,19 @@ function populateDynamicChartData(streams, isOriginal = false) {
 // 5. RENDERING — ACTIVITY INFO
 // =====================================================
 
-function renderActivityInfo(activity) {
+function providerActivityUrl(activity, activitySource) {
+    const id = activity?.id;
+    const numericId = (
+        typeof id === 'number' && Number.isSafeInteger(id) && id >= 0
+    ) || (
+        typeof id === 'string' && /^(?:0|[1-9]\d*)$/.test(id)
+    );
+    return ['cache', 'network', 'mixed', 'demo'].includes(activitySource) && numericId
+        ? `https://www.strava.com/activities/${encodeURIComponent(String(id))}`
+        : null;
+}
+
+function renderActivityInfo(activity, activitySource) {
     const name = activity.name || 'Cycling Activity';
     const pageTitle = document.getElementById('activity-page-title');
     if (pageTitle && name) pageTitle.textContent = name;
@@ -406,7 +418,7 @@ function renderActivityInfo(activity) {
     const kudos = Number.isFinite(kudosValue) ? kudosValue : null;
     const comments = Number.isFinite(commentsValue) ? commentsValue : null;
     const tempStr = activity.average_temp !== undefined && activity.average_temp !== null ? `${activity.average_temp}°C` : null;
-    const stravaUrl = activity.id ? `https://www.strava.com/activities/${activity.id}` : null;
+    const stravaUrl = providerActivityUrl(activity, activitySource);
     const fields = [];
     const pushField = (label, value) => {
         if (value === null || value === undefined || value === '' || value === 'N/A' || value === 'Not available' || value === '-' || value === 'null') return;
@@ -431,7 +443,11 @@ function renderActivityInfo(activity) {
     }
     if (heroKudos) heroKudos.textContent = `❤️ ${kudos !== null ? kudos : '—'}`;
     if (heroComments) heroComments.textContent = `💬 ${comments !== null ? comments : '—'}`;
-    if (heroLink && stravaUrl) heroLink.href = stravaUrl;
+    if (heroLink) {
+        heroLink.hidden = stravaUrl === null;
+        if (stravaUrl === null) heroLink.removeAttribute('href');
+        else heroLink.href = stravaUrl;
+    }
 }
 
 function renderActivityStats(activity, streams) {
@@ -1451,7 +1467,7 @@ function initSmoothingControl() {
 // 16. MAIN INITIALIZATION
 // =====================================================
 
-export async function renderBikePage({ activity, streams, zones, athlete, activityId, allowExternalWeather }) {
+export async function renderBikePage({ activity, streams, zones, athlete, activityId, activitySource, allowExternalWeather }) {
     moveAndHideCustomChartSection();
     allowExternalWeatherForPage = allowExternalWeather === true;
 
@@ -1468,7 +1484,7 @@ export async function renderBikePage({ activity, streams, zones, athlete, activi
         const initialSmoothed = applySmoothingToStreams(originalStreamData, currentSmoothingLevel);
         populateDynamicChartData(initialSmoothed, false);
 
-        renderActivityInfo(activityData);
+        renderActivityInfo(activityData, activitySource);
         renderActivityStats(activityData, streamData);
         renderAdvancedStats(activityData);
         renderActivityMap(activityData, streamData);

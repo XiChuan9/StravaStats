@@ -553,7 +553,7 @@ test('PR-17 freezes the literal 17-path allowlist and stable boundaries', async 
     }
 });
 
-test('PR-17 Canonical detail browser harness freezes actual served-route evidence', async () => {
+test('PR-17 Canonical detail browser harness freezes instrumented evidence and blocks actual claims', async () => {
     const harness = await source('tests/consumers/canonical-detail-browser-smoke.html');
     const moduleScript = /<script type="module" nonce="pr17-detail">([\s\S]*?)<\/script>/.exec(harness);
     assert.notEqual(moduleScript, null);
@@ -572,11 +572,13 @@ test('PR-17 Canonical detail browser harness freezes actual served-route evidenc
         /\/html\/run\.html/,
         /\/html\/bike\.html/,
         /\/html\/swim\.html/,
-        /actualServedFrame/,
-        /verifyActualRouter/,
-        /verifyActualDetail/,
-        /ACTUAL_ADVANCED_ZERO_DATABASE_IO/,
-        /ACTUAL_ADVANCED_ZERO_PROVIDER_IO/,
+        /instrumentedServedFrame/,
+        /verifyInstrumentedRouter/,
+        /verifyInstrumentedDetail/,
+        /INSTRUMENTED_ADVANCED_ZERO_DATABASE_IO/,
+        /INSTRUMENTED_ADVANCED_ZERO_PROVIDER_IO/,
+        /ACTUAL_SERVED_NAVIGATION_BLOCKED/,
+        /DATABASE_ENUMERATION_REQUIRED/,
         /ROLLBACK_MODE_/,
         /DEMO_FLAG_ISOLATION_/,
         /navigator\.serviceWorker\.getRegistrations/,
@@ -588,6 +590,17 @@ test('PR-17 Canonical detail browser harness freezes actual served-route evidenc
         assert.match(harness, pattern);
     }
     assert.doesNotMatch(harness, /strava_tokens|strava_athlete_data|strava_training_zones/);
+    assert.doesNotMatch(harness, /ACTUAL_(?!SERVED_NAVIGATION_BLOCKED)/);
+    assert.doesNotMatch(harness, /document\.body\.dataset\.status = 'passed'/);
+    for (const destructivePattern of [
+        /indexedDB\.deleteDatabase/,
+        /localStorage\.clear\(/,
+        /sessionStorage\.clear\(/,
+        /caches\.delete\(/,
+        /\.unregister\(/
+    ]) {
+        assert.doesNotMatch(harness, destructivePattern);
+    }
 });
 
 test('page governance freezes provider, privacy, ID, mode, and B1 scope rules', async () => {

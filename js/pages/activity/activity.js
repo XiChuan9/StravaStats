@@ -175,7 +175,7 @@ export function getActivityRouteCoordinates(activity, streams) {
     const polyline = activity?.map?.summary_polyline || activity?.map?.polyline;
     if (typeof polyline === 'string' && polyline.length > 0) {
         const decoded = decodePolyline(polyline);
-        if (decoded.length >= 2) return decoded;
+        if (decoded.length > 0) return decoded;
     }
 
     const positions = streams?.latlng?.data;

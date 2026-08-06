@@ -117,18 +117,18 @@ function cloneJson(value, active = new Set()) {
 function bundleParts(bundle) {
     const values = readRecord(bundle);
     if (values === null) projectionFailure();
+    const activity = readRecord(values.activity);
     const laps = readDenseArray(values.laps);
     const streams = readRecord(values.streams);
     const series = readDenseArray(streams?.series);
     if (
-        values.activity === null
-        || typeof values.activity !== 'object'
+        activity === null
         || laps === null
         || streams === null
         || series === null
-        || streams.activityId !== values.activity.id
+        || streams.activityId !== activity.id
     ) projectionFailure();
-    return { activity: values.activity, laps, series };
+    return { activity, laps, series };
 }
 
 function projectLap(value) {
@@ -244,7 +244,14 @@ export function projectCanonicalDetailStreams(bundle, requestedTypes) {
     }
     const { series: storedSeries } = bundleParts(bundle);
     const series = readSeries(storedSeries);
-    const reference = referenceSeries(series, values);
+    const selectedSeries = new Map();
+    for (const type of values) {
+        if (type === 'time') continue;
+        const canonicalType = LEGACY_TO_CANONICAL_STREAM.get(type);
+        const stored = series.get(canonicalType);
+        if (stored !== undefined) selectedSeries.set(canonicalType, stored);
+    }
+    const reference = referenceSeries(selectedSeries, values);
     const result = {};
     for (const type of values) {
         if (type === 'time') {
@@ -254,7 +261,7 @@ export function projectCanonicalDetailStreams(bundle, requestedTypes) {
             continue;
         }
         const canonicalType = LEGACY_TO_CANONICAL_STREAM.get(type);
-        const stored = series.get(canonicalType);
+        const stored = selectedSeries.get(canonicalType);
         if (
             stored !== undefined
             && reference !== null

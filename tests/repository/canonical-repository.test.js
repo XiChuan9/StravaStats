@@ -344,6 +344,29 @@ test('detail stream projection maps physical types and degrades mismatched timel
         time: { data: [0, 60] },
         latlng: { data: [[0, 0], [0, 0.001]] }
     });
+
+    const requestedTimeline = detailBundle('selected-timeline');
+    requestedTimeline.streams.series = [
+        {
+            streamType: 'altitude',
+            unit: 'm',
+            offsetsSeconds: [0, 5],
+            values: [10, 11]
+        },
+        {
+            streamType: 'heartRate',
+            unit: 'bpm',
+            offsetsSeconds: [0, 10],
+            values: [120, 130]
+        }
+    ];
+    assert.deepEqual(
+        projectCanonicalDetailStreams(requestedTimeline, ['time', 'heartrate']),
+        {
+            time: { data: [0, 10] },
+            heartrate: { data: [120, 130] }
+        }
+    );
 });
 
 test('detail projection rejects unsafe bundle and request shapes without getter execution', () => {
@@ -356,12 +379,21 @@ test('detail projection rejects unsafe bundle and request shapes without getter 
             return 'private';
         }
     });
+    const idAccessor = detailBundle('unsafe-id');
+    Object.defineProperty(idAccessor.activity, 'id', {
+        enumerable: true,
+        get() {
+            getterCalls += 1;
+            return 'unsafe-id';
+        }
+    });
     const sparse = [];
     sparse.length = 1;
     const { proxy, revoke } = Proxy.revocable({}, {});
     revoke();
     for (const invoke of [
         () => projectCanonicalDetailActivity(stored),
+        () => projectCanonicalDetailActivity(idAccessor),
         () => projectCanonicalDetailStreams(detailBundle(), sparse),
         () => projectCanonicalDetailStreams(proxy, ['time'])
     ]) {
@@ -531,6 +563,55 @@ test('concurrent activity and stream reads coalesce into one Canonical bundle tr
     assert.equal(activity.data.id, stored.activity.id);
     assertCanonicalEnvelope(streams, streams.data);
     assert.deepEqual(streams.data.time.data, [0, 30, 60]);
+});
+
+test('a late stream read joining a full activity bundle selects only its requested timeline', async () => {
+    const stored = detailBundle('late-coalesced');
+    stored.streams.series = [
+        {
+            streamType: 'altitude',
+            unit: 'm',
+            offsetsSeconds: [0, 5],
+            values: [10, 11]
+        },
+        {
+            streamType: 'heartRate',
+            unit: 'bpm',
+            offsetsSeconds: [0, 10],
+            values: [120, 130]
+        }
+    ];
+    let releaseBundle;
+    let bundleStarted;
+    const started = new Promise(resolve => { bundleStarted = resolve; });
+    const blocked = new Promise(resolve => { releaseBundle = resolve; });
+    const calls = [];
+    const repository = new CanonicalRepository({
+        storeFactory: () => ({
+            async initialize() {},
+            async getBundle(id, options) {
+                calls.push({ id, options });
+                bundleStarted();
+                await blocked;
+                return stored;
+            }
+        })
+    });
+
+    const activityPromise = repository.getActivity(stored.activity.id);
+    await started;
+    const streamsPromise = repository.getStreams(stored.activity.id, {
+        types: ['time', 'heartrate']
+    });
+    releaseBundle();
+    const [activity, streams] = await Promise.all([activityPromise, streamsPromise]);
+
+    assert.equal(activity.data.id, stored.activity.id);
+    assert.deepEqual(calls, [{ id: stored.activity.id, options: undefined }]);
+    assert.deepEqual(streams.data, {
+        time: { data: [0, 10] },
+        heartrate: { data: [120, 130] }
+    });
 });
 
 test('Canonical detail reads preserve missing and map unsafe failures safely', async () => {

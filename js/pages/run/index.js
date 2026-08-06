@@ -180,8 +180,10 @@ export async function initializeRunPage({
         const bundle = await session.load();
         const detail = readExactRecord(bundle, BUNDLE_KEYS);
         if (detail === null) throw new TypeError('Invalid detail bundle.');
+        const activity = readEnvelopeData(detail.activity);
         await renderer({
-            activity: readEnvelopeData(detail.activity),
+            activity,
+            activitySource: readExactRecord(detail.activity, ENVELOPE_KEYS).source,
             streams: readEnvelopeData(detail.streams),
             zones: readEnvelopeData(detail.zones, true),
             athlete: readEnvelopeData(detail.athlete, true),
