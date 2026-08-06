@@ -104,8 +104,13 @@ function readEnvelopeData(envelope, optional = false) {
         || !REPOSITORY_SOURCES.has(record.source)
         || typeof record.partial !== 'boolean'
         || !isDenseNativeArray(record.warnings)
-        || record.data === null
-        || typeof record.data !== 'object'
+    ) throw new TypeError('Invalid detail result.');
+    if (record.data === null) {
+        if (optional) return null;
+        throw new TypeError('Invalid detail result.');
+    }
+    if (
+        typeof record.data !== 'object'
         || Array.isArray(record.data)
         || Object.getPrototypeOf(record.data) !== Object.prototype
     ) throw new TypeError('Invalid detail result.');

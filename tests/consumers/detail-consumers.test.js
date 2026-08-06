@@ -907,6 +907,27 @@ test('optional null metadata remains null and does not prevent rendering', async
     }
 });
 
+test('optional Repository success envelopes may carry canonical null data', async t => {
+    for (const page of detailPageCases) {
+        await t.test(page.name, async () => {
+            const { calls, options } = createDetailPageHarness({
+                bundleOverride: {
+                    activity: envelope({ id: 'optional-envelope-null' }, 'canonical'),
+                    streams: envelope({}, 'canonical'),
+                    zones: envelope(null, 'canonical'),
+                    athlete: envelope(null, 'canonical')
+                }
+            });
+            options.search = '?id=optional-envelope-null';
+            assert.equal(await page.initialize(options), true);
+            assert.equal(calls.render.length, 1);
+            assert.equal(calls.render[0].zones, null);
+            assert.equal(calls.render[0].athlete, null);
+            assert.equal(calls.error.length, 0);
+        });
+    }
+});
+
 test('all detail pages reject incomplete and malformed success envelopes', async t => {
     const cases = [
         ['data-only envelope', () => ({ data: {} })],

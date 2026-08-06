@@ -590,6 +590,7 @@ test('PR-17 Canonical detail browser harness freezes instrumented evidence and b
         assert.match(harness, pattern);
     }
     assert.doesNotMatch(harness, /strava_tokens|strava_athlete_data|strava_training_zones/);
+    assert.doesNotMatch(harness, /stream\('heartRate',\s*'bpm',\s*\[0,/);
     assert.doesNotMatch(harness, /ACTUAL_(?!SERVED_NAVIGATION_BLOCKED)/);
     assert.doesNotMatch(harness, /document\.body\.dataset\.status = 'passed'/);
     for (const destructivePattern of [

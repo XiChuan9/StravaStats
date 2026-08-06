@@ -144,7 +144,7 @@
                     [
                         stream('distance', 'm', [0, 600, 1200]),
                         stream('position', 'wgs84', [[0, 0], [0, 0.001], [0.001, 0.001]]),
-                        stream('heartRate', 'bpm', [0, 130, 140]),
+                        stream('heartRate', 'bpm', [null, 130, 140]),
                         stream('cadence', 'rpm', [0, 80, 82])
                     ],
                     [lap('opaque/generic ?#%', 0, 1200, 420)]
@@ -200,7 +200,7 @@
                     [
                         stream('distance', 'm', [0, 5000, 10000]),
                         stream('position', 'wgs84', [[2, 2], [2, 2.001], [2.001, 2.001]]),
-                        stream('heartRate', 'bpm', [0, 135, 145]),
+                        stream('heartRate', 'bpm', [null, 135, 145]),
                         stream('power', 'W', [0, 180, 220]),
                         stream('cadence', 'rpm', [0, 85, 90]),
                         stream('speed', 'm/s', [0, 5.5, 5.7])
@@ -227,7 +227,7 @@
                     }),
                     [
                         stream('distance', 'm', [0, 500, 1000]),
-                        stream('heartRate', 'bpm', [0, 120, 130]),
+                        stream('heartRate', 'bpm', [null, 120, 130]),
                         stream('cadence', 'spm', [0, 28, 30])
                     ],
                     [lap('swim?#opaque/000', 0, 1000, 1200)]
