@@ -180,6 +180,7 @@ latlng         <- position
 heartrate      <- heartRate
 watts          <- power
 velocity_smooth <- speed
+temp           <- temperature
 distance, altitude, cadence, moving, grade_smooth <- same-name series
 time           <- the selected reference series' stored offsetsSeconds
 ```
@@ -373,3 +374,46 @@ Canonical contract change, analysis/provider-auth change, production dependency,
 deployment/release change, PR-18 path, destructive data action, real credential/private-data use,
 merge/cleanup, or another material product/architecture expansion.
 
+## Implementation ledger
+
+### B1: Canonical Repository and detail projection
+
+Status: **Completed locally / PASS**.
+
+- Added the pure descriptor-safe `detail-projection.js` compatibility boundary.
+- Implemented Canonical `getActivity` and `getStreams` without changing the seven-method
+  Repository surface or five public exports.
+- Same-turn activity/stream calls coalesce into one Store initialization and one
+  `getBundle` transaction with the exact union of requested physical stream types.
+- Opaque strings are preserved; numeric IDs, duplicate/unknown streams, accessors, sparse
+  arrays, and Proxies fail before Store construction/I/O.
+- Missing activities map to safe `NOT_FOUND`; invalid Store/projection failures map to
+  redacted `INVALID_REQUEST` or `RESPONSE_INVALID` without retaining private details.
+- Activity/lap/stream projection preserves absent/null/zero/negative-zero, omits mismatched
+  timelines, and never interpolates or fabricates Canonical data.
+
+Actual local evidence at the B1 stop boundary:
+
+```text
+node --test tests/repository/canonical-repository.test.js
+  PASS 13/13
+node --test tests/repository/canonical-repository.test.js
+  tests/storage/canonical-store.test.js
+  tests/repository/repository-contract.test.js
+  tests/repository/repository-factory.test.js
+  PASS 50/50
+npm run check:syntax
+  PASS 204 files
+npm run check:privacy
+  PASS
+node --test tests/repository/dependency-boundaries.test.js
+  PASS 7/7
+node --test tests/consumers/detail-boundaries.test.js
+  PASS 21/21
+git diff --check
+  PASS
+```
+
+All B1 fixtures are deterministic, inline, synthetic, and offline. No migration, write-path,
+schema, provider/auth, analysis, dependency, Service Worker, PR-18, or default-mode change was
+made. Browser/CDP, independent review, full suite, CI, and Closure remain pending.
