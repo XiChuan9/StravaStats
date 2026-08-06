@@ -17,7 +17,8 @@ const summaryTabs = Object.freeze([
     'js/tabs/swim-analysis.js',
     'js/tabs/maps.js',
     'js/tabs/gear.js',
-    'js/tabs/wrapped.js'
+    'js/tabs/wrapped.js',
+    'js/tabs/planner.js'
 ]);
 const tabSources = new Map(await Promise.all(summaryTabs.map(async path => (
     [path, await source(path)]
@@ -72,6 +73,36 @@ test('summary tabs do not construct Repository or access auth/provider APIs', ()
         assert.doesNotMatch(value, /\/api\/strava-/i, path);
         assert.doesNotMatch(value, /indexedDB/i, path);
     }
+});
+
+test('PR-16 has one isolated Canonical harness and an exact actual-root route plan', async () => {
+    const harnessPath = 'tests/consumers/canonical-summary-browser-smoke.html';
+    const harness = await source(harnessPath);
+    assert.match(harness, /ACTIVITY_COUNT = 503/);
+    assert.match(harness, /createCanonicalStore/);
+    assert.match(harness, /createRepositoryWithDependencies/);
+    assert.match(harness, /dataRepositoryMode:\s*'canonical'/);
+    assert.match(harness, /requiresActualRootNavigation:\s*true/);
+    assert.match(harness, /ZERO_PROVIDER_OR_AUTHORIZATION_IO/);
+    assert.match(harness, /ZERO_TOKEN_READ/);
+    assert.match(harness, /DEMO_ZERO_REAL_V2_OPEN/);
+    assert.match(harness, /CANONICAL_503_COMPLETE/);
+    for (const route of [
+        '/activities',
+        '/calendar',
+        '/wrapped',
+        '/dashboard',
+        '/run',
+        '/bike',
+        '/swim',
+        '/gear',
+        '/map',
+        '/planner'
+    ]) {
+        assert.equal(harness.includes(`'${route}'`), true, route);
+    }
+    assert.doesNotMatch(harness, /tests\/fixtures\/private/);
+    assert.doesNotMatch(mainSource, /canonical-summary-browser-smoke/);
 });
 
 test('UI and user-owned storage stays on the explicit allowlist', () => {

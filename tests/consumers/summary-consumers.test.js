@@ -159,6 +159,43 @@ test('Factory is called exactly once per real or Demo page session with frozen o
     }
 });
 
+test('Explicit Real canonical selects Canonical while Demo remains Demo-first legacy factory mode', () => {
+    const canonicalBoundary = compileBoundary(mainSource, {
+        getFeatureFlags: () => Object.freeze({
+            dataRepositoryMode: 'canonical',
+            localImportEnabled: false,
+            canonicalShadowWriteEnabled: false
+        }),
+        getApplicationShadowWriter: () => null
+    });
+    const { repository } = syntheticRepository();
+    const realCalls = [];
+    canonicalBoundary.createSummaryRepositorySession({
+        sessionMode: APP_SESSION_MODE.REAL,
+        repositoryFactory: options => {
+            realCalls.push(options);
+            return repository;
+        }
+    });
+    assert.deepEqual(realCalls, [{
+        sessionMode: APP_SESSION_MODE.REAL,
+        mode: 'canonical'
+    }]);
+
+    const demoCalls = [];
+    canonicalBoundary.createSummaryRepositorySession({
+        sessionMode: APP_SESSION_MODE.DEMO,
+        repositoryFactory: options => {
+            demoCalls.push(options);
+            return repository;
+        }
+    });
+    assert.deepEqual(demoCalls, [{
+        sessionMode: APP_SESSION_MODE.DEMO,
+        mode: 'legacy'
+    }]);
+});
+
 test('Session-mode mismatch fails closed without replacing the Repository', () => {
     const { repository } = syntheticRepository();
     const session = createSession(APP_SESSION_MODE.REAL, repository);
@@ -218,6 +255,7 @@ test('Repository source maps only to approved generic activity loading copy', ()
     assert.equal(boundary.activityLoadingMessage('cache', 2), 'Activities loaded from cache (2)');
     assert.equal(boundary.activityLoadingMessage('network', 2), 'Activities downloaded (2)');
     assert.equal(boundary.activityLoadingMessage('mixed', 2), 'Activities ready (2)');
+    assert.equal(boundary.activityLoadingMessage('canonical', 2), 'Local activities ready (2)');
     assert.throws(() => boundary.activityLoadingMessage('private-source', 2));
 });
 

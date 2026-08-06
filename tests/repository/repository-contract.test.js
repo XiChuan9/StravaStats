@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { DemoRepository } from '../../js/repository/demo/demo-repository.js';
+import { CanonicalRepository } from '../../js/repository/canonical/canonical-repository.js';
 import {
     REPOSITORY_ERROR_CODE,
     REPOSITORY_SOURCE,
@@ -267,4 +268,26 @@ test('successful empty collections are not partial', async () => {
         assert.equal(value.partial, false);
         assert.deepEqual(value.warnings, []);
     }
+});
+
+test('CanonicalRepository preserves the seven-method public surface', async () => {
+    let constructions = 0;
+    const repository = new CanonicalRepository({
+        storeFactory() {
+            constructions += 1;
+            return {
+                async initialize() {},
+                async listActivities() { return []; }
+            };
+        }
+    });
+    for (const method of METHODS) {
+        assert.equal(typeof repository[method], 'function');
+    }
+    assert.equal(repository.getLaps, undefined);
+    const activities = await repository.listActivities();
+    assertEnvelope(activities);
+    assert.equal(activities.source, REPOSITORY_SOURCE.CANONICAL);
+    assert.deepEqual(activities.data, []);
+    assert.equal(constructions, 1);
 });

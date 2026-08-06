@@ -795,18 +795,26 @@ test('listActivities never reads stream or relation stores', async () => {
     const storage = createCanonicalStore(options(indexedDB));
     await storage.initialize();
     await storage.putBundle(bundle('opaque-list-boundary'));
+    const originalOpenCursor = IDBIndex.prototype.openCursor;
     const originalGetAll = IDBIndex.prototype.getAll;
-    const calls = [];
+    const cursorCalls = [];
+    let getAllCalls = 0;
+    IDBIndex.prototype.openCursor = function (...args) {
+        cursorCalls.push([this.objectStore.name, this.name]);
+        return originalOpenCursor.apply(this, args);
+    };
     IDBIndex.prototype.getAll = function (...args) {
-        calls.push([this.objectStore.name, this.name]);
+        getAllCalls += 1;
         return originalGetAll.apply(this, args);
     };
     try {
         await storage.listActivities();
     } finally {
+        IDBIndex.prototype.openCursor = originalOpenCursor;
         IDBIndex.prototype.getAll = originalGetAll;
     }
-    assert.deepEqual(calls, [['activities', 'byStartTimeUtc']]);
+    assert.deepEqual(cursorCalls, [['activities', 'byStartTimeUtc']]);
+    assert.equal(getAllCalls, 0);
     await storage.close();
 });
 

@@ -2,6 +2,7 @@ import {
     validateCanonicalActivity,
     validateImportedActivityBundle
 } from '../data/contracts/index.js';
+import { isStrictUtcInstant } from '../data/contracts/primitives.js';
 import {
     STORAGE_ERROR_CODE,
     STORAGE_OPERATION,
@@ -38,7 +39,13 @@ const GET_OPTION_FIELDS = Object.freeze(['streamTypes']);
 const LIST_OPTION_FIELDS = Object.freeze([
     'sportCategory',
     'limit',
-    'direction'
+    'direction',
+    'cursor'
+]);
+
+const LIST_CURSOR_FIELDS = Object.freeze([
+    'startTimeUtc',
+    'id'
 ]);
 
 const SPORT_CATEGORIES = Object.freeze([
@@ -814,7 +821,8 @@ function normalizeListOptions(options) {
         return Object.freeze({
             sportCategory: null,
             limit: 100,
-            direction: 'desc'
+            direction: 'desc',
+            cursor: null
         });
     }
     const values = ownDataValues(options, LIST_OPTION_FIELDS, true);
@@ -825,6 +833,24 @@ function normalizeListOptions(options) {
     const direction = Object.hasOwn(values, 'direction')
         ? values.direction
         : 'desc';
+    let cursor = null;
+    if (Object.hasOwn(values, 'cursor')) {
+        const cursorValues = ownDataValues(
+            values.cursor,
+            LIST_CURSOR_FIELDS
+        );
+        if (
+            !cursorValues
+            || !isStrictUtcInstant(cursorValues.startTimeUtc)
+            || !opaqueString(cursorValues.id)
+        ) {
+            return null;
+        }
+        cursor = Object.freeze({
+            startTimeUtc: cursorValues.startTimeUtc,
+            id: cursorValues.id
+        });
+    }
     if (
         (hasSportCategory && !SPORT_CATEGORIES.includes(sportCategory))
         || !Number.isSafeInteger(limit)
@@ -834,7 +860,56 @@ function normalizeListOptions(options) {
     ) {
         return null;
     }
-    return Object.freeze({ sportCategory, limit, direction });
+    return Object.freeze({ sportCategory, limit, direction, cursor });
+}
+
+function listRange(keyRange, options) {
+    const { sportCategory, cursor, direction } = options;
+    if (sportCategory === null) {
+        if (cursor === null) return undefined;
+        return direction === 'asc'
+            ? keyRange.bound(cursor.startTimeUtc, '\uffff')
+            : keyRange.bound('', cursor.startTimeUtc);
+    }
+    if (cursor === null) {
+        return keyRange.bound(
+            [sportCategory, ''],
+            [sportCategory, '\uffff']
+        );
+    }
+    return direction === 'asc'
+        ? keyRange.bound(
+            [sportCategory, cursor.startTimeUtc],
+            [sportCategory, '\uffff']
+        )
+        : keyRange.bound(
+            [sportCategory, ''],
+            [sportCategory, cursor.startTimeUtc]
+        );
+}
+
+function cursorTuple(indexKey, primaryKey, sportCategory) {
+    const startTimeUtc = sportCategory === null
+        ? indexKey
+        : (
+            Array.isArray(indexKey)
+            && indexKey.length === 2
+            && indexKey[0] === sportCategory
+        )
+            ? indexKey[1]
+            : null;
+    if (
+        !isStrictUtcInstant(startTimeUtc)
+        || !opaqueString(primaryKey)
+    ) {
+        throw schemaMismatch(STORAGE_OPERATION.LIST_ACTIVITIES);
+    }
+    return { startTimeUtc, id: primaryKey };
+}
+
+function tupleOrder(left, right) {
+    const time = codeUnitCompare(left.startTimeUtc, right.startTimeUtc);
+    return time === 0 ? codeUnitCompare(left.id, right.id) : time;
 }
 
 function listActivity(envelope) {
@@ -874,14 +949,10 @@ export function listCanonicalActivities(database, keyRange, options) {
     try {
         if (normalized.sportCategory === null) {
             indexName = 'byStartTimeUtc';
-            query = undefined;
         } else {
             indexName = 'bySportCategoryAndStartTimeUtc';
-            query = keyRange.bound(
-                [normalized.sportCategory, ''],
-                [normalized.sportCategory, '\uffff']
-            );
         }
+        query = listRange(keyRange, normalized);
     } catch {
         return Promise.reject(storageError(
             STORAGE_ERROR_CODE.INVALID_REQUEST,
@@ -893,23 +964,28 @@ export function listCanonicalActivities(database, keyRange, options) {
         mode: 'readonly',
         operation: STORAGE_OPERATION.LIST_ACTIVITIES
     }, context => {
-        const records = context.getAll(
+        const records = context.scanPage(
             V2_STORE_NAME.ACTIVITIES,
             indexName,
-            query
+            query,
+            normalized.direction === 'asc' ? 'next' : 'prev',
+            normalized.limit,
+            (indexKey, primaryKey) => {
+                if (normalized.cursor === null) return 'include';
+                const tuple = cursorTuple(
+                    indexKey,
+                    primaryKey,
+                    normalized.sportCategory
+                );
+                const order = tupleOrder(tuple, normalized.cursor);
+                return normalized.direction === 'asc'
+                    ? (order > 0 ? 'include' : 'skip')
+                    : (order < 0 ? 'include' : 'skip');
+            }
         );
         return () => {
             const activities = records.read().map(listActivity);
-            activities.sort((left, right) => {
-                const time = codeUnitCompare(
-                    left.startTimeUtc,
-                    right.startTimeUtc
-                );
-                const id = codeUnitCompare(left.id, right.id);
-                const order = time === 0 ? id : time;
-                return normalized.direction === 'asc' ? order : -order;
-            });
-            return deepFreeze(activities.slice(0, normalized.limit));
+            return deepFreeze(activities);
         };
     });
 }

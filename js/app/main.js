@@ -293,12 +293,17 @@ export function createSummaryRepositorySession({
         throw safeOperationalError();
     }
 
+    const featureFlags = sessionMode === APP_SESSION_MODE.REAL
+        ? getFeatureFlags()
+        : null;
     const repository = repositoryFactory({
         sessionMode,
-        mode: 'legacy'
+        mode: featureFlags?.dataRepositoryMode === 'canonical'
+            ? 'canonical'
+            : 'legacy'
     });
     const shadowWriter = sessionMode === APP_SESSION_MODE.REAL
-        ? getApplicationShadowWriter(getFeatureFlags())
+        ? getApplicationShadowWriter(featureFlags)
         : null;
 
     return Object.freeze({
@@ -567,7 +572,8 @@ export function activityLoadingMessage(source, count) {
         [REPOSITORY_SOURCE.DEMO]: `Demo activities ready (${count})`,
         [REPOSITORY_SOURCE.CACHE]: `Activities loaded from cache (${count})`,
         [REPOSITORY_SOURCE.NETWORK]: `Activities downloaded (${count})`,
-        [REPOSITORY_SOURCE.MIXED]: `Activities ready (${count})`
+        [REPOSITORY_SOURCE.MIXED]: `Activities ready (${count})`,
+        [REPOSITORY_SOURCE.CANONICAL]: `Local activities ready (${count})`
     })[source];
 }
 
@@ -1267,6 +1273,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function initializeLocalDashboard(state) {
         renderSourceStatus(state);
+        if (getFeatureFlags().dataRepositoryMode === 'canonical') {
+            await initializeApp(null);
+            return;
+        }
         if (state.legacyActivities.length === 0) {
             showLocalDashboardShell(state);
             return;

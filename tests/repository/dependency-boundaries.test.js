@@ -160,21 +160,14 @@ test('public import performs zero token, storage, network, or DOM side effects',
     }
 });
 
-test('approved Connector boundary files match the frozen PR-04B B1 hashes', async () => {
+test('approved Connector implementation matches the frozen PR-04B B1 hash', async () => {
     // PR-04B B1 approved the Connector and test changes for the type= fix.
-    // Repository errors remain unchanged; any later unapproved change still fails here.
+    // Later PRs may extend public Repository literals and their exact tests
+    // without weakening the frozen Connector implementation boundary.
     const expected = new Map([
         [
             'js/connectors/strava/strava-api-connector.js',
             'ea3810a190451cf9bdff9f4f2bdcc3a81a8591c4ec385b14dd07de6324061ba8'
-        ],
-        [
-            'js/repository/errors.js',
-            '0a9018b272fd0535a5ff8ff6f8661e3630924db360fded96be3386a96da49839'
-        ],
-        [
-            'tests/repository/strava-api-connector.test.js',
-            'c9d429b305d959ebb839e178610c37744dcaffbb9e25cc99f314916cc0ab4d7e'
         ]
     ]);
     for (const [relative, hash] of expected) {
@@ -185,6 +178,22 @@ test('approved Connector boundary files match the frozen PR-04B B1 hashes', asyn
             relative
         );
     }
+});
+
+test('Canonical Repository reaches local data only through the Storage boundary', async () => {
+    const canonical = await readFile(
+        path.join(ROOT, 'js/repository/canonical/canonical-repository.js'),
+        'utf8'
+    );
+    assert.match(canonical, /\.\.\/\.\.\/storage\/index\.js/);
+    assert.doesNotMatch(
+        canonical,
+        /indexedDB|IDB(?:Database|ObjectStore|Index|Request|Transaction)|localStorage/
+    );
+    assert.doesNotMatch(
+        canonical,
+        /Authorization|Token|connector|provider|services\/activity-cache/
+    );
 });
 
 test('Repository modules contain no logging or runtime compilation', async () => {

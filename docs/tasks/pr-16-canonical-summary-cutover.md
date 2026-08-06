@@ -136,8 +136,8 @@ needed.
 
 ### Literal path allowlist
 
-Implementation, tests, review repairs, and Closure may change exactly these 18
-paths and no nineteenth path:
+Implementation, tests, review repairs, and Closure may change exactly these 20
+paths and no twenty-first path:
 
 ```text
 docs/tasks/pr-16-canonical-summary-cutover.md
@@ -157,12 +157,47 @@ tests/repository/repository-factory.test.js
 tests/repository/dependency-boundaries.test.js
 tests/repository/strava-api-connector.test.js
 tests/shadow/shadow-app-integration.test.js
+tests/shadow/shadow-boundaries.test.js
 tests/storage/canonical-pagination.test.js
+tests/storage/canonical-store.test.js
 ```
 
 There is no directory glob or cumulative prior-PR permission. The Task Brief,
 Canonical Repository, Canonical summary projection, pagination test, and new
 browser harness are new files; all other entries are existing paths.
+
+### A3.2 approved test-only boundary repair
+
+The existing `tests/storage/canonical-store.test.js` froze the former
+`listActivities` implementation by spying on `IDBIndex.prototype.getAll` and
+requiring one exact call. The approved bounded keyset implementation correctly
+uses `openCursor`; without a redundant probe, the new 503-record pagination
+suite passed 3/3 while that one old implementation spy failed (the other 15
+Canonical Store tests passed). A semantic-free `getAll` probe was proven
+unnecessary for transaction completion and would add an unauthorized data
+request.
+
+The user therefore approved A3.2 to add only this nineteenth path. Its sole
+change replaces the implementation spy with `openCursor`, retains the exact
+`activities` / `byStartTimeUtc` boundary assertion, and explicitly asserts zero
+`getAll` calls. `boundedIndexProbe` and the probe-only `getAll(count)` extension
+remain prohibited. No other old test meaning or product contract changes.
+
+### A3.3 approved test-only boundary repair
+
+The serial full suite then passed 1306 of 1307 tests. Its sole failure was the
+PR-07 boundary test's whole-file SHA-256 freeze of
+`js/repository/factory.js`: the approved PR-16 Canonical routing necessarily
+changes that implementation file while preserving the public Repository
+surface. Updating the digest would merely recreate the same future-hostile
+blocker for the next approved Factory change.
+
+The user therefore approved A3.3 to add only this twentieth path. Its sole
+change removes the Factory whole-file digest from `FROZEN_HASHES`; the other
+four stable public/schema/storage hashes and every existing Shadow test
+meaning remain intact. Product code is not changed to satisfy the stale hash,
+and the PR-16 Factory routing is covered by focused public-contract, Factory,
+dependency-boundary, and Shadow-integration assertions.
 
 ### Prohibited paths and operations
 

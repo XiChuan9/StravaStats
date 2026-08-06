@@ -153,7 +153,8 @@ test('repository constants are exact and frozen', () => {
         CACHE: 'cache',
         NETWORK: 'network',
         DEMO: 'demo',
-        MIXED: 'mixed'
+        MIXED: 'mixed',
+        CANONICAL: 'canonical'
     });
     assert.deepEqual(REPOSITORY_WARNING_CODE, {
         CACHE_READ_FAILED: 'CACHE_READ_FAILED',
