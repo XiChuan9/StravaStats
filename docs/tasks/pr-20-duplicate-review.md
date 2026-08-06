@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 M17 / PR-20 |
-| Status | Ready for investigation; implementation not authorized |
+| Status | A3 contract frozen; implementation authorized within literal allowlist |
 | Branch | `codex/v2/duplicate-review` |
 | Base | `integration/v2` at `a686b19a6f2ab6ecb2c724cc940db3ab5c09eafe` |
 | Draft PR title | `feat(v2): add duplicate review workflow` |
@@ -15,17 +15,17 @@
 
 Investigate and, only after explicit approval of every material contract, implement the PR-20
 Duplicate Review workflow described by the product PRD and development plan. Possible or fuzzy
-duplicates may become review candidates, but they must remain two intact Canonical activities
-until the user explicitly confirms otherwise. PR-19's four exact identities continue to use the
-existing Exact Identity Resolver and must not be changed, weakened, rescored, or routed through
-fuzzy review.
+duplicates may become review candidates, but PR-20 always keeps them as two intact Canonical
+activities, including after the user records that they are the same activity. PR-19's four exact
+identities continue to use the existing Exact Identity Resolver and must not be changed, weakened,
+rescored, or routed through fuzzy review.
 
 The planned user surface includes candidate review, an explainable confidence/category,
 side-by-side comparison, Confirm same activity, Keep separate, Later, and a durable audit record.
-Those labels do not freeze algorithms, thresholds, persistence, merge semantics, source/field
-preference, stream handling, rollback, route, DOM, or public APIs. The authority documents do not
-yet resolve all of those contracts, so implementation remains prohibited until the investigation
-and material-decision gate is complete.
+The A3 decision record below freezes the algorithms, thresholds, persistence, review-only decision
+semantics, rollback, Source Manager surface, and narrow runtime API needed by this PR. It does not
+authorize source/field preference, stream handling, activity coalescing, hiding, deletion, or
+Unmerge.
 
 PR-20 does not start PR-21 backup/restore, PR-22 diagnostics/performance, PR-23 default switching,
 Service Worker work, deployment, release, merge, cleanup, or a broad UI redesign.
@@ -122,22 +122,176 @@ untouched:
   analysis algorithm, production dependency, provider/auth lifecycle, delete/disconnect behavior,
   or path outside the later approved literal allowlist.
 
-## Initial allowed path
+This section records the initial gate. It was resolved only by the exact A3 approvals and frozen
+contract below; it is not an open-ended authorization to fill later gaps by implementation choice.
 
-Before the implementation gate, the only writable path is:
+## A2 evidence and A3 approval record
+
+The read-only investigation established the following implementation boundaries:
+
+- the actual call graph is `source-manager.html` -> `js/source-manager.js` -> the Source Manager
+  composition root -> ImportService/ImportStore -> decode and normalize -> matching -> one
+  `persistImportItem` transaction -> PR-19 exact identity lookup -> exact link or unmatched
+  Canonical write -> safe public Import report -> Import Log;
+- the only race-safe candidate insertion point is after the PR-19 resolver returns `unmatched` and
+  before the same readwrite transaction commits the new Canonical graph, RawArtifact, ImportItem,
+  ImportJob, and candidate records;
+- physical V3 contains eleven stores and no candidate, decision, alias, presentation suppression,
+  field preference, merge snapshot, or reversal representation;
+- the existing `activities.bySportCategoryAndStartTimeUtc` index supports a transaction-current,
+  same-sport bounded time query. A deterministic synthetic offline benchmark measured 1,000
+  queries over 10,000 summaries at 177.7 ms with that index versus 23,021.9 ms and 10,000,000
+  materialized rows with full `getAll`; it is query-shape evidence, not an accuracy claim;
+- no accepted route-summary or numeric heart-rate/power coverage representation exists in the
+  Canonical contract, while source, device, lap, and capability-presence facts can be loaded safely;
+- PRD P1 and the development-plan deferrals make a real merge/Unmerge broader than PR-20, while
+  release gates require every fuzzy similarity to remain review-only and never auto-merge.
+
+The decision owner approved the main material package verbatim:
+
+> 批准 M17 A3：按推荐的 Review-only Option A、双区间 Algorithm B、physical V4、嵌入式 Source Manager 与 29 路径上限冻结实施。
+
+The decision owner then approved the only missing percentage formula verbatim:
+
+> 批准 M17 A3 百分比公式：距离和 moving duration 均采用对称 max-denominator；双零为 0%，正数与零为 100%，负数/缺失/null/非有限值不参与候选，阈值边界含等号。
+
+No implementation inference may expand those approvals. The frozen contract is:
+
+### Review-only product and lifecycle contract
+
+- Candidate discovery runs only after the unchanged PR-19 exact resolver returns `unmatched`.
+  Every exact match retains PR-19 behavior and performs no fuzzy query or candidate write.
+- Similarity never automatically merges, links a source, replaces a graph or stream, hides an
+  activity, changes Repository reads, or changes analysis. The incoming and existing Canonical
+  graphs and all provenance remain byte-for-byte durable.
+- `Confirm same activity` appends a `confirmed_same` identity-intent decision and moves only the
+  candidate status from `review_required` to `confirmed_same`. The UI must state that both
+  activities remain in the library until a future separately approved reversible merge exists.
+- `Keep separate` appends a `rejected` decision and moves only the candidate status to `rejected`.
+  `Later` performs no durable write. Repeating the same terminal decision returns the existing
+  decision; a different, stale, or concurrent terminal decision fails atomically with a stable
+  redacted conflict.
+- There is no field selection, source preference, primary/secondary activity, alias, suppression,
+  merge, Unmerge, or decision deletion/update in PR-20. Candidate and decision audit rows are
+  retained. Undo requires a future approved additive contract; PR-20 recovery is the absence of
+  destructive activity changes, not a simulated Unmerge.
+
+### Candidate algorithm and false-positive contract
+
+- The compared CanonicalActivity fields are exactly `sportCategory`, `startTimeUtc`,
+  `distanceMeters`, and `movingTimeSeconds`. The sport categories must be identical. Cross-sport
+  pairs are ineligible.
+- Both activities must have a strict UTC start instant and present, finite, non-negative distance
+  and moving duration. Missing, absent, `null`, non-finite, or negative values are ineligible and
+  are never coerced to zero. Activity IDs remain opaque strings and are only compared with
+  code-unit string ordering; they are never parsed or numerically converted.
+- `timeDeltaSeconds = abs(Date.parse(a.startTimeUtc) - Date.parse(b.startTimeUtc)) / 1000`.
+  For distance and moving duration, `deltaRatio(a,b) = 0` when both values are exactly zero;
+  otherwise it is `abs(a-b) / max(abs(a), abs(b))`. A positive value versus zero is therefore
+  `1` (100%).
+- `high` requires all three inclusive gates: time <= 30 seconds, distance ratio <= 0.01, and
+  moving-duration ratio <= 0.01. Otherwise `possible` requires all three inclusive gates: time
+  <= 120 seconds, distance ratio <= 0.02, and moving-duration ratio <= 0.03. A pair outside any
+  possible gate is not a candidate. Neither category changes activity data or authorizes merge.
+- Candidate evidence is a frozen creation snapshot containing only confidence, the three safe
+  deltas, the equal sport category, and `matcherVersion`; no raw activity ID, filename, hash,
+  route, payload, provider external ID, cause, health value, power value, or credential enters a
+  public DTO, DOM, log, error, report, or evidence artifact.
+- Candidate ranking is `high` before `possible`, then lower time delta, then the ordered opaque
+  activity-pair strings as code-unit tie-breaks. The stored pair is ordered by that same opaque
+  code-unit comparison. No arithmetic, locale collation, or case folding is applied to IDs.
+- At most 20 qualifying candidates may be created for one incoming activity. The bounded cursor
+  may inspect only the existing same-sport +/-120-second index range and stops on the 21st
+  qualifying row. That row causes stable redacted `CANDIDATE_LIMIT_EXCEEDED`; the transaction saves
+  neither the new activity nor partial candidates and does not alter RawArtifact, ImportItem, or
+  ImportJob progress. Full activity-store scans and cross-job/tab snapshots are prohibited.
+
+### V4 storage, API, import, and UI contract
+
+- IndexedDB advances additively to physical version 4 and schema ID `strava-stats-v2@4` with
+  migration ID `schema-0004-duplicate-review`. V3 -> V4 creates `mergeCandidates` and
+  `mergeDecisions` and rewrites no existing record. Upgrade abort leaves V3 retryable and intact.
+  Successfully upgraded V2 data remains readable by V4-capable code; old V3 code returns
+  `VERSION_UNSUPPORTED`. Legacy is a separate retained database and remains the application
+  rollback path.
+- `mergeCandidates` uses keyPath `id`; a unique `byActivityPair` index on
+  `[activityAId, activityBId]`; and a non-unique `byStatusAndCreatedAt` index on
+  `[status, createdAt]`. Its exact fields are `id`, `activityAId`, `activityBId`, `confidence`,
+  `status`, `matcherVersion`, `createdAt`, `updatedAt`, `createdFromImportItemId`, and `evidence`.
+  `status` is `review_required`, `confirmed_same`, or `rejected`.
+- `mergeDecisions` uses keyPath `id` and non-unique `byCandidateId`. Its exact fields are `id`,
+  `candidateId`, `decision`, `decidedAt`, and `decisionVersion`. Decisions are append-only;
+  `decision` is `confirmed_same` or `rejected`. There is no `fieldChoices` placeholder.
+- Candidate pair uniqueness makes repeated imports idempotent. IDs are opaque, generated values;
+  the unique pair index, not a derived ID, is the concurrency authority. Candidate status update
+  and decision append share one explicit readwrite transaction.
+- ImportItem gains terminal `review_required`. An unmatched import with one or more new or existing
+  review candidates commits normally but ends `review_required`; it remains a completed item for
+  ImportJob progress. ImportService public report schema remains version 1 and adds only
+  `totals.reviewRequired` plus item outcome `review_required`; it never exposes candidate or
+  activity IDs. `CANDIDATE_LIMIT_EXCEEDED` maps to the existing safe storage-failure path.
+- ImportStore's returned runtime object may add bounded `listDuplicateReviewCandidates`,
+  `getDuplicateReviewCandidate`, and `decideDuplicateReviewCandidate` methods for the composition
+  root. The top-level Storage ES export names, five Repository exports, seven Repository methods,
+  Import ES exports, CanonicalActivity and ImportedActivityBundle contracts remain unchanged.
+- Duplicate Review is embedded in Source Manager; no new route is added. Real mode lists a bounded
+  review queue and loads approved comparison details on demand. It shows start, sport, distance,
+  moving duration, capability availability, provider-safe source labels/count, device-present and
+  safe model label, and lap count. It omits route summary/geometry and numeric heart-rate/power
+  coverage. DOM and accessible messages never expose IDs, hashes, filenames, routes, payloads,
+  internal causes, or credentials.
+- Demo mode exposes the section only as disabled/unavailable presentation and performs zero Real
+  storage or provider I/O. Legacy/default feature selection, disconnect/delete separation, Source
+  Manager import behavior, Canonical/Legacy rollback, and provider/auth boundaries are unchanged.
+
+## A3 literal cumulative allowlist
+
+The collision audit confirmed the following 29 paths as the hard cumulative maximum for A3,
+implementation, verification, repair, and Closure:
 
 ```text
 docs/tasks/pr-20-duplicate-review.md
+docs/migrations/indexeddb-v2.md
+js/storage/constants.js
+js/storage/schema.js
+js/storage/migrations.js
+js/storage/database.js
+js/storage/transaction.js
+js/storage/import-store.js
+js/storage/duplicate-review.js
+js/import/state-machine.js
+js/import/import-service.js
+js/app/source-manager.js
+js/pages/source-manager/source-manager.js
+source-manager.html
+styles/source-manager.css
+tests/storage/indexeddb-v2-schema.test.js
+tests/storage/indexeddb-v2-boundaries.test.js
+tests/storage/indexeddb-v2-browser-smoke.html
+tests/storage/backup-manifest.test.js
+tests/storage/duplicate-review.test.js
+tests/storage/duplicate-review-transactions.test.js
+tests/storage/duplicate-review-boundaries.test.js
+tests/storage/duplicate-review-performance.test.js
+tests/import/import-state-machine.test.js
+tests/import/import-core.test.js
+tests/import/duplicate-review-import.test.js
+tests/source-manager/source-manager.test.js
+tests/source-manager/source-manager-boundaries.test.js
+tests/source-manager/source-manager-browser-smoke.html
 ```
 
-The A3 decision record must replace this investigation-only scope with one literal cumulative
-allowlist before any implementation or failure-first test is edited. Directory globs, whole-tree
-manifests, and mutable whole-file hashes are prohibited.
+The list may shrink but may not grow. Any thirtieth path, dependency, changed threshold/formula,
+new store/index/version/API/export/Canonical field, standalone route, activity coalescing/hiding,
+or Unmerge requires a new evidence-backed material approval before edit. Directory globs,
+whole-tree manifests, and mutable whole-file hashes are prohibited. `js/storage/transaction.js` is
+included only to let its existing bounded cursor selector inspect a row while stopping at the 21st
+qualifying candidate; it does not authorize a general transaction API redesign.
 
 ## Prohibited paths and operations
 
-Until A3 approval, every production and test path is prohibited. Throughout PR-20 the following
-remain out of scope unless an evidence-backed material decision explicitly says otherwise:
+Every path outside the A3 literal allowlist is prohibited. Throughout PR-20 the following remain
+out of scope unless a new evidence-backed material decision explicitly says otherwise:
 
 - `package.json`, lockfile, dependency, API/provider/auth, Service Worker, deployment, release,
   backup/restore, diagnostics, global default, Legacy database, delete/clear/downgrade, and user
@@ -180,21 +334,28 @@ npm test
 git diff --check
 ```
 
-A3 must add focused candidate, decision, merge/reversal, boundary, negative, privacy, concurrency,
-and actual-browser commands for every approved surface. Final verification also requires a true
-depth-1 checkout at the exact implementation/Closure head and exact-head CI. Unrun checks must be
-reported as `Not run` and never presented as Pass.
+A3 focused commands are `node --test tests/storage/duplicate-review.test.js`,
+`node --test tests/storage/duplicate-review-transactions.test.js`,
+`node --test tests/storage/duplicate-review-boundaries.test.js`,
+`node --test tests/storage/duplicate-review-performance.test.js`,
+`node --test tests/import/duplicate-review-import.test.js`, and the existing Source Manager,
+schema, migration-boundary, state-machine, import-core, backup-manifest, and browser-smoke files
+named in the allowlist. Final verification also requires a true depth-1 checkout at the exact
+implementation/Closure head and exact-head CI. Unrun checks must be reported as `Not run` and never
+presented as Pass.
 
 ## Rollback, migration, and privacy
 
-No migration or production behavior is authorized by this initial Task Brief. Application
-rollback continues to select Legacy through the existing feature flag and deletes nothing. The V2
-and Legacy databases remain physically retained. A future approved candidate/decision migration
-must be additive, idempotent, observable, abort-safe, explicitly retryable, and must document code
-rollback compatibility before it is implemented.
+The approved V4 migration is structural and additive only. Application rollback continues to
+select Legacy through the existing feature flag and deletes nothing. V2 and Legacy databases
+remain physically retained. Code rollback after a successful V4 upgrade requires V4-capable code;
+old V3 code must fail safely with `VERSION_UNSUPPORTED` and must not downgrade, clear, or rewrite
+the database. A failed upgrade transaction leaves V3 intact and retryable.
 
-Privacy impact at this stage is documentation only. Future evidence must remain deterministic,
-synthetic, offline, local-only, and redacted. No new telemetry or external data flow is authorized.
+Privacy impact is local persistence of redacted candidate difference snapshots and identity-intent
+audit decisions. Evidence remains deterministic, synthetic, offline, local-only, and redacted. No
+new telemetry, provider request, credential, real athlete input, precise route output, health/power
+value, or external data flow is authorized.
 
 ## Independent review and Closure
 
