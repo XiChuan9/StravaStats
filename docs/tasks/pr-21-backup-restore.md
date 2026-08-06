@@ -248,12 +248,38 @@ sixteen-path maximum to change the root page, telemetry, or CDN dependencies.
   redacted errors.
 - Use deterministic synthetic data only. Actual served disposable-profile browser evidence must
   inspect storage before and after a real backup download/import, open major restored Canonical
-  routes, and prove zero provider/auth/external telemetry plus clean console/runtime and protected
-  Service Worker/Cache/Legacy boundaries.
+  routes, prove zero provider/auth I/O and runtime exceptions, record the approved pre-existing
+  external/404 observations honestly, and protect Service Worker/Cache/Legacy boundaries.
 - Run exact-head focused, full, privacy, syntax, diff, depth-1 checkout, and CI gates. Independent
   findings-first review must be followed by failure-first repairs and a fresh no-findings re-review.
 - Final Review Closure changes only this Task Brief. Publication, Ready transition, CI observation,
   merge, cleanup, data deletion, deploy, release, and PR-22 remain separate authorization gates.
+
+## Final Review Closure
+
+Implementation commit `cf024d05314af36d1ff84f9fee278616218e8523` stays within the frozen
+sixteen-path maximum. The independent findings-first review reported four issues: physical-store
+JSONL order was not enforced, Demo navigation hard-coded Real backup, an injected nested crypto
+accessor could execute, and a fully rehashed manifest hash mismatch used the general data-invalid
+code. Failure-first tests reproduced each issue and the implementation now rejects noncanonical
+primary-key order before target creation, preserves Demo through the same-origin Sources referrer,
+accepts only descriptor-safe or trusted platform WebCrypto, and returns exact
+`BACKUP_HASH_MISMATCH` for a manifest-declared payload mismatch.
+
+The first fresh re-review found one additional cancellation gap in direct `validateBackup` after
+asynchronous ZIP hashing. A direct failure-first test now flips the signal during the first digest;
+shared validation checks cancellation after archive parsing, between payload phases, and after raw
+artifact digests. The second fresh independent re-review reported **no findings** across the entire
+frozen contract and all sixteen paths.
+
+Before this Closure, syntax passed for 226 files, privacy passed, focused backup/source boundaries
+passed 34/34, the full suite passed 1411/1411, and `git diff --check` passed. The approved Browser
+Gate evidence above remains the actual served disposable-profile proof. A final real-browser
+regression additionally confirmed that Sources in Demo opens the query-free backup link as
+`Demo · backup unavailable`, keeps both backup actions disabled, and accepts native platform
+WebCrypto without expanding the public API. The browser task space was closed. Exact-head local,
+depth-1, and CI gates run after this Task-Brief-only Closure commit; Ready, merge, cleanup,
+deploy/release, and PR-22 remain unauthorized.
 
 ## A3 literal cumulative allowlist
 
