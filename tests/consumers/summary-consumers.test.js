@@ -613,6 +613,23 @@ test('Strict dense-array validation preserves safe data and rejects unsafe array
     ]);
     assert.equal(boundary.isDenseDataArray(safeActivities), true);
 
+    const frozenActivities = Object.freeze([
+        Object.freeze({ id: 'synthetic-frozen' })
+    ]);
+    const frozenWarnings = Object.freeze([]);
+    const frozenResult = boundary.adaptRepositoryResult(Object.freeze({
+        data: frozenActivities,
+        source: REPOSITORY_SOURCE.CANONICAL,
+        warnings: frozenWarnings,
+        partial: false
+    }), {
+        operation: 'listActivities',
+        dataShape: 'array'
+    });
+    assert.equal(frozenResult.data, frozenActivities);
+    assert.equal(frozenResult.warnings.length, 0);
+    assert.equal(boundary.isDenseDataArray(frozenActivities), true);
+
     let getterCalls = 0;
     let customForEachCalls = 0;
     let customIteratorCalls = 0;
@@ -664,8 +681,6 @@ test('Strict dense-array validation preserves safe data and rejects unsafe array
         },
         enumerable: false
     });
-    const nonStandardLength = [];
-    Object.defineProperty(nonStandardLength, 'length', { writable: false });
     const revoked = Proxy.revocable([], {});
     revoked.revoke();
     const throwingReflection = new Proxy([], {
@@ -684,7 +699,6 @@ test('Strict dense-array validation preserves safe data and rejects unsafe array
         indexGetter,
         extraGetter,
         customIterator,
-        nonStandardLength,
         revoked.proxy,
         throwingReflection
     ]) {

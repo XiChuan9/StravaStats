@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta
         http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self' 'nonce-pr16-canonical'; style-src 'unsafe-inline'; connect-src 'self'; img-src data: 'self'; object-src 'none'; base-uri 'none'"
+        content="default-src 'self'; script-src 'self' 'nonce-pr16-canonical'; style-src 'unsafe-inline'; connect-src 'self'; frame-src 'self'; worker-src 'self'; img-src data: 'self'; object-src 'none'; base-uri 'none'"
     >
     <title>PR-16 Canonical Summary Browser Smoke</title>
     <link rel="icon" href="data:,">
@@ -18,6 +18,7 @@
     <h1>PR-16 Canonical Summary Browser Smoke</h1>
     <p id="status" role="status">Running deterministic local gates.</p>
     <pre id="result">{"status":"running"}</pre>
+    <div id="frames" hidden></div>
 
     <script type="module" nonce="pr16-canonical">
         const FIXED_NOW = Date.parse('2026-08-06T08:00:00.000Z');
@@ -36,6 +37,7 @@
         ]);
         const status = document.getElementById('status');
         const output = document.getElementById('result');
+        const frames = document.getElementById('frames');
         const observations = {
             assertions: [],
             explicitNetwork: [],
@@ -48,7 +50,20 @@
             canonicalConstructions: 0,
             demoReads: 0,
             databaseNames: [],
-            routes: ROUTES
+            routes: ROUTES,
+            actualRoot: {
+                routes: [],
+                network: [],
+                storageReads: [],
+                databaseOpens: [],
+                currentRoute: '/',
+                consoleWarnings: 0,
+                consoleErrors: 0,
+                runtimeErrors: 0,
+                serviceWorkers: []
+            },
+            resetServiceWorkers: 0,
+            resetCaches: 0
         };
 
         globalThis.__PR16_CANONICAL_ROOT_PLAN__ = Object.freeze({
@@ -65,6 +80,25 @@
         function assert(condition, code) {
             if (!condition) throw new Error(code);
             observations.assertions.push(code);
+        }
+
+        function waitFor(check, code, timeoutMs = 30_000) {
+            const started = performance.now();
+            return new Promise((resolve, reject) => {
+                const tick = () => {
+                    try {
+                        if (check()) return resolve();
+                    } catch {
+                        // Navigation and lazy rendering settle on later frames.
+                    }
+                    if (performance.now() - started >= timeoutMs) {
+                        reject(new Error(code));
+                        return;
+                    }
+                    requestAnimationFrame(tick);
+                };
+                tick();
+            });
         }
 
         function safeUrl(value) {
@@ -150,6 +184,332 @@
                 request.onerror = () => reject(new Error('TEST_DATABASE_DELETE_FAILED'));
                 request.onblocked = () => reject(new Error('TEST_DATABASE_DELETE_BLOCKED'));
             });
+        }
+
+        async function resetSyntheticRuntimeState() {
+            if (navigator.serviceWorker?.getRegistrations) {
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                for (const registration of registrations) {
+                    if (await registration.unregister()) {
+                        observations.resetServiceWorkers += 1;
+                    }
+                }
+            }
+            if (globalThis.caches?.keys) {
+                const names = await caches.keys();
+                for (const name of names) {
+                    if (await caches.delete(name)) observations.resetCaches += 1;
+                }
+            }
+        }
+
+        function isProviderOrApi(value, base) {
+            try {
+                const url = new URL(String(value?.url ?? value), base);
+                return (
+                    (url.origin === location.origin && url.pathname.startsWith('/api/'))
+                    || /(^|\.)(strava|garmin|coros|wahoo|polar)\.(com|net)$/i.test(url.hostname)
+                );
+            } catch {
+                return true;
+            }
+        }
+
+        async function actualRootFrame() {
+            const frame = document.createElement('iframe');
+            frame.title = 'PR-16 actual Canonical root';
+            const root = observations.actualRoot;
+            let installed = false;
+            let installationError = false;
+
+            const install = child => {
+                if (installed) return;
+                try {
+                    const childDocument = child.document;
+
+                    Object.defineProperty(child, '__STRAVASTATS_FEATURE_FLAGS__', {
+                        configurable: false,
+                        enumerable: false,
+                        writable: false,
+                        value: child.JSON.parse(JSON.stringify({
+                            dataRepositoryMode: 'canonical',
+                            localImportEnabled: false,
+                            canonicalShadowWriteEnabled: false
+                        }))
+                    });
+
+                    class SyntheticChart {
+                        static instances = [];
+                        static getChart(target) {
+                            return SyntheticChart.instances.find(instance => (
+                                instance.target === target || instance.target === target?.canvas
+                            )) ?? null;
+                        }
+                        constructor(target, config = {}) {
+                            this.target = target?.canvas ?? target;
+                            this.config = config;
+                            this.data = config.data ?? {};
+                            this.options = config.options ?? {};
+                            SyntheticChart.instances.push(this);
+                        }
+                        destroy() {}
+                        update() {}
+                        getDatasetMeta() { return { hidden: false }; }
+                        isDatasetVisible() { return true; }
+                        setDatasetVisibility() {}
+                    }
+                    child.Chart = SyntheticChart;
+                    child.CalHeatmap = class SyntheticCalHeatmap {
+                        paint() { return Promise.resolve(); }
+                        destroy() {}
+                    };
+                    const mapLayer = () => ({
+                        addTo() { return this; },
+                        addLayer() { return this; },
+                        clearLayers() { return this; },
+                        fitBounds() { return this; },
+                        setView() { return this; }
+                    });
+                    child.L = {
+                        map: mapLayer,
+                        layerGroup: mapLayer,
+                        tileLayer: mapLayer,
+                        heatLayer: mapLayer,
+                        polyline: mapLayer,
+                        circleMarker: mapLayer,
+                        latLngBounds: () => ({ isValid: () => false })
+                    };
+                    if (child.navigator.serviceWorker?.register) {
+                        child.navigator.serviceWorker.register = async () => ({
+                            scope: location.origin,
+                            active: null,
+                            waiting: null,
+                            installing: null
+                        });
+                    }
+                    const setSyntheticRoute = url => {
+                        const parsed = new child.URL(String(url), location.origin);
+                        if (parsed.origin !== location.origin) {
+                            throw new child.DOMException('Cross-origin route', 'SecurityError');
+                        }
+                        root.currentRoute = parsed.pathname;
+                    };
+                    child.history.pushState = (_state, _unused, url) => {
+                        if (url !== undefined && url !== null) setSyntheticRoute(url);
+                    };
+                    child.history.replaceState = (_state, _unused, url) => {
+                        if (url !== undefined && url !== null) setSyntheticRoute(url);
+                    };
+
+                    const childFetch = child.fetch.bind(child);
+                    child.fetch = (input, init) => {
+                        const target = safeUrl(input);
+                        const authorization = new child.Headers(
+                            init?.headers ?? input?.headers
+                        ).has('Authorization');
+                        const blocked = isProviderOrApi(input, child.location.href);
+                        root.network.push({ type: 'fetch', target, authorization, blocked });
+                        if (blocked) return Promise.reject(new Error('SYNTHETIC_PROVIDER_OFFLINE'));
+                        return childFetch(input, init);
+                    };
+
+                    const childXhrOpen = child.XMLHttpRequest.prototype.open;
+                    child.XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+                        const blocked = isProviderOrApi(url, child.location.href);
+                        root.network.push({
+                            type: 'xhr',
+                            method: String(method),
+                            target: safeUrl(url),
+                            authorization: false,
+                            blocked
+                        });
+                        if (blocked) throw new Error('SYNTHETIC_PROVIDER_OFFLINE');
+                        return childXhrOpen.call(this, method, url, ...rest);
+                    };
+
+                    const ChildWebSocket = child.WebSocket;
+                    child.WebSocket = class InstrumentedRootWebSocket extends ChildWebSocket {
+                        constructor(url, protocols) {
+                            const blocked = isProviderOrApi(url, child.location.href);
+                            root.network.push({
+                                type: 'websocket',
+                                target: safeUrl(url),
+                                authorization: false,
+                                blocked
+                            });
+                            if (blocked) throw new Error('SYNTHETIC_PROVIDER_OFFLINE');
+                            super(url, protocols);
+                        }
+                    };
+
+                    const childGetItem = child.Storage.prototype.getItem;
+                    child.Storage.prototype.getItem = function (key) {
+                        root.storageReads.push(String(key));
+                        return childGetItem.call(this, key);
+                    };
+
+                    const childOpen = child.indexedDB.open.bind(child.indexedDB);
+                    child.indexedDB.open = function (name, version) {
+                        root.databaseOpens.push(String(name));
+                        return version === undefined
+                            ? childOpen(name)
+                            : childOpen(name, version);
+                    };
+
+                    const childWarn = child.console.warn.bind(child.console);
+                    const childError = child.console.error.bind(child.console);
+                    child.console.warn = (...args) => {
+                        root.consoleWarnings += 1;
+                        childWarn(...args);
+                    };
+                    child.console.error = (...args) => {
+                        root.consoleErrors += 1;
+                        childError(...args);
+                    };
+                    child.addEventListener('error', event => {
+                        if (event instanceof child.ErrorEvent && event.message) {
+                            root.runtimeErrors += 1;
+                        }
+                    }, true);
+                    child.addEventListener('unhandledrejection', () => {
+                        root.runtimeErrors += 1;
+                    });
+                    installed = true;
+                } catch {
+                    installationError = true;
+                }
+            };
+
+            Object.defineProperty(globalThis, '__PR16_INSTALL_ACTUAL_ROOT__', {
+                configurable: true,
+                enumerable: false,
+                value: install
+            });
+            const rootResponse = await fetch('../../', {
+                cache: 'no-store',
+                credentials: 'omit'
+            });
+            assert(rootResponse.ok, 'ACTUAL_ROOT_DOCUMENT_LOADED');
+            const scriptPattern = new RegExp(
+                '<scr' + 'ipt\\b[\\s\\S]*?<\\/scr' + 'ipt>',
+                'gi'
+            );
+            const rootDocument = (await rootResponse.text()).replace(
+                scriptPattern,
+                script => /src=["']\/js\/main\.js["']/.test(script) ? script : ''
+            ).replace(
+                new RegExp('<link\\b[^>]*href=["\']https?:\\/\\/[^>]*>', 'gi'),
+                ''
+            );
+            const prelude = '<scr' + 'ipt nonce="pr16-canonical">'
+                + 'parent.__PR16_INSTALL_ACTUAL_ROOT__(window);'
+                + '</scr' + 'ipt>';
+            frame.srcdoc = rootDocument.replace('<head>', `<head>${prelude}`);
+            frames.append(frame);
+            await waitFor(
+                () => installed || installationError,
+                'ACTUAL_ROOT_INSTRUMENTATION_TIMEOUT'
+            );
+            delete globalThis.__PR16_INSTALL_ACTUAL_ROOT__;
+            assert(installed && !installationError, 'ACTUAL_ROOT_INSTRUMENTED_BEFORE_BOOTSTRAP');
+
+            await waitFor(
+                () => !frame.contentDocument
+                    .getElementById('app-section')
+                    .classList.contains('hidden'),
+                'ACTUAL_ROOT_CANONICAL_DASHBOARD_TIMEOUT'
+            );
+            const child = frame.contentWindow;
+            const childDocument = frame.contentDocument;
+            assert(
+                childDocument.getElementById('source-status')
+                    .textContent.includes('Local Library'),
+                'ACTUAL_ROOT_LOCAL_LIBRARY_STATUS'
+            );
+            const refresh = childDocument.getElementById('refresh-button');
+            assert(Boolean(refresh) && !refresh.disabled, 'ACTUAL_ROOT_CANONICAL_REFRESH_AVAILABLE');
+            refresh.click();
+            await waitFor(
+                () => childDocument.getElementById('loading-overlay')
+                    .classList.contains('hidden'),
+                'ACTUAL_ROOT_CANONICAL_REFRESH_TIMEOUT'
+            );
+            assert(
+                childDocument.getElementById('source-status')
+                    .textContent.includes('Canonical summaries'),
+                'ACTUAL_ROOT_CANONICAL_REFRESH_LOCAL'
+            );
+
+            const routeToTab = new Map([
+                ['/activities', 'activities-tab'],
+                ['/calendar', 'calendar-tab'],
+                ['/wrapped', 'wrapped-tab'],
+                ['/dashboard', 'dashboard-tab'],
+                ['/run', 'run-tab'],
+                ['/bike', 'bike-tab'],
+                ['/swim', 'swim-tab'],
+                ['/gear', 'gear-tab'],
+                ['/map', 'map-tab'],
+                ['/planner', 'planner-tab']
+            ]);
+            for (const [route, tabId] of routeToTab) {
+                const link = childDocument.querySelector(`.tab-link[data-tab="${tabId}"]`);
+                assert(Boolean(link), `ACTUAL_ROOT_LINK_${tabId}`);
+                link.click();
+                await waitFor(
+                    () => root.currentRoute === route
+                        && childDocument.getElementById(tabId).classList.contains('active'),
+                    `ACTUAL_ROOT_ROUTE_${tabId}`
+                );
+                await new Promise(resolve => child.requestAnimationFrame(
+                    () => child.requestAnimationFrame(resolve)
+                ));
+                root.routes.push(route);
+            }
+
+            assert(
+                childDocument.getElementById('act-counter')
+                    .textContent.includes(`${ACTIVITY_COUNT} / ${ACTIVITY_COUNT} activities`),
+                'ACTUAL_ROOT_503_CONSUMER_ROWS'
+            );
+            assert(
+                root.routes.length === ROUTES.length
+                    && root.routes.every((route, index) => route === ROUTES[index]),
+                'ACTUAL_ROOT_TEN_ROUTE_PARITY'
+            );
+            assert(
+                root.databaseOpens.length > 0
+                    && root.databaseOpens.every(name => name === 'strava-stats-v2'),
+                'ACTUAL_ROOT_ONLY_V2_DATABASE'
+            );
+            assert(
+                root.storageReads.every(key => !/token|authorization/i.test(key)),
+                'ACTUAL_ROOT_ZERO_TOKEN_READ'
+            );
+            assert(
+                root.network.every(entry => !entry.authorization && !entry.blocked),
+                'ACTUAL_ROOT_ZERO_PROVIDER_OR_AUTHORIZATION_IO'
+            );
+            assert(root.runtimeErrors === 0, 'ACTUAL_ROOT_ZERO_RUNTIME_ERRORS');
+            assert(root.consoleErrors === 0, 'ACTUAL_ROOT_ZERO_CONSOLE_ERRORS');
+
+            root.serviceWorkers = child.navigator.serviceWorker?.getRegistrations
+                ? (await child.navigator.serviceWorker.getRegistrations()).map(registration => ({
+                    scope: registration.scope,
+                    scriptURL: registration.active?.scriptURL
+                        || registration.waiting?.scriptURL
+                        || registration.installing?.scriptURL
+                        || null
+                }))
+                : [];
+            assert(
+                root.serviceWorkers.every(registration => (
+                    registration.scope.startsWith(location.origin)
+                    && registration.scriptURL?.startsWith(location.origin)
+                )),
+                'ACTUAL_ROOT_SAME_ORIGIN_SERVICE_WORKER_ONLY'
+            );
+            return frame;
         }
 
         function canonicalActivity(index) {
@@ -238,6 +598,7 @@
             const storageModule = await import('../../js/storage/index.js');
             const factoryModule = await import('../../js/repository/factory.js');
             const errorsModule = await import('../../js/repository/errors.js');
+            await resetSyntheticRuntimeState();
             await deleteDatabase(storageModule.V2_DATABASE_NAME);
 
             const storeOptions = {
@@ -334,6 +695,8 @@
             assert(observations.canonicalConstructions === 1, 'DEMO_ZERO_REAL_V2_OPEN');
             assert(observations.legacyConstructions === 0, 'DEMO_ZERO_LEGACY');
 
+            const rootFrame = await actualRootFrame();
+
             observations.databaseNames = typeof indexedDB.databases === 'function'
                 ? (await indexedDB.databases())
                     .map(value => value.name)
@@ -362,8 +725,10 @@
             assert(observations.runtimeErrors === 0, 'ZERO_RUNTIME_ERRORS');
             assert(ROUTES.length === 10 && new Set(ROUTES).size === 10, 'TEN_UNIQUE_SUMMARY_ROUTES');
 
+            rootFrame.remove();
+
             document.body.dataset.status = 'passed';
-            status.textContent = 'Passed; ready for disposable-profile CDP actual-root navigation.';
+            status.textContent = 'Passed; disposable-profile actual-root Canonical navigation complete.';
             output.textContent = JSON.stringify({
                 status: 'passed',
                 observations,

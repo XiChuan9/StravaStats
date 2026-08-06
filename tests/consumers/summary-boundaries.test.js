@@ -49,6 +49,18 @@ test('main obtains provider-owned data only through the Repository public entry'
     assert.match(mainSource, /repository\.getAthlete\(\)/);
     assert.match(mainSource, /repository\.getZones\(\)/);
     assert.match(mainSource, /repository\.getGears\(\)/);
+    assert.match(
+        mainSource,
+        /documentSessionMode === APP_SESSION_MODE\.REAL[\s\S]*?dataRepositoryMode === 'canonical'[\s\S]*?\? initializeApp\(null\)[\s\S]*?: runLocalFirstBootstrap/
+    );
+    assert.match(
+        mainSource,
+        /activityLoad\.source === REPOSITORY_SOURCE\.CANONICAL\s*\? structuredClone\(activities\)\s*:\s*activities/
+    );
+    assert.equal(
+        (mainSource.match(/activityLoad\.source === REPOSITORY_SOURCE\.CANONICAL\s*\? structuredClone\(activities\)/g) || []).length,
+        2
+    );
     assert.equal((mainSource.match(/isDemoMode\(\)/g) || []).length, 1);
 });
 
@@ -75,7 +87,7 @@ test('summary tabs do not construct Repository or access auth/provider APIs', ()
     }
 });
 
-test('PR-16 has one isolated Canonical harness and an exact actual-root route plan', async () => {
+test('PR-16 has one isolated Canonical harness with exact actual-root route evidence', async () => {
     const harnessPath = 'tests/consumers/canonical-summary-browser-smoke.html';
     const harness = await source(harnessPath);
     assert.match(harness, /ACTIVITY_COUNT = 503/);
@@ -83,6 +95,17 @@ test('PR-16 has one isolated Canonical harness and an exact actual-root route pl
     assert.match(harness, /createRepositoryWithDependencies/);
     assert.match(harness, /dataRepositoryMode:\s*'canonical'/);
     assert.match(harness, /requiresActualRootNavigation:\s*true/);
+    assert.match(harness, /async function actualRootFrame\(\)/);
+    assert.match(harness, /ACTUAL_ROOT_DOCUMENT_LOADED/);
+    assert.match(harness, /frame\.srcdoc = rootDocument\.replace/);
+    assert.match(harness, /ACTUAL_ROOT_INSTRUMENTED_BEFORE_BOOTSTRAP/);
+    assert.match(harness, /ACTUAL_ROOT_503_CONSUMER_ROWS/);
+    assert.match(harness, /ACTUAL_ROOT_TEN_ROUTE_PARITY/);
+    assert.match(harness, /ACTUAL_ROOT_ONLY_V2_DATABASE/);
+    assert.match(harness, /ACTUAL_ROOT_ZERO_PROVIDER_OR_AUTHORIZATION_IO/);
+    assert.match(harness, /ACTUAL_ROOT_ZERO_TOKEN_READ/);
+    assert.match(harness, /ACTUAL_ROOT_ZERO_RUNTIME_ERRORS/);
+    assert.match(harness, /ACTUAL_ROOT_SAME_ORIGIN_SERVICE_WORKER_ONLY/);
     assert.match(harness, /ZERO_PROVIDER_OR_AUTHORIZATION_IO/);
     assert.match(harness, /ZERO_TOKEN_READ/);
     assert.match(harness, /DEMO_ZERO_REAL_V2_OPEN/);
