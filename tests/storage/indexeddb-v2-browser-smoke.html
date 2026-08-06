@@ -48,7 +48,7 @@
                 'bySportCategoryAndStartTimeUtc',
                 'byStartTimeUtc'
             ],
-            activitySources: ['byActivityId'],
+            activitySources: ['byActivityId', 'byProviderAndExternalId'],
             streamSeries: ['byActivityId'],
             laps: ['byActivityIdAndIndex'],
             events: ['byActivityIdAndIndex'],
@@ -59,7 +59,7 @@
         };
         const EXPECTED_FINAL_COUNTS = {
             metadata: 1,
-            migrations: 2,
+            migrations: 3,
             activities: 5,
             activitySources: 5,
             streamSeries: 10,
@@ -248,6 +248,10 @@
                     transaction.objectStore('migrations')
                         .get('schema-0002-import-core')
                 );
+                const exactIdentityMigration = await requestResult(
+                    transaction.objectStore('migrations')
+                        .get('schema-0003-exact-identity-index')
+                );
                 await done;
                 return {
                     version: database.version,
@@ -274,6 +278,13 @@
                         retryCount: importMigration?.retryCount,
                         outputStoreCount:
                             importMigration?.outputSummary?.storeCount
+                    },
+                    exactIdentityMigration: {
+                        id: exactIdentityMigration?.id,
+                        status: exactIdentityMigration?.status,
+                        retryCount: exactIdentityMigration?.retryCount,
+                        outputStoreCount:
+                            exactIdentityMigration?.outputSummary?.storeCount
                     }
                 };
             } finally {
@@ -496,7 +507,7 @@
                 const ready = await storage.initialize();
                 assert(ready.status === 'ready', 'initialize-ready');
                 const inspected = await inspectV2();
-                assert(inspected.version === 2, 'database-version');
+                assert(inspected.version === 3, 'database-version');
                 assert(
                     JSON.stringify(inspected.stores) ===
                         JSON.stringify(EXPECTED_STORES.slice().sort()),
@@ -511,10 +522,10 @@
                 }
                 assert(inspected.metadata.databaseName === V2_NAME, 'metadata-name');
                 assert(
-                    inspected.metadata.schemaId === 'strava-stats-v2@2',
+                    inspected.metadata.schemaId === 'strava-stats-v2@3',
                     'metadata-schema'
                 );
-                assert(inspected.metadata.indexedDbVersion === 2, 'metadata-version');
+                assert(inspected.metadata.indexedDbVersion === 3, 'metadata-version');
                 assert(
                     inspected.metadata.canonicalSchemaVersion === 1,
                     'metadata-canonical'
@@ -537,6 +548,14 @@
                     && inspected.importMigration.retryCount === 0
                     && inspected.importMigration.outputStoreCount === 11,
                     'import-migration'
+                );
+                assert(
+                    inspected.exactIdentityMigration.id ===
+                        'schema-0003-exact-identity-index'
+                    && inspected.exactIdentityMigration.status === 'completed'
+                    && inspected.exactIdentityMigration.retryCount === 0
+                    && inspected.exactIdentityMigration.outputStoreCount === 11,
+                    'exact-identity-migration'
                 );
             });
 
@@ -819,7 +838,7 @@
                     );
                     assert(manifest.backupFormatVersion === 1, 'manifest-format');
                     assert(manifest.databaseName === V2_NAME, 'manifest-name');
-                    assert(manifest.indexedDbVersion === 2, 'manifest-version');
+                    assert(manifest.indexedDbVersion === 3, 'manifest-version');
                     assert(manifest.canonicalSchemaVersion === 1, 'manifest-canonical');
                     assert(manifest.applicationVersion === APPLICATION_VERSION, 'manifest-app');
                     assert(manifest.files.length === 0, 'manifest-files');
@@ -860,7 +879,7 @@
                 ));
                 await first.initialize();
                 await second.initialize();
-                const request = indexedDB.open(V2_NAME, 3);
+                const request = indexedDB.open(V2_NAME, 4);
                 const aborted = new Promise((resolve, reject) => {
                     request.onupgradeneeded = () => request.transaction.abort();
                     request.onsuccess = () => {
@@ -876,7 +895,7 @@
                 await expectCode(first.listActivities(), 'CONNECTION_STALE');
                 await expectCode(second.listActivities(), 'CONNECTION_STALE');
                 const inspected = await inspectV2();
-                assert(inspected.version === 2, 'aborted-version');
+                assert(inspected.version === 3, 'aborted-version');
                 assert(
                     JSON.stringify(inspected.counts) ===
                         JSON.stringify(EXPECTED_FINAL_COUNTS),
@@ -979,7 +998,7 @@
                 origin: location.origin,
                 database: {
                     name: V2_NAME,
-                    version: 2,
+                    version: 3,
                     stores: 11,
                     indexes: 9
                 },

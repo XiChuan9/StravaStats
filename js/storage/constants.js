@@ -1,11 +1,13 @@
 export const V2_DATABASE_NAME = 'strava-stats-v2';
-export const V2_DATABASE_VERSION = 2;
-export const V2_SCHEMA_ID = 'strava-stats-v2@2';
+export const V2_DATABASE_VERSION = 3;
+export const V2_SCHEMA_ID = 'strava-stats-v2@3';
 export const V2_CANONICAL_SCHEMA_VERSION = 1;
 
 export const V2_METADATA_KEY = 'database';
 export const V2_BOOTSTRAP_MIGRATION_ID = 'schema-0001-bootstrap';
 export const V2_IMPORT_MIGRATION_ID = 'schema-0002-import-core';
+export const V2_EXACT_IDENTITY_MIGRATION_ID =
+    'schema-0003-exact-identity-index';
 
 export const V2_STORE_NAME = Object.freeze({
     METADATA: 'metadata',

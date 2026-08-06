@@ -113,13 +113,13 @@ test('backup manifest has the exact frozen metadata-only shape and counts', asyn
     assert.deepEqual(await storage.createBackupManifest(), {
         backupFormatVersion: 1,
         databaseName: 'strava-stats-v2',
-        indexedDbVersion: 2,
+        indexedDbVersion: 3,
         canonicalSchemaVersion: 1,
         createdAt: '2026-08-04T10:11:12.013Z',
         applicationVersion: 'backup-manifest-test@1',
         stores: [
             { name: 'metadata', recordCount: 1 },
-            { name: 'migrations', recordCount: 2 },
+            { name: 'migrations', recordCount: 3 },
             { name: 'activities', recordCount: 0 },
             { name: 'activitySources', recordCount: 0 },
             { name: 'streamSeries', recordCount: 0 },
@@ -139,7 +139,7 @@ test('backup manifest has the exact frozen metadata-only shape and counts', asyn
     assertDeepFrozen(manifest);
     assert.deepEqual(manifest.stores, [
         { name: 'metadata', recordCount: 1 },
-        { name: 'migrations', recordCount: 2 },
+        { name: 'migrations', recordCount: 3 },
         { name: 'activities', recordCount: 1 },
         { name: 'activitySources', recordCount: 1 },
         { name: 'streamSeries', recordCount: 0 },
@@ -219,8 +219,8 @@ test('backup manifest fails closed for metadata mismatch without hashes', async 
     transaction.objectStore('metadata').put({
         key: 'database',
         databaseName: 'synthetic-wrong-database',
-        schemaId: 'strava-stats-v2@2',
-        indexedDbVersion: 2,
+        schemaId: 'strava-stats-v2@3',
+        indexedDbVersion: 3,
         canonicalSchemaVersion: 1,
         createdAt: '2026-08-04T10:11:12.013Z',
         createdByApplicationVersion: 'backup-manifest-test@1'

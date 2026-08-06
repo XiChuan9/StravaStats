@@ -19,12 +19,7 @@ function deepFreeze(value) {
     return Object.freeze(value);
 }
 
-export const V2_SCHEMA = deepFreeze({
-    databaseName: V2_DATABASE_NAME,
-    indexedDbVersion: V2_DATABASE_VERSION,
-    schemaId: V2_SCHEMA_ID,
-    canonicalSchemaVersion: V2_CANONICAL_SCHEMA_VERSION,
-    stores: [
+const V1_STORES = [
         {
             name: V2_STORE_NAME.METADATA,
             keyPath: 'key',
@@ -116,7 +111,10 @@ export const V2_SCHEMA = deepFreeze({
             keyPath: 'id',
             autoIncrement: false,
             indexes: []
-        },
+        }
+];
+
+const V2_IMPORT_STORES = [
         {
             name: V2_STORE_NAME.RAW_ARTIFACTS,
             keyPath: 'id',
@@ -150,8 +148,51 @@ export const V2_SCHEMA = deepFreeze({
                 multiEntry: false
             }]
         }
-    ]
+];
+
+const V2_STORES = [...V1_STORES, ...V2_IMPORT_STORES];
+const V3_STORES = V2_STORES.map(store => (
+    store.name === V2_STORE_NAME.ACTIVITY_SOURCES
+        ? {
+            ...store,
+            indexes: [
+                ...store.indexes,
+                {
+                    name: 'byProviderAndExternalId',
+                    keyPath: ['provider', 'externalId'],
+                    unique: false,
+                    multiEntry: false
+                }
+            ]
+        }
+        : store
+));
+
+export const V2_PHYSICAL_SCHEMA_BY_VERSION = deepFreeze({
+    1: {
+        databaseName: V2_DATABASE_NAME,
+        indexedDbVersion: 1,
+        schemaId: 'strava-stats-v2@1',
+        canonicalSchemaVersion: V2_CANONICAL_SCHEMA_VERSION,
+        stores: V1_STORES
+    },
+    2: {
+        databaseName: V2_DATABASE_NAME,
+        indexedDbVersion: 2,
+        schemaId: 'strava-stats-v2@2',
+        canonicalSchemaVersion: V2_CANONICAL_SCHEMA_VERSION,
+        stores: V2_STORES
+    },
+    3: {
+        databaseName: V2_DATABASE_NAME,
+        indexedDbVersion: V2_DATABASE_VERSION,
+        schemaId: V2_SCHEMA_ID,
+        canonicalSchemaVersion: V2_CANONICAL_SCHEMA_VERSION,
+        stores: V3_STORES
+    }
 });
+
+export const V2_SCHEMA = V2_PHYSICAL_SCHEMA_BY_VERSION[3];
 
 function names(list) {
     return Array.from(list).sort();

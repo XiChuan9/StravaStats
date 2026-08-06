@@ -188,7 +188,7 @@ test('repeated and concurrent CSV imports preserve exact row SHA idempotency', a
     await core.close();
 });
 
-test('same Strava identity with lexically different raw row fails without merge', async () => {
+test('same Strava identity links different raw bytes without replacing Canonical payload', async () => {
     const indexedDB = new IDBFactory();
     const importStore = store(indexedDB);
     const core = service(importStore);
@@ -198,16 +198,33 @@ test('same Strava identity with lexically different raw row fails without merge'
         `${header}\nopaque-same,2026-01-01T00:00:00Z,Run,1`
     )]);
     assert.equal((await core.waitForJob(first.jobId)).totals.completed, 1);
+    const beforeStore = createCanonicalStore({
+        indexedDB,
+        IDBKeyRange,
+        now: () => FIXED_TIME,
+        applicationVersion: 'exact-link-before@1'
+    });
+    await beforeStore.initialize();
+    const original = await beforeStore.getBundle('strava-archive:opaque-same');
+    await beforeStore.close();
     const second = await core.importArtifacts([await csvArtifact(
         `${header}\nopaque-same,2026-01-01T00:00:00Z,"Run",1`
     )]);
     const report = await core.waitForJob(second.jobId);
-    assert.equal(report.totals.failed, 1);
-    assert.equal(
-        report.items[0].errorCode,
-        IMPORT_ERROR_CODE.EXACT_IDENTITY_CONFLICT
-    );
+    assert.equal(report.totals.completed, 1);
+    assert.equal(report.totals.failed, 0);
+    assert.equal(report.items[0].errorCode, null);
     assert.equal((await core.previewActivities()).total, 1);
+    const afterStore = createCanonicalStore({
+        indexedDB,
+        IDBKeyRange,
+        now: () => FIXED_TIME,
+        applicationVersion: 'exact-link-after@1'
+    });
+    await afterStore.initialize();
+    const linked = await afterStore.getBundle('strava-archive:opaque-same');
+    assert.deepEqual(linked.activity, original.activity);
+    await afterStore.close();
     await core.close();
 });
 
