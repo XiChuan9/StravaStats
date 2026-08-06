@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Approved for implementation |
+| Status | Final Review closed; Ready handoff pending Closure-head CI |
 | Milestone | M13 |
 | Base branch | `integration/v2` |
 | Exact base SHA | `b8525bce7ca7d536f30ad3ed7312332a12ef243e` |
@@ -437,7 +437,7 @@ extension over existing indexes. Canonical writes remain owned by Import and
 the existing shadow writer. Legacy and Canonical stores stay isolated and
 unchanged by reads.
 
-Pause only for a required nineteenth path, a new public method, schema/index/
+Pause only for a required twenty-first path, a new public method, schema/index/
 version/migration change, analysis or provider-auth change, production
 dependency, Service Worker/release/deployment change, destructive data action,
 real credential/private-data requirement, PR-17/18 expansion, merge, cleanup,
@@ -445,5 +445,94 @@ or another substantive architecture/product decision.
 
 ## Closure ledger
 
-Pending implementation, local and Browser/CDP verification, independent Final
-Review, fresh re-review, exact-head CI, and Ready handoff.
+### Delivered change
+
+- Exact base remained
+  `b8525bce7ca7d536f30ad3ed7312332a12ef243e`; the independently reviewed
+  implementation head is
+  `9ad39cbb8d4e3eb25692793fcbe456170c9bf767`.
+- Published commits before this single-file Closure are `5c6e312` (Task Brief),
+  `e3df752` (Canonical summary cutover), `27e4bd0` (actual-root bootstrap), and
+  `9ad39cb` (Final Review repairs). Each was pushed normally without amend,
+  rebase, or force.
+- The exact cumulative diff contains the 20 literal allowlist paths and no
+  twenty-first path. `js/app/feature-flags.js`, schema, migrations, Import
+  public API, analysis, PR-17/18 consumers, dependencies, Service Worker,
+  release, and deployment surfaces remain unchanged.
+
+### Findings-first Final Review
+
+The first independent review of `b8525bc...27e4bd0` reported three actionable
+findings: same-timestamp continuation pages re-scanned passed primary keys;
+truthful `elevationGainMeters` was omitted from active summary consumers; and
+the existing Basketball, Volleyball, and Table Tennis import variants fell
+back to generic types. Failure-first focused tests then reproduced the bounded
+pagination and projection failures (8/10 passed before repair).
+
+Commit `9ad39cb` repaired all three within the frozen paths. Store pagination
+now seeks the exclusive `(indexKey, primaryKey)` boundary with
+`continuePrimaryKey`; instrumentation bounds asc, desc, and sport-filter
+continuations to `limit + O(1)`. Projection preserves the raw elevation value,
+including missing/null/zero/negative-zero semantics, and restores the three
+stable variant names. The actual-root harness proves the resulting 123 m
+Dashboard value instead of only inspecting a Repository envelope.
+
+A fresh independent read-only re-review of
+`b8525bc...9ad39cb` reported **no actionable findings**. It confirmed the
+exact/deleted cursor mechanics, transaction terminal lifecycle, Repository
+desc/500 traversal, projection semantics, actual-root data path, default
+Legacy behavior, and Canonical/Demo/Legacy/shadow isolation. Residual risks are
+non-blocking: deleted-cursor behavior is covered by the mechanism rather than a
+separately named test; read-committed traversal intentionally provides no
+snapshot for concurrent sort-key mutation; and the controlled browser harness
+does not claim a production Service Worker or complete visual-regression run.
+
+### Verification evidence
+
+At reviewed head `9ad39cb`:
+
+```text
+npm ci                                             PASS (6 packages)
+npm run check:syntax                               PASS (203 files)
+npm run check:privacy                              PASS
+broad focused Storage/Repository/consumer/shadow   PASS (417/417)
+npm test -- --test-concurrency=1                   PASS (1307/1307, 37047 ms)
+npm test                                           PASS (1307/1307, 18397 ms)
+git diff --check                                   PASS
+literal path audit                                 PASS (20/20, no extra path)
+depth-1 clone npm ci + broad focused               PASS (417/417)
+```
+
+GitHub Actions run `31065265685`, job `92501549797` (`checks`), succeeded for
+exact head `9ad39cb`; dependency install, syntax, privacy, and tests all
+completed successfully.
+
+The disposable synthetic Browser/CDP gate passed on a fresh loopback origin.
+It loaded the served root document and `/js/main.js`, seeded 503 deterministic
+Canonical activities, refreshed locally, navigated Activities, Calendar,
+Wrapped, Dashboard, Run, Bike, Swim, Gear, Map, and Planner, and rendered the
+truthful Canonical elevation value. It observed only `strava-stats-v2`, zero
+Legacy database/provider/Token/Authorization I/O, zero console/runtime errors,
+and no non-same-origin Service Worker registration. The finalized PR-15 harness
+also passed for First-run, malformed settings, V2-only shell, Legacy local, and
+Demo isolation before the Final Review repair; that historical harness was not
+modified.
+
+The containing single-file Closure commit must receive a fresh exact-head CI
+success before the control tower updates the PR body and moves Draft PR #22 to
+Ready for review. That final SHA/run is recorded in the PR handoff because a
+commit cannot contain its own SHA. Ready remains explicitly not merge
+authorization.
+
+### Privacy, migration, rollback, and Not run
+
+- All fixtures and browser data were deterministic and synthetic. No user
+  Chrome profile, real Token, account, provider request, private activity,
+  route, stream, export, or screenshot was used.
+- There is no schema or data migration and no write-path change. Legacy and V2
+  libraries remain intact and isolated. Rollback is the unchanged literal
+  `legacy` default, an explicit flag switch to Legacy, or a normal PR revert;
+  none deletes or rewrites data.
+- Not run: real-provider/credential tests, private fixtures, full visual matrix,
+  production Service Worker lifecycle, deployment, release, destructive
+  migration, merge/auto-merge, cleanup, PR-17, PR-18, or M14.
