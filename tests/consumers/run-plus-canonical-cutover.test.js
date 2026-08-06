@@ -20,6 +20,10 @@ const taskBrief = await readFile(
     new URL('docs/tasks/pr-18-run-plus-nsm-cutover.md', projectRoot),
     'utf8'
 );
+const browserHarness = await readFile(
+    new URL('tests/consumers/run-plus-canonical-browser-smoke.html', projectRoot),
+    'utf8'
+);
 
 const FIXED_TIME = Date.parse('2026-08-06T08:00:00.000Z');
 const OPAQUE_ID = '0007/opaque ?#%';
@@ -371,4 +375,35 @@ test('Task Brief freezes the literal seven-path scope without future-hostile has
     assert.doesNotMatch(taskBrief, /FROZEN_HASHES|createHash\(|[a-f0-9]{64}/);
     assert.match(taskBrief, /DEFAULT_FEATURE_FLAGS\.dataRepositoryMode` remains literal `legacy`/);
     assert.match(taskBrief, /There is therefore no LocalStorage migration in PR-18/);
+});
+
+test('served browser seed freezes synthetic actual-route evidence without claiming a pass', () => {
+    assert.match(browserHarness, /__PR18_RUN_PLUS_BROWSER_PLAN__/);
+    for (const value of [
+        "modes: Object.freeze(['canonical', 'demo', 'legacy', 'shadow'])",
+        "routes: Object.freeze(['/run-plus', '/run-plus/nsm'])",
+        'actual-served-navigation',
+        'settings-and-tags-persist',
+        'filter-rerender',
+        'interval-analysis',
+        'deep-hr-analysis',
+        'impact-load',
+        'tss-ctl-atl-tsb',
+        'missing-gps-hr-power',
+        'opaque-id-round-trip',
+        'zero-provider-token-auth-legacy-io',
+        'safe-repository-failure',
+        'console-runtime-storage-idb-cache-sw-observation',
+        'ACTUAL_SERVED_NAVIGATION_REQUIRED'
+    ]) {
+        assert.equal(browserHarness.includes(value), true, value);
+    }
+    for (const key of USER_STORAGE_KEYS) {
+        assert.equal(browserHarness.includes(key), true, key);
+    }
+    assert.match(browserHarness, /indexedDB\.databases/);
+    assert.match(browserHarness, /createCanonicalStore/);
+    assert.match(browserHarness, /document\.body\.dataset\.status = 'seeded'/);
+    assert.doesNotMatch(browserHarness, /dataset\.status = 'passed'|status:\s*'passed'/);
+    assert.doesNotMatch(browserHarness, /https?:\/\//);
 });
