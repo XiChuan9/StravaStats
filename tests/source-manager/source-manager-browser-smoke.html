@@ -352,6 +352,31 @@
             assert(!realDoc.body.textContent.includes('private-archive.zip'), 'NO_ZIP_FILENAME_DOM');
 
             realDoc.getElementById('dialog-close').click();
+            const separateFile = new File(
+                [csv('browser-separate-001', 'Ride')],
+                'private-separate-activity.csv',
+                { type: 'text/csv' }
+            );
+            await importFile(realFrame, 'local', separateFile, 5);
+            assert(realDoc.getElementById('preview-total').textContent === '4 activities', 'KEEP_SEPARATE_RETAINS_TWO_ACTIVITIES');
+            realDoc.getElementById('dialog-close').click();
+            await waitFor(
+                () => realDoc.querySelector('.duplicate-review-card button'),
+                'KEEP_SEPARATE_QUEUE_TIMEOUT'
+            );
+            realDoc.querySelector('.duplicate-review-card button').click();
+            await waitFor(
+                () => realDoc.getElementById('duplicate-review-dialog').open,
+                'KEEP_SEPARATE_DIALOG_TIMEOUT'
+            );
+            realDoc.getElementById('duplicate-review-separate').click();
+            await waitFor(
+                () => realDoc.querySelectorAll('.duplicate-review-card').length === 0,
+                'KEEP_SEPARATE_DECISION_TIMEOUT'
+            );
+            assert(realDoc.getElementById('preview-total').textContent === '4 activities', 'KEEP_SEPARATE_DOES_NOT_COALESCE');
+            assert(realDoc.getElementById('import-live').textContent.includes('Both activities remain'), 'KEEP_SEPARATE_COPY_EXPLICIT');
+
             const formatFiles = [
                 new File([createSyntheticFitActivity()], 'private-athlete.fit', {
                     type: 'application/vnd.ant.fit'
@@ -366,9 +391,9 @@
             const formatGates = ['FIT', 'TCX', 'GPX'];
             for (let index = 0; index < formatFiles.length; index += 1) {
                 realDoc.getElementById('dialog-close').click();
-                await importFile(realFrame, 'local', formatFiles[index], 5 + index);
+                await importFile(realFrame, 'local', formatFiles[index], 6 + index);
                 assert(
-                    realDoc.getElementById('preview-total').textContent === `${4 + index} activities`,
+                    realDoc.getElementById('preview-total').textContent === `${5 + index} activities`,
                     `${formatGates[index]}_REGISTRY_STORAGE_PREVIEW`
                 );
                 assert(
@@ -378,8 +403,8 @@
             }
 
             realDoc.getElementById('dialog-close').click();
-            await importFile(realFrame, 'local', formatFiles[0], 8);
-            assert(realDoc.getElementById('preview-total').textContent === '6 activities', 'FIT_EXACT_DUPLICATE');
+            await importFile(realFrame, 'local', formatFiles[0], 9);
+            assert(realDoc.getElementById('preview-total').textContent === '7 activities', 'FIT_EXACT_DUPLICATE');
 
             realDoc.getElementById('dialog-close').click();
             const corruptFit = new File(
@@ -387,8 +412,8 @@
                 'private-corrupt.fit',
                 { type: 'application/vnd.ant.fit' }
             );
-            await importFile(realFrame, 'local', corruptFit, 9);
-            assert(realDoc.getElementById('preview-total').textContent === '6 activities', 'MALFORMED_FIT_NO_WRITE');
+            await importFile(realFrame, 'local', corruptFit, 10);
+            assert(realDoc.getElementById('preview-total').textContent === '7 activities', 'MALFORMED_FIT_NO_WRITE');
             assert(!realDoc.body.textContent.includes(corruptFit.name), 'MALFORMED_FIT_FILENAME_REDACTED');
 
             const invalidDoc = await choose(realFrame, 'archive', new File(['not zip'], 'invalid.zip'));
@@ -411,11 +436,11 @@
             realFrame.contentWindow.location.reload();
             await new Promise(resolve => { realFrame.onload = resolve; });
             await waitFor(
-                () => realFrame.contentDocument.getElementById('preview-total').textContent === '6 activities',
+                () => realFrame.contentDocument.getElementById('preview-total').textContent === '7 activities',
                 'RELOAD_PREVIEW_TIMEOUT',
                 30_000
             );
-            assert(realFrame.contentDocument.querySelectorAll('.report-card').length >= 10, 'RELOAD_IMPORT_LOG');
+            assert(realFrame.contentDocument.querySelectorAll('.report-card').length >= 11, 'RELOAD_IMPORT_LOG');
             assert(
                 Array.from(realFrame.contentDocument.querySelectorAll('.report-card')).every(
                     card => card.querySelectorAll('.report-item').length <= 100
@@ -439,9 +464,9 @@
             assert(v2.version === 4, 'V2_VERSION_4');
             assert(v2.stores.length === 13, 'V2_THIRTEEN_STORES');
             assert(Object.values(v2.indexes).reduce((sum, list) => sum + list.length, 0) === 13, 'V2_THIRTEEN_INDEXES');
-            assert(v2.counts.activities === 6, 'CANONICAL_ACTIVITY_COUNT');
-            assert(v2.counts.mergeCandidates >= 1, 'CANDIDATE_AUDIT_RETAINED');
-            assert(v2.counts.mergeDecisions >= 1, 'DECISION_AUDIT_RETAINED');
+            assert(v2.counts.activities === 7, 'CANONICAL_ACTIVITY_COUNT');
+            assert(v2.counts.mergeCandidates >= 2, 'CANDIDATE_AUDIT_RETAINED');
+            assert(v2.counts.mergeDecisions >= 2, 'DECISION_AUDIT_RETAINED');
 
             const registrations = await navigator.serviceWorker.getRegistrations();
             const cacheNames = await caches.keys();

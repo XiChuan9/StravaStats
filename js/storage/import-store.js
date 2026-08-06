@@ -1506,12 +1506,6 @@ export function createImportStore(options) {
         ) {
             return Promise.reject(dataInvalid(operation));
         }
-        let decidedAt;
-        try {
-            decidedAt = timestamp(dependencies.now, operation);
-        } catch (error) {
-            return Promise.reject(error);
-        }
         return runReady(operation, database => runTransaction(database, {
             storeNames: [
                 V2_STORE_NAME.MERGE_CANDIDATES,
@@ -1557,6 +1551,7 @@ export function createImportStore(options) {
                     };
                     return;
                 }
+                const decidedAt = timestamp(dependencies.now, operation);
                 if (decisions.length !== 0 || decidedAt < candidate.createdAt) {
                     throw conflict(operation);
                 }

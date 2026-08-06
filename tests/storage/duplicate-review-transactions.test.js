@@ -64,11 +64,11 @@ function bundle(id, seconds = 0, overrides = {}) {
     };
 }
 
-function createHarness(indexedDB = new IDBFactory()) {
+function createHarness(indexedDB = new IDBFactory(), suppliedNow = null) {
     let tick = 0;
     const importStore = createImportStore({
         indexedDB, IDBKeyRange,
-        now: () => BASE_TIME + tick++,
+        now: suppliedNow || (() => BASE_TIME + tick++),
         applicationVersion: 'duplicate-review-transactions@1'
     });
     const service = createImportService({
@@ -117,6 +117,121 @@ test('confirm and reject decisions are atomic, idempotent, and never coalesce ac
     assert.equal(reviewed.activities.length, 2);
     assert.doesNotMatch(JSON.stringify(reviewed.activities), /opaque-left|opaque-right/);
     await service.close();
+});
+
+test('terminal decision replay returns the stored audit row without new clock work', async () => {
+    let tick = 0;
+    let clockEnabled = true;
+    const { importStore, service } = createHarness(
+        new IDBFactory(),
+        () => {
+            if (!clockEnabled) throw new Error('clock unavailable');
+            return BASE_TIME + tick++;
+        }
+    );
+    await service.initialize();
+    await importBundle(service, bundle('replay-left'));
+    await importBundle(service, bundle('replay-right', 10));
+    const [candidate] = await importStore.listDuplicateReviewCandidates();
+    const first = await importStore.decideDuplicateReviewCandidate(
+        candidate.id,
+        'confirmed_same'
+    );
+
+    clockEnabled = false;
+    assert.deepEqual(
+        await importStore.decideDuplicateReviewCandidate(
+            candidate.id,
+            'confirmed_same'
+        ),
+        first
+    );
+    await service.close();
+});
+
+test('keep-separate is idempotent and preserves both Canonical graphs', async () => {
+    const { importStore, service } = createHarness();
+    await service.initialize();
+    await importBundle(service, bundle('separate-left'));
+    await importBundle(service, bundle('separate-right', 10));
+    const [candidate] = await importStore.listDuplicateReviewCandidates();
+    const before = await service.previewActivities();
+
+    const first = await importStore.decideDuplicateReviewCandidate(
+        candidate.id,
+        'rejected'
+    );
+    const repeated = await importStore.decideDuplicateReviewCandidate(
+        candidate.id,
+        'rejected'
+    );
+    assert.deepEqual(repeated, first);
+    assert.equal(first.status, 'rejected');
+    await assert.rejects(
+        importStore.decideDuplicateReviewCandidate(
+            candidate.id,
+            'confirmed_same'
+        ),
+        error => error.code === 'CONFLICT'
+    );
+    assert.deepEqual(await service.previewActivities(), before);
+    assert.equal(
+        (await importStore.getDuplicateReviewCandidate(candidate.id)).status,
+        'rejected'
+    );
+    await service.close();
+});
+
+test('concurrent same and opposing decisions serialize to one append-only result', async () => {
+    const same = createHarness();
+    await same.service.initialize();
+    await importBundle(same.service, bundle('concurrent-same-left'));
+    await importBundle(same.service, bundle('concurrent-same-right', 10));
+    const [sameCandidate] = await same.importStore.listDuplicateReviewCandidates();
+    const sameResults = await Promise.all([
+        same.importStore.decideDuplicateReviewCandidate(
+            sameCandidate.id,
+            'rejected'
+        ),
+        same.importStore.decideDuplicateReviewCandidate(
+            sameCandidate.id,
+            'rejected'
+        )
+    ]);
+    assert.deepEqual(sameResults[0], sameResults[1]);
+    await same.service.close();
+
+    const opposing = createHarness();
+    await opposing.service.initialize();
+    await importBundle(opposing.service, bundle('concurrent-opposing-left'));
+    await importBundle(opposing.service, bundle('concurrent-opposing-right', 10));
+    const [opposingCandidate] =
+        await opposing.importStore.listDuplicateReviewCandidates();
+    const opposingResults = await Promise.allSettled([
+        opposing.importStore.decideDuplicateReviewCandidate(
+            opposingCandidate.id,
+            'confirmed_same'
+        ),
+        opposing.importStore.decideDuplicateReviewCandidate(
+            opposingCandidate.id,
+            'rejected'
+        )
+    ]);
+    assert.equal(
+        opposingResults.filter(result => result.status === 'fulfilled').length,
+        1
+    );
+    const [rejected] = opposingResults.filter(result => result.status === 'rejected');
+    assert.equal(rejected.reason.code, 'CONFLICT');
+    const [winner] = opposingResults.filter(result => result.status === 'fulfilled');
+    assert.equal(
+        (await opposing.importStore.getDuplicateReviewCandidate(
+            opposingCandidate.id
+        )).status,
+        winner.value.status
+    );
+    assert.equal((await opposing.service.previewActivities()).total, 2);
+    await opposing.service.close();
 });
 
 test('21st qualifying candidate aborts activity and every partial candidate atomically', async () => {
