@@ -1754,6 +1754,125 @@ test('four renderers degrade safely on empty streams without mutating bundle pay
     assert.equal(fetchAccesses, 0);
 });
 
+test('four renderers accept canonical latlng streams without requiring provider polylines', async () => {
+    const priorDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+    const priorWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+    try {
+        Object.defineProperty(globalThis, 'document', {
+            configurable: true,
+            value: { getElementById: () => null }
+        });
+        Object.defineProperty(globalThis, 'window', {
+            configurable: true,
+            value: {}
+        });
+
+        for (const directory of ['activity', 'run', 'bike', 'swim']) {
+            const module = await import(
+                `../../js/pages/${directory}/${directory}.js?canonical-route=${Date.now()}-${directory}`
+            );
+            const streams = {
+                latlng: {
+                    data: [
+                        [37.7749, -122.4194],
+                        [37.7754, -122.4188],
+                        [37.7760, -122.4181]
+                    ]
+                }
+            };
+            const before = structuredClone(streams);
+            const coords = module.getActivityRouteCoordinates({}, streams);
+
+            assert.deepEqual(coords, streams.latlng.data, directory);
+            assert.notEqual(coords, streams.latlng.data, directory);
+            assert.notEqual(coords[0], streams.latlng.data[0], directory);
+            assert.deepEqual(streams, before, directory);
+            assert.deepEqual(
+                module.getActivityRouteCoordinates({}, { latlng: { data: [[91, 0], [0, 0]] } }),
+                [],
+                directory
+            );
+        }
+    } finally {
+        if (priorDocument) Object.defineProperty(globalThis, 'document', priorDocument);
+        else delete globalThis.document;
+        if (priorWindow) Object.defineProperty(globalThis, 'window', priorWindow);
+        else delete globalThis.window;
+    }
+});
+
+test('four renderers keep minimal canonical laps free of non-finite presentation values', async () => {
+    const globalNames = ['document', 'window', 'Chart'];
+    const originals = new Map(globalNames.map(name => [
+        name,
+        Object.getOwnPropertyDescriptor(globalThis, name)
+    ]));
+    const forbidden = /NaN|Infinity|undefined/;
+    try {
+        for (const directory of ['activity', 'run', 'bike', 'swim']) {
+            const elements = new Map();
+            for (const id of ['laps-section', 'laps-table', 'laps-chart', 'laps-chart-section']) {
+                elements.set(id, {
+                    id,
+                    innerHTML: '',
+                    classList: {
+                        add() {},
+                        remove() {}
+                    }
+                });
+            }
+            const chartConfigs = [];
+            Object.defineProperty(globalThis, 'document', {
+                configurable: true,
+                value: {
+                    getElementById: id => elements.get(id) || null
+                }
+            });
+            Object.defineProperty(globalThis, 'window', {
+                configurable: true,
+                value: {}
+            });
+            Object.defineProperty(globalThis, 'Chart', {
+                configurable: true,
+                value: class {
+                    constructor(_canvas, config) {
+                        chartConfigs.push(config);
+                    }
+                    destroy() {}
+                }
+            });
+
+            const module = await import(
+                `../../js/pages/${directory}/${directory}.js?minimal-laps=${Date.now()}-${directory}`
+            );
+            const laps = [
+                { lap_index: 1, distance: 1000, moving_time: 300, average_speed: 1000 / 300 },
+                { lap_index: 2 }
+            ];
+            module.renderLaps(laps);
+            module.renderLapsChart(laps);
+
+            assert.doesNotMatch(elements.get('laps-table').innerHTML, forbidden, directory);
+            assert.equal(chartConfigs.length, 1, directory);
+            const data = chartConfigs[0].data.datasets[0].data;
+            assert.equal(data.length, 1, directory);
+            assert.equal(data.every(Number.isFinite), true, directory);
+
+            const callbacks = chartConfigs[0].options.plugins.tooltip.callbacks;
+            for (const callbackName of ['label', 'afterLabel']) {
+                if (typeof callbacks[callbackName] !== 'function') continue;
+                const output = callbacks[callbackName]({ dataIndex: 0 });
+                assert.doesNotMatch(JSON.stringify(output), forbidden, `${directory}:${callbackName}`);
+            }
+        }
+    } finally {
+        for (const [name, descriptor] of originals) {
+            if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+            else delete globalThis[name];
+        }
+    }
+});
+
 test('Swim correction uses injected athlete and preserves Repository payload', async () => {
     const priorDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
     try {

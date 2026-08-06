@@ -133,6 +133,30 @@ function decodePolyline(str) {
     return coordinates;
 }
 
+export function getActivityRouteCoordinates(activity, streams) {
+    const polyline = activity?.map?.summary_polyline || activity?.map?.polyline;
+    if (typeof polyline === 'string' && polyline.length > 0) {
+        const decoded = decodePolyline(polyline);
+        if (decoded.length >= 2) return decoded;
+    }
+
+    const positions = streams?.latlng?.data;
+    if (!Array.isArray(positions) || positions.length < 2) return [];
+    const coordinates = [];
+    for (const point of positions) {
+        if (!Array.isArray(point) || point.length < 2) return [];
+        const [latitude, longitude] = point;
+        if (
+            !Number.isFinite(latitude)
+            || !Number.isFinite(longitude)
+            || Math.abs(latitude) > 90
+            || Math.abs(longitude) > 180
+        ) return [];
+        coordinates.push([latitude, longitude]);
+    }
+    return coordinates;
+}
+
 function rollingMean(arr, windowSize = 25) {
     if (!Array.isArray(arr) || arr.length === 0) return [];
     const result = [];
@@ -576,9 +600,8 @@ function getRouteColorSeries(streams, mode, pointCount) {
 
 function renderActivityMap(activity, streams) {
     if (!DOM.map) return;
-    const polyline = activity.map?.summary_polyline || activity.map?.polyline;
-    if (polyline && window.L) {
-        const coords = decodePolyline(polyline);
+    if (window.L) {
+        const coords = getActivityRouteCoordinates(activity, streams);
         if (coords.length > 0) {
             DOM.map.innerHTML = '';
             if (window.activityRouteMap) {
@@ -1186,7 +1209,7 @@ function renderSpeedMinMaxAreaChart(streams, smoothingLevel = 100) {
 // 13. RENDERING — TABLES
 // =====================================================
 
-function renderLaps(laps) {
+export function renderLaps(laps) {
     const section = document.getElementById('laps-section');
     const table = document.getElementById('laps-table');
     if (!section || !table) return;
@@ -1195,23 +1218,28 @@ function renderLaps(laps) {
     const header = `<thead><tr><th>Lap</th><th>Distance</th><th>Time</th><th>Avg Speed</th><th>Elev. +</th><th>Avg HR</th><th>Avg Power</th></tr></thead>`;
     const body = laps.map(lap => `<tr>
         <td>${lap.lap_index}</td>
-        <td>${(lap.distance / 1000).toFixed(2)} km</td>
-        <td>${formatTime(lap.moving_time)}</td>
+        <td>${Number.isFinite(lap.distance) ? `${(lap.distance / 1000).toFixed(2)} km` : '-'}</td>
+        <td>${Number.isFinite(lap.moving_time) ? formatTime(lap.moving_time) : '-'}</td>
         <td>${formatSpeed(lap.average_speed)}</td>
-        <td>${Math.round(lap.total_elevation_gain)} m</td>
+        <td>${Number.isFinite(lap.total_elevation_gain) ? `${Math.round(lap.total_elevation_gain)} m` : '-'}</td>
         <td>${lap.average_heartrate ? Math.round(lap.average_heartrate) + ' bpm' : '-'}</td>
         <td>${lap.average_watts ? Math.round(lap.average_watts) + ' W' : '-'}</td>
     </tr>`).join('');
     table.innerHTML = header + `<tbody>${body}</tbody>`;
 }
 
-function renderLapsChart(laps) {
+export function renderLapsChart(laps) {
     const canvas = document.getElementById('laps-chart');
     const section = document.getElementById('laps-chart-section');
     if (!canvas || !section || !laps || laps.length === 0) return;
+    const chartLaps = laps.filter(lap => Number.isFinite(lap.average_speed) && lap.average_speed > 0);
+    if (chartLaps.length === 0) {
+        section.classList.add('hidden');
+        return;
+    }
     section.classList.remove('hidden');
-    const labels = laps.map((_, i) => `Lap ${i + 1}`);
-    const speeds = laps.map(lap => +(lap.average_speed * 3.6).toFixed(2));
+    const labels = chartLaps.map((lap, i) => `Lap ${lap.lap_index ?? i + 1}`);
+    const speeds = chartLaps.map(lap => +(lap.average_speed * 3.6).toFixed(2));
     const maxSpd = Math.max(...speeds), minSpd = Math.min(...speeds);
     const colors = speeds.map(s => { const t = maxSpd > minSpd ? (s - minSpd) / (maxSpd - minSpd) : 0.5; return `hsl(15, 90%, ${35 + t * 35}%)`; });
 
@@ -1226,12 +1254,12 @@ function renderLapsChart(laps) {
                 tooltip: {
                     callbacks: {
                         label: ctx => {
-                            const lap = laps[ctx.dataIndex];
+                            const lap = chartLaps[ctx.dataIndex];
                             return [
                                 `Speed: ${formatSpeed(lap.average_speed)}`,
-                                `Dist: ${(lap.distance / 1000).toFixed(2)} km`,
-                                `Time: ${formatTime(lap.moving_time)}`,
-                                `Elev: ${Math.round(lap.total_elevation_gain)} m`,
+                                `Dist: ${Number.isFinite(lap.distance) ? `${(lap.distance / 1000).toFixed(2)} km` : '-'}`,
+                                `Time: ${Number.isFinite(lap.moving_time) ? formatTime(lap.moving_time) : '-'}`,
+                                `Elev: ${Number.isFinite(lap.total_elevation_gain) ? `${Math.round(lap.total_elevation_gain)} m` : '-'}`,
                                 `HR: ${lap.average_heartrate ? Math.round(lap.average_heartrate) + ' bpm' : '-'}`,
                                 `Power: ${lap.average_watts ? Math.round(lap.average_watts) + ' W' : '-'}`
                             ];

@@ -11,7 +11,8 @@ export const SWIM_STREAM_TYPES = Object.freeze([
     'distance',
     'time',
     'heartrate',
-    'cadence'
+    'cadence',
+    'latlng'
 ]);
 const BUNDLE_KEYS = Object.freeze(['activity', 'streams', 'zones', 'athlete']);
 const ENVELOPE_KEYS = Object.freeze(['data', 'source', 'warnings', 'partial']);

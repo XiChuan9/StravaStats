@@ -213,15 +213,15 @@ test('page stream contracts and metadata flags remain exact and ordered', () => 
             athlete: false
         }],
         ['js/pages/run/index.js', {
-            streams: ['distance', 'time', 'heartrate', 'altitude', 'cadence', 'watts', 'velocity_smooth'],
+            streams: ['distance', 'time', 'heartrate', 'altitude', 'cadence', 'watts', 'velocity_smooth', 'latlng'],
             athlete: false
         }],
         ['js/pages/bike/index.js', {
-            streams: ['distance', 'time', 'heartrate', 'altitude', 'cadence', 'watts', 'velocity_smooth'],
+            streams: ['distance', 'time', 'heartrate', 'altitude', 'cadence', 'watts', 'velocity_smooth', 'latlng'],
             athlete: false
         }],
         ['js/pages/swim/index.js', {
-            streams: ['distance', 'time', 'heartrate', 'cadence'],
+            streams: ['distance', 'time', 'heartrate', 'cadence', 'latlng'],
             athlete: true
         }]
     ]);
@@ -551,6 +551,43 @@ test('PR-17 freezes the literal 17-path allowlist and stable boundaries', async 
     ]) {
         assert.match(brief, pattern);
     }
+});
+
+test('PR-17 Canonical detail browser harness freezes actual served-route evidence', async () => {
+    const harness = await source('tests/consumers/canonical-detail-browser-smoke.html');
+    const moduleScript = /<script type="module" nonce="pr17-detail">([\s\S]*?)<\/script>/.exec(harness);
+    assert.notEqual(moduleScript, null);
+    execFileSync(
+        process.execPath,
+        ['--input-type=module', '--check'],
+        { input: moduleScript[1], encoding: 'utf8' }
+    );
+    for (const pattern of [
+        /DISPOSABLE_LOOPBACK_ORIGIN_REQUIRED/,
+        /EXPLICIT_SYNTHETIC_MODE_REQUIRED/,
+        /dataRepositoryMode:\s*'canonical'/,
+        /V2_DATABASE\s*=\s*'strava-stats-v2'/,
+        /\/html\/activity-router\.html/,
+        /\/html\/activity\.html/,
+        /\/html\/run\.html/,
+        /\/html\/bike\.html/,
+        /\/html\/swim\.html/,
+        /actualServedFrame/,
+        /verifyActualRouter/,
+        /verifyActualDetail/,
+        /ACTUAL_ADVANCED_ZERO_DATABASE_IO/,
+        /ACTUAL_ADVANCED_ZERO_PROVIDER_IO/,
+        /ROLLBACK_MODE_/,
+        /DEMO_FLAG_ISOLATION_/,
+        /navigator\.serviceWorker\.getRegistrations/,
+        /caches\.keys\(\)/,
+        /databaseOpens/,
+        /storageReads/,
+        /authorization/
+    ]) {
+        assert.match(harness, pattern);
+    }
+    assert.doesNotMatch(harness, /strava_tokens|strava_athlete_data|strava_training_zones/);
 });
 
 test('page governance freezes provider, privacy, ID, mode, and B1 scope rules', async () => {

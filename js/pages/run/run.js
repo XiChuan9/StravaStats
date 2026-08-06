@@ -232,6 +232,30 @@ function decodePolyline(str) {
     return coordinates;
 }
 
+export function getActivityRouteCoordinates(activity, streams) {
+    const polyline = activity?.map?.summary_polyline || activity?.map?.polyline;
+    if (typeof polyline === 'string' && polyline.length > 0) {
+        const decoded = decodePolyline(polyline);
+        if (decoded.length >= 2) return decoded;
+    }
+
+    const positions = streams?.latlng?.data;
+    if (!Array.isArray(positions) || positions.length < 2) return [];
+    const coordinates = [];
+    for (const point of positions) {
+        if (!Array.isArray(point) || point.length < 2) return [];
+        const [latitude, longitude] = point;
+        if (
+            !Number.isFinite(latitude)
+            || !Number.isFinite(longitude)
+            || Math.abs(latitude) > 90
+            || Math.abs(longitude) > 180
+        ) return [];
+        coordinates.push([latitude, longitude]);
+    }
+    return coordinates;
+}
+
 /**
  * Estimates VO2max from activity data using Karvonen formula
  */
@@ -941,8 +965,8 @@ function getRouteColorSeries(streams, mode, pointCount) {
 function renderActivityMap(activity, streams) {
     if (!DOM.map) return;
 
-    if (activity.map?.summary_polyline && window.L) {
-        const coords = decodePolyline(activity.map.summary_polyline);
+    if (window.L) {
+        const coords = getActivityRouteCoordinates(activity, streams);
         if (coords.length > 0) {
             DOM.map.innerHTML = '';
             if (window.activityRouteMap) {
@@ -1290,7 +1314,7 @@ function renderBestEfforts(bestEfforts) {
 /**
  * Renders laps table
  */
-function renderLaps(laps) {
+export function renderLaps(laps) {
     const section = document.getElementById('laps-section');
     const table = document.getElementById('laps-table');
     if (!section || !table) return;
@@ -1316,13 +1340,16 @@ function renderLaps(laps) {
 
     const tableBody = laps.map(lap => {
         const pace = formatPace(lap.average_speed);
+        const distance = Number.isFinite(lap.distance) ? `${(lap.distance / 1000).toFixed(2)} km` : '-';
+        const movingTime = Number.isFinite(lap.moving_time) ? formatTime(lap.moving_time) : '-';
+        const elevation = Number.isFinite(lap.total_elevation_gain) ? `${Math.round(lap.total_elevation_gain)} m` : '-';
         return `
         <tr>
             <td>${lap.lap_index}</td>
-            <td>${(lap.distance / 1000).toFixed(2)} km</td>
-            <td>${formatTime(lap.moving_time)}</td>
+            <td>${distance}</td>
+            <td>${movingTime}</td>
             <td>${pace}</td>
-            <td>${Math.round(lap.total_elevation_gain)} m</td>
+            <td>${elevation}</td>
             <td>${lap.average_heartrate ? Math.round(lap.average_heartrate) : '-'} bpm</td>
         </tr>`;
     }).join('');
@@ -1333,15 +1360,20 @@ function renderLaps(laps) {
 /**
  * Renders laps pace chart
  */
-function renderLapsChart(laps) {
+export function renderLapsChart(laps) {
     const canvas = document.getElementById('laps-chart');
     const section = document.getElementById('laps-chart-section');
     if (!canvas || !section || !laps || laps.length === 0) return;
 
+    const chartLaps = laps.filter(lap => Number.isFinite(lap.average_speed) && lap.average_speed > 0);
+    if (chartLaps.length === 0) {
+        section.classList.add('hidden');
+        return;
+    }
     section.classList.remove('hidden');
 
-    const labels = laps.map((_, i) => `Lap ${i + 1}`);
-    const paces = laps.map(lap => 1000 / lap.average_speed);
+    const labels = chartLaps.map((lap, i) => `Lap ${lap.lap_index ?? i + 1}`);
+    const paces = chartLaps.map(lap => 1000 / lap.average_speed);
     const minPace = Math.min(...paces);
     const maxPace = Math.max(...paces);
 
@@ -1379,15 +1411,15 @@ function renderLapsChart(laps) {
                     callbacks: {
                         title: ctx => labels[ctx[0].dataIndex],
                         label: ctx => {
-                            const lap = laps[ctx.dataIndex];
+                            const lap = chartLaps[ctx.dataIndex];
                             return `Pace: ${formatPace(lap.average_speed)}`;
                         },
                         afterLabel: ctx => {
-                            const lap = laps[ctx.dataIndex];
+                            const lap = chartLaps[ctx.dataIndex];
                             return [
-                                `Distance: ${(lap.distance / 1000).toFixed(2)} km`,
-                                `Time: ${formatTime(lap.moving_time)}`,
-                                `Elevation: ${Math.round(lap.total_elevation_gain)} m`,
+                                `Distance: ${Number.isFinite(lap.distance) ? `${(lap.distance / 1000).toFixed(2)} km` : '-'}`,
+                                `Time: ${Number.isFinite(lap.moving_time) ? formatTime(lap.moving_time) : '-'}`,
+                                `Elevation: ${Number.isFinite(lap.total_elevation_gain) ? `${Math.round(lap.total_elevation_gain)} m` : '-'}`,
                                 `Avg HR: ${lap.average_heartrate ? Math.round(lap.average_heartrate) : '-'} bpm`
                             ];
                         }

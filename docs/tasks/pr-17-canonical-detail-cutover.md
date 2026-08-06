@@ -464,3 +464,52 @@ git diff --check
 No HTML/CSS, renderer, Store/schema, Import, analysis, dependency, Service Worker, release,
 global default, or PR-18 path changed in B2. Browser/CDP, renderer degradation, full suite,
 independent review, CI, and Closure remain pending.
+
+### B3: renderer degradation and actual-route harness
+
+Status: **Implementation completed locally / Browser execution blocked by surface capability**.
+
+- Generic, Run, Bike, and Swim maps now prefer an existing provider polyline and otherwise
+  consume only the injected `latlng` stream. Coordinates are copied, finite/bounds-checked,
+  and never encoded, stored, or fetched as a route.
+- A failure-first stream-contract check found that Run, Bike, and Swim did not request
+  `latlng`. Their existing stream lists now append only `latlng`; request count, session count,
+  Repository methods, metadata flags, and all other stream ordering remain unchanged.
+- Minimal Canonical laps render missing metrics as the existing dash marker. Pace/speed charts
+  include only laps with a finite positive derived speed, so DOM, chart data, and tooltips do
+  not contain `NaN`, `Infinity`, or `undefined`.
+- The new deterministic harness seeds only four inline synthetic Canonical bundles and freezes
+  actual served Router plus Generic/Run/Bike/Swim document checks, Canonical/Demo/Legacy/Shadow
+  mode checks, opaque IDs, maps/laps/charts, repeated Advanced reuse, provider/auth/Legacy I/O,
+  console/runtime, IndexedDB, storage, Cache, and Service Worker observations.
+- A stable boundary test parses the harness module with Node and asserts the actual-route and
+  evidence contracts without a whole-file hash.
+
+Actual local evidence at the B3 implementation boundary:
+
+```text
+node --test tests/consumers/detail-consumers.test.js
+  tests/consumers/detail-boundaries.test.js
+  PASS 269/269
+node --test [focused detail/Canonical Store/Repository/summary/Demo/shadow set]
+  PASS 415/415
+npm run check:syntax
+  PASS 204 files
+npm run check:privacy
+  PASS
+git diff --check
+  PASS
+```
+
+Browser/CDP did not pass and is not claimed. The control tower used policy-compliant fresh
+in-app Browser tabs at two isolated loopback ports. Both passed the loopback and explicit
+synthetic-mode preconditions and failed closed before seeding with redacted
+`StorageError / PR17_BROWSER_GATE_FAILED`; `seededBundles` remained zero. A bounded capability
+check on the fresh origin established that `indexedDB`, `IDBKeyRange`, `localStorage`, and
+`sessionStorage` are all unavailable in that execution surface. No Chrome/raw-CDP fallback
+was used. The actual Canonical Store/browser portion is **Blocked pending a separately approved
+equivalent execution surface**. No user profile, credential, Token, account, private fixture,
+real activity/location/health/power data, external provider request, screenshot, Cache, or
+Service Worker was accessed. Both temporary servers were stopped cleanly.
+
+Independent review, full suite, depth-1 verification, exact-head CI, and Closure remain pending.

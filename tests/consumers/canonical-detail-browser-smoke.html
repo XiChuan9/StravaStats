@@ -1,0 +1,829 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+        http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'nonce-pr17-detail'; style-src 'unsafe-inline'; connect-src 'self'; img-src data: 'self'; object-src 'none'; base-uri 'none'"
+    >
+    <link rel="icon" href="data:,">
+    <title>PR-17 Canonical Detail Browser Smoke</title>
+    <style>
+        body { font: 14px/1.5 system-ui, sans-serif; margin: 24px; }
+        pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+    </style>
+</head>
+<body data-status="running">
+    <h1>PR-17 Canonical Detail Browser Smoke</h1>
+    <p id="status" role="status">Preparing deterministic local detail routes.</p>
+    <pre id="result">{"status":"running"}</pre>
+    <div id="frames" hidden></div>
+
+    <script type="module" nonce="pr17-detail">
+        const FIXED_NOW = Date.parse('2026-08-06T08:00:00.000Z');
+        const V2_DATABASE = 'strava-stats-v2';
+        const status = document.getElementById('status');
+        const output = document.getElementById('result');
+        const frames = document.getElementById('frames');
+        const assertions = [];
+        const observations = {
+            assertions,
+            routerTargets: [],
+            canonicalModes: [],
+            rollbackModes: [],
+            demoModes: [],
+            actualRoutes: [],
+            resetServiceWorkers: 0,
+            resetCaches: 0,
+            seededBundles: 0
+        };
+
+        function assert(condition, code) {
+            if (!condition) throw new Error(code);
+            assertions.push(code);
+        }
+
+        function canonicalActivity(id, sportCategory, overrides = {}) {
+            return {
+                schemaVersion: 1,
+                id,
+                sportCategory,
+                sportVariant: null,
+                startTimeUtc: '2026-08-05T08:00:00.000Z',
+                timeZone: { ianaName: null, utcOffsetMinutes: 0 },
+                capabilities: {
+                    hasGps: false,
+                    hasHeartRate: false,
+                    hasPower: false,
+                    hasCadence: false,
+                    hasLaps: false
+                },
+                name: `Synthetic ${sportCategory} detail`,
+                distanceMeters: 0,
+                movingTimeSeconds: 0,
+                elapsedTimeSeconds: 0,
+                ...overrides
+            };
+        }
+
+        function stream(streamType, unit, values) {
+            return {
+                streamType,
+                unit,
+                offsetsSeconds: values.map((_, index) => index * 60),
+                values
+            };
+        }
+
+        function bundle(activity, series = [], laps = []) {
+            return {
+                schemaVersion: 1,
+                activity,
+                streams: { activityId: activity.id, series },
+                laps,
+                events: [],
+                sources: [{
+                    id: `synthetic-source:${activity.id}`,
+                    activityId: activity.id,
+                    provider: 'synthetic',
+                    externalId: null,
+                    rawArtifactId: null,
+                    acquisitionMethod: 'synthetic-browser-test',
+                    deviceId: null,
+                    importedAt: activity.startTimeUtc
+                }],
+                devices: [],
+                warnings: [],
+                versionMetadata: {
+                    schemaVersion: 1,
+                    parserVersion: 'synthetic-browser-parser@1',
+                    normalizerVersion: 'synthetic-browser-normalizer@1',
+                    analysisVersion: null,
+                    settingsVersion: null,
+                    inputHash: null
+                }
+            };
+        }
+
+        function lap(activityId, index, distanceMeters, movingTimeSeconds) {
+            return {
+                id: `synthetic-lap:${activityId}:${index}`,
+                activityId,
+                index,
+                startOffsetSeconds: index * movingTimeSeconds,
+                elapsedTimeSeconds: movingTimeSeconds,
+                movingTimeSeconds,
+                distanceMeters
+            };
+        }
+
+        const routeFixtures = Object.freeze([
+            Object.freeze({
+                page: 'generic',
+                path: '/html/activity.html',
+                id: 'opaque/generic ?#%',
+                bundle: bundle(
+                    canonicalActivity('opaque/generic ?#%', 'other', {
+                        distanceMeters: 1200,
+                        movingTimeSeconds: 420,
+                        elapsedTimeSeconds: 450,
+                        capabilities: {
+                            hasGps: true,
+                            hasHeartRate: true,
+                            hasPower: false,
+                            hasCadence: true,
+                            hasLaps: true
+                        }
+                    }),
+                    [
+                        stream('distance', 'm', [0, 600, 1200]),
+                        stream('position', 'wgs84', [[0, 0], [0, 0.001], [0.001, 0.001]]),
+                        stream('heartRate', 'bpm', [0, 130, 140]),
+                        stream('cadence', 'rpm', [0, 80, 82])
+                    ],
+                    [lap('opaque/generic ?#%', 0, 1200, 420)]
+                )
+            }),
+            Object.freeze({
+                page: 'run',
+                path: '/html/run.html',
+                id: '000-run/opaque',
+                bundle: bundle(
+                    canonicalActivity('000-run/opaque', 'run', {
+                        sportVariant: 'trail-run',
+                        distanceMeters: 5000,
+                        movingTimeSeconds: 1500,
+                        elapsedTimeSeconds: 1530,
+                        elevationGainMeters: 0,
+                        capabilities: {
+                            hasGps: true,
+                            hasHeartRate: false,
+                            hasPower: false,
+                            hasCadence: false,
+                            hasLaps: true
+                        }
+                    }),
+                    [
+                        stream('distance', 'm', [0, 2500, 5000]),
+                        stream('position', 'wgs84', [[1, 1], [1, 1.001], [1.001, 1.001]]),
+                        stream('speed', 'm/s', [0, 3.3, 3.4])
+                    ],
+                    [lap('000-run/opaque', 0, 5000, 1500)]
+                )
+            }),
+            Object.freeze({
+                page: 'bike',
+                path: '/html/bike.html',
+                id: 'bike alpha/beta',
+                bundle: bundle(
+                    canonicalActivity('bike alpha/beta', 'ride', {
+                        sportVariant: 'gravel',
+                        distanceMeters: 10000,
+                        movingTimeSeconds: 1800,
+                        elapsedTimeSeconds: 1860,
+                        averagePowerWatts: 0,
+                        averageCadence: 0,
+                        capabilities: {
+                            hasGps: true,
+                            hasHeartRate: true,
+                            hasPower: true,
+                            hasCadence: true,
+                            hasLaps: true
+                        }
+                    }),
+                    [
+                        stream('distance', 'm', [0, 5000, 10000]),
+                        stream('position', 'wgs84', [[2, 2], [2, 2.001], [2.001, 2.001]]),
+                        stream('heartRate', 'bpm', [0, 135, 145]),
+                        stream('power', 'W', [0, 180, 220]),
+                        stream('cadence', 'rpm', [0, 85, 90]),
+                        stream('speed', 'm/s', [0, 5.5, 5.7])
+                    ],
+                    [lap('bike alpha/beta', 0, 10000, 1800)]
+                )
+            }),
+            Object.freeze({
+                page: 'swim',
+                path: '/html/swim.html',
+                id: 'swim?#opaque/000',
+                bundle: bundle(
+                    canonicalActivity('swim?#opaque/000', 'swim', {
+                        distanceMeters: 1000,
+                        movingTimeSeconds: 1200,
+                        elapsedTimeSeconds: 1230,
+                        capabilities: {
+                            hasGps: false,
+                            hasHeartRate: true,
+                            hasPower: false,
+                            hasCadence: true,
+                            hasLaps: true
+                        }
+                    }),
+                    [
+                        stream('distance', 'm', [0, 500, 1000]),
+                        stream('heartRate', 'bpm', [0, 120, 130]),
+                        stream('cadence', 'spm', [0, 28, 30])
+                    ],
+                    [lap('swim?#opaque/000', 0, 1000, 1200)]
+                )
+            })
+        ]);
+
+        function waitFor(check, code, timeoutMs = 30_000) {
+            const started = performance.now();
+            return new Promise((resolve, reject) => {
+                const tick = () => {
+                    try {
+                        if (check()) return resolve();
+                    } catch {
+                        // A served frame may still be navigating or rendering.
+                    }
+                    if (performance.now() - started >= timeoutMs) {
+                        reject(new Error(code));
+                        return;
+                    }
+                    requestAnimationFrame(tick);
+                };
+                tick();
+            });
+        }
+
+        function safeTarget(value, base) {
+            try {
+                const url = new URL(String(value?.url ?? value), base);
+                return url.origin === location.origin
+                    ? url.pathname
+                    : `${url.protocol}//${url.host}${url.pathname}`;
+            } catch {
+                return 'invalid';
+            }
+        }
+
+        function isProviderOrApi(value, base) {
+            try {
+                const url = new URL(String(value?.url ?? value), base);
+                return (
+                    (url.origin === location.origin && url.pathname.startsWith('/api/'))
+                    || /(^|\.)(strava|garmin|coros|wahoo|polar)\.(com|net)$/i.test(url.hostname)
+                );
+            } catch {
+                return true;
+            }
+        }
+
+        const frameConfigurations = new Map();
+        let frameSequence = 0;
+
+        function installActualRoute(child, token) {
+            const configuration = frameConfigurations.get(token);
+            if (!configuration) throw new Error('UNKNOWN_ACTUAL_ROUTE');
+            const route = {
+                kind: configuration.kind,
+                page: configuration.fixture.page,
+                path: configuration.path,
+                network: [],
+                storageReads: [],
+                databaseOpens: [],
+                chartCalls: [],
+                mapCalls: [],
+                consoleWarnings: 0,
+                consoleErrors: 0,
+                runtimeErrors: 0,
+                advancedRuns: 0,
+                installed: false
+            };
+            configuration.observation = route;
+            observations.actualRoutes.push(route);
+
+            Object.defineProperty(child, '__STRAVASTATS_FEATURE_FLAGS__', {
+                configurable: false,
+                enumerable: false,
+                writable: false,
+                value: child.JSON.parse(JSON.stringify({
+                    dataRepositoryMode: 'canonical',
+                    localImportEnabled: false,
+                    canonicalShadowWriteEnabled: false
+                }))
+            });
+
+            class SyntheticChart {
+                static instances = [];
+                static getChart(target) {
+                    return this.instances.find(instance => (
+                        instance.target === target || instance.target === target?.canvas
+                    )) ?? null;
+                }
+                constructor(target, config = {}) {
+                    this.target = target?.canvas ?? target;
+                    this.config = config;
+                    this.data = config.data ?? {};
+                    this.options = config.options ?? {};
+                    this.constructor.instances.push(this);
+                    route.chartCalls.push(this.target?.id || String(target || 'anonymous'));
+                }
+                destroy() {}
+                update() {}
+                getDatasetMeta() { return { hidden: false }; }
+                isDatasetVisible() { return true; }
+                setDatasetVisibility() {}
+            }
+            child.Chart = SyntheticChart;
+
+            const inertLayer = kind => ({
+                addTo() { route.mapCalls.push(kind); return this; },
+                addLayer() { return this; },
+                clearLayers() { return this; },
+                setView() { return this; },
+                fitBounds() { return this; },
+                getBounds() { return [[0, 0], [0.001, 0.001]]; },
+                remove() {}
+            });
+            child.L = {
+                map: () => inertLayer('map'),
+                tileLayer: () => inertLayer('tileLayer'),
+                polyline: () => inertLayer('polyline'),
+                featureGroup: () => inertLayer('featureGroup'),
+                layerGroup: () => inertLayer('layerGroup'),
+                circleMarker: () => inertLayer('circleMarker'),
+                marker: () => inertLayer('marker'),
+                divIcon: options => options,
+                latLngBounds: () => ({ isValid: () => false })
+            };
+
+            const childFetch = child.fetch.bind(child);
+            child.fetch = (input, init) => {
+                const target = safeTarget(input, child.location.href);
+                const authorization = new child.Headers(init?.headers ?? input?.headers)
+                    .has('Authorization');
+                const blocked = isProviderOrApi(input, child.location.href);
+                const external = new child.URL(String(input?.url ?? input), child.location.href)
+                    .origin !== location.origin;
+                route.network.push({ type: 'fetch', target, authorization, blocked, external });
+                if (blocked) return Promise.reject(new Error('SYNTHETIC_PROVIDER_OFFLINE'));
+                if (external) {
+                    return Promise.resolve(new child.Response('{}', {
+                        status: 503,
+                        headers: { 'Content-Type': 'application/json' }
+                    }));
+                }
+                return childFetch(input, init);
+            };
+
+            const childXhrOpen = child.XMLHttpRequest.prototype.open;
+            child.XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+                const blocked = isProviderOrApi(url, child.location.href);
+                route.network.push({
+                    type: 'xhr',
+                    target: safeTarget(url, child.location.href),
+                    authorization: false,
+                    blocked,
+                    external: new child.URL(String(url), child.location.href).origin !== location.origin
+                });
+                if (blocked) throw new Error('SYNTHETIC_PROVIDER_OFFLINE');
+                return childXhrOpen.call(this, method, url, ...rest);
+            };
+
+            const ChildWebSocket = child.WebSocket;
+            child.WebSocket = class SyntheticWebSocket extends ChildWebSocket {
+                constructor(url, protocols) {
+                    const blocked = isProviderOrApi(url, child.location.href);
+                    route.network.push({
+                        type: 'websocket',
+                        target: safeTarget(url, child.location.href),
+                        authorization: false,
+                        blocked,
+                        external: true
+                    });
+                    if (blocked) throw new Error('SYNTHETIC_PROVIDER_OFFLINE');
+                    super(url, protocols);
+                }
+            };
+
+            const childGetItem = child.Storage.prototype.getItem;
+            child.Storage.prototype.getItem = function (key) {
+                route.storageReads.push(String(key));
+                return childGetItem.call(this, key);
+            };
+            const childOpen = child.indexedDB.open.bind(child.indexedDB);
+            child.indexedDB.open = function (name, version) {
+                route.databaseOpens.push({ name: String(name), version: version ?? null });
+                return version === undefined ? childOpen(name) : childOpen(name, version);
+            };
+
+            const childWarn = child.console.warn.bind(child.console);
+            const childError = child.console.error.bind(child.console);
+            child.console.warn = (...args) => {
+                route.consoleWarnings += 1;
+                childWarn(...args);
+            };
+            child.console.error = (...args) => {
+                route.consoleErrors += 1;
+                childError(...args);
+            };
+            child.addEventListener('error', event => {
+                if (event instanceof child.ErrorEvent && event.message) route.runtimeErrors += 1;
+            }, true);
+            child.addEventListener('unhandledrejection', () => {
+                route.runtimeErrors += 1;
+            });
+            if (child.navigator.serviceWorker?.register) {
+                child.navigator.serviceWorker.register = async () => ({
+                    scope: location.origin,
+                    active: null,
+                    waiting: null,
+                    installing: null
+                });
+            }
+            route.installed = true;
+        }
+
+        Object.defineProperty(globalThis, '__PR17_INSTALL_ACTUAL_ROUTE__', {
+            configurable: true,
+            enumerable: false,
+            value: installActualRoute
+        });
+
+        function sanitizeServedDocument(source, entryPath) {
+            const externalScript = new RegExp(
+                '<scr' + 'ipt\\b[^>]*src=["\']https?:\\/\\/[^>]*><\\/scr' + 'ipt>',
+                'gi'
+            );
+            const externalLink = new RegExp('<link\\b[^>]*href=["\']https?:\\/\\/[^>]*>', 'gi');
+            const entryScript = new RegExp(
+                '<scr' + 'ipt\\b[^>]*src=["\'](?:\\.\\.\\/)?'
+                    + entryPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+                    + '["\'][^>]*><\\/scr' + 'ipt>',
+                'gi'
+            );
+            return source
+                .replace(externalScript, '')
+                .replace(externalLink, '')
+                .replace(/<script\b[^>]*src=["']\/_vercel\/[^>]*><\/script>/gi, '')
+                .replace(entryScript, '')
+                .replace(/(["'])\.\.\//g, '$1/');
+        }
+
+        async function actualServedFrame(configuration) {
+            const token = `frame-${frameSequence += 1}`;
+            frameConfigurations.set(token, configuration);
+            const response = await fetch(configuration.path, {
+                cache: 'no-store',
+                credentials: 'omit'
+            });
+            assert(response.ok, `SERVED_DOCUMENT_${configuration.fixture.page.toUpperCase()}`);
+            let source = sanitizeServedDocument(await response.text(), configuration.entryPath);
+            const prelude = '<scr' + 'ipt nonce="pr17-detail">'
+                + `parent.__PR17_INSTALL_ACTUAL_ROUTE__(window, ${JSON.stringify(token)});`
+                + '</scr' + 'ipt>';
+            let runner;
+            if (configuration.kind === 'router') {
+                runner = '<scr' + 'ipt type="module" nonce="pr17-detail">'
+                    + 'const add = document.addEventListener.bind(document);'
+                    + 'document.addEventListener = (type, ...args) => type === "DOMContentLoaded" ? undefined : add(type, ...args);'
+                    + 'const entry = await import("/js/pages/activity-router.js");'
+                    + 'document.addEventListener = add;'
+                    + `window.__PR17_ACTUAL_RESULT__ = await entry.routeActivity({search:${JSON.stringify(`?id=${encodeURIComponent(configuration.fixture.id)}`)},navigate:value=>{window.__PR17_ACTUAL_TARGET__=value;}});`
+                    + '</scr' + 'ipt>';
+            } else {
+                runner = '<scr' + 'ipt type="module" nonce="pr17-detail">'
+                    + 'const add = document.addEventListener.bind(document);'
+                    + 'document.addEventListener = (type, ...args) => type === "DOMContentLoaded" ? undefined : add(type, ...args);'
+                    + `const entry = await import(${JSON.stringify(`/${configuration.entryPath}`)});`
+                    + 'document.addEventListener = add;'
+                    + `window.__PR17_ACTUAL_RESULT__ = await entry[${JSON.stringify(configuration.initializer)}]({search:${JSON.stringify(`?id=${encodeURIComponent(configuration.fixture.id)}`)}});`
+                    + '</scr' + 'ipt>';
+            }
+            source = source
+                .replace('<head>', `<head>${prelude}`)
+                .replace('</body>', `${runner}</body>`);
+
+            const frame = document.createElement('iframe');
+            frame.title = `PR-17 ${configuration.kind} ${configuration.fixture.page}`;
+            frame.srcdoc = source;
+            frames.append(frame);
+            await waitFor(
+                () => configuration.observation?.installed === true,
+                'ACTUAL_ROUTE_INSTRUMENTATION_TIMEOUT'
+            );
+            await waitFor(
+                () => typeof frame.contentWindow.__PR17_ACTUAL_RESULT__ === 'boolean',
+                'ACTUAL_ROUTE_RENDER_TIMEOUT'
+            );
+            assert(frame.contentWindow.__PR17_ACTUAL_RESULT__ === true, `ACTUAL_ROUTE_RESULT_${configuration.fixture.page.toUpperCase()}`);
+            return frame;
+        }
+
+        async function verifyActualRouter(fixture) {
+            const configuration = {
+                kind: 'router',
+                fixture,
+                path: '/html/activity-router.html',
+                entryPath: 'js/pages/activity-router.js',
+                observation: null
+            };
+            const frame = await actualServedFrame(configuration);
+            assert(
+                frame.contentWindow.__PR17_ACTUAL_TARGET__
+                    === `${fixture.path.split('/').pop()}?id=${encodeURIComponent(fixture.id)}`,
+                `ACTUAL_ROUTER_TARGET_${fixture.page.toUpperCase()}`
+            );
+            verifyRouteIo(configuration.observation, fixture.page);
+            frame.remove();
+        }
+
+        function verifyRouteIo(route, page) {
+            assert(
+                route.databaseOpens.length > 0
+                    && route.databaseOpens.every(value => value.name === V2_DATABASE),
+                `ACTUAL_ONLY_V2_DATABASE_${page.toUpperCase()}`
+            );
+            assert(
+                route.storageReads.every(key => !/token|authorization/i.test(key)),
+                `ACTUAL_ZERO_TOKEN_READ_${page.toUpperCase()}`
+            );
+            assert(
+                route.network.every(value => !value.authorization && !value.blocked),
+                `ACTUAL_ZERO_PROVIDER_AUTH_IO_${page.toUpperCase()}`
+            );
+            assert(route.runtimeErrors === 0, `ACTUAL_ZERO_RUNTIME_ERRORS_${page.toUpperCase()}`);
+            assert(route.consoleErrors === 0, `ACTUAL_ZERO_CONSOLE_ERRORS_${page.toUpperCase()}`);
+        }
+
+        async function verifyActualDetail(fixture) {
+            const names = {
+                generic: ['js/pages/activity/index.js', 'initializeActivityPage'],
+                run: ['js/pages/run/index.js', 'initializeRunPage'],
+                bike: ['js/pages/bike/index.js', 'initializeBikePage'],
+                swim: ['js/pages/swim/index.js', 'initializeSwimPage']
+            };
+            const configuration = {
+                kind: 'detail',
+                fixture,
+                path: fixture.path,
+                entryPath: names[fixture.page][0],
+                initializer: names[fixture.page][1],
+                observation: null
+            };
+            const frame = await actualServedFrame(configuration);
+            const child = frame.contentWindow;
+            const childDocument = frame.contentDocument;
+            assert(
+                childDocument.getElementById('activity-info')?.textContent.trim().length > 0,
+                `ACTUAL_DOM_${fixture.page.toUpperCase()}`
+            );
+            assert(
+                !/NaN|Infinity|undefined/.test(childDocument.getElementById('laps-table')?.innerHTML || ''),
+                `ACTUAL_FINITE_LAPS_${fixture.page.toUpperCase()}`
+            );
+            assert(
+                childDocument.getElementById('laps-table')?.textContent.trim().length > 0,
+                `ACTUAL_LAPS_${fixture.page.toUpperCase()}`
+            );
+            assert(configuration.observation.chartCalls.length > 0, `ACTUAL_CHARTS_${fixture.page.toUpperCase()}`);
+            if (fixture.bundle.activity.capabilities.hasGps) {
+                assert(configuration.observation.mapCalls.includes('polyline'), `ACTUAL_MAP_${fixture.page.toUpperCase()}`);
+            } else {
+                assert(!configuration.observation.mapCalls.includes('polyline'), `ACTUAL_MAP_DEGRADED_${fixture.page.toUpperCase()}`);
+            }
+
+            if (fixture.page === 'generic') {
+                const button = childDocument.getElementById('advanced-analysis-btn');
+                const content = childDocument.getElementById('analysis-content');
+                const databaseCount = configuration.observation.databaseOpens.length;
+                const providerCount = configuration.observation.network.filter(value => value.blocked).length;
+                button.click();
+                await waitFor(() => content.children.length >= 5, 'ACTUAL_ADVANCED_FIRST_TIMEOUT');
+                button.click();
+                await waitFor(() => content.children.length >= 5, 'ACTUAL_ADVANCED_SECOND_TIMEOUT');
+                assert(configuration.observation.databaseOpens.length === databaseCount, 'ACTUAL_ADVANCED_ZERO_DATABASE_IO');
+                assert(
+                    configuration.observation.network.filter(value => value.blocked).length === providerCount,
+                    'ACTUAL_ADVANCED_ZERO_PROVIDER_IO'
+                );
+                configuration.observation.advancedRuns = 2;
+            }
+
+            verifyRouteIo(configuration.observation, fixture.page);
+            const registrations = child.navigator.serviceWorker?.getRegistrations
+                ? await child.navigator.serviceWorker.getRegistrations()
+                : [];
+            assert(
+                registrations.every(value => value.scope.startsWith(location.origin)),
+                `ACTUAL_SAME_ORIGIN_SERVICE_WORKER_${fixture.page.toUpperCase()}`
+            );
+            frame.remove();
+        }
+
+        function deleteDatabase(name) {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.deleteDatabase(name);
+                request.onsuccess = () => resolve();
+                request.onerror = () => reject(new Error('TEST_DATABASE_DELETE_FAILED'));
+                request.onblocked = () => reject(new Error('TEST_DATABASE_DELETE_BLOCKED'));
+            });
+        }
+
+        async function resetSyntheticRuntime() {
+            if (navigator.serviceWorker?.getRegistrations) {
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                for (const registration of registrations) {
+                    if (await registration.unregister()) observations.resetServiceWorkers += 1;
+                }
+            }
+            if (globalThis.caches?.keys) {
+                for (const name of await caches.keys()) {
+                    if (await caches.delete(name)) observations.resetCaches += 1;
+                }
+            }
+            localStorage.clear();
+            sessionStorage.clear();
+            await deleteDatabase(V2_DATABASE);
+        }
+
+        function detailEnvelope(data, source = 'canonical') {
+            return { data, source, warnings: [], partial: false };
+        }
+
+        function detailBundleForMode(id, source) {
+            return {
+                activity: detailEnvelope({ id, laps: [], splits_metric: [], segment_efforts: [], best_efforts: [] }, source),
+                streams: detailEnvelope({}, source),
+                zones: null,
+                athlete: null
+            };
+        }
+
+        async function exerciseCompositionModes() {
+            const modules = await Promise.all([
+                import('../../js/pages/activity/index.js'),
+                import('../../js/pages/run/index.js'),
+                import('../../js/pages/bike/index.js'),
+                import('../../js/pages/swim/index.js')
+            ]);
+            const initializers = [
+                modules[0].initializeActivityPage,
+                modules[1].initializeRunPage,
+                modules[2].initializeBikePage,
+                modules[3].initializeSwimPage
+            ];
+
+            for (let index = 0; index < initializers.length; index += 1) {
+                for (const mode of ['legacy', 'shadow']) {
+                    const calls = [];
+                    const result = await initializers[index]({
+                        search: `?id=rollback-${index}`,
+                        demoModeReader: () => false,
+                        featureFlagsReader: () => ({ dataRepositoryMode: mode }),
+                        repositoryFactory: options => {
+                            calls.push(options);
+                            return {};
+                        },
+                        sessionFactory: () => ({
+                            load: async () => detailBundleForMode(`rollback-${index}`, 'legacy')
+                        }),
+                        renderer: async () => {},
+                        errorRenderer: () => { throw new Error('ROLLBACK_RENDER_FAILED'); }
+                    });
+                    assert(result === true, `ROLLBACK_${mode.toUpperCase()}_${index}`);
+                    assert(calls.length === 1 && calls[0].mode === 'legacy', `ROLLBACK_MODE_${mode.toUpperCase()}_${index}`);
+                    observations.rollbackModes.push({ page: index, requested: mode, selected: calls[0].mode });
+                }
+
+                let flagReads = 0;
+                const demoCalls = [];
+                const demoResult = await initializers[index]({
+                    search: `?id=demo-${index}`,
+                    demoModeReader: () => true,
+                    featureFlagsReader: () => {
+                        flagReads += 1;
+                        throw new Error('DEMO_MUST_IGNORE_REAL_FLAGS');
+                    },
+                    repositoryFactory: options => {
+                        demoCalls.push(options);
+                        return {};
+                    },
+                    sessionFactory: () => ({
+                        load: async () => detailBundleForMode(`demo-${index}`, 'demo')
+                    }),
+                    renderer: async () => {},
+                    errorRenderer: () => { throw new Error('DEMO_RENDER_FAILED'); }
+                });
+                assert(demoResult === true && flagReads === 0, `DEMO_FLAG_ISOLATION_${index}`);
+                assert(demoCalls.length === 1 && demoCalls[0].sessionMode === 'demo', `DEMO_MODE_${index}`);
+                observations.demoModes.push({ page: index, selected: demoCalls[0] });
+            }
+        }
+
+        async function run() {
+            assert(
+                location.hostname === '127.0.0.1' || location.hostname === 'localhost',
+                'DISPOSABLE_LOOPBACK_ORIGIN_REQUIRED'
+            );
+            assert(new URLSearchParams(location.search).get('synthetic') === 'pr17', 'EXPLICIT_SYNTHETIC_MODE_REQUIRED');
+
+            const storageModule = await import('../../js/storage/index.js');
+            const repositoryModule = await import('../../js/repository/index.js');
+            const routerModule = await import('../../js/pages/activity-router.js');
+            const demoModule = await import('../../js/demo/index.js');
+            await resetSyntheticRuntime();
+
+            const storeOptions = {
+                indexedDB,
+                IDBKeyRange,
+                now: () => FIXED_NOW,
+                applicationVersion: 'pr17-canonical-detail-browser@1'
+            };
+            const seedStore = storageModule.createCanonicalStore(storeOptions);
+            await seedStore.initialize();
+            for (const fixture of routeFixtures) {
+                await seedStore.putBundle(fixture.bundle);
+                observations.seededBundles += 1;
+            }
+            await seedStore.close();
+
+            const repository = repositoryModule.createRepository({ sessionMode: 'real', mode: 'canonical' });
+            for (const fixture of routeFixtures) {
+                const [activity, streams] = await Promise.all([
+                    repository.getActivity(fixture.id),
+                    repository.getStreams(fixture.id, { types: ['distance', 'time', 'latlng', 'heartrate', 'cadence', 'watts', 'velocity_smooth'] })
+                ]);
+                assert(activity.source === 'canonical' && activity.data.id === fixture.id, `CANONICAL_ACTIVITY_${fixture.page.toUpperCase()}`);
+                assert(streams.source === 'canonical', `CANONICAL_STREAMS_${fixture.page.toUpperCase()}`);
+                assert(!Object.hasOwn(activity.data, 'map'), `NO_PROVIDER_MAP_${fixture.page.toUpperCase()}`);
+                observations.canonicalModes.push(fixture.page);
+
+                let target = null;
+                const routed = await routerModule.routeActivity({
+                    search: `?id=${encodeURIComponent(fixture.id)}`,
+                    demoModeReader: () => false,
+                    featureFlagsReader: () => ({ dataRepositoryMode: 'canonical' }),
+                    repositoryFactory: repositoryModule.createRepository,
+                    navigate: value => { target = value; },
+                    errorRenderer: () => { throw new Error('ROUTER_FAILED'); }
+                });
+                assert(routed === true, `ROUTER_SUCCESS_${fixture.page.toUpperCase()}`);
+                assert(target === `${fixture.path.split('/').pop()}?id=${encodeURIComponent(fixture.id)}`, `ROUTER_TARGET_${fixture.page.toUpperCase()}`);
+                observations.routerTargets.push(target);
+            }
+
+            for (const fixture of routeFixtures) {
+                await verifyActualRouter(fixture);
+                await verifyActualDetail(fixture);
+            }
+
+            await exerciseCompositionModes();
+            demoModule.loadDemoData({
+                now: new Date(FIXED_NOW),
+                referenceDate: new Date(FIXED_NOW).toISOString(),
+                storage: localStorage
+            });
+            const demoActivities = demoModule.getDemoActivities(localStorage);
+            const demoActivity = demoActivities.find(value => typeof value?.id === 'number');
+            assert(Boolean(demoActivity), 'DEMO_ACTIVITY_AVAILABLE');
+
+            globalThis.__PR17_CANONICAL_DETAIL_PLAN__ = Object.freeze({
+                featureFlags: Object.freeze({
+                    dataRepositoryMode: 'canonical',
+                    localImportEnabled: false,
+                    canonicalShadowWriteEnabled: false
+                }),
+                routerPath: '/html/activity-router.html',
+                canonicalRoutes: Object.freeze(routeFixtures.map(value => Object.freeze({
+                    page: value.page,
+                    path: value.path,
+                    id: value.id,
+                    expectMap: value.bundle.activity.capabilities.hasGps,
+                    expectLaps: value.bundle.activity.capabilities.hasLaps
+                }))),
+                demoRoute: Object.freeze({
+                    path: '/html/activity-router.html',
+                    id: String(demoActivity.id)
+                }),
+                requiresActualServedNavigation: true
+            });
+
+            document.body.dataset.status = 'passed';
+            status.textContent = 'Prepared; canonical detail fixtures and actual-route plan are ready.';
+            output.textContent = JSON.stringify({
+                status: 'passed',
+                observations,
+                routePlan: globalThis.__PR17_CANONICAL_DETAIL_PLAN__
+            }, null, 2);
+        }
+
+        run().catch(error => {
+            document.body.dataset.status = 'failed';
+            status.textContent = 'Failed';
+            output.textContent = JSON.stringify({
+                status: 'failed',
+                error: {
+                    name: error instanceof Error ? error.name : 'UnknownError',
+                    code: 'PR17_BROWSER_GATE_FAILED'
+                },
+                observations
+            }, null, 2);
+        });
+    </script>
+</body>
+</html>
