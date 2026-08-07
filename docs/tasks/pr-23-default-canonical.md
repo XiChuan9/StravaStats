@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 M20 / PR-23 |
-| Status | Ready for investigation; implementation allowlist not yet approved |
+| Status | A2 complete; proposed seven-path A3 allowlist awaiting control-tower freeze |
 | Branch | `codex/v2/default-canonical` |
 | Base | `integration/v2` at `3d8e17c5fab243b8605d5ddd1ca99450675ed5d8` |
 | Draft PR title | `refactor(v2): make canonical repository the default` |
@@ -129,6 +129,108 @@ The A2 record must distinguish source facts, executed evidence, and inference. P
 claims require evidence. No implementation path is allowed merely because changing the default
 appears to be a one-line edit.
 
+## A2 evidence and actual call graph
+
+The read-only investigation completed against exact base behavior before any production or test
+implementation change. The following focused baseline set passed 405/405:
+
+```text
+tests/feature-flags.test.js
+tests/bootstrap/local-first-bootstrap.test.js
+tests/bootstrap/local-first-bootstrap-boundaries.test.js
+tests/repository/repository-factory.test.js
+tests/shadow/shadow-app-integration.test.js
+tests/consumers/summary-consumers.test.js
+tests/consumers/summary-boundaries.test.js
+tests/consumers/detail-consumers.test.js
+tests/consumers/detail-boundaries.test.js
+tests/consumers/run-plus-canonical-cutover.test.js
+tests/source-manager/source-manager-boundaries.test.js
+tests/backup/backup-boundaries.test.js
+tests/diagnostics/diagnostics-boundaries.test.js
+```
+
+Source inspection and those executed tests establish this actual selection graph:
+
+```text
+module import
+  -> DEFAULT_FEATURE_FLAGS / Factory / page imports perform zero storage, Token,
+     provider, network, Worker, timer, or DOM I/O at the guarded boundaries
+
+root document
+  -> isDemoMode() exactly once
+  -> Demo: runLocalFirstBootstrap(sessionMode='demo')
+       -> Demo dispatch before Real inspection or dependency construction
+       -> createRepository({sessionMode:'demo', mode:'legacy'}) -> DemoRepository
+  -> Real + effective canonical:
+       -> initializeApp(null) without Legacy bootstrap, Token read, auth, or provider startup
+       -> createSummaryRepositorySession -> createRepository(real, canonical)
+       -> CanonicalRepository -> existing Canonical Store -> local listActivities
+       -> summary tabs receive projected activities
+       -> Run Plus / NSM receive the same frozen narrow session façade
+  -> Real + effective legacy or shadow:
+       -> V2-first local-first inspection plus accepted Legacy read/status inspection
+       -> First-run / blocked / Dashboard dispatch
+       -> explicit Legacy activities enter the existing Legacy summary façade
+       -> shadow remains Legacy read; only accepted network success may enqueue best-effort shadow
+
+activity Router and four detail documents
+  -> determine Demo once
+  -> Real reads effective feature flags once
+  -> canonical maps to CanonicalRepository; legacy/shadow map to LegacyRepository
+  -> Demo maps to DemoRepository before Real dependencies
+  -> DetailReadSession supplies summary/detail/streams/laps/zones/athlete to renderers
+
+Source Manager / Backup / Diagnostics
+  -> do not read dataRepositoryMode
+  -> Source Manager uses its explicit ?mode=real|demo Import composition
+  -> Backup uses its explicit Real/Demo session boundary and frozen V2/settings APIs
+  -> Diagnostics uses its session error/performance records and origin estimate only
+```
+
+`getFeatureFlags()` has one runtime override seam: the own data descriptor
+`globalThis.__STRAVASTATS_FEATURE_FLAGS__`. The override must be an ordinary exact-key data object;
+accessors, Proxies, symbols, extra keys, non-enumerable properties, invalid prototypes, and invalid
+values fail closed without getter execution. There is no persisted mode setting and no provider,
+auth, URL, LocalStorage, IndexedDB, or network lookup in flag resolution.
+
+The Repository Factory deliberately keeps its separate omitted-mode fallback as `legacy`; PR-23
+does not change that lower-level safety contract. Every production Real composition root passes an
+explicit mode derived from the application feature flags. Demo selection precedes that Real mode
+and the Factory returns DemoRepository regardless of the passed Real-mode value.
+
+## A2 frozen product behavior matrix
+
+| Context | Effective mode/read | Startup and empty behavior | Forbidden side effects |
+| --- | --- | --- | --- |
+| No runtime override | Canonical | Existing V2 starts locally; absent/empty V2 navigates exact `/source-manager.html?mode=real` after one local Canonical summary read and before metadata/analysis | No Legacy read, Token/auth/provider/network startup, copy, repair, clear, or migration |
+| Explicit `canonical` | Canonical | Same contract as the production default | No shadow writer or Legacy fallback |
+| Explicit `legacy` | Legacy | Accepted local-first inspection; Legacy data starts through its detached façade; empty state enters First-run | No V2-to-Legacy copy, V2 delete, or Legacy rewrite |
+| Explicit `shadow` | Legacy read plus accepted shadow observation/write | Same local-first and rollback behavior as Legacy; existing shadow write remains best effort and only observes accepted network success | Canonical never becomes the read source; shadow failure never changes Legacy success |
+| Demo with any Real flag | DemoRepository | Demo dispatch occurs before Real inspection/dependency construction | Zero Real V2/Legacy/provider/auth/Token/network/Worker construction or reads |
+| Invalid/hostile/absent override shape | Canonical default | Fail closed to the frozen production default without executing accessors | No error detail disclosure or recovery mutation |
+| Canonical Store/list failure | Safe blocked Dashboard error path | Fixed Diagnostics code and safe UI; no retry or provider fallback | No raw cause, Token, payload, ID, or private data disclosure |
+| Provider/auth/Token/network failure or offline | Canonical local behavior unchanged | Existing local V2 remains startable and browsable; absent/empty V2 keeps local Source Manager usable | No provider request is required to determine local availability |
+
+For default or explicit Canonical, a zero-length successful `source: "canonical"` summary envelope
+is the precise First-run signal. The redirect occurs immediately after validating the Repository
+envelope and before `getAthlete`, `getZones`, `getGears`, preprocessing, tab rendering, Run Plus,
+NSM, or any provider/auth boundary. Missing/absent values, literal `null`, real zero, negative zero,
+and opaque string IDs are not involved in this count and retain their existing projections.
+
+The base currently lacks that zero-length Canonical redirect because explicit Canonical bypasses
+the Legacy-aware bootstrap to preserve zero Legacy reads and calls `initializeApp(null)` directly.
+Changing only the default literal would therefore render an empty Dashboard. The smallest
+collision-free repair is a root-composition guard after the existing validated Canonical
+`listActivities` result. Changing the local-first inspection result shape or exposing Canonical
+records/counts is unnecessary and prohibited.
+
+Source Manager, Import, Backup/Restore, and Diagnostics already use independent accepted public
+boundaries and do not consult the Repository-mode flag. Summary, Router/detail, Run Plus, and NSM
+already route explicit Canonical end to end. No schema, public API, dependency, decoder, algorithm,
+Worker, Service Worker, deployment, release, migration, automatic Legacy copy, provider/auth, or
+PR-24 change is required. There is therefore no material A/B/C decision package.
+
 ## Material decision and pause gate
 
 If A2 shows that completion requires any physical schema, public API, dependency, Canonical
@@ -141,12 +243,29 @@ The package must include source and runtime evidence, the exact collision, failu
 privacy and data impact, migration and rollback impact, literal candidate paths, recommendation,
 and tradeoffs. No material option may be implemented without explicit approval.
 
-## A3 implementation gate and literal scope
+## A3 implementation gate and proposed literal scope
 
-Implementation is prohibited until A2 has frozen the exact default-canonical contract,
-failure-first matrix, and a literal cumulative path allowlist in this Task Brief. The allowlist is
-currently **not approved**. Any next path, future-hostile boundary collision, or uncovered contract
-gap requires the smallest control-tower supplement and pauses implementation.
+A2 proposes exactly these seven cumulative paths for investigation evidence, implementation,
+tests, browser evidence, findings-first repairs, and Final Review Closure:
+
+```text
+docs/tasks/pr-23-default-canonical.md
+js/app/feature-flags.js
+js/app/main.js
+tests/feature-flags.test.js
+tests/consumers/run-plus-canonical-cutover.test.js
+tests/default-canonical.test.js
+tests/default-canonical-browser-smoke.html
+```
+
+The seven-path list is a hard maximum with no glob and no implicit generated file. It keeps the
+Factory's omitted-mode Legacy fallback, local-first result schema, Repository/Storage/Import/
+Backup/Diagnostics exports, physical schema, detail and tab modules, user-owned settings, Worker,
+Service Worker, dependencies, deployment, release, and PR-24 outside the diff.
+
+Implementation remains prohibited until the control tower freezes this exact list and behavior
+matrix. Any eighth path, future-hostile boundary collision, or uncovered contract gap requires the
+smallest control-tower supplement and pauses implementation.
 
 After approval, each behavior change begins with a test that fails for the intended reason on the
 exact PR-22 base behavior. Findings-first repair follows the same rule: reproduce each actionable
