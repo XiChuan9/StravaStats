@@ -538,7 +538,9 @@ export function createImportService(options) {
         let quotaIndex = -1;
         for (let index = 0; index < items.length; index += 1) {
             if (isTerminalImportItem(items[index].status)) continue;
+            if (await cancellationCheckpoint(jobId, jobStatus)) return;
             items[index] = await transitionItem(items[index], I.PERSISTING);
+            if (await cancellationCheckpoint(jobId, jobStatus)) return;
             try {
                 await recordImportPerformanceOperation('persistence', () => (
                     dependencies.store.persistImportItem(
@@ -558,6 +560,7 @@ export function createImportService(options) {
                 if (quotaReached) quotaIndex = index;
             }
             if (quotaReached) break;
+            if (await cancellationCheckpoint(jobId, jobStatus)) return;
         }
         if (quotaReached) {
             const quotaFailure = importError(

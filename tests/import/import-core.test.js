@@ -607,6 +607,50 @@ test('decoder failure observes an in-flight cancellation before scheduling anoth
     await core.close();
 });
 
+test('cancellation during an in-flight persistence stops the next persistence schedule', async () => {
+    const indexedDB = new IDBFactory();
+    const realStore = store(indexedDB);
+    let releasePersistence;
+    let reachedPersistence;
+    let persistenceCalls = 0;
+    const persistenceGate = new Promise(resolve => { releasePersistence = resolve; });
+    const persistenceReached = new Promise(resolve => { reachedPersistence = resolve; });
+    const wrappedStore = {
+        ...realStore,
+        async persistImportItem(...args) {
+            persistenceCalls += 1;
+            if (persistenceCalls === 1) {
+                reachedPersistence();
+                await persistenceGate;
+            }
+            return realStore.persistImportItem(...args);
+        }
+    };
+    const core = service(wrappedStore);
+    await core.initialize();
+    const first = await artifact();
+    const run = await core.importArtifacts([
+        first,
+        { ...first, content: `${first.content}\n` }
+    ]);
+    await persistenceReached;
+    let cancellationResult;
+    try {
+        cancellationResult = await core.cancelJob(run.jobId);
+    } finally {
+        releasePersistence();
+    }
+    assert.deepEqual(cancellationResult, { status: 'cancellation-requested' });
+
+    const report = await core.waitForJob(run.jobId);
+    assert.equal(report.status, 'cancelled');
+    assert.equal(report.totals.completed, 1);
+    assert.equal(report.totals.cancelled, 1);
+    assert.equal(persistenceCalls, 1);
+    assert.equal((await core.previewActivities()).total, 1);
+    await core.close();
+});
+
 for (const boundary of ['queued', 'validating', 'decoding', 'normalizing', 'matching']) {
     test(`cancellation at ${boundary} stops unfinished items without a Canonical write`, async () => {
         const indexedDB = new IDBFactory();

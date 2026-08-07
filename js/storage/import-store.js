@@ -112,7 +112,7 @@ const JOB_TRANSITIONS = Object.freeze({
     decoding: Object.freeze(['normalizing', 'failed_decode', 'cancelled']),
     normalizing: Object.freeze(['matching', 'cancelled']),
     matching: Object.freeze(['persisting', 'cancelled']),
-    persisting: Object.freeze(['analyzing', 'failed_storage']),
+    persisting: Object.freeze(['analyzing', 'failed_storage', 'cancelled']),
     analyzing: Object.freeze(['completed', 'completed_with_warnings']),
     failed_validation: Object.freeze(['retrying']),
     failed_decode: Object.freeze(['retrying']),
@@ -138,7 +138,7 @@ const ITEM_TRANSITIONS = Object.freeze({
     matching: Object.freeze(['persisting', 'retrying', 'cancelled']),
     persisting: Object.freeze([
         'completed', 'review_required', 'skipped_exact_duplicate',
-        'failed_storage', 'retrying'
+        'failed_storage', 'retrying', 'cancelled'
     ]),
     failed_validation: Object.freeze(['retrying']),
     failed_decode: Object.freeze(['retrying']),
@@ -1085,7 +1085,7 @@ export function createImportStore(options) {
     function cancelImportJob(jobId, expectedStatus) {
         if (
             !opaqueString(jobId)
-            || !['queued', 'validating', 'decoding', 'normalizing', 'matching']
+            || !['queued', 'validating', 'decoding', 'normalizing', 'matching', 'persisting']
                 .includes(expectedStatus)
         ) {
             return Promise.reject(dataInvalid(STORAGE_OPERATION.CANCEL_IMPORT_JOB));

@@ -45,7 +45,7 @@ const JOB_TRANSITIONS = Object.freeze({
     [J.DECODING]: Object.freeze([J.NORMALIZING, J.FAILED_DECODE, J.CANCELLED]),
     [J.NORMALIZING]: Object.freeze([J.MATCHING, J.CANCELLED]),
     [J.MATCHING]: Object.freeze([J.PERSISTING, J.CANCELLED]),
-    [J.PERSISTING]: Object.freeze([J.ANALYZING, J.FAILED_STORAGE]),
+    [J.PERSISTING]: Object.freeze([J.ANALYZING, J.FAILED_STORAGE, J.CANCELLED]),
     [J.ANALYZING]: Object.freeze([J.COMPLETED, J.COMPLETED_WITH_WARNINGS]),
     [J.FAILED_VALIDATION]: Object.freeze([J.RETRYING]),
     [J.FAILED_DECODE]: Object.freeze([J.RETRYING]),
@@ -85,7 +85,8 @@ const ITEM_TRANSITIONS = Object.freeze({
         I.REVIEW_REQUIRED,
         I.SKIPPED_EXACT_DUPLICATE,
         I.FAILED_STORAGE,
-        I.RETRYING
+        I.RETRYING,
+        I.CANCELLED
     ]),
     [I.FAILED_VALIDATION]: Object.freeze([I.RETRYING]),
     [I.FAILED_DECODE]: Object.freeze([I.RETRYING]),
@@ -113,7 +114,7 @@ export function assertImportItemTransition(current, next) {
 }
 
 export function canCancelImportJob(status) {
-    return [J.QUEUED, J.VALIDATING, J.DECODING, J.NORMALIZING, J.MATCHING]
+    return [J.QUEUED, J.VALIDATING, J.DECODING, J.NORMALIZING, J.MATCHING, J.PERSISTING]
         .includes(status);
 }
 
