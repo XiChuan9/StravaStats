@@ -289,8 +289,10 @@ the following implementation contracts.
 
 ## A3 exact cumulative path allowlist
 
-The collision audit found no further material boundary after the A3.1 supplement. The following
-42 paths are the literal hard maximum for every implementation, test, repair and closure change in
+The collision audit found no further material boundary after the A3.1 supplement. A later pure-test
+collision added only `tests/import/strava-zip.test.js` under delegated control-tower authority so
+the inherited quota regression can assert the approved stop-scheduling behavior. The following
+43 paths are the literal hard maximum for every implementation, test, repair and closure change in
 PR-22. A path not listed here requires a supplemental decision before it is edited.
 
 ```text
@@ -327,6 +329,7 @@ tests/diagnostics/diagnostics-browser-smoke.html
 tests/diagnostics/import-performance.test.js
 tests/import/import-core.test.js
 tests/import/import-performance.test.js
+tests/import/strava-zip.test.js
 tests/source-manager/source-manager.test.js
 tests/source-manager/source-manager-boundaries.test.js
 tests/source-manager/source-manager-performance-browser-smoke.html
