@@ -1346,6 +1346,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const activities = activityLoad.data;
             if (
                 activityLoad.source === REPOSITORY_SOURCE.CANONICAL
+                && activities.length === 0
+            ) {
+                window.location.assign('/source-manager.html?mode=real');
+                return;
+            }
+            if (
+                activityLoad.source === REPOSITORY_SOURCE.CANONICAL
                 && sourceStatus
             ) {
                 sourceStatus.textContent = 'Local Library ready · Canonical summaries · provider offline';

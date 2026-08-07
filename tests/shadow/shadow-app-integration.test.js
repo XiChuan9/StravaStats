@@ -240,12 +240,12 @@ test('enabled shadow mode reports unavailable browser storage without blocking L
     });
 });
 
-test('Demo, Legacy, unsafe, and disabled shadow modes keep page reads Legacy with zero writer', async () => {
+test('Demo, Legacy, invalid-default, and disabled Shadow select exact reads with zero writer', async () => {
     const scenarios = [
-        { sessionMode: APP_SESSION_MODE.DEMO, mode: 'shadow', enabled: true },
-        { sessionMode: APP_SESSION_MODE.REAL, mode: 'legacy', enabled: true },
-        { sessionMode: APP_SESSION_MODE.REAL, mode: 'unknown', enabled: true },
-        { sessionMode: APP_SESSION_MODE.REAL, mode: 'shadow', enabled: false }
+        { sessionMode: APP_SESSION_MODE.DEMO, mode: 'shadow', enabled: true, readMode: 'legacy' },
+        { sessionMode: APP_SESSION_MODE.REAL, mode: 'legacy', enabled: true, readMode: 'legacy' },
+        { sessionMode: APP_SESSION_MODE.REAL, mode: 'unknown', enabled: true, readMode: 'canonical' },
+        { sessionMode: APP_SESSION_MODE.REAL, mode: 'shadow', enabled: false, readMode: 'legacy' }
     ];
     for (const scenario of scenarios) {
         await withPlatform({
@@ -267,7 +267,7 @@ test('Demo, Legacy, unsafe, and disabled shadow modes keep page reads Legacy wit
             assert.equal(result.data, activities);
             assert.deepEqual(calls.factory, [{
                 sessionMode: scenario.sessionMode,
-                mode: 'legacy'
+                mode: scenario.readMode
             }]);
             assert.equal(exportApplicationShadowParityReport(), null);
         });

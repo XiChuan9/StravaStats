@@ -7,8 +7,12 @@ import {
   resolveFeatureFlags,
 } from '../js/app/feature-flags.js';
 
-test('feature flags default to the legacy repository with local v2 paths disabled', () => {
+test('feature flags default to the canonical repository with local v2 paths otherwise unchanged', () => {
   assert.deepEqual(resolveFeatureFlags(), DEFAULT_FEATURE_FLAGS);
+  assert.equal(DEFAULT_FEATURE_FLAGS.dataRepositoryMode, 'canonical');
+  assert.equal(DEFAULT_FEATURE_FLAGS.localImportEnabled, false);
+  assert.equal(DEFAULT_FEATURE_FLAGS.canonicalShadowWriteEnabled, false);
+  assert.equal(Object.isFrozen(DEFAULT_FEATURE_FLAGS), true);
 });
 
 test('feature flag overrides are explicit and validated', () => {
@@ -45,7 +49,7 @@ test('shadow writing requires the exact shadow mode and strict boolean gate', ()
       resolved.dataRepositoryMode,
       ['legacy', 'canonical'].includes(dataRepositoryMode)
         ? dataRepositoryMode
-        : 'legacy',
+        : 'canonical',
     );
   }
   assert.equal(
@@ -85,4 +89,30 @@ test('runtime feature flags do not mutate the defaults', () => {
   assert.equal(resolved.localImportEnabled, true);
   assert.equal(DEFAULT_FEATURE_FLAGS.localImportEnabled, false);
   assert.equal(Object.isFrozen(resolved), true);
+});
+
+test('absent and hostile runtime overrides fail closed to the canonical production default', () => {
+  const accessor = {};
+  let getterCalls = 0;
+  Object.defineProperty(accessor, 'dataRepositoryMode', {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      return 'legacy';
+    },
+  });
+
+  for (const override of [
+    undefined,
+    null,
+    {},
+    { dataRepositoryMode: 'unknown' },
+    accessor,
+  ]) {
+    const resolved = getFeatureFlags(override);
+    assert.equal(resolved.dataRepositoryMode, 'canonical');
+    assert.equal(resolved.localImportEnabled, false);
+    assert.equal(resolved.canonicalShadowWriteEnabled, false);
+  }
+  assert.equal(getterCalls, 0);
 });
