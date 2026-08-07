@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 M21 / PR-24 |
-| Status | Documentation implemented; independent findings under repair |
+| Status | Final Review Closure complete; post-Closure exact-head CI and control-tower Ready pending |
 | Branch | `codex/v2/release-documentation` |
 | Base | `integration/v2` at `61d7b032305fd8f12d71544315f06d553213801d` |
 | Draft PR title | `docs(v2): complete release candidate documentation` |
@@ -292,7 +292,7 @@ blocked even though PR-24 can document them.
 | Shadow differences reviewed | PARTIAL | safe report contract passes; no real-library difference review |
 | Canonical can switch back to Legacy | PASS | PR-23 explicit non-destructive Legacy/Shadow served evidence |
 | No private data enters Git/logs/external telemetry | BLOCKED | privacy guard and safe Diagnostics redaction pass; inherited raw console and server/API logging, exact location/date external requests, telemetry/CDN, and SW API-cache risks remain production privacy release blockers |
-| Migration/Backup/Privacy/Troubleshooting docs complete | PARTIAL | PR-24 deliverables not implemented at A2 freeze |
+| Migration/Backup/Privacy/Troubleshooting docs complete | PASS | all seven surfaces implemented; two findings-first repair rounds complete; final fresh independent review reports no actionable findings |
 | Final rollback drill | BLOCKED | not run; production deployment/SW/data-owner rehearsal required |
 | Release owner approval | BLOCKED | no production release approval; Ready/merge would not satisfy this gate |
 
@@ -427,6 +427,66 @@ control tower updates the PR body and marks the Draft PR Ready. The control towe
 clear Squash Merge authorization package. Work stops at Ready until merge is separately authorized.
 Even after merge, PR-24 does not authorize a tag, GitHub Release, deploy, production Service Worker
 rollout, default-branch change, or cleanup.
+
+## Final Review Closure
+
+The cumulative implementation remains exactly the ten frozen paths. The commit sequence before
+this Task-Brief-only Closure is:
+
+```text
+2db33e3  A1 Task Brief only; Draft PR #30 opened
+7bfa2ff  A2 evidence ledger and literal scope freeze
+43568c1  seven release-documentation surfaces and initial docs contracts
+bfd61f0  first independent-review privacy/settings/gate corrections
+f4f584f  fresh-review safe-code/feature-flag/link corrections
+```
+
+The first independent findings-first review reported three actionable P1 findings: the backup
+guides incorrectly excluded shared Legacy-compatible settings, inherited raw logging and exact
+date/location egress were under-disclosed, and the documentation gate was conditionally described
+as `PASS` while its ledger row remained `PARTIAL`. The fixes narrowed the excluded data to Legacy
+activity/provider cache, documented additive shared-setting restore and its conflicts, promoted the
+inherited privacy risks to release blockers, and restored one current ledger status. Corresponding
+contracts failed first and then passed.
+
+The next fresh review reported two P1 findings and one P2 finding: README safe-code language was
+broader than reviewed V2 boundaries, Migration Guide misstated partial feature-flag overrides, and
+root-absolute served-route Markdown links were broken when rendered on GitHub. Three added contracts
+failed 9/12 before the fixes and passed 12/12 afterward. The fixes scope safe-code claims to reviewed
+V2 Import/Backup/Diagnostics boundaries, describe omitted versus invalid flag behavior exactly, and
+render served routes as executable code instead of invalid repository links.
+
+A different final independent reviewer then reviewed all ten paths at exact implementation head
+`f4f584f362aa3975cde1d98950be1d127887c7e3` against the exact base and reported **no actionable
+findings**. That review rechecked every prior finding class plus commands, links, routes, package/V4,
+backup, rollback, privacy, compatibility evidence, gate status, and Ready/release separation. It
+used no real/private data or browser profile.
+
+Final pre-Closure evidence is:
+
+```text
+node --test tests/docs/release-docs.test.js   PASS 12/12
+npm run check:syntax                         PASS 239 files
+npm run check:privacy                        PASS
+npm test                                     PASS 1469/1469
+git diff --check                             PASS
+literal frozen-scope audit                   PASS 10/10, no eleventh path
+CI f4f584f                                    PASS run 31156073677, job 92795732760
+```
+
+Earlier exact implementation and repair heads also passed GitHub CI: `43568c1` in run
+`31155032677`/job `92792565446`, and `bfd61f0` in run `31155709199`/job `92794617434`. Served UI
+evidence remains explicitly reused from the accepted PR-14/15/20/21/22/23 disposable synthetic
+Chromium runs; PR-24 did not rerun a browser and does not claim cross-browser, real-account,
+private-library, production Service Worker, deployment, or rollback-drill evidence.
+
+This Closure commit changes only this Task Brief. Its SHA cannot exist until commit time, so the
+required real remote depth-1 checkout and exact-head GitHub CI are post-commit evidence. They must
+both resolve to the pushed Closure SHA before the control tower may update PR #30 and mark it Ready.
+The Production “All CI passes” ledger row therefore remains `PARTIAL` inside this immutable Closure
+record; a successful post-Closure run is reported in the PR/control-tower handoff without amending
+the Closure. Ready remains distinct from merge, tag, release, deploy, Service Worker rollout, or
+cleanup.
 
 ## Privacy, migration, rollback, and release impact
 
