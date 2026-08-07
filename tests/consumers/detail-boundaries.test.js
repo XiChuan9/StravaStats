@@ -120,6 +120,7 @@ const rendererSources = new Map(
     ]))
 );
 const advancedSource = await source('js/pages/activity/advanced-analysis.js');
+const streamPresentationSource = await source('js/pages/detail/stream-presentation.js');
 
 test('page module imports perform zero Token, storage, network, or provider I/O', async () => {
     const guardedNames = [
@@ -668,11 +669,79 @@ test('Router, DetailReadSession, and page composition module graph is acyclic', 
     ]);
 });
 
+test('Stream presentation reduction remains confined to renderer construction seams', async () => {
+    for (const [relativePath, value] of rendererSources) {
+        assert.match(value, /\.\.\/detail\/stream-presentation\.js/, relativePath);
+        assert.match(value, /prepareStreamMapPresentation\(/, relativePath);
+        if (relativePath !== 'js/pages/swim/swim.js') {
+            const chartAdapter = /function createStreamPresentationChart[\s\S]*?\n}\n/.exec(value)?.[0] ?? '';
+            assert.match(chartAdapter, /presentation\.status === 'too-fragmented'/, relativePath);
+            assert.match(chartAdapter, /Too fragmented to plot\./, relativePath);
+        }
+    }
+    for (const relativePath of [
+        'js/pages/activity/advanced-analysis.js',
+        'js/tabs/run-plus.js',
+        'js/analysis/index.js',
+        'js/repository/index.js'
+    ]) {
+        assert.doesNotMatch(
+            await source(relativePath),
+            /stream-presentation|reduceAlignedStreamData|prepareStreamChartPresentation|prepareStreamMapPresentation/,
+            relativePath
+        );
+    }
+    assert.doesNotMatch(
+        streamPresentationSource,
+        /repository|storage|indexedDB|localStorage|sessionStorage|fetch\(|XMLHttpRequest|WebSocket|console\./
+    );
+});
+
+test('Stream performance harnesses are deterministic native modules with recording boundaries', async () => {
+    const nodeGate = await source('tests/performance/stream-performance.test.js');
+    for (const pattern of [
+        /POINT_COUNT\s*=\s*200_000/,
+        /WARMUPS\s*=\s*10/,
+        /SAMPLES\s*=\s*30/,
+        /p95.*<=\s*25/s,
+        /maximum.*<=\s*50/s
+    ]) {
+        assert.match(nodeGate, pattern);
+    }
+
+    const browserHarness = await source('tests/performance/performance-browser-smoke.html');
+    const moduleScript = /<script type="module">([\s\S]*?)<\/script>/.exec(browserHarness);
+    assert.notEqual(moduleScript, null);
+    execFileSync(
+        process.execPath,
+        ['--input-type=module', '--check'],
+        { input: moduleScript[1], encoding: 'utf8' }
+    );
+    for (const pattern of [
+        /POINT_COUNT\s*=\s*200_000/,
+        /ACTIVITY_COUNTS\s*=\s*Object\.freeze\(\[5_000,\s*10_000\]\)/,
+        /REPETITIONS\s*=\s*5/,
+        /repositoryEnvelopeP95Ms\s*<=\s*1_000/,
+        /activitiesSecondRafP95Ms\s*<=\s*1_500/,
+        /startupGetStreams\s*===\s*0/,
+        /RecordingChart/,
+        /RecordingLeaflet/,
+        /PerformanceObserver/,
+        /chartPointMaximum/,
+        /mapPointMaximum/,
+        /uncaught/
+    ]) {
+        assert.match(browserHarness, pattern);
+    }
+    assert.doesNotMatch(browserHarness, /https?:\/\/|fixtures\/private|indexedDB|localStorage|sessionStorage/);
+});
+
 test('consumer boundary tests contain no private fixtures or external URLs', async () => {
     const entries = await readdir(new URL('tests/consumers/', projectRootUrl));
     for (const name of [
         'detail-consumers.test.js',
-        'detail-boundaries.test.js'
+        'detail-boundaries.test.js',
+        'stream-presentation.test.js'
     ]) {
         assert.equal(entries.includes(name), true);
         const value = await source(`tests/consumers/${name}`);

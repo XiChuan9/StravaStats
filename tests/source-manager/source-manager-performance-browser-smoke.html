@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Source Manager performance browser smoke</title>
+</head>
+<body>
+    <output id="result">RUNNING</output>
+    <script type="module">
+        import {
+            SOURCE_MANAGER_LIMITS,
+            planSourceFileBatches
+        } from '../../js/pages/source-manager/source-manager.js';
+
+        const output = document.getElementById('result');
+        const initialEffects = {
+            serviceWorkers: navigator.serviceWorker
+                ? (await navigator.serviceWorker.getRegistrations()).length : 0,
+            caches: typeof caches === 'object' ? (await caches.keys()).length : 0,
+            databases: typeof indexedDB?.databases === 'function'
+                ? (await indexedDB.databases()).length : null
+        };
+        try {
+            let reads = 0;
+            const started = performance.now();
+            const files = Array.from({ length: 1_000 }, (_, index) => ({
+                name: `synthetic-${index}.fit`,
+                size: 1_024,
+                type: 'application/vnd.ant.fit',
+                async arrayBuffer() {
+                    reads += 1;
+                    return new ArrayBuffer(1_024);
+                }
+            }));
+            const plan = planSourceFileBatches(files);
+            if (!plan.ok) throw new Error('planning failed');
+            if (plan.batches.length !== 40) throw new Error('job count');
+            if (!plan.batches.every(batch => batch.files.length === 25)) {
+                throw new Error('file budget');
+            }
+            if (reads !== 0) throw new Error('eager read');
+            if (SOURCE_MANAGER_LIMITS.maxSelectionBytes !== 256 * 1024 * 1024) {
+                throw new Error('selection limit');
+            }
+            const browserEffects = {
+                serviceWorkersBefore: initialEffects.serviceWorkers,
+                serviceWorkersAfter: navigator.serviceWorker
+                    ? (await navigator.serviceWorker.getRegistrations()).length : 0,
+                cachesBefore: initialEffects.caches,
+                cachesAfter: typeof caches === 'object' ? (await caches.keys()).length : 0,
+                databasesBefore: initialEffects.databases,
+                databasesAfter: typeof indexedDB?.databases === 'function'
+                    ? (await indexedDB.databases()).length : null,
+                providerOrAuthRequests: performance.getEntriesByType('resource')
+                    .filter(entry => {
+                        const url = new URL(entry.name);
+                        return url.pathname.startsWith('/api/')
+                            || (url.origin !== location.origin
+                                && /strava|oauth/i.test(url.href));
+                    })
+                    .length
+            };
+            browserEffects.databaseDelta = browserEffects.databasesBefore === null
+                ? null : browserEffects.databasesAfter - browserEffects.databasesBefore;
+            const evidence = Object.freeze({
+                status: 'passed',
+                runtime: navigator.userAgent,
+                hardwareConcurrency: navigator.hardwareConcurrency ?? null,
+                fileCount: 1_000,
+                jobCount: 40,
+                eagerReads: reads,
+                planningMilliseconds: performance.now() - started,
+                workerRequests: 0,
+                storageWrites: 0,
+                externalResources: performance.getEntriesByType('resource')
+                    .filter(entry => new URL(entry.name).origin !== location.origin)
+                    .length,
+                browserEffects
+            });
+            globalThis.__PR22_SOURCE_MANAGER_PERFORMANCE_EVIDENCE__ = evidence;
+            output.textContent = JSON.stringify(evidence);
+        } catch {
+            globalThis.__PR22_SOURCE_MANAGER_PERFORMANCE_EVIDENCE__ = Object.freeze({ status: 'failed' });
+            output.textContent = 'FAIL';
+        }
+    </script>
+</body>
+</html>

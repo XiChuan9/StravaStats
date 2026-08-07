@@ -6,6 +6,11 @@
 
 import { formatDate as sharedFormatDate, formatPaceSwim } from '../../shared/utils/index.js';
 import { renderWeatherAnalysis, renderWeatherMapDetails } from '../../shared/utils/weather-analysis.js';
+import {
+    prepareStreamMapPresentation,
+    reduceAlignedStreamData,
+    restoreStreamGapMask
+} from '../detail/stream-presentation.js';
 
 // =====================================================
 // 1. INITIALIZATION & CONFIGURATION
@@ -310,11 +315,8 @@ function renderActivityMap(activity, streams) {
         window.swimActivityMap = null;
     }
 
-    const map = L.map('activity-map').setView(coords[0], 13);
-    window.swimActivityMap = map;
     const style = document.getElementById('activity-map-style')?.value || 'osm';
     const layer = MAP_LAYERS[style] || MAP_LAYERS.osm;
-    L.tileLayer(layer.url, layer.options).addTo(map);
 
     const routeSelect = document.getElementById('route-color-mode');
     const availableModes = getAvailableRouteColorModes(streams);
@@ -326,22 +328,37 @@ function renderActivityMap(activity, streams) {
 
     const colorMode = routeSelect?.value || 'route';
     const routeValues = getRouteColorSeries(streams, colorMode, coords.length);
+    const presentation = prepareStreamMapPresentation(coords, routeValues);
+    const displayCoords = presentation.coordinates;
+    const displayRouteValues = presentation.routeValues;
+    if (presentation.status === 'too-fragmented') {
+        DOM.map.textContent = 'Too fragmented to plot.';
+        if (allowExternalWeatherForPage) {
+            renderWeatherAnalysis(activity, coords);
+            renderWeatherMapDetails(activity, coords, null, false);
+        }
+        return;
+    }
 
-    if (routeValues) {
-        const finiteValues = routeValues.filter(Number.isFinite);
+    const map = L.map('activity-map').setView(displayCoords[0], 13);
+    window.swimActivityMap = map;
+    L.tileLayer(layer.url, layer.options).addTo(map);
+
+    if (displayRouteValues) {
+        const finiteValues = displayRouteValues.filter(Number.isFinite);
         const minValue = Math.min(...finiteValues);
         const maxValue = Math.max(...finiteValues);
         const group = L.featureGroup().addTo(map);
 
-        for (let i = 1; i < coords.length; i++) {
-            const value = routeValues[i] ?? routeValues[i - 1];
+        for (let i = 1; i < displayCoords.length; i++) {
+            const value = displayRouteValues[i] ?? displayRouteValues[i - 1];
             const color = valueToRouteColor(value, minValue, maxValue);
-            L.polyline([coords[i - 1], coords[i]], { color, weight: 4, opacity: 0.9 }).addTo(group);
+            L.polyline([displayCoords[i - 1], displayCoords[i]], { color, weight: 4, opacity: 0.9 }).addTo(group);
         }
 
         map.fitBounds(group.getBounds());
     } else {
-        const polylineLayer = L.polyline(coords, { color: '#FC5200', weight: 4 }).addTo(map);
+        const polylineLayer = L.polyline(displayCoords, { color: '#FC5200', weight: 4 }).addTo(map);
         map.fitBounds(polylineLayer.getBounds());
     }
 
@@ -982,17 +999,24 @@ function renderStreamCharts(streams, activity) {
         canvas.parentElement.style.display = visible ? '' : 'none';
     }
 
-    const numSegments = CONFIG.NUM_SEGMENTS;
-    let distance = streams.distance?.data || [];
-    let heartrate = streams.heartrate?.data || [];
-    let cadence = streams.cadence?.data || [];
-
-    const step = Math.max(1, Math.floor(distance.length / numSegments));
-    const segmentedDistance = distance.filter((_, i) => i % step === 0);
-    const segmentedHR = heartrate.filter((_, i) => i % step === 0);
-    const segmentedCadence = cadence.filter((_, i) => i % step === 0);
-    const hasHR = heartrate.length > 0 && segmentedHR.some(v => v !== null);
-    const hasCadence = cadence.length > 0 && segmentedCadence.some(v => v !== null);
+    const distance = streams.distance?.data || [];
+    const heartrate = restoreStreamGapMask(
+        streams.heartrate?.data || [],
+        originalStreamData?.heartrate?.data || streams.heartrate?.data || []
+    );
+    const cadence = restoreStreamGapMask(
+        streams.cadence?.data || [],
+        originalStreamData?.cadence?.data || streams.cadence?.data || []
+    );
+    const presentation = reduceAlignedStreamData(
+        { distance, heartrate, cadence },
+        { criticalKeys: ['heartrate', 'cadence'] }
+    );
+    const displayDistance = presentation.data.distance;
+    const displayHeartrate = presentation.data.heartrate;
+    const displayCadence = presentation.data.cadence;
+    const hasHR = heartrate.length > 0 && heartrate.some(v => v !== null);
+    const hasCadence = cadence.length > 0 && cadence.some(v => v !== null);
 
     setChartContainerVisibility('chart-heartrate', hasHR);
     setChartContainerVisibility('chart-cadence', hasCadence);
@@ -1003,10 +1027,10 @@ function renderStreamCharts(streams, activity) {
         createChart('chart-heartrate', {
             type: 'line',
             data: {
-                labels: segmentedDistance.map(d => d ? (d / 100).toFixed(0) : '0'),
+                labels: displayDistance.map(d => d ? (d / 100).toFixed(0) : '0'),
                 datasets: [{
                     label: 'Heart Rate (bpm)',
-                    data: segmentedHR,
+                    data: displayHeartrate,
                     borderColor: chartColors.heartrate.primary,
                     backgroundColor: chartColors.heartrate.secondary,
                     tension: 0.1,
@@ -1030,10 +1054,10 @@ function renderStreamCharts(streams, activity) {
         createChart('chart-cadence', {
             type: 'line',
             data: {
-                labels: segmentedDistance.map(d => d ? (d / 100).toFixed(0) : '0'),
+                labels: displayDistance.map(d => d ? (d / 100).toFixed(0) : '0'),
                 datasets: [{
                     label: 'Stroke Rate (SPM)',
-                    data: segmentedCadence,
+                    data: displayCadence,
                     borderColor: chartColors.cadence.primary,
                     backgroundColor: chartColors.cadence.secondary,
                     tension: 0.1,

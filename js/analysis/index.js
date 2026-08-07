@@ -14,6 +14,7 @@ import { FatigueEngine } from './engines/fatigue.js';
 import { AeroEngine } from './engines/aero.js';
 import { PhysiologyEngine } from './engines/physiology.js';
 import { InsightsGenerator } from './engines/insights-generator.js';
+import { recordDiagnosticError } from '../diagnostics/index.js';
 
 export class ActivityAnalysisEngine {
     constructor(config = {}) {
@@ -72,7 +73,7 @@ export class ActivityAnalysisEngine {
 
             // 5. Sport-specific analysis
             const sportType = metadata.sport_type || metadata.type || 'Unknown';
-            console.log(`🏃 Running ${sportType} analysis...`);
+            console.log('🏃 Running activity analysis...');
             const analyzer = await getAnalyzerForSport(sportType, result.track);
             result.sport_analysis = await analyzer.analyze();
 
@@ -113,12 +114,16 @@ export class ActivityAnalysisEngine {
             result.sport_analysis.processing_time_ms = Date.now() - startTime;
             result.sport_analysis.analysis_version = '1.0';
 
-            console.log(`✅ Analysis complete in ${result.sport_analysis.processing_time_ms}ms`);
+            console.log('✅ Analysis complete.');
 
             return result.sport_analysis;
 
         } catch (error) {
-            console.error('❌ Analysis failed:', error);
+            recordDiagnosticError({
+                page: 'activity',
+                category: 'analysis',
+                code: 'ANALYSIS_FAILED'
+            });
             throw error;
         }
     }

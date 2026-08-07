@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#fc5200">
+    <meta
+        http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'"
+    >
+    <title>Diagnostics — StravaStats</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/styles/source-manager.css">
+</head>
+<body>
+    <main class="source-manager" aria-labelledby="diagnostics-title">
+        <header class="page-header">
+            <a class="brand" href="/" aria-label="StravaStats home">StravaStats</a>
+            <div>
+                <p class="eyebrow">Private local support</p>
+                <h1 id="diagnostics-title">Diagnostics</h1>
+                <p class="page-intro">Review bounded, privacy-safe browser diagnostics and export a local snapshot.</p>
+            </div>
+        </header>
+
+        <section id="blocking-error" class="notice notice--error" role="alert" hidden>
+            <h2>Diagnostics are unavailable</h2>
+            <p>No activity data was changed. You can continue using the local library.</p>
+            <code>DIAGNOSTICS_START_FAILED</code>
+        </section>
+
+        <section class="library-section" aria-labelledby="estimate-title">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Current browser origin</p>
+                    <h2 id="estimate-title">Storage estimate</h2>
+                </div>
+                <p id="estimate-status" class="session-label">Checking estimate</p>
+            </div>
+            <dl class="preview-list">
+                <div><dt>Estimated origin storage use</dt><dd id="estimate-usage">Unavailable</dd></div>
+                <div><dt>Estimated origin storage quota</dt><dd id="estimate-quota">Unavailable</dd></div>
+                <div><dt>Estimated origin storage headroom</dt><dd id="estimate-headroom">Unavailable</dd></div>
+                <div><dt>Estimated origin storage used</dt><dd id="estimate-percent">Unavailable</dd></div>
+            </dl>
+            <p class="source-note">These are rounded estimates for this entire browser origin, not exact StravaStats bytes, free disk space, or a persistence guarantee.</p>
+            <button type="button" id="refresh-diagnostics" class="button">Refresh</button>
+        </section>
+
+        <section class="report-section" aria-labelledby="errors-title">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">This tab session</p>
+                    <h2 id="errors-title">Recent errors</h2>
+                </div>
+                <p id="error-storage-status" class="session-label">Checking records</p>
+            </div>
+            <ol id="recent-errors" class="report-list"></ol>
+            <p id="empty-errors">No recent errors recorded.</p>
+        </section>
+
+        <section class="report-section" aria-labelledby="import-performance-title">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">This tab session</p>
+                    <h2 id="import-performance-title">Import performance</h2>
+                </div>
+                <p id="import-performance-status" class="session-label">Checking records</p>
+            </div>
+            <ol id="import-performance-records" class="report-list"></ol>
+            <p id="empty-import-performance">No Import performance records in this session.</p>
+        </section>
+
+        <section class="report-section" aria-labelledby="export-title">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Bounded JSON snapshot</p>
+                    <h2 id="export-title">Export diagnostics</h2>
+                </div>
+            </div>
+            <p>The export contains only the coarse estimate and safe fixed error and Import performance records shown here. It is limited to 256 KiB.</p>
+            <button type="button" id="export-diagnostics" class="button button--primary">Export diagnostics JSON</button>
+            <p id="diagnostics-status" role="status" aria-live="polite">Ready.</p>
+            <p><a class="button" href="/storage-backup.html">Back to Storage &amp; Backup</a></p>
+        </section>
+    </main>
+    <script type="module" src="/js/diagnostics.js"></script>
+</body>
+</html>

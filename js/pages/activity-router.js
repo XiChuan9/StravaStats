@@ -1,6 +1,12 @@
 import { isDemoMode } from '../demo/index.js';
 import { createRepository } from '../repository/index.js';
 import { getFeatureFlags } from '../app/feature-flags.js';
+import {
+    installGlobalDiagnosticsListeners,
+    recordDiagnosticError
+} from '../diagnostics/index.js';
+
+installGlobalDiagnosticsListeners({ page: 'activity-router' });
 
 const ROUTER_OPTION_KEYS = new Set([
     'search',
@@ -339,6 +345,11 @@ export async function routeActivity(options = {}) {
         normalized.navigate(`${targetPage}?id=${encodeURIComponent(activityId)}`);
         return true;
     } catch {
+        recordDiagnosticError({
+            page: 'activity-router',
+            category: 'page',
+            code: 'ACTIVITY_ROUTE_FAILED'
+        });
         try {
             (normalized?.errorRenderer ?? renderActivityRouterError)();
         } catch {

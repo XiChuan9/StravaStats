@@ -24,6 +24,11 @@ import {
     STRAVA_ZIP_MEDIA_TYPE,
     expandStravaZipArtifact
 } from './strava-zip.js';
+import {
+    observeImportCancellation,
+    recordImportPerformanceOperation,
+    trackImportWorkerRequest
+} from '../diagnostics/import-performance.js';
 
 const OPTION_FIELDS = Object.freeze(['importStore', 'worker', 'crypto', 'createId']);
 const ARTIFACT_FIELDS = Object.freeze(['mediaType', 'content']);
@@ -252,6 +257,52 @@ export function createImportService(options) {
         return true;
     }
 
+    async function cancellationCheckpoint(jobId, status) {
+        if (!cancellation.has(jobId)) return false;
+        observeImportCancellation();
+        if (status === J.HASHING) {
+            await transitionJob(jobId, J.HASHING, J.DECODING);
+            return cancelRemaining(jobId, J.DECODING);
+        }
+        return cancelRemaining(jobId, status);
+    }
+
+    async function terminalizeHashingQuota(jobId, items) {
+        const quotaFailure = importError(
+            IMPORT_ERROR_CODE.STORAGE_QUOTA_EXCEEDED,
+            true,
+            'persist'
+        );
+        for (let index = 0; index < items.length; index += 1) {
+            if (isTerminalImportItem(items[index].status)) continue;
+            try {
+                if (items[index].status === I.VALIDATING) {
+                    items[index] = await transitionItem(items[index], I.HASHING);
+                }
+                if (items[index].status === I.HASHING) {
+                    items[index] = await failItem(
+                        items[index],
+                        I.FAILED_STORAGE,
+                        quotaFailure
+                    );
+                }
+            } catch {
+                // Terminalization is best-effort under storage pressure.
+                break;
+            }
+        }
+        await transitionJob(jobId, J.HASHING, J.DECODING);
+        await transitionJob(jobId, J.DECODING, J.NORMALIZING);
+        await transitionJob(jobId, J.NORMALIZING, J.MATCHING);
+        await transitionJob(jobId, J.MATCHING, J.PERSISTING);
+        await transitionJob(
+            jobId,
+            J.PERSISTING,
+            J.FAILED_STORAGE,
+            IMPORT_ERROR_CODE.STORAGE_QUOTA_EXCEEDED
+        );
+    }
+
     async function hash(content) {
         try {
             const bytes = new TextEncoder().encode(content);
@@ -304,11 +355,15 @@ export function createImportService(options) {
             await transitionJob(jobId, J.QUEUED, J.VALIDATING);
             jobStatus = J.VALIDATING;
             for (let index = 0; index < items.length; index += 1) {
-                items[index] = await transitionItem(items[index], I.VALIDATING);
+                items[index] = await recordImportPerformanceOperation(
+                    'validation',
+                    () => transitionItem(items[index], I.VALIDATING)
+                );
+                if (await cancellationCheckpoint(jobId, jobStatus)) return;
             }
         }
 
-        if (cancellation.has(jobId) && await cancelRemaining(jobId, jobStatus)) return;
+        if (await cancellationCheckpoint(jobId, jobStatus)) return;
 
         let viable = 0;
         for (let index = 0; index < items.length; index += 1) {
@@ -333,6 +388,7 @@ export function createImportService(options) {
             } else {
                 viable += 1;
             }
+            if (await cancellationCheckpoint(jobId, jobStatus)) return;
         }
         if (viable === 0) {
             await transitionJob(
@@ -350,7 +406,10 @@ export function createImportService(options) {
             if (isTerminalImportItem(items[index].status)) continue;
             items[index] = await transitionItem(items[index], I.HASHING);
             try {
-                const hashed = await hash(artifacts[index].content);
+                const hashed = await recordImportPerformanceOperation(
+                    'hashing',
+                    () => hash(artifacts[index].content)
+                );
                 const rawArtifactId = `raw:${hashed.sha256}`;
                 const decision = await dependencies.store.storeRawArtifact(
                     items[index].id,
@@ -376,30 +435,36 @@ export function createImportService(options) {
                     );
                 }
             } catch (error) {
+                const safe = safeImportFailure(error);
                 items[index] = await failItem(
                     items[index],
                     ownErrorValue(error, 'code') === IMPORT_ERROR_CODE.HASH_COLLISION
                         ? I.FAILED_VALIDATION
                         : I.FAILED_STORAGE,
-                    safeImportFailure(error)
+                    safe
                 );
+                if (safe.code === IMPORT_ERROR_CODE.STORAGE_QUOTA_EXCEEDED) {
+                    await terminalizeHashingQuota(jobId, items);
+                    return;
+                }
             }
+            if (await cancellationCheckpoint(jobId, jobStatus)) return;
         }
 
         await transitionJob(jobId, J.HASHING, J.DECODING);
         jobStatus = J.DECODING;
-        if (cancellation.has(jobId) && await cancelRemaining(jobId, jobStatus)) return;
+        if (await cancellationCheckpoint(jobId, jobStatus)) return;
 
         const decodedItems = new Map();
         for (let index = 0; index < items.length; index += 1) {
             if (isTerminalImportItem(items[index].status)) continue;
             items[index] = await transitionItem(items[index], I.DECODING);
             try {
-                const result = await dependencies.process({
+                const result = await trackImportWorkerRequest(() => dependencies.process({
                     mediaType: artifacts[index].mediaType,
                     content: artifacts[index].content,
                     rawArtifactId: items[index].artifactId
-                });
+                }));
                 const resultValues = ownDataValues(
                     result,
                     ['ok', 'decoded', 'code', 'retryable'],
@@ -423,6 +488,7 @@ export function createImportService(options) {
                 await transitionJob(jobId, jobStatus, J.FAILED_DECODE, safe.code);
                 return;
             }
+            if (await cancellationCheckpoint(jobId, jobStatus)) return;
         }
 
         await transitionJob(jobId, jobStatus, J.NORMALIZING);
@@ -432,10 +498,13 @@ export function createImportService(options) {
             if (isTerminalImportItem(items[index].status)) continue;
             items[index] = await transitionItem(items[index], I.NORMALIZING);
             try {
-                bundles.set(items[index].id, normalizeImportedActivity({
-                    decoded: decodedItems.get(items[index].id),
-                    rawArtifactId: items[index].artifactId
-                }));
+                bundles.set(items[index].id, await recordImportPerformanceOperation(
+                    'normalizing',
+                    async () => normalizeImportedActivity({
+                        decoded: decodedItems.get(items[index].id),
+                        rawArtifactId: items[index].artifactId
+                    })
+                ));
             } catch {
                 items[index] = await failItem(
                     items[index],
@@ -447,35 +516,76 @@ export function createImportService(options) {
                     )
                 );
             }
+            if (await cancellationCheckpoint(jobId, jobStatus)) return;
         }
-        if (cancellation.has(jobId) && await cancelRemaining(jobId, jobStatus)) return;
+        if (await cancellationCheckpoint(jobId, jobStatus)) return;
 
         await transitionJob(jobId, jobStatus, J.MATCHING);
         jobStatus = J.MATCHING;
         for (let index = 0; index < items.length; index += 1) {
             if (isTerminalImportItem(items[index].status)) continue;
-            items[index] = await transitionItem(items[index], I.MATCHING);
+            items[index] = await recordImportPerformanceOperation(
+                'matching',
+                () => transitionItem(items[index], I.MATCHING)
+            );
+            if (await cancellationCheckpoint(jobId, jobStatus)) return;
         }
-        if (cancellation.has(jobId) && await cancelRemaining(jobId, jobStatus)) return;
+        if (await cancellationCheckpoint(jobId, jobStatus)) return;
 
         await transitionJob(jobId, jobStatus, J.PERSISTING);
         jobStatus = J.PERSISTING;
+        let quotaReached = false;
+        let quotaIndex = -1;
         for (let index = 0; index < items.length; index += 1) {
             if (isTerminalImportItem(items[index].status)) continue;
             items[index] = await transitionItem(items[index], I.PERSISTING);
             try {
-                await dependencies.store.persistImportItem(
-                    items[index].id,
-                    bundles.get(items[index].id)
-                );
+                await recordImportPerformanceOperation('persistence', () => (
+                    dependencies.store.persistImportItem(
+                        items[index].id,
+                        bundles.get(items[index].id)
+                    )
+                ));
                 items[index] = await dependencies.store.getImportItem(items[index].id);
             } catch (error) {
+                const safe = mapStorageError(error, true);
                 items[index] = await failItem(
                     items[index],
                     I.FAILED_STORAGE,
-                    mapStorageError(error, true)
+                    safe
                 );
+                quotaReached = safe.code === IMPORT_ERROR_CODE.STORAGE_QUOTA_EXCEEDED;
+                if (quotaReached) quotaIndex = index;
             }
+            if (quotaReached) break;
+        }
+        if (quotaReached) {
+            const quotaFailure = importError(
+                IMPORT_ERROR_CODE.STORAGE_QUOTA_EXCEEDED,
+                true,
+                'persist'
+            );
+            for (let index = quotaIndex + 1; index < items.length; index += 1) {
+                if (isTerminalImportItem(items[index].status)) continue;
+                try {
+                    items[index] = await transitionItem(items[index], I.PERSISTING);
+                    items[index] = await failItem(
+                        items[index],
+                        I.FAILED_STORAGE,
+                        quotaFailure
+                    );
+                } catch {
+                    // Terminalization is best-effort under storage pressure.
+                    break;
+                }
+            }
+            await transitionJob(
+                jobId,
+                jobStatus,
+                J.FAILED_STORAGE,
+                IMPORT_ERROR_CODE.STORAGE_QUOTA_EXCEEDED
+            );
+            return;
         }
         await transitionJob(jobId, jobStatus, J.ANALYZING);
         jobStatus = J.ANALYZING;
@@ -515,16 +625,22 @@ export function createImportService(options) {
     }
 
     async function cancelJob(jobId) {
+        const wasActive = active.has(jobId);
+        if (wasActive) cancellation.add(jobId);
         const job = await dependencies.store.getImportJob(jobId);
-        if (!job) throw importError(IMPORT_ERROR_CODE.NOT_FOUND);
+        if (!job) {
+            cancellation.delete(jobId);
+            throw importError(IMPORT_ERROR_CODE.NOT_FOUND);
+        }
         if (
-            active.has(jobId)
+            wasActive
             && (canCancelImportJob(job.status) || job.status === J.HASHING)
         ) {
-            cancellation.add(jobId);
+            observeImportCancellation();
             return Object.freeze({ status: 'cancellation-requested' });
         }
         if (!canCancelImportJob(job.status)) {
+            cancellation.delete(jobId);
             throw importError(IMPORT_ERROR_CODE.INVALID_TRANSITION);
         }
         cancellation.add(jobId);

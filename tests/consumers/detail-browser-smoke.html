@@ -267,6 +267,7 @@
         const runRenderer = await import('../../js/pages/run/run.js');
         const bikeRenderer = await import('../../js/pages/bike/bike.js');
         const swimRenderer = await import('../../js/pages/swim/swim.js');
+        const streamPresentation = await import('../../js/pages/detail/stream-presentation.js');
         const advanced = await import('../../js/pages/activity/advanced-analysis.js');
         const analysisUi = await import('../../js/pages/activity/analysis-ui-components.js');
         const repository = await import('../../js/repository/index.js');
@@ -299,7 +300,40 @@
             invariant(typeof globalThis.classifyBike === 'function', 'CLASSIFY_BIKE_NOT_LOADED');
             invariant(Object.keys(repository).length === 5);
             invariant(counters.fetch === 0 && counters.realStorageRead === 0 && counters.indexedDB === 0);
-            return { modules: 12, classifiers: 2, importProviderIo: 0 };
+            return { modules: 13, classifiers: 2, importProviderIo: 0 };
+        });
+
+        await gate('stream-presentation-recording-boundary', async () => {
+            const pointCount = 2_001;
+            const labels = Array.from({ length: pointCount }, (_, index) => Math.floor(index / 2));
+            const first = Array.from({ length: pointCount }, (_, index) => (index % 97) - 48);
+            const second = Array.from({ length: pointCount }, (_, index) => 70 - (index % 89));
+            first[11] = 0;
+            first[12] = -0;
+            second[1_000] = null;
+            const chart = streamPresentation.prepareStreamChartPresentation(labels, [
+                { label: 'first', data: first },
+                { label: 'second', data: second }
+            ]);
+            invariant(chart.labels.length <= 1_000, 'STREAM_CHART_CAP');
+            invariant(chart.datasets.every(dataset => dataset.data.length === chart.labels.length),
+                'STREAM_CHART_ALIGNMENT');
+            new Chart(document.getElementById('chart-altitude'), {
+                type: 'line',
+                data: { labels: chart.labels, datasets: chart.datasets }
+            });
+
+            const geometry = Array.from({ length: pointCount }, (_, index) => [index % 89, index % 179]);
+            const map = streamPresentation.prepareStreamMapPresentation(geometry, first);
+            invariant(map.coordinates.length <= 2_000, 'STREAM_MAP_CAP');
+            invariant(map.routeValues.length === map.coordinates.length, 'STREAM_MAP_ALIGNMENT');
+            L.polyline(map.coordinates).addTo({});
+            return {
+                inputPoints: pointCount,
+                chartPoints: chart.labels.length,
+                mapPoints: map.coordinates.length,
+                recordingStubs: ['Chart', 'Leaflet']
+            };
         });
 
         await gate('opaque-router-ids-and-sports', async () => {

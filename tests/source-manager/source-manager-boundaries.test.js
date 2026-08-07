@@ -208,3 +208,31 @@ test('Import and Repository public surfaces remain frozen', async () => {
     assert.equal(Object.keys(repository).includes('importActivities'), false);
     assert.equal(Object.keys(repository).includes('listImportJobs'), false);
 });
+
+test('Import performance recorder is internal and Source Manager owns session configuration', async () => {
+    const root = await source('js/source-manager.js');
+    const page = await source('js/pages/source-manager/source-manager.js');
+    const importIndex = await source('js/import/index.js');
+    assert.match(root, /configureImportPerformance/);
+    assert.match(root, /sessionStorage/);
+    assert.match(root, /performance\.now/);
+    assert.doesNotMatch(page, /sessionStorage|localStorage/);
+    assert.doesNotMatch(importIndex, /import-performance/);
+});
+
+test('selection progress counts each accepted file exactly once across preflight and durable jobs', async () => {
+    const page = await source('js/pages/source-manager/source-manager.js');
+    assert.match(page, /let processedAcceptedFiles = 0/);
+    assert.match(page, /processedAcceptedFiles \+= results\.length - artifacts\.length/);
+    assert.match(page, /processedAcceptedFiles \+= artifacts\.length/);
+    assert.doesNotMatch(page, /processedSelectionFiles \+= batch\.files\.length/);
+});
+
+test('served 1,000-file planning smoke records runtime and zero eager reads', async () => {
+    const harness = await source('tests/source-manager/source-manager-performance-browser-smoke.html');
+    assert.match(harness, /__PR22_SOURCE_MANAGER_PERFORMANCE_EVIDENCE__/);
+    assert.match(harness, /fileCount:\s*1_000/);
+    assert.match(harness, /jobCount:\s*40/);
+    assert.match(harness, /eagerReads:\s*reads/);
+    assert.match(harness, /externalResources/);
+});

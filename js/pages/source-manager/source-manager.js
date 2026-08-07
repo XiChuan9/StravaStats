@@ -19,6 +19,12 @@ import {
     GPX_LIMITS,
     GPX_MEDIA_TYPE
 } from '../../decoders/gpx/decoder.js';
+import {
+    beginImportPerformanceSelection,
+    finishImportPerformanceSelection,
+    observeImportCancellation
+} from '../../diagnostics/import-performance.js';
+import { recordDiagnosticError } from '../../diagnostics/index.js';
 
 export const SOURCE_MANAGER_SESSION_MODE = Object.freeze({
     REAL: 'real',
@@ -26,7 +32,10 @@ export const SOURCE_MANAGER_SESSION_MODE = Object.freeze({
 });
 
 export const SOURCE_MANAGER_LIMITS = Object.freeze({
-    maxFiles: 100,
+    maxFiles: 1_000,
+    maxOrdinaryFilesPerJob: 25,
+    maxOrdinaryBytesPerJob: 32 * 1024 * 1024,
+    maxSelectionBytes: 256 * 1024 * 1024,
     maxCsvBytes: ACTIVITIES_CSV_LIMITS.maxBytes,
     maxZipBytes: STRAVA_ZIP_LIMITS.maxArchiveBytes,
     maxFitBytes: FIT_LIMITS.maxDecodedBytes,
@@ -38,7 +47,8 @@ const PREFLIGHT_COPY = Object.freeze({
     FILE_TYPE_UNSUPPORTED: 'This file format is not supported.',
     FILE_HEADER_INVALID: 'The file header or root does not match its selected format.',
     FILE_TOO_LARGE: 'The file is larger than the supported import limit.',
-    TOO_MANY_FILES: 'Select no more than 100 files at a time.',
+    TOO_MANY_FILES: 'Select no more than 1,000 files at a time.',
+    SELECTION_TOO_LARGE: 'Select files totaling no more than 256 MiB.',
     FILE_READ_FAILED: 'The file could not be read.',
     DEMO_IMPORT_UNAVAILABLE: 'Demo import is not available in this milestone.',
     REVIEW_STALE: 'This review item changed. Refresh the review queue.',
@@ -302,6 +312,112 @@ function preflightFailure(code, ordinal) {
     });
 }
 
+function preliminaryFailure(code, ordinal) {
+    return Object.freeze({ ordinal, result: preflightFailure(code, ordinal) });
+}
+
+export function planSourceFileBatches(values) {
+    let files;
+    try {
+        files = Array.from(values);
+    } catch {
+        return Object.freeze({
+            ok: false,
+            code: 'FILE_READ_FAILED',
+            copy: safeCopy('FILE_READ_FAILED')
+        });
+    }
+    if (files.length > SOURCE_MANAGER_LIMITS.maxFiles) {
+        return Object.freeze({
+            ok: false,
+            code: 'TOO_MANY_FILES',
+            copy: safeCopy('TOO_MANY_FILES')
+        });
+    }
+    const accepted = [];
+    const rejected = [];
+    let totalBytes = 0;
+    for (let ordinal = 0; ordinal < files.length; ordinal += 1) {
+        const snapshot = fileSnapshot(files[ordinal]);
+        if (!snapshot || !Number.isSafeInteger(snapshot.size) || snapshot.size < 0) {
+            rejected.push(preliminaryFailure('FILE_READ_FAILED', ordinal));
+            continue;
+        }
+        totalBytes += snapshot.size;
+        if (!Number.isSafeInteger(totalBytes) || totalBytes > SOURCE_MANAGER_LIMITS.maxSelectionBytes) {
+            return Object.freeze({
+                ok: false,
+                code: 'SELECTION_TOO_LARGE',
+                copy: safeCopy('SELECTION_TOO_LARGE')
+            });
+        }
+        const kind = extension(snapshot.name);
+        if (!['csv', 'zip', 'fit', 'tcx', 'gpx'].includes(kind)) {
+            rejected.push(preliminaryFailure('FILE_TYPE_UNSUPPORTED', ordinal));
+            continue;
+        }
+        const mimeFormat = recognizedMimeFormat(snapshot.type);
+        if (mimeFormat !== null && mimeFormat !== kind) {
+            rejected.push(preliminaryFailure('FILE_HEADER_INVALID', ordinal));
+            continue;
+        }
+        const maximum = {
+            csv: SOURCE_MANAGER_LIMITS.maxCsvBytes,
+            zip: SOURCE_MANAGER_LIMITS.maxZipBytes,
+            fit: SOURCE_MANAGER_LIMITS.maxFitBytes,
+            tcx: SOURCE_MANAGER_LIMITS.maxTcxBytes,
+            gpx: SOURCE_MANAGER_LIMITS.maxGpxBytes
+        }[kind];
+        if (snapshot.size > maximum) {
+            rejected.push(preliminaryFailure('FILE_TOO_LARGE', ordinal));
+            continue;
+        }
+        accepted.push(Object.freeze({ ordinal, kind, size: snapshot.size, file: files[ordinal] }));
+    }
+
+    const batches = [];
+    let ordinary = [];
+    let ordinaryBytes = 0;
+    const flushOrdinary = () => {
+        if (ordinary.length === 0) return;
+        batches.push(Object.freeze({
+            kind: 'ordinary',
+            bytes: ordinaryBytes,
+            files: Object.freeze(ordinary.map(entry => entry.file)),
+            ordinals: Object.freeze(ordinary.map(entry => entry.ordinal))
+        }));
+        ordinary = [];
+        ordinaryBytes = 0;
+    };
+    for (const entry of accepted) {
+        if (entry.kind === 'csv' || entry.kind === 'zip') {
+            flushOrdinary();
+            batches.push(Object.freeze({
+                kind: 'container',
+                bytes: entry.size,
+                files: Object.freeze([entry.file]),
+                ordinals: Object.freeze([entry.ordinal])
+            }));
+            continue;
+        }
+        if (
+            ordinary.length === SOURCE_MANAGER_LIMITS.maxOrdinaryFilesPerJob
+            || ordinaryBytes + entry.size > SOURCE_MANAGER_LIMITS.maxOrdinaryBytesPerJob
+        ) flushOrdinary();
+        ordinary.push(entry);
+        ordinaryBytes += entry.size;
+    }
+    flushOrdinary();
+    return Object.freeze({
+        ok: true,
+        artifactCount: files.length,
+        acceptedCount: accepted.length,
+        totalBytes,
+        rejected: Object.freeze(rejected),
+        batches: Object.freeze(batches)
+    });
+}
+
 export async function preflightSourceFiles(values) {
     let files;
     try {
@@ -309,8 +425,9 @@ export async function preflightSourceFiles(values) {
     } catch {
         return Object.freeze([preflightFailure('FILE_READ_FAILED', 0)]);
     }
-    if (files.length > SOURCE_MANAGER_LIMITS.maxFiles) {
-        return Object.freeze([preflightFailure('TOO_MANY_FILES', 0)]);
+    const plan = planSourceFileBatches(files);
+    if (!plan.ok) {
+        return Object.freeze([preflightFailure(plan.code, 0)]);
     }
     const results = [];
     for (let ordinal = 0; ordinal < files.length; ordinal += 1) {
@@ -497,12 +614,13 @@ export function createSourceManagerPage({ document, sessionMode, importFacade })
         live: document.getElementById('import-live'),
         alert: document.getElementById('import-alert')
     });
-    let selection = Object.freeze([]);
+    let selection = null;
     let opener = null;
     let activeSource = null;
     let activeJobId = null;
     let activeReviewToken = null;
     let importActive = false;
+    let batchCancellationRequested = false;
     let closed = false;
 
     function setSourceStatus(source, status) {
@@ -519,6 +637,11 @@ export function createSourceManagerPage({ document, sessionMode, importFacade })
 
     function showError(error) {
         const code = safeCode(error);
+        recordDiagnosticError({
+            page: 'source-manager',
+            category: 'page',
+            code: 'SOURCE_MANAGER_OPERATION_FAILED'
+        });
         elements.dialogErrorCode.textContent = code;
         elements.dialogErrorCopy.textContent = safeCopy(code);
         elements.dialogError.hidden = false;
@@ -527,6 +650,11 @@ export function createSourceManagerPage({ document, sessionMode, importFacade })
 
     function showBlockingError(error) {
         const code = safeCode(error, 'STORAGE_UNAVAILABLE');
+        recordDiagnosticError({
+            page: 'source-manager',
+            category: 'page',
+            code: 'SOURCE_MANAGER_START_FAILED'
+        });
         elements.blockingCode.textContent = code;
         elements.blockingCopy.textContent = safeCopy(code);
         elements.blocking.hidden = false;
@@ -733,14 +861,15 @@ export function createSourceManagerPage({ document, sessionMode, importFacade })
         }
     }
 
-    function renderProgress(report) {
+    function renderProgress(report, completedBefore = 0, selectionTotal = report.totals.total) {
         const completed = report.items.filter(item => TERMINAL_ITEM_OUTCOMES.has(item.outcome)).length;
+        const aggregateCompleted = completedBefore + completed;
         elements.progress.hidden = false;
-        elements.progressBar.max = Math.max(1, report.totals.total);
-        elements.progressBar.value = completed;
-        elements.progressCount.textContent = `${completed} of ${report.totals.total} complete`;
+        elements.progressBar.max = Math.max(1, selectionTotal);
+        elements.progressBar.value = Math.min(selectionTotal, aggregateCompleted);
+        elements.progressCount.textContent = `${aggregateCompleted} of ${selectionTotal} complete`;
         elements.progressStatus.textContent = `Current stage: ${report.status}`;
-        elements.live.textContent = `Import stage ${report.status}. ${completed} of ${report.totals.total} items complete.`;
+        elements.live.textContent = `Import stage ${report.status}. ${aggregateCompleted} of ${selectionTotal} items complete.`;
     }
 
     async function refreshPublicReads() {
@@ -755,7 +884,8 @@ export function createSourceManagerPage({ document, sessionMode, importFacade })
     }
 
     function resetDialog() {
-        selection = Object.freeze([]);
+        selection = null;
+        batchCancellationRequested = false;
         elements.fileInput.value = '';
         elements.selectionSummary.hidden = true;
         elements.selectionList.replaceChildren();
@@ -788,19 +918,45 @@ export function createSourceManagerPage({ document, sessionMode, importFacade })
 
     async function acceptFiles(values) {
         elements.dialogError.hidden = true;
-        const results = await preflightSourceFiles(values);
-        selection = Object.freeze(results.filter(result => result.ok));
+        const plan = planSourceFileBatches(values);
         elements.selectionList.replaceChildren();
-        for (const result of results) {
-            const suffix = result.ok
-                ? (result.rows === null ? 'ready' : `${result.rows} rows`)
-                : `${result.code}: ${result.copy}`;
-            elements.selectionList.append(text(document, 'li', `${result.label} — ${suffix}`));
+        if (!plan.ok) {
+            selection = null;
+            showError(Object.freeze({ code: plan.code }));
+            elements.selectionSummary.hidden = false;
+            elements.startImport.disabled = true;
+            elements.fileInput.value = '';
+            return;
         }
-        elements.selectionSummary.hidden = results.length === 0;
-        elements.startImport.disabled = selection.length === 0;
-        const rejected = results.filter(result => !result.ok).length;
-        elements.live.textContent = `${selection.length} files ready. ${rejected} files rejected.`;
+        selection = plan;
+        const entries = plan.batches.flatMap(batch => batch.ordinals.map((ordinal, index) => ({
+            ordinal,
+            kind: batch.kind === 'container'
+                ? extension(fileSnapshot(batch.files[index])?.name)
+                : 'file'
+        })));
+        const visible = entries.slice(0, MAX_VISIBLE_REPORT_ITEMS);
+        for (const entry of visible) {
+            const label = entry.kind === 'file'
+                ? `File ${entry.ordinal + 1}`
+                : `${entry.kind.toUpperCase()} file ${entry.ordinal + 1}`;
+            elements.selectionList.append(text(document, 'li', `${label} — ready`));
+        }
+        for (const rejected of plan.rejected.slice(0, Math.max(0, MAX_VISIBLE_REPORT_ITEMS - visible.length))) {
+            elements.selectionList.append(text(
+                document,
+                'li',
+                `${rejected.result.label} — ${rejected.result.code}: ${rejected.result.copy}`
+            ));
+        }
+        const hidden = plan.artifactCount - elements.selectionList.children.length;
+        if (hidden > 0) {
+            elements.selectionList.append(text(document, 'li', `${hidden} additional files are not shown.`));
+        }
+        elements.selectionSummary.hidden = plan.artifactCount === 0;
+        elements.startImport.disabled = plan.acceptedCount === 0;
+        const rejected = plan.rejected.length;
+        elements.live.textContent = `${plan.acceptedCount} files ready. ${rejected} files rejected.`;
         if (rejected > 0) {
             elements.alert.textContent = `${rejected} selected files were rejected by preflight.`;
         }
@@ -808,40 +964,101 @@ export function createSourceManagerPage({ document, sessionMode, importFacade })
     }
 
     async function startImport() {
-        if (selection.length === 0 || importActive) return;
+        if (!selection || selection.acceptedCount === 0 || importActive) return;
+        const currentSelection = selection;
         importActive = true;
+        batchCancellationRequested = false;
+        beginImportPerformanceSelection(currentSelection.artifactCount);
         elements.startImport.disabled = true;
         elements.close.disabled = true;
         elements.closeIcon.disabled = true;
         setSourceStatus(activeSource, 'importing');
+        const terminalCounts = {
+            completed: 0,
+            reviewRequired: 0,
+            skippedExactDuplicate: 0,
+            failed: currentSelection.rejected.length,
+            cancelled: 0,
+            notStarted: 0
+        };
+        let processedAcceptedFiles = 0;
+        let outcome = 'completed';
         try {
-            const artifacts = selection.map(result => result.artifact);
-            const started = await importFacade.importArtifacts(artifacts);
-            activeJobId = started.jobId;
-            while (!closed) {
-                const report = await importFacade.getReport(activeJobId);
-                renderProgress(report);
-                if (TERMINAL_JOB_STATUSES.has(report.status)) break;
-                await new Promise(resolve => setTimeout(resolve, 40));
+            for (const batch of currentSelection.batches) {
+                if (batchCancellationRequested || closed) break;
+                const results = await preflightSourceFiles(batch.files);
+                const artifacts = results.filter(result => result.ok).map(result => result.artifact);
+                terminalCounts.failed += results.length - artifacts.length;
+                processedAcceptedFiles += results.length - artifacts.length;
+                if (batchCancellationRequested || closed) break;
+                if (artifacts.length === 0) continue;
+                const started = await importFacade.importArtifacts(artifacts);
+                activeJobId = started.jobId;
+                if (batchCancellationRequested) {
+                    await importFacade.cancelJob(activeJobId);
+                }
+                while (!closed) {
+                    const report = await importFacade.getReport(activeJobId);
+                    renderProgress(
+                        report,
+                        currentSelection.rejected.length + processedAcceptedFiles,
+                        currentSelection.artifactCount
+                    );
+                    if (TERMINAL_JOB_STATUSES.has(report.status)) break;
+                    await new Promise(resolve => setTimeout(resolve, 40));
+                }
+                const report = await importFacade.waitForJob(activeJobId);
+                renderProgress(
+                    report,
+                    currentSelection.rejected.length + processedAcceptedFiles,
+                    currentSelection.artifactCount
+                );
+                for (const field of ['completed', 'reviewRequired', 'skippedExactDuplicate', 'failed', 'cancelled']) {
+                    terminalCounts[field] += report.totals[field] || 0;
+                }
+                processedAcceptedFiles += artifacts.length;
+                activeJobId = null;
+                const quota = report.status === 'failed_storage'
+                    || report.items.some(item => item.errorCode === 'STORAGE_QUOTA_EXCEEDED');
+                if (quota) {
+                    outcome = 'failed';
+                    break;
+                }
+                if (report.status === 'cancelled') {
+                    batchCancellationRequested = true;
+                    outcome = 'cancelled';
+                    break;
+                }
+                if (report.totals.failed > 0 || report.status !== 'completed') {
+                    outcome = 'completed_with_warnings';
+                }
             }
-            const report = await importFacade.waitForJob(activeJobId);
-            renderProgress(report);
-            const failed = report.totals.failed > 0
-                || ['failed_validation', 'failed_decode', 'failed_storage'].includes(report.status);
+            terminalCounts.notStarted = Math.max(
+                0,
+                currentSelection.acceptedCount - processedAcceptedFiles
+            );
+            if (batchCancellationRequested) outcome = 'cancelled';
+            const failed = terminalCounts.failed > 0 || outcome === 'failed';
             setSourceStatus(activeSource, failed ? 'error' : 'success');
-            if (report.totals.skippedExactDuplicate > 0) {
-                elements.live.textContent = 'This file was already imported exactly; no second activity was created.';
-            } else if (report.status === 'cancelled') {
+            if (outcome === 'cancelled') {
                 elements.live.textContent = 'Import cancelled. Completed items were kept.';
+            } else if (terminalCounts.skippedExactDuplicate > 0 && terminalCounts.completed === 0) {
+                elements.live.textContent = 'These files were already imported exactly; no second activities were created.';
             } else {
-                elements.live.textContent = report.status === 'completed'
+                elements.live.textContent = outcome === 'completed'
                     ? 'Import completed.' : 'Import completed with warnings.';
             }
             await refreshPublicReads();
         } catch (error) {
+            outcome = 'failed';
             setSourceStatus(activeSource, 'error');
             showError(error);
         } finally {
+            terminalCounts.notStarted = Math.max(
+                terminalCounts.notStarted,
+                currentSelection.acceptedCount - processedAcceptedFiles
+            );
+            finishImportPerformanceSelection({ outcome, terminalCounts });
             activeJobId = null;
             importActive = false;
             elements.close.disabled = false;
@@ -851,10 +1068,13 @@ export function createSourceManagerPage({ document, sessionMode, importFacade })
     }
 
     async function cancelImport() {
-        if (!importActive || activeJobId === null) return;
+        if (!importActive) return;
+        batchCancellationRequested = true;
+        observeImportCancellation();
         elements.cancelImport.disabled = true;
         elements.progressStatus.textContent = 'Cancellation requested.';
         elements.live.textContent = 'Cancellation requested.';
+        if (activeJobId === null) return;
         try {
             await importFacade.cancelJob(activeJobId);
         } catch (error) {

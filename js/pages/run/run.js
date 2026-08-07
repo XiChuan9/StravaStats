@@ -6,6 +6,11 @@
 
 import { formatDate as sharedFormatDate, formatPace as sharedFormatPace, formatPaceRun } from '../../shared/utils/index.js';
 import { renderWeatherAnalysis, renderWeatherMapDetails } from '../../shared/utils/weather-analysis.js';
+import {
+    prepareStreamChartPresentation,
+    prepareStreamMapPresentation,
+    restoreStreamGapMask
+} from '../detail/stream-presentation.js';
 
 // =====================================================
 // 1. INITIALIZATION & CONFIGURATION
@@ -358,6 +363,47 @@ function createChart(canvasId, config) {
     chartInstances[canvasId] = new Chart(canvas, config);
 }
 
+function createStreamPresentationChart(canvasId, config) {
+    const presentation = prepareStreamChartPresentation(
+        config.data.labels,
+        config.data.datasets
+    );
+    const canvas = document.getElementById(canvasId);
+    if (canvas?.dataset) canvas.dataset.presentationState = presentation.status;
+    let status = document.getElementById(`${canvasId}-presentation-status`);
+    if (canvas && !status) {
+        status = document.createElement('p');
+        status.id = `${canvasId}-presentation-status`;
+        status.setAttribute('role', 'status');
+        canvas.insertAdjacentElement('afterend', status);
+    }
+    if (presentation.status === 'too-fragmented') {
+        if (chartInstances[canvasId]) {
+            chartInstances[canvasId].destroy();
+            delete chartInstances[canvasId];
+        }
+        if (canvas) canvas.hidden = true;
+        if (status) {
+            status.hidden = false;
+            status.textContent = 'Too fragmented to plot.';
+        }
+        return null;
+    }
+    if (canvas) canvas.hidden = false;
+    if (status) {
+        status.hidden = true;
+        status.textContent = '';
+    }
+    return createChart(canvasId, {
+        ...config,
+        data: {
+            ...config.data,
+            labels: presentation.labels,
+            datasets: presentation.datasets
+        }
+    });
+}
+
 /**
  * Applies smoothing to a copy of stream data based on smoothing level
  */
@@ -521,7 +567,10 @@ function renderDynamicChart(primaryData, primaryType, primaryShow, secondaryData
         const primaryColor = chartColors[primaryData];
         datasets.push({
             label: getDataLabel(primaryData),
-            data: dynamicChartData[primaryData],
+            data: restoreStreamGapMask(
+                dynamicChartData[primaryData],
+                originalDynamicChartData[primaryData]
+            ),
             borderColor: primaryColor.primary,
             backgroundColor: primaryColor.secondary,
             borderWidth: 2,
@@ -544,7 +593,10 @@ function renderDynamicChart(primaryData, primaryType, primaryShow, secondaryData
         const secondaryColor = chartColors[secondaryData];
         datasets.push({
             label: getDataLabel(secondaryData),
-            data: dynamicChartData[secondaryData],
+            data: restoreStreamGapMask(
+                dynamicChartData[secondaryData],
+                originalDynamicChartData[secondaryData]
+            ),
             borderColor: secondaryColor.primary,
             backgroundColor: secondaryColor.secondary,
             borderWidth: 2,
@@ -615,7 +667,7 @@ function renderDynamicChart(primaryData, primaryType, primaryShow, secondaryData
         plugins: backgroundPlugin ? [backgroundPlugin] : [],
     };
 
-    createChart('dynamic-custom-chart', config);
+    createStreamPresentationChart('dynamic-custom-chart', config);
 }
 
 /**
@@ -989,11 +1041,8 @@ function renderActivityMap(activity, streams) {
                 window.activityRouteMap.remove();
                 window.activityRouteMap = null;
             }
-            const map = L.map('activity-map').setView(coords[0], 13);
-            window.activityRouteMap = map;
             const style = document.getElementById('activity-map-style')?.value || 'osm';
             const layer = MAP_LAYERS[style] || MAP_LAYERS.osm;
-            L.tileLayer(layer.url, layer.options).addTo(map);
 
             const routeSelect = document.getElementById('route-color-mode');
             const availableModes = getAvailableRouteColorModes(streams);
@@ -1005,22 +1054,37 @@ function renderActivityMap(activity, streams) {
 
             const colorMode = routeSelect?.value || 'route';
             const routeValues = getRouteColorSeries(streams, colorMode, coords.length);
+            const presentation = prepareStreamMapPresentation(coords, routeValues);
+            const displayCoords = presentation.coordinates;
+            const displayRouteValues = presentation.routeValues;
+            if (presentation.status === 'too-fragmented') {
+                DOM.map.textContent = 'Too fragmented to plot.';
+                if (allowExternalWeatherForPage) {
+                    renderWeatherAnalysis(activity, coords);
+                    renderWeatherMapDetails(activity, coords, null, false);
+                }
+                return;
+            }
 
-            if (routeValues) {
-                const finiteValues = routeValues.filter(Number.isFinite);
+            const map = L.map('activity-map').setView(displayCoords[0], 13);
+            window.activityRouteMap = map;
+            L.tileLayer(layer.url, layer.options).addTo(map);
+
+            if (displayRouteValues) {
+                const finiteValues = displayRouteValues.filter(Number.isFinite);
                 const minValue = Math.min(...finiteValues);
                 const maxValue = Math.max(...finiteValues);
                 const group = L.featureGroup().addTo(map);
 
-                for (let i = 1; i < coords.length; i++) {
-                    const value = routeValues[i] ?? routeValues[i - 1];
+                for (let i = 1; i < displayCoords.length; i++) {
+                    const value = displayRouteValues[i] ?? displayRouteValues[i - 1];
                     const color = valueToRouteColor(value, minValue, maxValue);
-                    L.polyline([coords[i - 1], coords[i]], { color, weight: 4, opacity: 0.9 }).addTo(group);
+                    L.polyline([displayCoords[i - 1], displayCoords[i]], { color, weight: 4, opacity: 0.9 }).addTo(group);
                 }
 
                 map.fitBounds(group.getBounds());
             } else {
-                const polyline = L.polyline(coords, { color: '#FC5200', weight: 4 }).addTo(map);
+                const polyline = L.polyline(displayCoords, { color: '#FC5200', weight: 4 }).addTo(map);
                 map.fitBounds(polyline.getBounds());
             }
 
@@ -1161,7 +1225,7 @@ function renderStreamCharts(streams, activity, smoothingLevel = 100) {
         const color = colors[colorKey] ? colors[colorKey].primary : chartColors[colorKey].primary;
         const bgColor = colors[colorKey] ? colors[colorKey].secondary : chartColors[colorKey].secondary;
 
-        createChart(canvasId, {
+        createStreamPresentationChart(canvasId, {
             type: 'line',
             data: {
                 labels: distLabels,
@@ -1212,7 +1276,10 @@ function renderStreamCharts(streams, activity, smoothingLevel = 100) {
 
     // Altitude chart
     if (hasAltitude) {
-        const smoothAltitude = rollingMean(altitude.data, windowSizes.altitude);
+        const smoothAltitude = restoreStreamGapMask(
+            rollingMean(altitude.data, windowSizes.altitude),
+            originalStreamData?.altitude?.data || altitude.data
+        );
         createStreamChart('chart-altitude', 'Altitud (m)', smoothAltitude, 'altitude');
     }
 
@@ -1229,14 +1296,17 @@ function renderStreamCharts(streams, activity, smoothingLevel = 100) {
                 paceStreamData.push(null);
             }
         }
-        const smoothPaceStreamData = rollingMean(paceStreamData, windowSizes.pace);
+        const smoothPaceStreamData = restoreStreamGapMask(
+            rollingMean(paceStreamData, windowSizes.pace),
+            paceStreamData
+        );
         const paceLabels = distLabels.slice(1);
 
         const colors = getClassificationBasedColors();
         const paceColor = colors.pace ? colors.pace.primary : chartColors.pace.primary;
         const paceBgColor = colors.pace ? colors.pace.secondary : chartColors.pace.secondary;
 
-        createChart('chart-pace-distance', {
+        createStreamPresentationChart('chart-pace-distance', {
             type: 'line',
             data: {
                 labels: paceLabels,
@@ -1265,20 +1335,29 @@ function renderStreamCharts(streams, activity, smoothingLevel = 100) {
 
     // Heart rate chart
     if (hasHeartrate) {
-        const smoothHeartrate = rollingMean(heartrate.data, windowSizes.heartrate);
+        const smoothHeartrate = restoreStreamGapMask(
+            rollingMean(heartrate.data, windowSizes.heartrate),
+            originalStreamData?.heartrate?.data || heartrate.data
+        );
         createStreamChart('chart-heart-distance', 'FC (bpm)', smoothHeartrate, 'heartrate');
     }
 
     // Cadence chart
     if (hasCadence) {
         const cadenceData = activity.type === 'Run' ? cadence.data.map(c => c * 2) : cadence.data;
-        const smoothCadence = rollingMean(cadenceData, windowSizes.cadence);
+        const smoothCadence = restoreStreamGapMask(
+            rollingMean(cadenceData, windowSizes.cadence),
+            originalStreamData?.cadence?.data || cadence.data
+        );
         createStreamChart('chart-cadence-distance', 'Cadencia (spm)', smoothCadence, 'cadence');
     }
 
     // Power (watts) chart
     if (hasWatts) {
-        const smoothWatts = rollingMean(watts.data, windowSizes.watts);
+        const smoothWatts = restoreStreamGapMask(
+            rollingMean(watts.data, windowSizes.watts),
+            originalStreamData?.watts?.data || watts.data
+        );
         createStreamChart('chart-watts-distance', 'Power (W)', smoothWatts, 'watts');
     }
 }

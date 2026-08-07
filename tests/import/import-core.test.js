@@ -265,8 +265,10 @@ test('CSV cancellation retains no unfinished row and performs no Canonical write
     const gate = new Promise(resolve => { release = resolve; });
     const reachedGate = new Promise(resolve => { reached = resolve; });
     let first = true;
+    let calls = 0;
     const worker = {
         async process(input) {
+            calls += 1;
             if (first) {
                 first = false;
                 reached();
@@ -287,6 +289,7 @@ test('CSV cancellation retains no unfinished row and performs no Canonical write
     const report = await core.waitForJob(run.jobId);
     assert.equal(report.status, 'cancelled');
     assert.equal(report.totals.cancelled, 2);
+    assert.equal(calls, 1);
     assert.equal((await core.previewActivities()).total, 0);
     await core.close();
 });
@@ -656,9 +659,78 @@ test('quota fault aborts the per-item Canonical transaction and reports a safe c
     } finally {
         IDBObjectStore.prototype.add = originalAdd;
     }
-    assert.equal(report.status, 'completed_with_warnings');
+    assert.equal(report.status, 'failed_storage');
     assert.equal(report.items[0].errorCode, IMPORT_ERROR_CODE.STORAGE_QUOTA_EXCEEDED);
     assert.doesNotMatch(JSON.stringify(report), /private platform text/);
+    assert.equal((await core.previewActivities()).total, 0);
+    await core.close();
+});
+
+test('quota stops scheduling later persistence while preserving earlier item commits', async () => {
+    const indexedDB = new IDBFactory();
+    const realStore = store(indexedDB);
+    let persistenceCalls = 0;
+    const wrappedStore = {
+        ...realStore,
+        async persistImportItem(...args) {
+            persistenceCalls += 1;
+            if (persistenceCalls === 2) {
+                throw Object.freeze({ code: 'QUOTA_EXCEEDED' });
+            }
+            return realStore.persistImportItem(...args);
+        }
+    };
+    const core = service(wrappedStore);
+    await core.initialize();
+    const template = JSON.parse((await artifact()).content);
+    const artifacts = [0, 1, 2].map(index => {
+        const value = structuredClone(template);
+        value.activity.id = `synthetic-quota-${index}`;
+        value.streams.activityId = value.activity.id;
+        value.sources[0].id = `synthetic-source-${index}`;
+        value.sources[0].activityId = value.activity.id;
+        return { mediaType: SYNTHETIC_JSON_MEDIA_TYPE, content: JSON.stringify(value) };
+    });
+    const run = await core.importArtifacts(artifacts);
+    const report = await core.waitForJob(run.jobId);
+    assert.equal(persistenceCalls, 2);
+    assert.equal(report.status, 'failed_storage');
+    assert.equal(report.items[1].errorCode, IMPORT_ERROR_CODE.STORAGE_QUOTA_EXCEEDED);
+    assert.equal(report.items[2].errorCode, IMPORT_ERROR_CODE.STORAGE_QUOTA_EXCEEDED);
+    assert.equal(report.totals.completed, 1);
+    assert.equal(report.totals.failed, 2);
+    assert.equal((await core.previewActivities()).total, 1);
+    await core.close();
+});
+
+test('raw-artifact quota stops hashing and safely terminalizes every later item as failed_storage', async () => {
+    const indexedDB = new IDBFactory();
+    const realStore = store(indexedDB);
+    let rawArtifactCalls = 0;
+    const wrappedStore = {
+        ...realStore,
+        async storeRawArtifact() {
+            rawArtifactCalls += 1;
+            throw Object.freeze({
+                code: 'QUOTA_EXCEEDED',
+                message: 'private raw-artifact quota detail'
+            });
+        }
+    };
+    const core = service(wrappedStore);
+    await core.initialize();
+    const input = await artifact();
+    const run = await core.importArtifacts([input, input, input]);
+    const report = await core.waitForJob(run.jobId);
+    assert.equal(rawArtifactCalls, 1);
+    assert.equal(report.status, 'failed_storage');
+    assert.equal(report.totals.failed, 3);
+    assert.equal(report.totals.cancelled, 0);
+    assert.deepEqual(
+        report.items.map(item => item.errorCode),
+        Array(3).fill(IMPORT_ERROR_CODE.STORAGE_QUOTA_EXCEEDED)
+    );
+    assert.doesNotMatch(JSON.stringify(report), /private raw-artifact quota detail/);
     assert.equal((await core.previewActivities()).total, 0);
     await core.close();
 });

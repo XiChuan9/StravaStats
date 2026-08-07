@@ -6,6 +6,12 @@ import {
 } from '../../repository/index.js';
 import '../../shared/utils/speed-insights.js';
 import { createDetailReadSession } from '../detail/detail-read-session.js';
+import {
+    installGlobalDiagnosticsListeners,
+    recordDiagnosticError
+} from '../../diagnostics/index.js';
+
+installGlobalDiagnosticsListeners({ page: 'bike' });
 
 export const BIKE_STREAM_TYPES = Object.freeze([
     'distance',
@@ -163,6 +169,11 @@ export async function initializeBikePage({
 } = {}) {
     const activityId = activityIdFromSearch(search);
     if (activityId === null) {
+        recordDiagnosticError({
+            page: 'bike',
+            category: 'page',
+            code: 'DETAIL_ID_INVALID'
+        });
         errorRenderer();
         return false;
     }
@@ -197,6 +208,11 @@ export async function initializeBikePage({
         });
         return true;
     } catch {
+        recordDiagnosticError({
+            page: 'bike',
+            category: 'page',
+            code: 'DETAIL_LOAD_FAILED'
+        });
         errorRenderer();
         return false;
     }
