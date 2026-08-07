@@ -316,3 +316,23 @@ V3 -> V4 只在一个 versionchange transaction 中创建两个 store/index 集�
 成功升级后，旧 physical-v3 代码以 `VERSION_UNSUPPORTED` 安全失败，不得降级、清库或
 重建。代码回滚必须使用支持 v4 的版本；应用数据回滚仍通过独立保留的 Legacy 数据库和
 既有 feature flag。候选/决策记录继续保留，不作为自动清理对象。
+
+## 18. PR-21 accepted backup and restore profile
+
+PR-21 不改变 physical V4、store、index、database version 或 migration registry。备份使用
+专用 deterministic stored ZIP32，固定 17 个 entry；archive 和单 entry 上限均为
+268,435,456 bytes。当前实现明确是 whole-buffer，不声称 streaming、chunking、resume 或
+backpressure。CRC32 与 central-directory SHA-256 校验、manifest 版本/计数/hash、全部记录
+结构和内部引用验证在任何目标写入前完成。
+
+恢复只接受数据库不存在或 exact empty V4 baseline。不存在时在一个 versionchange
+transaction 创建现有 V4 描述符并写入备份；空基线时在一个包含 13 stores 的 readwrite
+transaction 内重新检查并写入。除空基线的 metadata/migrations 外一律使用 `add`，不提供
+delete、clear、rename、swap 或 non-empty overwrite。transaction abort、quota、constraint、
+取消或进程中断不会留下部分 V4 资料库。
+
+相同备份重复执行返回 `already_restored` 且不写数据库；其他 non-empty/different target
+返回 `TARGET_NOT_EMPTY`。Durable settings 不进入 V4 schema，只按冻结 allowlist 在数据库
+成功后 additive 写入；冲突在数据库写入前返回 `TARGET_SETTINGS_CONFLICT`，中途失败返回
+`SETTINGS_PENDING`，重复同一备份仅补齐缺失 setting。Legacy database/cache 始终不被打开、
+升级、写入或删除。

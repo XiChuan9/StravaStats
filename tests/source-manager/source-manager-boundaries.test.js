@@ -82,6 +82,38 @@ test('same-origin page has four source cards and complete accessible import cont
     assert.doesNotMatch(html, /FIT, TCX, and GPX are not supported yet/);
     assert.match(html, /Disconnecting and deleting local data are separate actions/);
     assert.doesNotMatch(html, /https?:\/\//);
+    assert.match(html, /href="\/storage-backup\.html">Storage &amp; Backup<\/a>/);
+    assert.doesNotMatch(html, /storage-backup\.html\?mode=real/);
+    const backupApp = await source('js/app/storage-backup.js');
+    assert.match(backupApp, /source\.pathname === '\/source-manager\.html'/);
+    assert.match(backupApp, /source\.origin === origin/);
+    assert.match(backupApp, /STORAGE_BACKUP_SESSION_MODE\.DEMO/);
+});
+
+test('PR-21 freezes an exact sixteen-path hard maximum with no scope expansion', async () => {
+    const brief = await source('docs/tasks/pr-21-backup-restore.md');
+    const allowed = [
+        'docs/tasks/pr-21-backup-restore.md',
+        'docs/migrations/indexeddb-v2.md',
+        'docs/migrations/rollback-plan.md',
+        'source-manager.html',
+        'storage-backup.html',
+        'js/storage-backup.js',
+        'js/app/storage-backup.js',
+        'js/pages/storage-backup/storage-backup.js',
+        'js/backup/index.js',
+        'js/backup/codec.js',
+        'js/backup/backup-service.js',
+        'tests/backup/codec.test.js',
+        'tests/backup/backup-service.test.js',
+        'tests/backup/backup-boundaries.test.js',
+        'tests/backup/backup-browser-smoke.html',
+        'tests/source-manager/source-manager-boundaries.test.js'
+    ];
+    assert.equal(new Set(allowed).size, 16);
+    for (const path of allowed) assert.equal(brief.includes(path), true, path);
+    assert.match(brief, /hard maximum is exactly sixteen paths/i);
+    assert.match(brief, /seventeenth path pauses implementation/i);
 });
 
 test('page consumer does not select storage/provider/auth or disclose raw inputs', async () => {

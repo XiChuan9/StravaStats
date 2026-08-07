@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta
+        http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'nonce-pr21-backup'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'"
+    >
+    <title>PR-21 deterministic backup browser smoke</title>
+    <style>
+        body { font: 16px system-ui; margin: 2rem; }
+        [data-state="passed"] { color: #176b37; }
+        [data-state="failed"] { color: #9b1c1c; }
+    </style>
+</head>
+<body>
+    <h1>PR-21 backup source</h1>
+    <p id="status" data-state="running">Preparing deterministic synthetic V4 data.</p>
+    <a id="download" hidden>Download deterministic backup</a>
+    <pre id="result"></pre>
+    <script type="module" nonce="pr21-backup">
+        import { createBackupService } from '../../js/backup/index.js';
+        import { createCanonicalStore } from '../../js/storage/index.js';
+
+        const FIXED_TIME = Date.parse('2026-08-07T05:06:07.008Z');
+        const ACTIVITY_ID = 'browser:opaque/001?#';
+        const status = document.getElementById('status');
+        const result = document.getElementById('result');
+        const download = document.getElementById('download');
+
+        function bundle() {
+            return {
+                schemaVersion: 1,
+                activity: {
+                    schemaVersion: 1,
+                    id: ACTIVITY_ID,
+                    sportCategory: 'run',
+                    sportVariant: null,
+                    startTimeUtc: '2026-08-07T04:00:00.000Z',
+                    timeZone: { ianaName: 'Etc/UTC', utcOffsetMinutes: 0 },
+                    capabilities: {
+                        hasGps: false,
+                        hasHeartRate: false,
+                        hasPower: false,
+                        hasCadence: false,
+                        hasLaps: true
+                    },
+                    name: 'Deterministic browser activity',
+                    distanceMeters: 10_000,
+                    movingTimeSeconds: 3_000,
+                    elapsedTimeSeconds: 3_000,
+                    elevationGainMeters: 0,
+                    extensions: { missingMarker: null, positiveZero: 0, negativeZero: -0 }
+                },
+                streams: { activityId: ACTIVITY_ID, series: [] },
+                laps: [{
+                    id: `${ACTIVITY_ID}:lap:0`,
+                    activityId: ACTIVITY_ID,
+                    index: 0,
+                    startOffsetSeconds: 0,
+                    elapsedTimeSeconds: 3_000
+                }],
+                events: [],
+                sources: [{
+                    id: `${ACTIVITY_ID}:source`,
+                    activityId: ACTIVITY_ID,
+                    provider: 'synthetic-provider',
+                    externalId: null,
+                    rawArtifactId: null,
+                    acquisitionMethod: 'local-file',
+                    deviceId: null,
+                    importedAt: '2026-08-07T04:00:00.000Z'
+                }],
+                devices: [],
+                warnings: [],
+                versionMetadata: {
+                    schemaVersion: 1,
+                    parserVersion: 'browser-test@1',
+                    normalizerVersion: 'browser-test@1',
+                    analysisVersion: null,
+                    settingsVersion: 'browser-test@1',
+                    inputHash: null
+                }
+            };
+        }
+
+        async function run() {
+            const beforeDatabases = typeof indexedDB.databases === 'function'
+                ? await indexedDB.databases()
+                : [];
+            const beforeCaches = await caches.keys();
+            const beforeWorkers = await navigator.serviceWorker.getRegistrations();
+            const storage = createCanonicalStore({
+                indexedDB,
+                IDBKeyRange,
+                now: () => FIXED_TIME,
+                applicationVersion: 'pr21-browser@1'
+            });
+            await storage.initialize();
+            await storage.putBundle(bundle());
+            localStorage.setItem('dashboard_settings', '{"units":"metric"}');
+            localStorage.setItem('training_goals', '{"weeklyDistance":0}');
+            const service = createBackupService({
+                indexedDB,
+                IDBKeyRange,
+                crypto,
+                now: () => FIXED_TIME,
+                applicationVersion: 'pr21-browser@1',
+                settingsReader: () => ({
+                    dashboard_settings: localStorage.getItem('dashboard_settings'),
+                    training_goals: localStorage.getItem('training_goals')
+                }),
+                settingsWriter: (key, value) => localStorage.setItem(key, value)
+            });
+            const exported = await service.exportLibrary();
+            const validated = await service.validateBackup(exported.blob);
+            const archiveBytes = new Uint8Array(await exported.blob.arrayBuffer());
+            let archiveBinary = '';
+            for (let offset = 0; offset < archiveBytes.length; offset += 32_768) {
+                archiveBinary += String.fromCharCode(
+                    ...archiveBytes.subarray(offset, offset + 32_768)
+                );
+            }
+            window.__backupBytesBase64 = btoa(archiveBinary);
+            download.href = URL.createObjectURL(exported.blob);
+            download.download = exported.filename;
+            download.hidden = false;
+            await service.close();
+            await storage.close();
+            const afterDatabases = typeof indexedDB.databases === 'function'
+                ? await indexedDB.databases()
+                : [];
+            const afterCaches = await caches.keys();
+            const afterWorkers = await navigator.serviceWorker.getRegistrations();
+            return Object.freeze({
+                status: 'passed',
+                byteLength: exported.byteLength,
+                activityCount: validated.activityCount,
+                beforeDatabaseNames: beforeDatabases.map(value => value.name).sort(),
+                afterDatabaseNames: afterDatabases.map(value => value.name).sort(),
+                beforeCacheCount: beforeCaches.length,
+                afterCacheCount: afterCaches.length,
+                beforeWorkerCount: beforeWorkers.length,
+                afterWorkerCount: afterWorkers.length
+            });
+        }
+
+        run().then(observation => {
+            window.__backupSmoke = observation;
+            status.dataset.state = 'passed';
+            status.textContent = 'Synthetic backup is ready.';
+            result.textContent = JSON.stringify(observation, null, 2);
+        }).catch(() => {
+            window.__backupSmoke = Object.freeze({ status: 'failed', code: 'BROWSER_SMOKE_FAILED' });
+            status.dataset.state = 'failed';
+            status.textContent = 'Browser smoke failed safely.';
+        });
+    </script>
+</body>
+</html>
