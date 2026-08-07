@@ -181,3 +181,36 @@ test('release prose keeps compatibility and external-resource evidence qualified
     assert.doesNotMatch(text, /(?:all|fully) cross-browser (?:tests? )?(?:pass|passed)/i);
     assert.doesNotMatch(text, /production (?:deployment|release|Service Worker)[^\n]*(?:pass|passed|complete)/i);
 });
+
+test('backup and privacy guides disclose shared Legacy-compatible settings truthfully', async () => {
+    const [backup, privacy] = await Promise.all([
+        source('docs/guides/backup-guide.md'),
+        source('docs/guides/privacy-guide.md')
+    ]);
+    for (const document of [backup, privacy]) {
+        assert.match(document, /shared Legacy-compatible (?:user )?settings/i);
+        assert.match(document, /add(?:ed|itive)[^\n]*(?:restore|settings)|restore[^\n]*add(?:ed|itive)/i);
+        assert.match(document, /does not include[^\n]*Legacy activity/i);
+    }
+    assert.match(backup, /TARGET_SETTINGS_CONFLICT/);
+});
+
+test('release blockers disclose inherited raw console and server logging', async () => {
+    const [limitations, privacy, brief] = await Promise.all([
+        source('docs/guides/known-limitations.md'),
+        source('docs/guides/privacy-guide.md'),
+        source('docs/tasks/pr-24-release-documentation.md')
+    ]);
+    for (const document of [limitations, privacy, brief]) {
+        assert.match(document, /raw console[^\n]*(?:server|API)|(?:server|API)[^\n]*raw console/i);
+        assert.match(document, /release blocker/i);
+        assert.match(document, /exact (?:activity )?(?:location|coordinates)[^\n]*(?:date|external)|exact[^\n]*date[^\n]*(?:location|coordinates|external)/i);
+    }
+    assert.match(privacy, /safe Diagnostics[^\n]*does not[^\n]*all application logs/i);
+});
+
+test('release-gate status does not claim a conditional PASS', async () => {
+    const brief = await source('docs/tasks/pr-24-release-documentation.md');
+    assert.doesNotMatch(brief, /advances[^\n]*`PASS`[^\n]*subject to/i);
+    assert.match(brief, /Migration\/Backup\/Privacy\/Troubleshooting docs complete \| (?:PARTIAL|PASS) \|/);
+});

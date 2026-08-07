@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 M21 / PR-24 |
-| Status | Documentation and local verification complete; independent review pending |
+| Status | Documentation implemented; independent findings under repair |
 | Branch | `codex/v2/release-documentation` |
 | Base | `integration/v2` at `61d7b032305fd8f12d71544315f06d553213801d` |
 | Draft PR title | `docs(v2): complete release candidate documentation` |
@@ -291,7 +291,7 @@ blocked even though PR-24 can document them.
 | Run Plus / NSM passes | PASS | deterministic actual-served route evidence |
 | Shadow differences reviewed | PARTIAL | safe report contract passes; no real-library difference review |
 | Canonical can switch back to Legacy | PASS | PR-23 explicit non-destructive Legacy/Shadow served evidence |
-| No private data enters Git/logs/external telemetry | BLOCKED | privacy guard and diagnostics redaction pass; inherited telemetry/CDN and SW API-cache risks remain |
+| No private data enters Git/logs/external telemetry | BLOCKED | privacy guard and safe Diagnostics redaction pass; inherited raw console and server/API logging, exact location/date external requests, telemetry/CDN, and SW API-cache risks remain production privacy release blockers |
 | Migration/Backup/Privacy/Troubleshooting docs complete | PARTIAL | PR-24 deliverables not implemented at A2 freeze |
 | Final rollback drill | BLOCKED | not run; production deployment/SW/data-owner rehearsal required |
 | Release owner approval | BLOCKED | no production release approval; Ready/merge would not satisfy this gate |
@@ -368,9 +368,9 @@ synthetic data. PR-24 changes no served source, route, behavior, or fixture and 
 the browser gates were rerun during this documentation task.
 
 At this implementation head, the Production row “Migration/Backup/Privacy/Troubleshooting docs
-complete” advances from A2 `PARTIAL` to implementation `PASS`, subject to independent review and
-exact-head CI. “All CI passes” remains `PARTIAL` until the Final Review Closure head receives fresh
-GitHub CI. Every other `PARTIAL`, `BLOCKED`, and `NOT RUN` row remains unchanged.
+complete” remains `PARTIAL`: the artifacts exist, but independent review and Final Review Closure
+are not complete. “All CI passes” also remains `PARTIAL` until the Final Review Closure head receives
+fresh GitHub CI. Every other `PARTIAL`, `BLOCKED`, and `NOT RUN` row remains unchanged.
 
 ## Required documentation contracts
 

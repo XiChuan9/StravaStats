@@ -23,7 +23,8 @@ they do not look like a person's name.
 
 - Canonical activities and Import records: IndexedDB `strava-stats-v2` V4.
 - Preserved Legacy data: separate `strava-dashboard-cache` and established Legacy localStorage.
-- Approved durable UI/analysis settings: localStorage; an allowlist is included in V2 backup.
+- Approved durable UI/analysis settings: localStorage; shared Legacy-compatible user settings from
+  the explicit allowlist are included in V2 backup.
 - Recent Diagnostics errors and import performance: bounded sessionStorage with in-memory fallback.
 - Provider Tokens: Legacy auth storage, outside V2 backup and Diagnostics.
 
@@ -52,9 +53,14 @@ GPS, heart-rate, power, devices, import logs, duplicate decisions, and settings.
 or otherwise access-controlled outside the repository. Do not attach it to a bug report. Do not
 rename it to bypass the privacy guard.
 
-The backup intentionally excludes Token/Authorization material, provider connection, Legacy
-storage, Cache Storage, Service Worker state, and session Diagnostics. Read the
-[Backup Guide](./backup-guide.md) before sharing or restoring anything.
+Restore adds missing shared Legacy-compatible user settings additively after the database
+transaction; an existing different value produces `TARGET_SETTINGS_CONFLICT` before database
+mutation. Those restored settings may affect the UI after an explicit Legacy rollback.
+
+The backup does not include Legacy activity or provider cache payloads. It also excludes
+Token/Authorization material, provider connection state, Cache Storage, Service Worker state, and
+session Diagnostics. Read the [Backup Guide](./backup-guide.md) before sharing or restoring
+anything.
 
 ## Provider, external service, and telemetry boundary
 
@@ -67,19 +73,25 @@ Other established pages are not fully offline:
   Leaflet;
 - root declares Google Tag Manager/Analytics and same-origin Vercel Insights;
 - Legacy provider features use same-origin serverless API routes;
-- weather/maps can use external services;
+- weather/maps can send exact activity date and coordinates to external services when invoked;
 - the existing AI Chat uses an explicitly user-supplied external AI key and sends prepared context
   to that service when the user invokes it.
 
 These are inherited external and telemetry boundaries, not evidence that private activity data is
-uploaded by local import. They remain production privacy-review blockers. Never include filename,
+uploaded by local import. Exact location/date external requests remain a production privacy release
+blocker until the release owner reviews and accepts or removes the behavior. Never include filename,
 route, user identity, Token, raw payload, or health/power data in product analytics events.
 
 ## Console, DOM, and error handling
 
-Public errors use closed safe codes. Do not add `console.log(error)`, raw caught objects, provider
-responses, activity objects, storage records, identifiers, or filenames. User-facing recovery copy
-must not echo a malicious filename or platform message. Use [Diagnostics](/diagnostics.html) and
+The reviewed V2 import, restore, and Diagnostics surfaces use closed safe codes, but that guarantee
+does not cover every inherited application path. Inherited raw console and server/API logging is a
+production privacy release blocker: established analysis/weather code can log activity values, and
+serverless provider routes can log provider response/error values. Safe Diagnostics does not make all application logs safe.
+
+Do not add `console.log(error)`, raw caught objects, provider responses, activity objects, storage
+records, identifiers, or filenames. User-facing recovery copy in a reviewed safe-code boundary must
+not echo a malicious filename or platform message. Use [Diagnostics](/diagnostics.html) and
 [Troubleshooting](./troubleshooting.md) instead of asking users to paste their full console or
 storage contents.
 

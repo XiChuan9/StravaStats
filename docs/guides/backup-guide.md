@@ -66,11 +66,19 @@ handled after the database transaction.
 restored database and continues additive settings work. Never delete V4 or overwrite an existing
 setting as a shortcut.
 
-## What backup does not touch
+## Shared settings and data backup does not touch
 
-V2 backup/restore does not include or modify:
+The approved settings snapshot contains shared Legacy-compatible user settings, including the
+documented dashboard, analysis, training-goal, and `gear-custom-*` allowlist. Restore adds missing
+settings additively after the database transaction. A different existing value stops validation
+before database mutation with `TARGET_SETTINGS_CONFLICT`; a post-commit settings verification issue
+returns `SETTINGS_PENDING`. Because these settings are shared, a successful restore can affect the
+UI settings seen after an explicit rollback to Legacy.
 
-- Legacy `strava-dashboard-cache` or Legacy localStorage/cache;
+V2 backup does not include Legacy activity or provider cache payloads such as
+`strava-dashboard-cache`, `strava_activities`, athlete/zones/gears/demo/provider/token records. It
+also does not include or modify:
+
 - provider connections, Strava Token, or Authorization material;
 - Cache Storage or Service Worker state;
 - session-only Diagnostics errors or performance records;
