@@ -559,8 +559,8 @@ export function createImportService(options) {
                 quotaReached = safe.code === IMPORT_ERROR_CODE.STORAGE_QUOTA_EXCEEDED;
                 if (quotaReached) quotaIndex = index;
             }
-            if (quotaReached) break;
             if (await cancellationCheckpoint(jobId, jobStatus)) return;
+            if (quotaReached) break;
         }
         if (quotaReached) {
             const quotaFailure = importError(

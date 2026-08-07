@@ -651,6 +651,50 @@ test('cancellation during an in-flight persistence stops the next persistence sc
     await core.close();
 });
 
+test('cancellation latched during an in-flight quota failure cancels only unfinished items', async () => {
+    const indexedDB = new IDBFactory();
+    const realStore = store(indexedDB);
+    let releasePersistence;
+    let reachedPersistence;
+    let persistenceCalls = 0;
+    const persistenceGate = new Promise(resolve => { releasePersistence = resolve; });
+    const persistenceReached = new Promise(resolve => { reachedPersistence = resolve; });
+    const wrappedStore = {
+        ...realStore,
+        async persistImportItem() {
+            persistenceCalls += 1;
+            reachedPersistence();
+            await persistenceGate;
+            throw Object.freeze({ code: 'QUOTA_EXCEEDED' });
+        }
+    };
+    const core = service(wrappedStore);
+    await core.initialize();
+    const first = await artifact();
+    const run = await core.importArtifacts([
+        first,
+        { ...first, content: `${first.content}\n` }
+    ]);
+    await persistenceReached;
+    let cancellationResult;
+    try {
+        cancellationResult = await core.cancelJob(run.jobId);
+    } finally {
+        releasePersistence();
+    }
+    assert.deepEqual(cancellationResult, { status: 'cancellation-requested' });
+
+    const report = await core.waitForJob(run.jobId);
+    assert.equal(report.status, 'cancelled');
+    assert.equal(report.totals.failed, 1);
+    assert.equal(report.totals.cancelled, 1);
+    assert.equal(report.items[0].errorCode, IMPORT_ERROR_CODE.STORAGE_QUOTA_EXCEEDED);
+    assert.equal(report.items[1].errorCode, IMPORT_ERROR_CODE.IMPORT_CANCELLED);
+    assert.equal(persistenceCalls, 1);
+    assert.equal((await core.previewActivities()).total, 0);
+    await core.close();
+});
+
 for (const boundary of ['queued', 'validating', 'decoding', 'normalizing', 'matching']) {
     test(`cancellation at ${boundary} stops unfinished items without a Canonical write`, async () => {
         const indexedDB = new IDBFactory();
