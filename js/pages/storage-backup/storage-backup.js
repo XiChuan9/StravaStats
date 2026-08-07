@@ -1,4 +1,5 @@
 import { BACKUP_ERROR_CODE } from '../../backup/index.js';
+import { recordDiagnosticError } from '../../diagnostics/index.js';
 
 export const STORAGE_BACKUP_SESSION_MODE = Object.freeze({
     REAL: 'real',
@@ -101,6 +102,11 @@ export function createStorageBackupPage({ document, sessionMode, URL }) {
             elements.status.textContent = 'Backup created.';
             elements.detail.textContent = `${formatBytes(result.byteLength)} · ${result.activityCount} activities · ${result.createdAt}`;
         } catch (error) {
+            recordDiagnosticError({
+                page: 'storage-backup',
+                category: 'backup',
+                code: 'BACKUP_EXPORT_FAILED'
+            });
             showError(error);
         } finally {
             setBusy(false);
@@ -118,6 +124,11 @@ export function createStorageBackupPage({ document, sessionMode, URL }) {
             elements.detail.textContent = `${formatBytes(result.byteLength)} · ${result.activityCount} activities · ${result.createdAt}`;
             elements.count.textContent = String(result.activityCount);
         } catch (error) {
+            recordDiagnosticError({
+                page: 'storage-backup',
+                category: 'backup',
+                code: 'BACKUP_RESTORE_FAILED'
+            });
             showError(error);
         } finally {
             setBusy(false);

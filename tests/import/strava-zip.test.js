@@ -547,7 +547,7 @@ test('ZIP cancellation retains durable rows but performs no Canonical write', as
     await core.close();
 });
 
-test('ZIP quota failure aborts one Canonical transaction and allows the next row', async () => {
+test('ZIP quota failure aborts one Canonical transaction and stops later rows', async () => {
     const indexedDB = new IDBFactory();
     const importStore = store(indexedDB);
     const core = service(importStore, 'quota');
@@ -568,15 +568,19 @@ test('ZIP quota failure aborts one Canonical transaction and allows the next row
     } finally {
         IDBObjectStore.prototype.add = originalAdd;
     }
-    assert.equal(report.status, 'completed_with_warnings');
-    assert.equal(report.totals.completed, 1);
-    assert.equal(report.totals.failed, 1);
+    assert.equal(report.status, 'failed_storage');
+    assert.equal(report.totals.completed, 0);
+    assert.equal(report.totals.failed, 2);
     assert.equal(
         report.items[0].errorCode,
         IMPORT_ERROR_CODE.STORAGE_QUOTA_EXCEEDED
     );
+    assert.equal(
+        report.items[1].errorCode,
+        IMPORT_ERROR_CODE.STORAGE_QUOTA_EXCEEDED
+    );
     assert.doesNotMatch(JSON.stringify(report), /private quota detail|opaque-run/);
-    assert.equal((await core.previewActivities()).total, 1);
+    assert.equal((await core.previewActivities()).total, 0);
     await core.close();
 });
 

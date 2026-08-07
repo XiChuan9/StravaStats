@@ -49,10 +49,9 @@ export function hideLoading() {
     }
 }
 
-export function handleError(message, error) {
-    console.error(message, error);
+export function handleError(message, _error) {
     hideLoading();
-    alert(`Error: ${message}. Check console for details.`);
+    alert(`Error: ${message}. Open Diagnostics for a safe status record.`);
 }
 
 export function setupDashboard(activities) {

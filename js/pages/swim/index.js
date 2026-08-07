@@ -6,6 +6,12 @@ import {
 } from '../../repository/index.js';
 import '../../shared/utils/speed-insights.js';
 import { createDetailReadSession } from '../detail/detail-read-session.js';
+import {
+    installGlobalDiagnosticsListeners,
+    recordDiagnosticError
+} from '../../diagnostics/index.js';
+
+installGlobalDiagnosticsListeners({ page: 'swim' });
 
 export const SWIM_STREAM_TYPES = Object.freeze([
     'distance',
@@ -160,6 +166,11 @@ export async function initializeSwimPage({
 } = {}) {
     const activityId = activityIdFromSearch(search);
     if (activityId === null) {
+        recordDiagnosticError({
+            page: 'swim',
+            category: 'page',
+            code: 'DETAIL_ID_INVALID'
+        });
         errorRenderer();
         return false;
     }
@@ -194,6 +205,11 @@ export async function initializeSwimPage({
         });
         return true;
     } catch {
+        recordDiagnosticError({
+            page: 'swim',
+            category: 'page',
+            code: 'DETAIL_LOAD_FAILED'
+        });
         errorRenderer();
         return false;
     }

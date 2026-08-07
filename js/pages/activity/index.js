@@ -6,6 +6,12 @@ import {
 } from '../../repository/index.js';
 import '../../shared/utils/speed-insights.js';
 import { createDetailReadSession } from '../detail/detail-read-session.js';
+import {
+    installGlobalDiagnosticsListeners,
+    recordDiagnosticError
+} from '../../diagnostics/index.js';
+
+installGlobalDiagnosticsListeners({ page: 'activity' });
 
 export const ACTIVITY_STREAM_TYPES = Object.freeze([
     'distance',
@@ -180,6 +186,11 @@ export async function initializeActivityPage({
 } = {}) {
     const activityId = activityIdFromSearch(search);
     if (activityId === null) {
+        recordDiagnosticError({
+            page: 'activity',
+            category: 'page',
+            code: 'DETAIL_ID_INVALID'
+        });
         errorRenderer();
         return false;
     }
@@ -215,6 +226,11 @@ export async function initializeActivityPage({
         });
         return true;
     } catch {
+        recordDiagnosticError({
+            page: 'activity',
+            category: 'page',
+            code: 'DETAIL_LOAD_FAILED'
+        });
         errorRenderer();
         return false;
     }

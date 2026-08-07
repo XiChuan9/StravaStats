@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import {
+    planSourceFileBatches,
     preflightSourceFiles,
     sourceManagerReportItemCode,
     SOURCE_MANAGER_LIMITS,
@@ -42,7 +43,10 @@ const CSV = [
 test('Source Manager constants freeze Real/Demo modes and existing file limits', () => {
     assert.deepEqual(SOURCE_MANAGER_SESSION_MODE, { REAL: 'real', DEMO: 'demo' });
     assert.deepEqual(SOURCE_MANAGER_LIMITS, {
-        maxFiles: 100,
+        maxFiles: 1_000,
+        maxOrdinaryFilesPerJob: 25,
+        maxOrdinaryBytesPerJob: 33_554_432,
+        maxSelectionBytes: 268_435_456,
         maxCsvBytes: 5_242_880,
         maxZipBytes: 67_108_864,
         maxFitBytes: 16_777_216,
@@ -230,7 +234,7 @@ test('FIT, TCX, and GPX size limits reject +1 before reading bytes', async () =>
 
 test('file-count limit fails before reading any selected file', async () => {
     let reads = 0;
-    const files = Array.from({ length: 101 }, (_, index) => ({
+    const files = Array.from({ length: 1_001 }, (_, index) => ({
         name: `synthetic-${index}.csv`,
         size: encoder.encode(CSV).byteLength,
         async arrayBuffer() {
@@ -242,6 +246,56 @@ test('file-count limit fails before reading any selected file', async () => {
     assert.equal(reads, 0);
     assert.equal(results.length, 1);
     assert.equal(results[0].code, 'TOO_MANY_FILES');
+});
+
+test('1,000 ordinary files form deterministic 25-file jobs without reading bytes', () => {
+    let reads = 0;
+    const files = Array.from({ length: 1_000 }, (_, index) => ({
+        name: `synthetic-${index}.fit`,
+        size: 1_024,
+        type: 'application/vnd.ant.fit',
+        async arrayBuffer() { reads += 1; return new ArrayBuffer(1_024); }
+    }));
+    const plan = planSourceFileBatches(files);
+    assert.equal(plan.ok, true);
+    assert.equal(plan.artifactCount, 1_000);
+    assert.equal(plan.batches.length, 40);
+    assert.equal(plan.batches.every(batch => batch.files.length === 25), true);
+    assert.equal(reads, 0);
+});
+
+test('ordinary byte budget splits jobs and CSV/ZIP are singleton container jobs', () => {
+    const mib = 1_048_576;
+    const file = (name, size) => ({ name, size, type: '', async arrayBuffer() { return new ArrayBuffer(0); } });
+    const plan = planSourceFileBatches([
+        file('one.fit', 16 * mib), file('two.fit', 16 * mib), file('three.fit', 1),
+        file('activities.csv', 2), file('archive.zip', 3), file('four.gpx', 1)
+    ]);
+    assert.deepEqual(plan.batches.map(batch => ({ kind: batch.kind, count: batch.files.length, bytes: batch.bytes })), [
+        { kind: 'ordinary', count: 2, bytes: 32 * mib },
+        { kind: 'ordinary', count: 1, bytes: 1 },
+        { kind: 'container', count: 1, bytes: 2 },
+        { kind: 'container', count: 1, bytes: 3 },
+        { kind: 'ordinary', count: 1, bytes: 1 }
+    ]);
+});
+
+test('selection total over 256 MiB has exact page-local failure and performs zero reads', async () => {
+    let reads = 0;
+    const files = Array.from({ length: 17 }, (_, index) => ({
+        name: `synthetic-${index}.fit`, size: 16_777_216, type: '',
+        async arrayBuffer() { reads += 1; return new ArrayBuffer(0); }
+    }));
+    const plan = planSourceFileBatches(files);
+    assert.deepEqual(plan, {
+        ok: false,
+        code: 'SELECTION_TOO_LARGE',
+        copy: 'Select files totaling no more than 256 MiB.'
+    });
+    assert.equal(reads, 0);
+    const results = await preflightSourceFiles(files);
+    assert.equal(results[0].code, 'SELECTION_TOO_LARGE');
+    assert.equal(reads, 0);
 });
 
 test('hostile file accessors are rejected without getter execution or disclosure', async () => {

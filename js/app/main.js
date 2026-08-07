@@ -37,6 +37,7 @@ import {
     inspectLocalFirstBootstrap,
     runLocalFirstBootstrap
 } from './local-first-bootstrap.js';
+import { recordDiagnosticError } from '../diagnostics/index.js';
 
 export const APP_SESSION_MODE = Object.freeze({
     DEMO: 'demo',
@@ -1450,7 +1451,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const initialTabId = getTabIdFromPath(window.location.pathname);
             activateTab(initialTabId, { updateUrl: true, replaceUrl: true });
-        } catch (error) {
+        } catch {
+            recordDiagnosticError({
+                page: 'dashboard',
+                category: 'page',
+                code: 'DASHBOARD_INITIALIZE_FAILED'
+            });
             handleError('Could not initialize the app', safeOperationalError());
         } finally {
             hideLoading();
@@ -1536,7 +1542,12 @@ document.addEventListener('DOMContentLoaded', () => {
             setupYearlySelector();
             activateTab(getTabIdFromPath(window.location.pathname));
             showLoading('Refresh completed', 100, elapsed());
-        } catch (error) {
+        } catch {
+            recordDiagnosticError({
+                page: 'dashboard',
+                category: 'page',
+                code: 'DASHBOARD_REFRESH_FAILED'
+            });
             handleError('Error refreshing activities', safeOperationalError());
         } finally {
             hideLoading();
@@ -1721,7 +1732,12 @@ document.addEventListener('DOMContentLoaded', () => {
         },
         showBlocked: showLocalFirstBlocked
     });
-    applicationStart.catch(error => {
+    applicationStart.catch(() => {
+        recordDiagnosticError({
+            page: 'dashboard',
+            category: 'page',
+            code: 'DASHBOARD_START_FAILED'
+        });
         logOperationalWarning('App failed to start');
         showLocalFirstBlocked(Object.freeze({
             localStatus: LOCAL_FIRST_STATUS.UNAVAILABLE,
