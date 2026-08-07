@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 M20 / PR-23 |
-| Status | A3.2 approved; failure-first implementation and verification in progress |
+| Status | Final Review Closure complete; final exact-head CI and control-tower Ready handoff pending |
 | Branch | `codex/v2/default-canonical` |
 | Base | `integration/v2` at `3d8e17c5fab243b8605d5ddd1ca99450675ed5d8` |
 | Draft PR title | `refactor(v2): make canonical repository the default` |
@@ -389,6 +389,37 @@ no actionable findings.
 
 Independent review, fresh re-review, remote depth-1 exact-head checks, Final Review Closure, and
 exact-head CI remain pending at this point.
+
+## Final Review Closure
+
+Implementation and findings-first repair are complete through exact implementation head
+`2c30d4328c8e37054adf896c698765d3d235d61f`.
+
+- The first independent review found one P2 evidence gap: the empty-Canonical scenario did not
+  explicitly freeze zero Legacy database/Token/error work. A failing static gate reproduced the
+  gap before `9e4f3cc` added exact pre-navigation assertions and passed the actual browser harness.
+- A fresh second reviewer found one P1 evidence gap: navigation replaced the instrumented window,
+  so destination Source Manager startup was not observed. A second failing gate reproduced the
+  gap before `2c30d43` added a separately instrumented real `source-manager.html` document using
+  the production `startSourceManager` composition root with exact Real search. The actual-served
+  browser then proved First-run ready, only V2 database opens, no `strava_tokens`, no
+  Authorization, zero provider requests, and zero runtime/console errors across the destination.
+- A third, fresh independent reviewer inspected the exact `3d8e17c5...2c30d43` nine-path diff and
+  reported **no actionable findings**. Residual limitation: that reviewer was intentionally
+  read-only and did not independently rerun browser or broad automated gates.
+- Final local post-repair evidence passed: `npm test` `1457/1457`, syntax for 238 files, privacy,
+  `git diff --check`, exact nine-path scope, and the deterministic actual-served PR-23 browser
+  matrix.
+- A real remote depth-1 fetch of `origin/codex/v2/default-canonical` resolved exactly
+  `2c30d4328c8e37054adf896c698765d3d235d61f` with `--is-shallow-repository=true`. Its detached,
+  clean checkout passed `npm ci`, `npm test` `1457/1457`, syntax for 238 files, privacy, and
+  `git diff --check`.
+
+This Closure changes only this Task Brief. It authorizes neither Ready, merge, branch/worktree or
+temporary-directory cleanup, deployment/release, integration mutation, nor PR-24. After this
+Closure is pushed, the final remote head must equal the Closure commit and exact-head CI must pass
+before the control tower updates the PR body and marks Draft PR #29 Ready. Ready remains distinct
+from merge authorization.
 
 ## Privacy, migration, rollback, and completion
 
