@@ -91,7 +91,7 @@ serverless provider routes can log provider response/error values. Safe Diagnost
 
 Do not add `console.log(error)`, raw caught objects, provider responses, activity objects, storage
 records, identifiers, or filenames. User-facing recovery copy in a reviewed safe-code boundary must
-not echo a malicious filename or platform message. Use [Diagnostics](/diagnostics.html) and
+not echo a malicious filename or platform message. Use Diagnostics at `/diagnostics.html` and
 [Troubleshooting](./troubleshooting.md) instead of asking users to paste their full console or
 storage contents.
 

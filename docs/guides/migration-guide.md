@@ -62,10 +62,12 @@ globalThis.__STRAVASTATS_FEATURE_FLAGS__ = Object.freeze({
 ```
 
 For Shadow comparison, use `dataRepositoryMode: 'shadow'` and explicitly set
-`canonicalShadowWriteEnabled: true`. An invalid, incomplete, accessor-based, or late override fails
-closed to the frozen defaults. There is no persisted end-user mode setting and no supported UI
-toggle, so a deployment owner must inject the override in the bootstrap document or controlled
-test harness before `/js/main.js` loads.
+`canonicalShadowWriteEnabled: true`. An ordinary-object override can be partial; omitted fields use
+their frozen defaults. Unknown keys, accessors, proxies, or invalid object shapes reject the entire
+override, while invalid field values resolve to safe field defaults. A late override cannot alter
+flags already frozen during import. There is no persisted end-user mode setting and no supported UI
+toggle, so a deployment owner must inject the override in the bootstrap document or controlled test
+harness before `/js/main.js` loads.
 
 ## IndexedDB physical V4 and compatibility
 

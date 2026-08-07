@@ -2,7 +2,7 @@
 
 These procedures are intentionally non-destructive. Do not clear site data, delete an IndexedDB
 database, overwrite settings, edit a backup, or repeatedly import private files as a first response.
-Record the exact safe code and use [Diagnostics](/diagnostics.html) where available.
+Record the exact safe code and use Diagnostics at `/diagnostics.html` where available.
 
 ## First-run or an empty local library
 

@@ -214,3 +214,23 @@ test('release-gate status does not claim a conditional PASS', async () => {
     assert.doesNotMatch(brief, /advances[^\n]*`PASS`[^\n]*subject to/i);
     assert.match(brief, /Migration\/Backup\/Privacy\/Troubleshooting docs complete \| (?:PARTIAL|PASS) \|/);
 });
+
+test('safe-code claims remain scoped to reviewed V2 boundaries', async () => {
+    const readme = await source('README.md');
+    assert.match(readme, /reviewed V2 (?:Import|import)[^\n]*(?:Backup|backup)[^\n]*Diagnostics[^\n]*safe codes/i);
+    assert.doesNotMatch(readme, /Public errors and Diagnostics use fixed safe codes/i);
+});
+
+test('migration guide distinguishes partial overrides from invalid feature flags', async () => {
+    const migration = await source('docs/guides/migration-guide.md');
+    assert.match(migration, /omitted fields?[^\n]*(?:use|fall back to|default)/i);
+    assert.doesNotMatch(migration, /invalid, incomplete[^\n]*fails? closed/i);
+});
+
+test('served routes are code, not root-absolute GitHub Markdown links', async () => {
+    for (const file of RELEASE_DOCS) {
+        for (const target of localMarkdownLinks(await source(file))) {
+            assert(!target.startsWith('/'), `${file} has a root-absolute Markdown link: ${target}`);
+        }
+    }
+});

@@ -6,7 +6,7 @@ recovery, not for Git, support tickets, analytics, or cross-version migration.
 
 ## Before you create a backup
 
-- Open the served [Storage & Backup](/storage-backup.html) page in a Real session.
+- Open the served Storage & Backup page at `/storage-backup.html` in a Real session.
 - Close or pause imports and duplicate-review actions so the library is stable.
 - Choose a private storage location outside the repository.
 - Treat the resulting file as sensitive athlete data: it may contain raw artifacts, activity
@@ -39,7 +39,7 @@ appended, path-traversal, duplicate-entry, or rehashed-invalid archive fails bef
 
 1. Use an absent V2 database or an exact empty V4 target. Do not clear a valuable library to make a
    restore fit.
-2. Open [Storage & Backup](/storage-backup.html).
+2. Open Storage & Backup at `/storage-backup.html`.
 3. Choose the private `*.stravastats-backup.zip` file.
 4. Select **Validate and restore**. The entire archive is validated before any target write.
 5. Wait for the result, then open the library and inspect expected summaries and details.

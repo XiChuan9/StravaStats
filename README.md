@@ -57,7 +57,7 @@ toggle. See the [Migration Guide](./docs/guides/migration-guide.md) before using
 
 ### Sources and local import
 
-Open [Sources](/source-manager.html?mode=real) in a served application. It supports:
+Open Sources at `/source-manager.html?mode=real` in a served application. It supports:
 
 - English Strava `activities.csv`;
 - a bounded Strava ZIP containing an exact root `activities.csv`;
@@ -84,9 +84,9 @@ activity or source. Field-level merge, unmerge, split, and source preference rem
 
 ### Backup, restore, and diagnostics
 
-- [Storage & Backup](/storage-backup.html) creates a deterministic, integrity-checked full V4
+- Storage & Backup at `/storage-backup.html` creates a deterministic, integrity-checked full V4
   backup and restores only into an absent or exact empty V4 target.
-- [Diagnostics](/diagnostics.html) shows a rounded origin-wide storage estimate, recent safe
+- Diagnostics at `/diagnostics.html` shows a rounded origin-wide storage estimate, recent safe
   session errors, and safe import-performance aggregates. Its explicit export is privacy-redacted
   and is not a library backup.
 
@@ -112,8 +112,9 @@ deleting local activity data.
 
 Local import files are processed in the browser and are not uploaded by the Import pipeline. The
 repository privacy guard rejects private fixture paths and sports files outside the synthetic
-fixture tree. Public errors and Diagnostics use fixed safe codes rather than raw causes, IDs,
-filenames, routes, GPS, heart-rate, power, or payloads.
+fixture tree. Reviewed V2 Import, Backup/Restore, and Diagnostics boundaries use safe codes rather
+than raw causes, IDs, filenames, routes, GPS, heart-rate, power, or payloads; this guarantee does not
+cover inherited provider/API paths.
 
 That local-first statement does **not** mean the complete application is fully offline. The current
 root and detail documents still declare third-party CDN assets and telemetry, and some Legacy
