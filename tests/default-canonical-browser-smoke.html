@@ -442,6 +442,21 @@
                 () => !frame.contentDocument.getElementById('first-run')?.hidden,
                 'EMPTY_CANONICAL_FIRST_RUN_UI'
             );
+            assert(
+                observation.databaseOpens.length > 0
+                && observation.databaseOpens.every(name => name === V2_DATABASE_NAME),
+                'EMPTY_CANONICAL_ONLY_V2_DATABASE'
+            );
+            assert(
+                !observation.storageReads.includes('strava_tokens'),
+                'EMPTY_CANONICAL_NO_TOKEN_READ'
+            );
+            assert(
+                observation.network.every(value => !value.authorization),
+                'EMPTY_CANONICAL_NO_AUTHORIZATION'
+            );
+            assert(observation.runtimeErrors === 0, 'EMPTY_CANONICAL_ZERO_RUNTIME_ERRORS');
+            assert(observation.consoleErrors === 0, 'EMPTY_CANONICAL_ZERO_CONSOLE_ERRORS');
             assert(observation.providerRequests === undefined || observations.providerRequests === 0, 'EMPTY_ZERO_PROVIDER');
             observations.scenarios.push('empty-default');
             frame.remove();
