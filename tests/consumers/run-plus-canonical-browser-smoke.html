@@ -23,6 +23,7 @@
         const FIXED_NOW = Date.parse('2026-08-06T08:00:00.000Z');
         const V2_DATABASE = 'strava-stats-v2';
         const FULL_ID = '0007/opaque ?#%';
+        const DOM_XSS_CANARY = '<img src=x onerror=globalThis.__domSafetyExecuted=1> double" single\' backtick` onclick=globalThis.__domSafetyExecuted=2 javascript:globalThis.__domSafetyExecuted=3 __proto__ constructor prototype 运动🏃‍♀️ é';
         const MISSING_ID = 'missing-capabilities/opaque';
         const ZERO_ID = 'zero-metrics/opaque';
         const status = document.getElementById('status');
@@ -122,7 +123,7 @@
         }
 
         const fullActivity = activity(FULL_ID, '2026-08-05', {
-            name: 'Synthetic SubT 6x6',
+            name: DOM_XSS_CANARY,
             averageHeartRateBpm: 148,
             averagePowerWatts: 0,
             averageCadence: 84,
@@ -244,6 +245,7 @@
                 'tss-ctl-atl-tsb',
                 'missing-gps-hr-power',
                 'opaque-id-round-trip',
+                'dom-xss-canary-text-zero-execution',
                 'zero-provider-token-auth-legacy-io',
                 'safe-repository-failure',
                 'console-runtime-storage-idb-cache-sw-observation'

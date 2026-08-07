@@ -15,6 +15,7 @@ const summaryTabs = Object.freeze([
     'js/tabs/run-analysis.js',
     'js/tabs/bike-analysis.js',
     'js/tabs/swim-analysis.js',
+    'js/tabs/athlete.js',
     'js/tabs/maps.js',
     'js/tabs/gear.js',
     'js/tabs/wrapped.js',
@@ -27,6 +28,109 @@ const mainSource = await source('js/app/main.js');
 const tabsIndexSource = await source('js/tabs/index.js');
 const runPlusSource = await source('js/tabs/run-plus.js');
 const speedInsightsSource = await source('js/shared/utils/speed-insights.js');
+
+const domSafetyCanaries = Object.freeze([
+    '<img src=x onerror=globalThis.__domSafetyExecuted=1>',
+    'double\" single\' backtick`',
+    'onclick=globalThis.__domSafetyExecuted=2',
+    'alpha/beta ?#%&=+;',
+    'javascript:globalThis.__domSafetyExecuted=3',
+    '__proto__',
+    'constructor',
+    'prototype',
+    '运动🏃‍♀️ é',
+    null,
+    0,
+    -0
+]);
+
+test('M23 failure-first canary corpus freezes hostile text, opaque IDs, and null/zero semantics', () => {
+    assert.equal(domSafetyCanaries.length, 12);
+    assert.equal(Object.is(domSafetyCanaries.at(-2), 0), true);
+    assert.equal(Object.is(domSafetyCanaries.at(-1), -0), true);
+    assert.equal(domSafetyCanaries.includes(null), true);
+    for (const token of [
+        '<img src=x onerror=',
+        'double\" single\' backtick`',
+        'onclick=',
+        'alpha/beta ?#%&=+;',
+        'javascript:',
+        '__proto__',
+        'constructor',
+        'prototype',
+        '运动🏃‍♀️ é'
+    ]) {
+        assert.equal(domSafetyCanaries.some(value => String(value).includes(token)), true, token);
+    }
+});
+
+test('M23 R1 root summary renders persistent names and opaque IDs only through native DOM seams', () => {
+    const activities = tabSources.get('js/tabs/activities.js');
+    const calendar = tabSources.get('js/tabs/calendar.js');
+    const wrapped = tabSources.get('js/tabs/wrapped.js');
+    const run = tabSources.get('js/tabs/run-analysis.js');
+    const bike = tabSources.get('js/tabs/bike-analysis.js');
+    const swim = tabSources.get('js/tabs/swim-analysis.js');
+    const athlete = tabSources.get('js/tabs/athlete.js');
+    const maps = tabSources.get('js/tabs/maps.js');
+
+    assert.match(mainSource, /document\.createElement\('option'\)/);
+    assert.match(mainSource, /selectEl\.replaceChildren\(\.\.\.optionElements\)/);
+    assert.doesNotMatch(mainSource, /selectEl\.innerHTML\s*=\s*options/);
+
+    for (const [path, value] of [
+        ['activities', activities],
+        ['calendar', calendar],
+        ['wrapped', wrapped],
+        ['run', run],
+        ['bike', bike],
+        ['swim', swim],
+        ['athlete', athlete]
+    ]) {
+        assert.match(value, /URLSearchParams/, `${path}: URLSearchParams`);
+        assert.match(value, /rel\s*=\s*['"]noopener noreferrer['"]/, `${path}: rel`);
+        assert.match(value, /Number\.isSafeInteger/, `${path}: Legacy numeric ID`);
+        assert.doesNotMatch(
+            value,
+            /<a[^>]*href\s*=\s*[`'"][^`'"\n]*activity-router[^\n]*\$\{/,
+            `${path}: interpolated activity-router href`
+        );
+    }
+
+    for (const [path, value] of [
+        ['wrapped', wrapped],
+        ['run', run],
+        ['bike', bike],
+        ['swim', swim]
+    ]) {
+        assert.match(value, /Number\.isSafeInteger\(activity\?\.id\)[^\n]*activity\.id > 0/, `${path}: zero stays inert`);
+    }
+
+    for (const [path, value] of [
+        ['run', run],
+        ['bike', bike],
+        ['swim', swim]
+    ]) {
+        assert.doesNotMatch(value, /<a[^>]*activity-router[\s\S]*?\$\{[as]\.name\}/, path);
+        assert.match(value, /replaceChildren/, `${path}: replaceChildren`);
+    }
+
+    assert.doesNotMatch(athlete, /<img\s+src=[^\n]*athlete\.profile_medium/);
+    assert.doesNotMatch(athlete, /innerHTML\s*=\s*`[^`]*\$\{error\.message\}/);
+    assert.match(athlete, /profileUrl\.protocol\s*===\s*['"]https:['"]/);
+    assert.match(athlete, /contentDiv\.replaceChildren/);
+    assert.doesNotMatch(athlete, /createChartError\([^)]*error\.message/);
+    assert.doesNotMatch(athlete, /console\.error\([^\n]*,\s*error\s*\)/);
+    assert.match(athlete, /Error rendering chart\./);
+    assert.match(athlete, /Number\.isFinite\(z\?\.min\)/);
+    assert.match(athlete, /Number\.isFinite\(z\?\.max\)/);
+    assert.match(athlete, /Number\.isFinite\(zoneWidth\)/);
+
+    assert.doesNotMatch(maps, /bindPopup\s*\(\s*`/);
+    assert.match(maps, /bindPopup\(popup\)/);
+    assert.match(maps, /sportSel\.replaceChildren/);
+    assert.match(activities, /document\.createElement\('small'\)/);
+});
 
 test('main obtains provider-owned data only through the Repository public entry', () => {
     assert.match(
@@ -100,7 +204,10 @@ test('PR-16 has one isolated Canonical harness with exact actual-root route evid
     assert.match(harness, /frame\.srcdoc = rootDocument\.replace/);
     assert.match(harness, /ACTUAL_ROOT_INSTRUMENTED_BEFORE_BOOTSTRAP/);
     assert.match(harness, /ACTUAL_ROOT_503_CONSUMER_ROWS/);
-    assert.match(harness, /ACTUAL_ROOT_TEN_ROUTE_PARITY/);
+    assert.match(harness, /ACTUAL_ROOT_ELEVEN_ROUTE_PARITY/);
+    assert.match(harness, /ACTUAL_ROOT_CANARY_RENDERED_AS_TEXT/);
+    assert.match(harness, /ACTUAL_ROOT_OPAQUE_ID_URLSEARCHPARAMS_ROUND_TRIP/);
+    assert.match(harness, /ACTUAL_ROOT_ZERO_CANARY_EXECUTION/);
     assert.match(harness, /ACTUAL_ROOT_ONLY_V2_DATABASE/);
     assert.match(harness, /ACTUAL_ROOT_ZERO_PROVIDER_OR_AUTHORIZATION_IO/);
     assert.match(harness, /ACTUAL_ROOT_ZERO_TOKEN_READ/);
@@ -120,12 +227,38 @@ test('PR-16 has one isolated Canonical harness with exact actual-root route evid
         '/swim',
         '/gear',
         '/map',
+        '/trends',
         '/planner'
     ]) {
         assert.equal(harness.includes(`'${route}'`), true, route);
     }
     assert.doesNotMatch(harness, /tests\/fixtures\/private/);
     assert.doesNotMatch(mainSource, /canonical-summary-browser-smoke/);
+});
+
+test('M23 browser harnesses freeze Canonical and supported-Legacy DOM canary evidence', async () => {
+    const canonicalHarness = await source('tests/consumers/canonical-summary-browser-smoke.html');
+    const legacyHarness = await source('tests/consumers/summary-browser-smoke.html');
+    for (const harness of [canonicalHarness, legacyHarness]) {
+        for (const token of [
+            'DOM_XSS_CANARY',
+            'OPAQUE_ID_CANARY',
+            '<img src=x onerror=',
+            'double" single\\\' backtick`',
+            'onclick=',
+            'javascript:',
+            '__proto__',
+            'constructor',
+            'prototype',
+            '运动🏃‍♀️'
+        ]) {
+            assert.equal(harness.includes(token), true, token);
+        }
+    }
+    assert.match(legacyHarness, /legacyAthleteAndMapDomSafety/);
+    assert.match(legacyHarness, /nonHttpsProfileOmitted:\s*true/);
+    assert.match(legacyHarness, /leafletPopupUsesDom:\s*true/);
+    assert.match(legacyHarness, /canaryExecutions:\s*0/);
 });
 
 test('UI and user-owned storage stays on the explicit allowlist', () => {

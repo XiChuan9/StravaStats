@@ -69,21 +69,46 @@ function mondayOf(dt) {
     return d;
 }
 
-function buildPeriodSummary(activities) {
+function createPeriodSummary(activities) {
     const count = activities.length;
     const totalKm = (activities.reduce((s, a) => s + (a.distance || 0), 0) / 1000).toFixed(0);
     const totalH = (activities.reduce((s, a) => s + (a.moving_time || 0), 0) / 3600).toFixed(0);
     const daysActive = new Set(activities.map(a => (a.start_date_local || '').slice(0, 10)).filter(Boolean)).size;
     const totalTSS = activities.reduce((s, a) => s + (typeof a.tss === 'number' ? a.tss : 0), 0).toFixed(0);
 
-    return `
-        <div class="cal-year-summary">
-            <span>${count} activities</span>
-            <span>${totalKm} km</span>
-            <span>${totalH} h</span>
-            <span>${daysActive} active days</span>
-            <span>${totalTSS} TSS</span>
-        </div>`;
+    const summary = document.createElement('div');
+    summary.className = 'cal-year-summary';
+    for (const value of [
+        `${count} activities`,
+        `${totalKm} km`,
+        `${totalH} h`,
+        `${daysActive} active days`,
+        `${totalTSS} TSS`
+    ]) {
+        const item = document.createElement('span');
+        item.textContent = value;
+        summary.append(item);
+    }
+    return summary;
+}
+
+function createActivityLink(activity, className) {
+    const activityId = typeof activity?.id === 'string' && activity.id.length > 0
+        ? activity.id
+        : (Number.isSafeInteger(activity?.id) && activity.id >= 0 ? String(activity.id) : null);
+    if (activityId === null) {
+        const inert = document.createElement('span');
+        inert.className = className;
+        return inert;
+    }
+    const params = new URLSearchParams();
+    params.set('id', activityId);
+    const link = document.createElement('a');
+    link.className = className;
+    link.href = `html/activity-router.html?${params.toString()}`;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    return link;
 }
 
 // ─── Streak calculation ───────────────────────────────────────────────────────
@@ -182,9 +207,7 @@ export function renderCalendarTab(allActivities) {
                     <button class="cal-view-btn" data-view="month">Month</button>
                     <button class="cal-view-btn" data-view="year">Year</button>
                 </div>
-                <select class="cal-type-filter" multiple size="${Math.min(8, Math.max(4, types.length))}">
-                    ${types.map(t => `<option value="${t}">${emoji(t)} ${t} (${typeCounts[t]})</option>`).join('')}
-                </select>
+                <select class="cal-type-filter" multiple size="${Math.min(8, Math.max(4, types.length))}"></select>
             </div>
             <div class="cal-nav">
                 <button class="cal-nav-btn" id="cal-prev">‹</button>
@@ -195,13 +218,7 @@ export function renderCalendarTab(allActivities) {
         </div>
         <div id="cal-streaks"></div>
         <div id="cal-body"></div>
-        <div class="cal-legend">
-            ${types.map(t => `
-            <span class="cal-legend-item">
-                <span class="cal-legend-dot" style="background:${sportColor(t, 0.6)}"></span>
-                ${emoji(t)} ${t}
-            </span>`).join('')}
-        </div>
+        <div class="cal-legend"></div>
     </div>`;
 
     // ── Wire controls ────────────────────────────────────────────────────────
@@ -209,6 +226,24 @@ export function renderCalendarTab(allActivities) {
         b.addEventListener('click', () => { state.view = b.dataset.view; renderAll(); })
     );
     const typeFilter = root.querySelector('.cal-type-filter');
+    const typeOptions = types.map(type => {
+        const option = document.createElement('option');
+        option.value = type;
+        option.textContent = `${emoji(type)} ${type} (${typeCounts[type]})`;
+        return option;
+    });
+    typeFilter.replaceChildren(...typeOptions);
+    const legend = root.querySelector('.cal-legend');
+    const legendItems = types.map(type => {
+        const item = document.createElement('span');
+        item.className = 'cal-legend-item';
+        const dot = document.createElement('span');
+        dot.className = 'cal-legend-dot';
+        dot.style.background = sportColor(type, 0.6);
+        item.append(dot, document.createTextNode(`${emoji(type)} ${type}`));
+        return item;
+    });
+    legend.replaceChildren(...legendItems);
     Array.from(typeFilter.options).forEach(opt => {
         opt.selected = state.filterTypes.length === 0 || state.filterTypes.includes(opt.value);
     });
@@ -311,10 +346,20 @@ export function renderCalendarTab(allActivities) {
         const startDow = (firstDay.getDay() + 6) % 7; // Mon=0
         const monthActs = [];
 
-        let html = `<div class="cal-month-grid">
-            ${DAYS_SHORT.map(d => `<div class="cal-dow-header">${d}</div>`).join('')}`;
+        const grid = document.createElement('div');
+        grid.className = 'cal-month-grid';
+        for (const label of DAYS_SHORT) {
+            const header = document.createElement('div');
+            header.className = 'cal-dow-header';
+            header.textContent = label;
+            grid.append(header);
+        }
 
-        for (let i = 0; i < startDow; i++) html += `<div class="cal-day-empty"></div>`;
+        for (let i = 0; i < startDow; i++) {
+            const empty = document.createElement('div');
+            empty.className = 'cal-day-empty';
+            grid.append(empty);
+        }
 
         for (let day = 1; day <= lastDay.getDate(); day++) {
             const dt = new Date(state.year, state.month, day);
@@ -324,9 +369,14 @@ export function renderCalendarTab(allActivities) {
             const isToday = dateStr === todayStr;
             const isFuture = dt > new Date();
 
-            html += `<div class="cal-day${isToday ? ' cal-today' : ''}${isFuture ? ' cal-future' : ''}" data-date="${dateStr}">
-                <div class="cal-day-num">${day}</div>
-                <div class="cal-day-pills">`;
+            const dayCell = document.createElement('div');
+            dayCell.className = `cal-day${isToday ? ' cal-today' : ''}${isFuture ? ' cal-future' : ''}`;
+            dayCell.dataset.date = dateStr;
+            const dayNumber = document.createElement('div');
+            dayNumber.className = 'cal-day-num';
+            dayNumber.textContent = String(day);
+            const pills = document.createElement('div');
+            pills.className = 'cal-day-pills';
 
             for (const a of acts.slice(0, 4)) {
                 const t = getType(a);
@@ -334,17 +384,25 @@ export function renderCalendarTab(allActivities) {
                 const km = a.distance ? `${(a.distance / 1000).toFixed(1)} km` : '';
                 const tss = typeof a.tss === 'number' ? `TSS ${Math.round(a.tss)}` : '';
                 const stats = [km, tss].filter(Boolean).join(' · ');
-                html += `<div class="cal-pill" style="background:${bg};color:${sportColorDark(t)}" title="${a.name}">${emoji(t)} ${stats}</div>`;
+                const pill = document.createElement('div');
+                pill.className = 'cal-pill';
+                pill.style.background = bg;
+                pill.style.color = sportColorDark(t);
+                pill.title = a.name == null ? String(a.name) : String(a.name);
+                pill.textContent = `${emoji(t)} ${stats}`;
+                pills.append(pill);
             }
-            if (acts.length > 4) html += `<div class="cal-pill cal-pill-more">+${acts.length - 4} more</div>`;
-            html += `</div></div>`;
+            if (acts.length > 4) {
+                const more = document.createElement('div');
+                more.className = 'cal-pill cal-pill-more';
+                more.textContent = `+${acts.length - 4} more`;
+                pills.append(more);
+            }
+            dayCell.append(dayNumber, pills);
+            dayCell.addEventListener('click', () => showDayDetail(dateStr, acts));
+            grid.append(dayCell);
         }
-        html += `</div>${buildPeriodSummary(monthActs)}`;
-        el.innerHTML = html;
-
-        el.querySelectorAll('.cal-day[data-date]').forEach(c =>
-            c.addEventListener('click', () => showDayDetail(c.dataset.date, byDate[c.dataset.date] || []))
-        );
+        el.replaceChildren(grid, createPeriodSummary(monthActs));
     }
 
     // ── Weekly view ──────────────────────────────────────────────────────────
@@ -353,7 +411,8 @@ export function renderCalendarTab(allActivities) {
         const todayStr = toYMD(new Date());
         const weekActs = [];
 
-        let html = `<div class="cal-week-grid">`;
+        const grid = document.createElement('div');
+        grid.className = 'cal-week-grid';
 
         for (let i = 0; i < 7; i++) {
             const dt = new Date(+wStart + i * 86400000);
@@ -365,20 +424,31 @@ export function renderCalendarTab(allActivities) {
 
             const totalKm = acts.reduce((s, a) => s + (a.distance || 0), 0) / 1000;
             const totalTime = acts.reduce((s, a) => s + (a.moving_time || 0), 0);
-            const daySummary = acts.length
-                ? `<span class="cal-week-day-total">${totalKm.toFixed(1)} km · ${utils.formatTime(totalTime)}</span>`
-                : '';
-
-            html += `<div class="cal-week-col${isToday ? ' cal-today' : ''}${isFuture ? ' cal-future' : ''}">
-                <div class="cal-week-day-header">
-                    <span class="cal-week-dow">${DAYS_SHORT[i]}</span>
-                    <span class="cal-week-date">${utils.formatDate(dt)}</span>
-                    ${daySummary}
-                </div>
-                <div class="cal-week-acts">`;
+            const column = document.createElement('div');
+            column.className = `cal-week-col${isToday ? ' cal-today' : ''}${isFuture ? ' cal-future' : ''}`;
+            const header = document.createElement('div');
+            header.className = 'cal-week-day-header';
+            const dow = document.createElement('span');
+            dow.className = 'cal-week-dow';
+            dow.textContent = DAYS_SHORT[i];
+            const date = document.createElement('span');
+            date.className = 'cal-week-date';
+            date.textContent = utils.formatDate(dt);
+            header.append(dow, date);
+            if (acts.length) {
+                const daySummary = document.createElement('span');
+                daySummary.className = 'cal-week-day-total';
+                daySummary.textContent = `${totalKm.toFixed(1)} km · ${utils.formatTime(totalTime)}`;
+                header.append(daySummary);
+            }
+            const activitiesEl = document.createElement('div');
+            activitiesEl.className = 'cal-week-acts';
 
             if (acts.length === 0) {
-                html += `<div class="cal-week-rest">Rest day</div>`;
+                const rest = document.createElement('div');
+                rest.className = 'cal-week-rest';
+                rest.textContent = 'Rest day';
+                activitiesEl.append(rest);
             } else {
                 for (const a of acts) {
                     const t = getType(a);
@@ -387,18 +457,26 @@ export function renderCalendarTab(allActivities) {
                     const dur = a.moving_time ? utils.formatTime(a.moving_time) : '';
                     const hr = a.average_heartrate ? `${Math.round(a.average_heartrate)} bpm` : '';
                     const tss = typeof a.tss === 'number' ? `TSS ${Math.round(a.tss)}` : '';
-                    html += `<a class="cal-week-activity" href="html/activity-router.html?id=${a.id}" target="_blank"
-                        style="background:${bg};border-left:3px solid ${sportColorDark(t)}">
-                        <div class="cal-week-act-sport">${emoji(t)} ${t}</div>
-                        <div class="cal-week-act-name">${a.name || '—'}</div>
-                        <div class="cal-week-act-stats">${[km, dur, hr, tss].filter(Boolean).join(' · ')}</div>
-                    </a>`;
+                    const link = createActivityLink(a, 'cal-week-activity');
+                    link.style.background = bg;
+                    link.style.borderLeft = `3px solid ${sportColorDark(t)}`;
+                    const sport = document.createElement('div');
+                    sport.className = 'cal-week-act-sport';
+                    sport.textContent = `${emoji(t)} ${t}`;
+                    const name = document.createElement('div');
+                    name.className = 'cal-week-act-name';
+                    name.textContent = a.name || '—';
+                    const stats = document.createElement('div');
+                    stats.className = 'cal-week-act-stats';
+                    stats.textContent = [km, dur, hr, tss].filter(Boolean).join(' · ');
+                    link.append(sport, name, stats);
+                    activitiesEl.append(link);
                 }
             }
-            html += `</div></div>`;
+            column.append(header, activitiesEl);
+            grid.append(column);
         }
-        html += `</div>${buildPeriodSummary(weekActs)}`;
-        el.innerHTML = html;
+        el.replaceChildren(grid, createPeriodSummary(weekActs));
     }
 
     // ── Yearly heatmap ────────────────────────────────────────────────────────
@@ -429,18 +507,49 @@ export function renderCalendarTab(allActivities) {
                 monthLabels.push({ wi, label: MONTHS_FULL[m].slice(0, 3) });
         });
 
-        const monthsHtml = monthLabels.map(ml =>
-            `<span style="position:absolute;left:${ml.wi * COL_W}px">${ml.label}</span>`
-        ).join('');
-
-        const weeksHtml = weeks.map(week => {
-            const cells = week.map(dt => {
+        const outer = document.createElement('div');
+        outer.className = 'cal-year-outer';
+        const dowColumn = document.createElement('div');
+        dowColumn.className = 'cal-year-dow-col';
+        DAYS_SHORT.forEach((label, index) => {
+            const day = document.createElement('div');
+            day.className = 'cal-year-dow';
+            day.textContent = index % 2 === 0 ? label : '';
+            dowColumn.append(day);
+        });
+        const heatmap = document.createElement('div');
+        heatmap.className = 'cal-year-heatmap';
+        const monthsRow = document.createElement('div');
+        monthsRow.className = 'cal-year-months-row';
+        monthsRow.style.position = 'relative';
+        monthsRow.style.height = '18px';
+        monthsRow.style.marginBottom = '3px';
+        monthsRow.style.fontSize = '.62rem';
+        monthsRow.style.color = 'var(--text-light)';
+        for (const month of monthLabels) {
+            const label = document.createElement('span');
+            label.style.position = 'absolute';
+            label.style.left = `${month.wi * COL_W}px`;
+            label.textContent = month.label;
+            monthsRow.append(label);
+        }
+        const weeksEl = document.createElement('div');
+        weeksEl.className = 'cal-year-weeks';
+        for (const week of weeks) {
+            const weekEl = document.createElement('div');
+            weekEl.className = 'cal-year-week';
+            for (const dt of week) {
                 const dateStr = toYMD(dt);
                 const acts = byDate[dateStr] || [];
                 const inYear = dt.getFullYear() === state.year;
+                const cell = document.createElement('div');
 
-                if (!inYear || acts.length === 0)
-                    return `<div class="cal-year-cell cal-year-empty" title="${inYear ? utils.formatDate(dateStr) : ''}"></div>`;
+                if (!inYear || acts.length === 0) {
+                    cell.className = 'cal-year-cell cal-year-empty';
+                    cell.title = inYear ? utils.formatDate(dateStr) : '';
+                    weekEl.append(cell);
+                    continue;
+                }
 
                 // Dominant sport by time
                 const byTime = {};
@@ -457,28 +566,22 @@ export function renderCalendarTab(allActivities) {
                 const names = acts.map(a => `${emoji(getType(a))} ${a.name}`).join('\n');
                 const tip = `${utils.formatDate(dateStr)}\n${names}\n${km.toFixed(1)} km · ${utils.formatTime(totalSec)}`;
 
-                return `<div class="cal-year-cell" style="background:${bg}" data-date="${dateStr}" title="${tip}"></div>`;
-            }).join('');
-            return `<div class="cal-year-week">${cells}</div>`;
-        }).join('');
+                cell.className = 'cal-year-cell';
+                cell.style.background = bg;
+                cell.dataset.date = dateStr;
+                cell.title = tip;
+                cell.addEventListener('click', () => showDayDetail(dateStr, acts));
+                weekEl.append(cell);
+            }
+            weeksEl.append(weekEl);
+        }
 
         // Year summary
         const yActs = filteredActs.filter(a => (a.start_date_local || '').startsWith(`${state.year}`));
 
-        el.innerHTML = `
-        <div class="cal-year-outer">
-            <div class="cal-year-dow-col">
-                ${DAYS_SHORT.map((d, i) => `<div class="cal-year-dow">${i % 2 === 0 ? d : ''}</div>`).join('')}
-            </div>
-            <div class="cal-year-heatmap">
-                <div class="cal-year-months-row" style="position:relative;height:18px;margin-bottom:3px;font-size:.62rem;color:var(--text-light)">${monthsHtml}</div>
-                <div class="cal-year-weeks">${weeksHtml}</div>
-            </div>
-        </div>${buildPeriodSummary(yActs)}`;
-
-        el.querySelectorAll('.cal-year-cell[data-date]').forEach(c =>
-            c.addEventListener('click', () => showDayDetail(c.dataset.date, byDate[c.dataset.date] || []))
-        );
+        heatmap.append(monthsRow, weeksEl);
+        outer.append(dowColumn, heatmap);
+        el.replaceChildren(outer, createPeriodSummary(yActs));
     }
 
     // ── Day detail panel ─────────────────────────────────────────────────────
@@ -497,30 +600,42 @@ export function renderCalendarTab(allActivities) {
         panel.className = 'cal-day-detail';
         panel.dataset.date = dateStr;
 
-        const rows = acts.map(a => {
+        const rows = document.createElement('div');
+        rows.className = 'cal-detail-rows';
+        for (const a of acts) {
             const t = getType(a);
             const km = a.distance ? `${(a.distance / 1000).toFixed(2)} km` : '';
             const dur = a.moving_time ? utils.formatTime(a.moving_time) : '';
             const hr = a.average_heartrate ? `${Math.round(a.average_heartrate)} bpm` : '';
             const ele = a.total_elevation_gain ? `↑${a.total_elevation_gain.toFixed(0)} m` : '';
             const tss = typeof a.tss === 'number' ? `TSS ${Math.round(a.tss)}` : '';
-            return `<a class="cal-detail-row" href="html/activity-router.html?id=${a.id}" target="_blank"
-                style="border-left:3px solid ${sportColorDark(t)}">
-                <span class="cal-detail-sport">${emoji(t)} ${t}</span>
-                <span class="cal-detail-name">${a.name || '—'}</span>
-                <span class="cal-detail-stats">${[km, dur, hr, ele, tss].filter(Boolean).join(' · ')}</span>
-            </a>`;
-        }).join('');
+            const link = createActivityLink(a, 'cal-detail-row');
+            link.style.borderLeft = `3px solid ${sportColorDark(t)}`;
+            const sport = document.createElement('span');
+            sport.className = 'cal-detail-sport';
+            sport.textContent = `${emoji(t)} ${t}`;
+            const name = document.createElement('span');
+            name.className = 'cal-detail-name';
+            name.textContent = a.name || '—';
+            const stats = document.createElement('span');
+            stats.className = 'cal-detail-stats';
+            stats.textContent = [km, dur, hr, ele, tss].filter(Boolean).join(' · ');
+            link.append(sport, name, stats);
+            rows.append(link);
+        }
 
-        panel.innerHTML = `
-        <div class="cal-detail-header">
-            <strong>${DAYS_SHORT[(dt.getDay() + 6) % 7]}, ${utils.formatDate(dt)}</strong>
-            <button class="cal-detail-close">✕</button>
-        </div>
-        <div class="cal-detail-rows">${rows}</div>`;
+        const header = document.createElement('div');
+        header.className = 'cal-detail-header';
+        const heading = document.createElement('strong');
+        heading.textContent = `${DAYS_SHORT[(dt.getDay() + 6) % 7]}, ${utils.formatDate(dt)}`;
+        const close = document.createElement('button');
+        close.className = 'cal-detail-close';
+        close.textContent = '✕';
+        close.addEventListener('click', () => panel.remove());
+        header.append(heading, close);
+        panel.replaceChildren(header, rows);
 
         root.querySelector('#cal-body').after(panel);
-        panel.querySelector('.cal-detail-close').addEventListener('click', () => panel.remove());
     }
 
     renderAll();

@@ -38,9 +38,34 @@
 
     <section id="run-plus-tab"></section>
 
+    <section id="legacy-dom-safety-evidence" hidden>
+        <div id="activity-filters"></div>
+        <table id="activities-table"></table>
+        <div id="act-counter"></div>
+        <div id="athlete-profile-card"><div class="profile-content"></div></div>
+        <div id="training-zones-card"><div class="zones-content"></div></div>
+        <div id="map-tab">
+            <input id="map-date-from">
+            <input id="map-date-to">
+            <button id="map-apply-date"></button>
+            <button id="map-reset-date"></button>
+            <select id="map-sport-filter"></select>
+            <select id="map-visualization"><option value="heat">heat</option><option value="points">points</option></select>
+            <select id="map-tiles"><option value="osm">osm</option></select>
+            <input id="map-heat-intensity">
+            <input id="map-heat-radius">
+            <input id="map-heat-blur">
+            <input id="map-color-by-sport" type="checkbox">
+            <div id="global-map"></div>
+        </div>
+    </section>
+
     <script type="module">
         const resultElement = document.getElementById('smoke-result');
         const statusElement = document.getElementById('smoke-status');
+        const DOM_XSS_CANARY = '<img src=x onerror=globalThis.__domSafetyExecuted=1> double" single\' backtick` onclick=globalThis.__domSafetyExecuted=2 javascript:globalThis.__domSafetyExecuted=3 __proto__ constructor prototype 运动🏃‍♀️ é';
+        const OPAQUE_ID_CANARY = 'alpha/beta ?#%&=+;';
+        globalThis.__domSafetyExecuted = 0;
         const gates = {};
         const observations = {
             pageNetwork: [],
@@ -322,24 +347,33 @@
         });
 
         const modules = await gate('consumerModuleImports', async () => {
-            const [repositoryModule, tabsModule, runModule, gearModule, preprocessingModule] = await Promise.all([
+            const [repositoryModule, tabsModule, runModule, gearModule, preprocessingModule, athleteModule, mapsModule, activitiesModule] = await Promise.all([
                 import('/js/repository/index.js'),
                 import('/js/tabs/index.js'),
                 import('/js/tabs/run-analysis.js'),
                 import('/js/tabs/gear.js'),
-                import('/js/shared/preprocessing/index.js')
+                import('/js/shared/preprocessing/index.js'),
+                import('/js/tabs/athlete.js'),
+                import('/js/tabs/maps.js'),
+                import('/js/tabs/activities.js')
             ]);
             requireGate(typeof repositoryModule.createRepository === 'function');
             requireGate(typeof tabsModule.setRunSessionGears === 'function');
             requireGate(typeof runModule.renderGearGanttChart === 'function');
             requireGate(typeof gearModule.renderGearTab === 'function');
             requireGate(typeof preprocessingModule.preprocessActivities === 'function');
+            requireGate(typeof athleteModule.renderAthleteProfile === 'function');
+            requireGate(typeof mapsModule.renderMapTab === 'function');
+            requireGate(typeof activitiesModule.renderActivitiesTab === 'function');
             return {
                 repositoryModule,
                 tabsModule,
                 runModule,
                 gearModule,
-                preprocessingModule
+                preprocessingModule,
+                athleteModule,
+                mapsModule,
+                activitiesModule
             };
         });
 
@@ -542,6 +576,130 @@
                 malformedGearEmptyState: true,
                 providerGearReads: 0,
                 uiStorageKeys: ['gear-custom-shoe-1', 'gearEditMode']
+            };
+        });
+
+        await gate('legacyAthleteAndMapDomSafety', async () => {
+            requireGate(modules !== null);
+            modules.athleteModule.renderAthleteProfile({
+                profile_medium: 'javascript:globalThis.__domSafetyExecuted=4',
+                firstname: DOM_XSS_CANARY,
+                lastname: 'Legacy',
+                city: '__proto__',
+                country: 'constructor prototype',
+                follower_count: 0,
+                friend_count: -0
+            });
+            const profile = document.querySelector('#athlete-profile-card .profile-content');
+            requireGate(profile.querySelector('img') === null);
+            requireGate(profile.querySelector('.name')?.textContent === `${DOM_XSS_CANARY} Legacy`);
+            requireGate(profile.querySelector('img[src="x"]') === null);
+
+            modules.athleteModule.renderTrainingZones({
+                heart_rate: {
+                    custom_zones: true,
+                    zones: [
+                        { min: '0', max: 100 },
+                        { min: 0, max: Infinity },
+                        { min: 0, max: 100 },
+                        { min: 100, max: 200 }
+                    ]
+                }
+            });
+            const zoneSegments = Array.from(document.querySelectorAll(
+                '#training-zones-card .zone-segment'
+            ));
+            requireGate(zoneSegments.length === 2);
+            requireGate(zoneSegments.every(segment => segment.style.flexBasis === '50%'));
+
+            const popups = [];
+            const layer = () => ({
+                addTo() { return this; },
+                addLayer() { return this; },
+                clearLayers() { return this; },
+                removeLayer() { return this; },
+                setView() { return this; },
+                fitBounds() { return this; },
+                bindPopup(value) { popups.push(value); return this; }
+            });
+            globalThis.L = {
+                map: layer,
+                layerGroup: layer,
+                tileLayer: layer,
+                heatLayer: layer,
+                polyline: layer,
+                circleMarker: layer,
+                latLngBounds: () => ({ pad() { return this; } })
+            };
+            delete globalThis._stravaMap;
+            modules.mapsModule.renderMapTab([{
+                id: OPAQUE_ID_CANARY,
+                type: 'Run',
+                sport_type: DOM_XSS_CANARY,
+                name: DOM_XSS_CANARY,
+                start_date_local: '2026-01-02T06:00:00.000Z',
+                start_latlng: [1, 2],
+                end_latlng: [3, 4]
+            }]);
+            const visualization = document.getElementById('map-visualization');
+            visualization.value = 'points';
+            visualization.dispatchEvent(new Event('change', { bubbles: true }));
+            const sportOption = Array.from(document.getElementById('map-sport-filter').options)
+                .find(option => option.value === DOM_XSS_CANARY);
+            requireGate(sportOption?.textContent === DOM_XSS_CANARY);
+            requireGate(popups.length === 2);
+            requireGate(popups.every(popup => popup instanceof HTMLElement));
+            requireGate(popups.every(popup => popup.textContent.includes(DOM_XSS_CANARY)));
+            requireGate(popups.every(popup => popup.querySelector('img[src="x"]') === null));
+            requireGate(globalThis.__domSafetyExecuted === 0);
+            return {
+                canaryRenderedAsText: true,
+                opaqueIdPreserved: OPAQUE_ID_CANARY,
+                nonHttpsProfileOmitted: true,
+                finiteTrainingZoneStyles: ['50%', '50%'],
+                leafletPopupUsesDom: true,
+                canaryExecutions: 0
+            };
+        });
+
+        await gate('legacyActivityIdAndDomParity', async () => {
+            requireGate(modules !== null);
+            const legacyActivities = [
+                { id: 66914681, name: 'Legacy numeric ID', type: DOM_XSS_CANARY, sport_type: DOM_XSS_CANARY },
+                { id: 0, name: 'Legacy zero ID', type: 'Run', sport_type: 'Run' },
+                { id: -0, name: 'Legacy negative zero ID', type: 'Run', sport_type: 'Run' },
+                { id: null, name: 'Legacy null ID', type: 'Run', sport_type: 'Run' },
+                { name: 'Legacy missing ID', type: 'Run', sport_type: 'Run' },
+                { id: '0', name: 'Opaque string zero ID', type: 'Run', sport_type: 'Run' }
+            ].map((activity, index) => ({
+                start_date_local: `2026-01-0${index + 1}T06:00:00.000Z`,
+                distance: 1000,
+                moving_time: 300,
+                ...activity
+            }));
+            modules.activitiesModule.renderActivitiesTab(legacyActivities);
+            const rows = Array.from(document.querySelectorAll('#activities-table tbody tr'));
+            const rowFor = name => rows.find(row => row.textContent.includes(name));
+            const queryIdFor = name => {
+                const link = rowFor(name)?.querySelector('a.act-name-link');
+                return link ? new URL(link.href).searchParams.get('id') : null;
+            };
+            requireGate(queryIdFor('Legacy numeric ID') === '66914681');
+            requireGate(queryIdFor('Legacy zero ID') === '0');
+            requireGate(queryIdFor('Legacy negative zero ID') === '0');
+            requireGate(queryIdFor('Opaque string zero ID') === '0');
+            requireGate(rowFor('Legacy null ID')?.querySelector('a') === null);
+            requireGate(rowFor('Legacy missing ID')?.querySelector('a') === null);
+            const sportCell = rowFor('Legacy numeric ID')?.children[2];
+            requireGate(sportCell?.querySelector('small')?.textContent === DOM_XSS_CANARY);
+            requireGate(sportCell.querySelector('img[src="x"]') === null);
+            requireGate(globalThis.__domSafetyExecuted === 0);
+            return {
+                numericId: '66914681',
+                zeroIds: ['0', '0'],
+                missingAndNullLinks: 0,
+                sportSmallHookRetained: true,
+                canaryExecutions: 0
             };
         });
 
@@ -771,7 +929,7 @@
                 requireGate(factoryCount === 1);
                 requireGate(JSON.stringify(factoryOptions) === JSON.stringify([{
                     sessionMode: 'real',
-                    mode: 'legacy'
+                    mode: 'canonical'
                 }]));
 
                 const initializeActivities = await mainModule.loadActivitiesForSession({
@@ -936,10 +1094,10 @@
                 const networkStart = observations.pageNetwork.length;
                 const chartStart = observations.chartConfigs.length;
                 const rawRun = {
-                    id: 'demo-browser-run',
+                    id: OPAQUE_ID_CANARY,
                     type: 'Run',
                     sport_type: 'Run',
-                    name: 'Synthetic 6x Threshold Run Plus Demo',
+                    name: `${DOM_XSS_CANARY} Synthetic 6x Threshold`,
                     start_date: '2026-01-05T06:00:00.000Z',
                     start_date_local: '2026-01-05T06:00:00.000Z',
                     distance: 10000,
@@ -955,12 +1113,12 @@
                     gears: Object.freeze([...injectedGears]),
                     async getActivity(activityId) {
                         activityReads += 1;
-                        requireGate(activityId === 'demo-browser-run');
+                        requireGate(activityId === OPAQUE_ID_CANARY);
                         return { ...rawRun, laps: [] };
                     },
                     async getStreams(activityId) {
                         streamReads += 1;
-                        requireGate(activityId === 'demo-browser-run');
+                        requireGate(activityId === OPAQUE_ID_CANARY);
                         throw new Error('synthetic private stream failure');
                     },
                     onFiltersChange(nextFilters) {
@@ -1039,6 +1197,17 @@
                 gearFilter.dispatchEvent(new Event('change', { bubbles: true }));
                 await Promise.resolve();
                 const rerenderedGearFilter = root.querySelector('#run-plus-gear-filter');
+                const canaryLinks = Array.from(root.querySelectorAll('a')).filter(link => (
+                    link.textContent === `${DOM_XSS_CANARY} Synthetic 6x Threshold`
+                ));
+                requireGate(canaryLinks.length > 0);
+                requireGate(canaryLinks.every(link => (
+                    new URL(link.href).searchParams.get('id') === OPAQUE_ID_CANARY
+                    && link.relList.contains('noopener')
+                    && link.relList.contains('noreferrer')
+                )));
+                requireGate(root.querySelector('img[src="x"]') === null);
+                requireGate(globalThis.__domSafetyExecuted === 0);
                 const allEmbeddedCharts = observations.chartConfigs.slice(chartStart).filter(config => (
                     typeof config.canvasId === 'string'
                     && config.canvasId.startsWith('run-plus-')
@@ -1129,6 +1298,9 @@
                         option.label === injectedLabel
                     )),
                     gearFilterInteractionApplied: rerenderedGearFilter?.value === 'demo-shoe',
+                    canaryRenderedAsText: canaryLinks.length > 0,
+                    opaqueIdRoundTrip: OPAQUE_ID_CANARY,
+                    canaryExecutions: globalThis.__domSafetyExecuted,
                     unsafeOptionGetterCalls,
                     nsmActivityReads: activityReads,
                     nsmStreamReads: streamReads,

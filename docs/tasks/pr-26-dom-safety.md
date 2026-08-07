@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 M23 / PR-26 |
-| Status | A2 read-only audit complete; implementation authority paused |
+| Status | A3 R1 implementation authorized and active; R2 prohibited |
 | Branch | `codex/v2/dom-safety` |
 | Exact base | `integration/v2@e083fa0d55c8981f0258af546451ebb0d48e4fa4` |
 | Allowed path for A0-A2 | `docs/tasks/pr-26-dom-safety.md` only |
@@ -652,3 +652,165 @@ product implementation was added; no actual-served browser or implementation CI 
 the docs-only A2 commit is pushed and Draft PR #32 is re-verified, the complete package is returned
 to the control tower. The PR remains Draft; Ready, merge, release, deploy, implementation, branch
 cleanup, and worktree cleanup remain prohibited.
+
+## A3 R1 implementation authorization
+
+The user explicitly approved the default M23 A3 contract: **“批准 M23 A3 默认方案。”** This
+authorization supersedes only the A2 implementation pause for R1. R2 remains prohibited until R1
+is Squash Merged, the resulting `integration/v2` push CI succeeds, and a separate task is opened.
+
+Approved decisions are:
+
+1. the strict R1 -> R2 split;
+2. removal of dynamic inline handlers in favor of `addEventListener`, internal links serialized
+   with `URLSearchParams`, and `rel="noopener noreferrer"` on new-window links;
+3. a literal `https:`-only policy for the supported-Legacy athlete profile image, omitting invalid
+   or non-HTTPS values;
+4. native DOM primitives only, with no sanitizer/dependency and no public API, schema, Repository,
+   Import, analysis, Service Worker, route, CSS, copy, or persistence change;
+5. exact opaque string IDs and existing missing/absent/`null`/numeric `0`/`-0` semantics.
+
+The cumulative A3 R1 hard allowlist is exactly these sixteen paths:
+
+```text
+docs/tasks/pr-26-dom-safety.md
+js/app/main.js
+js/tabs/activities.js
+js/tabs/calendar.js
+js/tabs/wrapped.js
+js/tabs/run-analysis.js
+js/tabs/bike-analysis.js
+js/tabs/swim-analysis.js
+js/tabs/athlete.js
+js/tabs/maps.js
+tests/consumers/summary-consumers.test.js
+tests/consumers/summary-boundaries.test.js
+tests/consumers/summary-browser-smoke.html
+tests/consumers/canonical-summary-browser-smoke.html
+tests/consumers/run-plus-consumers.test.js
+tests/consumers/run-plus-canonical-browser-smoke.html
+```
+
+A seventeenth path is a stop condition. A historical-test conflict or browser-surface blocker must
+be returned to the control tower as a minimal evidence/decision package; it does not expand scope.
+Implementation must be failure-first with the already frozen tag, double/single quote, backtick,
+inline-JavaScript, URL-reserved, scheme-like, `__proto__`/`constructor`/`prototype`, Unicode,
+missing/`null`/`0`/`-0` canaries. R1 ends only after focused/full/privacy/syntax/diff/path checks,
+actual-served disposable-browser evidence or an explicitly accepted equivalent-evidence decision,
+independent findings-first review, fresh no-findings re-review, exact-head depth-1 and CI success,
+and a Task-Brief-only Final Review Closure. Draft, no merge/cleanup/deploy/release, and no R2 remain
+hard boundaries.
+
+## A3 R1 implementation evidence
+
+### Implemented R1 seam
+
+R1 changes only the approved root-summary owners. Persistent activity names, Legacy activity type
+strings, gear option labels/IDs, athlete metadata, and Map popup names now enter native DOM nodes.
+Activity links retain values in closures/DOM properties, serialize one `id` with
+`URLSearchParams`, attach listeners with `addEventListener`, and add
+`rel="noopener noreferrer"` for new windows. Leaflet receives `HTMLElement` popup content, not an
+HTML string. The supported-Legacy athlete image is created only for an absolute literal `https:`
+URL; every other value is omitted.
+
+The Router's existing compatibility contract is preserved locally in each R1 owner: a non-empty
+string ID is retained byte-for-byte as a string and positive safe-integer Legacy IDs retain their
+existing `String(id)` behavior. Activities, Calendar, and Athlete historically emitted numeric
+zero links, so their `0`/`-0` values continue to route as `id=0`; Wrapped, Run, Bike, and Swim used
+truthy-ID guards, so numeric `0`/`-0` remain inert text there. Missing/invalid/null IDs never invent
+an empty query after repair. Opaque string `"0"` and `"000123"` are never parsed. Activities
+retains the existing emoji plus `<small>` Sport-cell DOM/CSS hook, with only the dynamic type
+assigned through `textContent`.
+
+Athlete Chart failures now expose and log only fixed public copy. A synthetic underlying Error
+whose message is the complete tag/quote/inline-JavaScript/Unicode canary is absent from both DOM
+and captured console payloads. Supported-Legacy training-zone min/max values, the aggregate range,
+and every computed `flexBasis` width must be finite before the style property is assigned; the
+browser canary rejects string and infinite bounds and retains only two finite `50%` segments. No
+public API, dependency, schema, storage, Repository, Import,
+analysis algorithm, Service Worker, route, CSS, product copy, persistence, migration, or stored
+value changed. R2 files and behavior remain untouched.
+
+### Failure-first and regression evidence
+
+The deterministic corpus covers tag and closing-tag shapes, double/single quotes, backtick,
+inline-JavaScript syntax, URL-reserved and scheme-like strings, `__proto__`, `constructor`,
+`prototype`, Unicode controls/combining/astral text, missing, `null`, string/numeric zero, and
+`-0`. Before the product repair, the focused boundary run failed specifically because
+`js/tabs/activities.js` still rejected the required Legacy numeric-ID contract. After repair, the
+focused summary/Run Plus set passes `59/59`.
+
+Executable supported-Legacy rendering covers ID `66914681`, numeric `0`, numeric `-0`, null,
+absent, and opaque string `"0"`: the numeric IDs route as `66914681`, `0`, and `0`; null/absent
+produce no anchor; exact text, `<small>` structure, and zero canary execution remain intact.
+Canonical rendering seeds independent Run, Ride, and Swim hostile names/opaque IDs and asserts
+the exact link text, query round-trip, and `rel` within Activities, Calendar, Wrapped, Run, Bike,
+and Swim after refresh, sort, filter, Calendar month/year/week plus day-detail switches, and
+rerender. The embedded Run Plus consumer repeats
+the exact-name/query/`rel`/zero-execution assertions after gear-filter rerender and NSM view switch.
+
+### Disposable-browser evidence and exact limitation
+
+All browser work used only `127.0.0.1`, fresh profiles under `/private/tmp`, deterministic
+synthetic storage, and no user Chrome/profile, login, Token, provider, private fixture, real
+activity/profile, GPS/health/power history, export, or screenshot.
+
+- The served supported-Legacy/Demo/Real seam harness passed with no failed gate: Legacy numeric,
+  zero, negative-zero, null/missing, Athlete profile, Map popup, and embedded Run Plus canaries were
+  inert; page network attempts were zero and captured console errors were zero.
+- The served Canonical harness passed its complete 11-route matrix. Independent Run/Ride/Swim
+  canaries round-tripped on their owning routes, all routes reported zero execution/injected
+  elements, the forced Athlete Chart failure exposed fixed copy only, underlying canary text was
+  absent from console, Repository I/O used only `strava-stats-v2`, and provider/Authorization/Token
+  observations were zero. Its rewritten `srcdoc` root remains supporting evidence, not a relabelled
+  actual-served result.
+- A fresh-profile direct real-URL run completed the 11 root routes earlier in A3 with zero canary
+  execution/elements, zero provider request, zero runtime/console error, exact opaque-ID link
+  round-trip, and no user storage/SW contamination. The independent-review delta then added three
+  sport-specific canaries, Legacy numeric sentinels, fixed Chart-error forcing, and stricter
+  assertions. A second direct real-URL 503-by-11 stress rerun after that delta exhausted the
+  isolated Chromium renderer (V8 OOM) before a final JSON record could be collected. The served
+  per-owner harnesses above passed the exact delta. This OOM is reported as a browser-surface
+  blocker/equivalent-evidence decision for the control tower; it is not claimed as a second direct
+  actual-served pass.
+- The canonical Run Plus seed plus direct `/run-plus` -> `/run-plus/nsm` disposable-profile run
+  passed with the opaque ID `0007/opaque ?#%`, exact hostile text, `noopener noreferrer`, zero
+  execution/injected elements, zero provider request, exact six synthetic user-owned storage keys,
+  and no Service Worker control. The seed document itself continues to say
+  `ACTUAL_SERVED_NAVIGATION_REQUIRED`; the separate direct navigation supplies the runtime evidence.
+
+### Local verification and review status
+
+```text
+npm ci                                                    PASS (6 packages installed)
+node --test focused summary/Run Plus consumers            PASS (59/59)
+npm run check:syntax                                      PASS (239 files)
+npm run check:privacy                                     PASS
+npm test                                                  PASS (1,474/1,474)
+git diff --check                                          PASS
+changed-path audit                                        PASS (exact approved 16; no seventeenth)
+```
+
+The first independent findings-first review found: rejected Legacy numeric IDs/Calendar empty
+queries; removed Activities `<small>` parity; insufficient per-sport and Run Plus canary evidence;
+non-executable null/zero tests; two stale exact-baseline browser expectations; and raw Athlete
+Chart Error retention. Each production/test finding received a failing or executable synthetic
+contract before repair. The two stale browser expectations are exact-baseline test corrections:
+Real defaults to Canonical on this base, and Canonical detail supports lookup so an unknown ID is
+`NOT_FOUND`. They do not change product/detail behavior or enter R2, and are returned explicitly to
+the control tower rather than treated as silent scope expansion. A fresh review then caught the
+owner-specific numeric-zero distinction and missing Wrapped/Calendar depth assertions. A second
+failure-first source contract reproduced the zero-parity issue; the four truthy-ID owners were
+corrected to keep `0`/`-0` inert, and the Canonical gate now executes Wrapped plus Calendar
+month/year/week/day-detail with all three sport canaries.
+
+The final independent review then identified the remaining non-finite Athlete training-zone style
+contract. Its source test failed first; the renderer now filters non-finite/reversed bounds and
+requires finite positive total/segment ranges before style assignment. A fresh served Legacy gate
+passed with exact `finiteTrainingZoneStyles: ["50%", "50%"]`. The reviewer rechecked that delta,
+the full production sink set, owner-local ID semantics, the exact 16 paths, and R1/R2 separation,
+and returned **NO FINDINGS**.
+
+Implementation commit/push, depth-1 verification, CI, and the Task-Brief-only Final Review
+Closure remain pending at this evidence checkpoint. PR #32 remains
+Draft; no Ready, merge, cleanup, deploy, release, or R2 work is authorized here.

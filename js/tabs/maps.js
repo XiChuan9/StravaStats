@@ -33,6 +33,14 @@ function makeTileLayer(key) {
     return L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap' });
 }
 
+function createMapPopup(activity, { end = false } = {}) {
+    const popup = document.createElement('div');
+    const title = document.createElement('strong');
+    title.textContent = `${end ? 'End: ' : ''}${activity.name || activity.type || ''}`;
+    popup.append(title, document.createElement('br'), document.createTextNode(activity.start_date_local || ''));
+    return popup;
+}
+
 export function renderMapTab(activities = [], dateFrom = null, dateTo = null) {
     const container = document.getElementById('map-tab');
     if (!container) return;
@@ -64,7 +72,16 @@ export function renderMapTab(activities = [], dateFrom = null, dateTo = null) {
 
     // Populate sport types and apply defaults
     const types = [...new Set(activities.map(a => (a.sport_type || a.type || 'Unknown').trim()).filter(Boolean))].sort();
-    sportSel.innerHTML = '<option value="all">All</option>' + types.map(t => `<option value="${t}">${t}</option>`).join('');
+    const allSportsOption = document.createElement('option');
+    allSportsOption.value = 'all';
+    allSportsOption.textContent = 'All';
+    const sportOptions = types.map(type => {
+        const option = document.createElement('option');
+        option.value = type;
+        option.textContent = type;
+        return option;
+    });
+    sportSel.replaceChildren(allSportsOption, ...sportOptions);
     // default control values
     sportSel.value = 'all';
     if (vizSel) vizSel.value = 'heat';
@@ -159,7 +176,8 @@ export function renderMapTab(activities = [], dateFrom = null, dateTo = null) {
                 if (view === 'points' || (view === 'routes' && !coords)) {
                     if (a.start_latlng && a.start_latlng.length === 2) {
                         const m = L.circleMarker([a.start_latlng[0], a.start_latlng[1]], { radius: 5, color: baseColor, fillColor: baseColor, fillOpacity: 0.9 });
-                        m.bindPopup(`<strong>${a.name || a.type}</strong><br>${a.start_date_local || ''}`);
+                        const popup = createMapPopup(a);
+                        m.bindPopup(popup);
                         m.addTo(window._stravaPoints);
                         bounds.push([a.start_latlng[0], a.start_latlng[1]]);
                     }
@@ -168,7 +186,8 @@ export function renderMapTab(activities = [], dateFrom = null, dateTo = null) {
                     else if (coords && coords.length) end = coords[coords.length - 1];
                     if (end) {
                         const me = L.circleMarker([end[0], end[1]], { radius: 5, color: baseColor, fillColor: baseColor, fillOpacity: 0.9 });
-                        me.bindPopup(`<strong>End: ${a.name || a.type}</strong><br>${a.start_date_local || ''}`);
+                        const popup = createMapPopup(a, { end: true });
+                        me.bindPopup(popup);
                         me.addTo(window._stravaPoints);
                         bounds.push([end[0], end[1]]);
                     }
@@ -217,4 +236,3 @@ export function renderMapTab(activities = [], dateFrom = null, dateTo = null) {
 }
 
 export default { renderMapTab };
-

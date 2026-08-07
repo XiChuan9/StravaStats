@@ -15,6 +15,15 @@ const APP_SESSION_MODE = Object.freeze({
 const projectRoot = new URL('../../', import.meta.url);
 const mainSource = await readFile(new URL('js/app/main.js', projectRoot), 'utf8');
 
+test('M23 main gear-filter seam uses native option nodes for persistent gear IDs and labels', () => {
+    assert.match(mainSource, /const setOptions = \(selectEl, options\) => \{/);
+    assert.match(mainSource, /document\.createElement\('option'\)/);
+    assert.match(mainSource, /optionEl\.value = String\(option\.value\)/);
+    assert.match(mainSource, /optionEl\.textContent = String\(option\.label\)/);
+    assert.match(mainSource, /selectEl\.replaceChildren\(\.\.\.optionElements\)/);
+    assert.doesNotMatch(mainSource, /selectEl\.innerHTML\s*=\s*options/);
+});
+
 function compileBoundary(source, {
     getFeatureFlags = () => Object.freeze({
         dataRepositoryMode: 'legacy',

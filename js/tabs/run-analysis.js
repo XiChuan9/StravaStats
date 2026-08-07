@@ -115,6 +115,32 @@ function getElement(id) {
     return document.getElementById(resolvedId);
 }
 
+function createActivityLink(activity) {
+    const label = activity?.name || '-';
+    const activityId = typeof activity?.id === 'string' && activity.id.length > 0
+        ? activity.id
+        : (Number.isSafeInteger(activity?.id) && activity.id > 0 ? String(activity.id) : null);
+    if (activityId === null) {
+        return document.createTextNode(label);
+    }
+    const params = new URLSearchParams();
+    params.set('id', activityId);
+    const link = document.createElement('a');
+    link.href = `/html/activity-router.html?${params.toString()}`;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = label;
+    return link;
+}
+
+function appendTableCell(row, value, dataValue = null) {
+    const cell = document.createElement('td');
+    if (dataValue !== null) cell.dataset.value = String(dataValue);
+    if (value instanceof Node) cell.append(value);
+    else cell.textContent = String(value);
+    row.append(cell);
+}
+
 function upsertChartInfo(canvasId, options) {
     utils.upsertChartInfo(scopedId(canvasId), options);
 }
@@ -1874,20 +1900,13 @@ function renderTopRuns(runs) {
         return `${h}h ${m}m`;
     };
 
-    const activityLink = a => {
-        if (!a?.id) return a?.name || '-';
-        return `<a href="/html/activity-router.html?id=${encodeURIComponent(a.id)}" target="_blank" rel="noopener noreferrer">${a.name}</a>`;
-    };
-
     el.innerHTML = `
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin: 2rem 0;">
             <div class="top-box" style="padding: 1.5rem; background: rgba(252, 82, 0, 0.08); border: 1px solid rgba(252, 82, 0, 0.25); border-radius: 12px;">
                 <h3 style="margin-top: 0; color: #FC5200;">🏃 Longest Runs</h3>
                 <table class="compact-table" id="${idAttr('run-top-distance-table')}">
                 <thead><tr style="background: #FC5200; color: #fff;"><th>#</th><th>Run</th><th data-sort="num">km</th></tr></thead>
-                <tbody>
-                    ${topDistance.map((a, i) => `<tr><td>${i + 1}</td><td>${activityLink(a)}</td><td data-value="${a.distance / 1000}">${(a.distance / 1000).toFixed(1)} km</td></tr>`).join("")}
-                </tbody>
+                <tbody></tbody>
                 </table>
             </div>
 
@@ -1895,9 +1914,7 @@ function renderTopRuns(runs) {
                 <h3 style="margin-top: 0; color: #FC5200;">⛰️ Most Elevation</h3>
                 <table class="compact-table" id="${idAttr('run-top-elevation-table')}">
                 <thead><tr style="background: #FC5200; color: #fff;"><th>#</th><th>Run</th><th data-sort="num">Elev (m)</th></tr></thead>
-                <tbody>
-                    ${topElevation.map((a, i) => `<tr><td>${i + 1}</td><td>${activityLink(a)}</td><td data-value="${a.total_elevation_gain}">${a.total_elevation_gain} m</td></tr>`).join("")}
-                </tbody>
+                <tbody></tbody>
                 </table>
             </div>
 
@@ -1905,13 +1922,27 @@ function renderTopRuns(runs) {
                 <h3 style="margin-top: 0; color: #FC5200;">⚡ Fastest Races</h3>
                 <table class="compact-table" id="${idAttr('run-top-pace-table')}">
                 <thead><tr style="background: #FC5200; color: #fff;"><th>#</th><th>Run</th><th data-sort="num">Pace</th></tr></thead>
-                <tbody>
-                    ${topFastest.map((a, i) => `<tr><td>${i + 1}</td><td>${activityLink(a)}</td><td data-value="${a.pace}">${utils.formatPace(a.pace, 1)}</td></tr>`).join("")}
-                </tbody>
+                <tbody></tbody>
                 </table>
             </div>
         </div>
     `;
+
+    const populateTopTable = (tableId, activities, valueFor, textFor) => {
+        const body = getElement(tableId)?.querySelector('tbody');
+        if (!body) return;
+        const rows = activities.map((activity, index) => {
+            const row = document.createElement('tr');
+            appendTableCell(row, index + 1);
+            appendTableCell(row, createActivityLink(activity));
+            appendTableCell(row, textFor(activity), valueFor(activity));
+            return row;
+        });
+        body.replaceChildren(...rows);
+    };
+    populateTopTable('run-top-distance-table', topDistance, a => a.distance / 1000, a => `${(a.distance / 1000).toFixed(1)} km`);
+    populateTopTable('run-top-elevation-table', topElevation, a => a.total_elevation_gain, a => `${a.total_elevation_gain} m`);
+    populateTopTable('run-top-pace-table', topFastest, a => a.pace, a => utils.formatPace(a.pace, 1));
 
     makeSortable(getElement('run-top-distance-table'));
     makeSortable(getElement('run-top-elevation-table'));
@@ -1923,26 +1954,12 @@ function renderActivitiesTable(runs) {
     const el = getElement("run-activities-table");
     if (!el) return;
 
-    const rows = runs
-        .sort((a, b) => new Date(b.start_date) - new Date(a.start_date))
-        .map(a => {
+    const sortedRuns = runs.sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
+    const rowValues = sortedRuns.map(a => {
             const pace = utils.formatPace(1000 / a.average_speed, 1);
             const paceVal = a.average_speed > 0 ? (1000 / a.average_speed) : 9999;
-            const activityLink = a.id
-                ? `<a href="/html/activity-router.html?id=${encodeURIComponent(a.id)}" target="_blank" rel="noopener noreferrer">${a.name}</a>`
-                : a.name;
-            return `
-            <tr>
-                <td>${a.start_date_local.substring(0, 10)}</td>
-                <td>${activityLink}</td>
-                <td data-value="${(a.distance / 1000).toFixed(2)}">${(a.distance / 1000).toFixed(2)}</td>
-                <td data-value="${a.total_elevation_gain || 0}">${a.total_elevation_gain || 0}</td>
-                <td data-value="${paceVal}">${pace}</td>
-                <td data-value="${a.average_heartrate || 0}">${a.average_heartrate ? Math.round(a.average_heartrate) : "-"}</td>
-            </tr>
-            `;
-        })
-        .join("");
+            return { activity: a, pace, paceVal };
+        });
 
     el.innerHTML = `
         <table id="${idAttr('run-all-table')}" style="width: 100%; border-collapse: collapse; margin-top: 2rem; border: 1px solid rgba(252, 82, 0, 0.25); border-radius: 10px; overflow: hidden;">
@@ -1956,10 +1973,22 @@ function renderActivitiesTable(runs) {
                     <th data-sort="num" style="padding: 12px; text-align: left; border-bottom: 2px solid rgba(255,255,255,0.2);">Avg HR</th>
                 </tr>
             <tbody>
-                ${rows}
             </tbody>
         </table>
     `;
+
+    const body = getElement('run-all-table')?.querySelector('tbody');
+    const rows = rowValues.map(({ activity, pace, paceVal }) => {
+        const row = document.createElement('tr');
+        appendTableCell(row, activity.start_date_local.substring(0, 10));
+        appendTableCell(row, createActivityLink(activity));
+        appendTableCell(row, (activity.distance / 1000).toFixed(2), (activity.distance / 1000).toFixed(2));
+        appendTableCell(row, activity.total_elevation_gain || 0, activity.total_elevation_gain || 0);
+        appendTableCell(row, pace, paceVal);
+        appendTableCell(row, activity.average_heartrate ? Math.round(activity.average_heartrate) : '-', activity.average_heartrate || 0);
+        return row;
+    });
+    body?.replaceChildren(...rows);
 
     makeSortable(getElement('run-all-table'));
 }
