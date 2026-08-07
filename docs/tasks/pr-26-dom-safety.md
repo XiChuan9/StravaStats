@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 M23 / PR-26 |
-| Status | A1 scope and evidence contract frozen; A2 read-only audit authorized |
+| Status | A2 read-only audit complete; implementation authority paused |
 | Branch | `codex/v2/dom-safety` |
 | Exact base | `integration/v2@e083fa0d55c8981f0258af546451ebb0d48e4fa4` |
 | Allowed path for A0-A2 | `docs/tasks/pr-26-dom-safety.md` only |
@@ -280,4 +280,375 @@ stop. Do not start implementation, mark Ready, merge, release, deploy, or clean 
 
 ## A2 result
 
-Pending read-only audit.
+### Verdict and priority
+
+The exact baseline contains production-reachable persistent DOM XSS and attribute/URL injection.
+The highest-priority path is imported or shadow-written Canonical activity data rendered by the
+root summary and detail routes. Supported Legacy/provider routes add independent gear, athlete,
+segment, map, and metadata surfaces. Two strictly ordered implementation packages are required:
+
+1. **R1 — root summary DOM and opaque-ID hardening.** Close every default-Canonical reachable P0
+   in the root document first, plus the root-owned supported-Legacy sinks. Freeze a safe internal
+   activity-link output seam for R2.
+2. **R2 — detail and gear-owned DOM hardening.** Consume the R1 seam, but continue to treat every
+   directly constructed activity/gear URL as untrusted. Close generic/sport detail, gear cards,
+   gear detail, segment, Leaflet tooltip, and inline-handler sinks.
+
+R2 depends on the R1 link contract and its regression evidence. R1 does not depend on R2. Neither
+package may use page age, low traffic, explicit Legacy mode, or an assumed friendly provider value
+to lower the priority of a reachable code-execution sink.
+
+### Verified source -> projection -> renderer graph
+
+#### Canonical import and shadow paths
+
+```text
+Strava archive activities.csv "Activity Name"
+  -> js/import/activities-csv-decoder.js:343-344 (verbatim string or null)
+  -> ImportedActivityBundle / CanonicalActivity validation
+     js/data/contracts/canonical-activity.js:294-304 (null or arbitrary string; not HTML encoding)
+  -> Canonical Store
+  -> CanonicalRepository.listActivities/getActivity
+  -> js/repository/canonical/summary-projection.js:164-194
+     id and name copied as strings; shadow gearExternalId copied as gear_id
+  -> js/repository/canonical/detail-projection.js:180-195
+     detail reuses the same summary fields
+  -> js/app/main.js root composition or DetailReadSession
+  -> R1/R2 renderers below
+
+GPX track/metadata name
+  -> js/decoders/gpx/decoder.js:935-937 (verbatim normalized XML text)
+  -> the same Canonical validation, persistence, projection, and renderer path
+
+Legacy/provider activity
+  -> js/shadow/legacy-to-canonical.js:114-124 and 250-270
+     numeric Legacy IDs may become strings; existing strings remain exact; gear_id becomes
+     shadowCanonicalWriterV1.gearExternalId without HTML or URL encoding
+  -> the same Canonical summary/detail projection path
+```
+
+Canonical `sportCategory`/`sportVariant` is projected through the finite compatibility tables in
+`summary-projection.js`; it is not attacker text in default Canonical mode. Canonical summary does
+not project map polylines, coordinates, athlete, zones, full gear objects, descriptions, segment
+efforts, or device metadata. FIT `productName` can become an arbitrary stored device `model`
+(`js/decoders/fit/decoder.js:925-947`), but no audited production projection renders that field;
+that candidate is `UNREACHABLE` on this baseline.
+
+#### Supported Legacy/provider paths
+
+```text
+Legacy connector or Legacy metadata/activity cache
+  -> LegacyRepository
+  -> js/repository/legacy/legacy-projection.js:1-142
+     detached JSON-safe descriptor copy; sensitive keys rejected; strings not DOM-encoded
+  -> js/app/main.js injected summary activities/athlete/zones/gears
+  -> root R1 renderers
+
+Legacy detail activity/streams/metadata
+  -> activity-router + DetailReadSession
+  -> generic/run/bike/swim R2 renderers
+
+Legacy gear/activity local cache used by the existing gear detail route
+  -> html/gear.html URLSearchParams id
+  -> js/pages/gear/gear-analysis.js:45-79
+  -> R2 hero/health/list/map renderers
+```
+
+The existing gear-detail cache read is an inherited, production-reachable page-local path. R2 may
+make its DOM output safe but must not migrate it to Repository, probe Legacy databases, change its
+storage keys, or combine that architecture issue with this repair.
+
+#### Output seam from R1 to R2
+
+R1 must create internal activity anchors as DOM nodes. It must construct a same-origin
+`/html/activity-router.html` URL relative to the served origin, set exactly one `id` search
+parameter with `URLSearchParams`, assign the resulting URL to the anchor, and put the label in a
+text node. `target="_blank"` links receive `rel="noopener noreferrer"`. The opaque ID is retained
+as the exact string; it is never trimmed for output, parsed, compared numerically, or placed in an
+HTML/JavaScript string.
+
+`js/pages/activity-router.js` already reads `id` with `URLSearchParams`, compares the decoded
+string identity, selects only a page from a closed route table, and applies `encodeURIComponent`
+when forwarding the same ID to the detail page. R2 must nevertheless defend direct navigation to
+`activity.html`, `run.html`, `bike.html`, `swim.html`, and `gear.html`: query parameters remain
+untrusted even when R1 normally produced the link. Gear links follow the same same-origin
+`URLSearchParams` rule with `/html/gear.html`; no `javascript:` or protocol-relative target is
+accepted or derived from data.
+
+### Severity definitions
+
+- `P0`: a production route places an externally controlled persisted or query value into an HTML,
+  event-handler, or Leaflet-HTML parser context capable of creating markup or executable behavior.
+  Default Canonical reachability is called out separately from supported Legacy reachability.
+- `P1`: the sink is real but exploitation requires a producer-contract violation, a dependency
+  error string that has not been shown attacker-controlled, or an indirect malformed-shape path.
+- `SAFE`: current production value is constant/closed, uses a context-safe primitive, or is canvas
+  text only.
+- `UNREACHABLE`: data exists upstream but is not projected into an actual served renderer.
+
+Static analysis proves the source-to-parser condition for P0. The actual-served browser proof is
+deliberately `NOT RUN` in A2 and is a mandatory implementation gate.
+
+### P0 sink inventory
+
+| Package | Mode / production route | File and function | Source -> sink and exploitability | Required repair |
+| --- | --- | --- | --- | --- |
+| R1 | Default Canonical root Run/Bike filters | `js/app/main.js:936-969`, `setOptions` | Canonical `gear_id`, including shadow `gearExternalId`, is placed in option text and a quoted `value` inside `innerHTML`. A closing-option/tag canary reaches the HTML parser. | Build `option` nodes; assign `.value` and `.textContent`; preserve the exact ID. |
+| R1 | Default Canonical `/activities` | `js/tabs/activities.js:397-400, 475-849`, `COLUMNS.name` / `renderActivitiesTab` | Imported `name` becomes anchor body; opaque `id` becomes quoted `href`; the combined table is assigned to `innerHTML`. Both tag and attribute breakouts are reachable. | DOM-build the activity link/cells; URLSearchParams seam; text nodes. |
+| R1 | Default Canonical `/calendar` | `js/tabs/calendar.js:329-343, 382-401, 450-468, 487-522` | Imported name enters `title` and element text; ID enters `href`; month/week/year/day-detail strings are parsed with `innerHTML`. | Create nodes; set `.title`/text safely; create seam anchors. |
+| R1 | Default Canonical `/wrapped` | `js/tabs/wrapped.js:465-467, 748-874` | `activityLink` places ID and name into anchor HTML used by records, top sessions, and the all-activities table. | Return/append an anchor element, not HTML; seam URL plus text node. |
+| R1 | Default Canonical `/run` and Run Plus embedded Run analysis | `js/tabs/run-analysis.js:1857-1947` | IDs are URL-encoded, but imported names remain raw anchor HTML in top runs and the all-runs table. | Retain exact ID through the seam; render names with text nodes. |
+| R1 | Default Canonical `/bike` | `js/tabs/bike-analysis.js:690-787` | Top-ride names are raw anchor HTML. The later all-rides table separately escapes name and encodes ID and is not the vulnerable sink. | DOM-build top-ride anchors; keep the safe all-rides outcome. |
+| R1 | Default Canonical `/swim` | `js/tabs/swim-analysis.js:978-1084` | Imported names are raw in both top-swim and all-swim anchor HTML; IDs are encoded but name markup still executes. | DOM-build anchors/cells; preserve numeric/null presentation. |
+| R1 | Default Canonical `/trends` | `js/tabs/athlete.js:489-566` | Longest/fastest/elevation activity IDs are inserted unencoded in `href` within `innerHTML`. A quoted-attribute plus closing-tag ID canary reaches HTML. | Seam anchors with fixed “View” text. |
+| R1 | Supported Legacy `/trends` | `js/tabs/athlete.js:1875-1944` | Provider/cache firstname, lastname, city, country, `profile_medium`, and zone fields are interpolated into element, `src`, `title`, style-value, and text contexts. Canonical `getAthlete/getZones` returns `null`, so this is not default-Canonical reachable but remains a supported production P0. | DOM-build profile/zones; text nodes; image URL policy; finite numeric style assignment only. |
+| R1 | Supported Legacy `/map` | `js/tabs/maps.js:145-174`, `renderMapTab` | Activity name/date is passed as a string to Leaflet `bindPopup`, which treats it as HTML. Canonical summary lacks coordinates/map data, so current default Canonical cannot reach this popup. | Pass an `HTMLElement` whose children use text nodes; retain closed map styles. |
+| R2 | Default Canonical generic detail | `js/pages/activity/activity.js:790-824`, `renderActivityInfo` | Imported Canonical name is inserted into `DOM.info.innerHTML`. Legacy description/type/gear add independent persisted strings in the same sink. | Build the fixed info list with elements/text nodes. |
+| R2 | Default Canonical run/bike/swim detail | `js/pages/run/run.js:844-884`, `js/pages/bike/bike.js:452-504`, `js/pages/swim/swim.js:643-684` | Canonical/shadow `gear_id` and Legacy gear label are placed in anchor `href` and body via `heroGear.innerHTML`. | Build anchor; gear URLSearchParams; text node; direct-query defense. |
+| R2 | Supported Legacy generic/run/bike detail | `js/pages/activity/activity.js:1232-1266, 1391-1436`, `js/pages/run/run.js:1372-1406, 1531-1576`, `js/pages/bike/bike.js:1360-1417` | Best-effort/segment names and segment IDs are interpolated into table HTML and external Strava URLs. Provider-controlled names can create markup; opaque/reserved IDs can corrupt attributes/paths. | DOM-build rows; text names; permit only fixed `https://www.strava.com/segments/` origin and encode the path component. |
+| R2 | Supported Legacy root `/gear` | `js/tabs/gear.js:385-475`, `createGearCard` | Gear id is embedded in inline `onclick` JavaScript and a gear URL; name/brand/model are raw HTML. Persistent gear fields can execute on parse or click. | Remove inline handler; DOM-build card; addEventListener closure; URLSearchParams gear URL; text nodes. |
+| R2 | Direct `/html/gear.html?id=...` and supported Legacy gear detail | `js/pages/gear/gear-analysis.js:45-132, 169-213, 490-539` | A direct query ID is reflected into not-found HTML; persisted gear id/name/brand/model create hero/input/id markup; persisted activity id/name creates inline `window.open` and list HTML. Direct URL is untrusted independently of R1. | `replaceChildren` safe error UI; DOM-build hero/inputs/list; addEventListener; URLSearchParams; retain exact localStorage key identity. |
+| R2 | Supported Legacy gear map | `js/pages/gear/gear-analysis.js:335-360`, `renderGearMap` | Activity name is passed to Leaflet `bindTooltip` as HTML for polylines/markers. | Pass a text-only `HTMLElement`/text node as tooltip content. |
+
+### P1 and non-P0 candidates
+
+| Package | Candidate | Classification and reason | Contract |
+| --- | --- | --- | --- |
+| R1 | `js/tabs/activities.js:450-742` inferred Legacy column keys/labels | `P1`. Canonical projection keys are fixed. Legacy projection accepts descriptor-safe JSON keys, but the current provider schema owns a fixed field set; a contract-violating key can enter checkbox/data-attribute HTML. | R1 DOM construction must make keys inert without deleting `__proto__`, `constructor`, or other valid own keys. |
+| R1 | `js/tabs/athlete.js:386-486, 1966-1985` transition/type rows and sport options | `P1`. Default Canonical sport type is closed. Legacy Repository does not locally enforce the provider enum, so malformed Legacy type strings can enter HTML. | Use option/text nodes while preserving the same labels/order. |
+| R1 | `js/tabs/wrapped.js:549-641` detailed sport types | `P1` for the same Legacy type-contract gap; default Canonical is closed. | Text nodes for dynamic labels when the owning renderer is repaired. |
+| R1 | `js/tabs/athlete.js:1520-1529, 1948-1963` Chart catch messages | `P1 / NEEDS BROWSER PROOF`. Raw `error.message` enters `innerHTML`; audited Chart configs use fixed IDs and numeric/closed data, and no deterministic imported-string-to-error path was established. | Replace with fixed safe copy or `.textContent`; never retain underlying/provider payload. |
+| R1 | Athlete `profile_medium` URL | `P1` for scheme/origin behavior in addition to the P0 HTML-context problem. A quoted breakout is removed by DOM creation, but an arbitrary remote URL could still fetch. | Freeze an explicit permitted image scheme/origin or omit invalid URLs. External-profile egress policy beyond this image is a separate decision. |
+| R2 | Static inline `window.close/history.back` handlers in served HTML | `SAFE` for DOM XSS because code and values are constants. They are not evidence of persisted injection. | Do not expand R2 to unrelated CSP cleanup; only remove dynamic inline handlers in owned repaired renderers. |
+
+### Safe and unreachable audit record
+
+| Area | Result |
+| --- | --- |
+| Activity Router | `SAFE`: query is parsed with `URLSearchParams`, page selection is closed, forwarding uses `encodeURIComponent`, and error UI uses `createElement`, `textContent`, and `addEventListener`. |
+| Run Analysis Leaflet popup | `SAFE`: only fixed “Start Point” / “End Point” text reaches `bindPopup`. |
+| Weather popup/prediction | `SAFE` for DOM XSS on the verified path: popup values are finite numbers or an internal weather-code/relation vocabulary; run names in the weather table use `textContent`. Weather/network/location egress is expressly outside R1/R2. |
+| Chart.js | `SAFE` for name/gear strings in current default canvas tooltips/legends. The custom HTML legend overlays create elements and assign label `textContent`. No external HTML tooltip renderer was found. |
+| AI/chat | Message text escapes `&`, `<`, and `>` before the limited bold/italic transform. Roles are produced only by the closed `user`/`model` app path. AI data egress, API-key storage, logging, and malformed localStorage recovery are outside R1/R2. |
+| Run Plus / NSM | `SAFE` for audited names/IDs/settings: `esc` is applied to name links, gear option values/labels, and user notes; IDs are `encodeURIComponent`-encoded. Its selector IDs are internal constants. Do not change it in R1/R2. |
+| Dashboard / Planner | `SAFE` for the investigated persistent name/gear/ID sources. Dynamic strings are numeric/closed or canvas data URLs; no activity name/opaque-ID HTML sink was found. |
+| Source Manager / Import Report / Duplicate Review | `SAFE`: imported labels/codes and review tokens use created elements, `textContent`, or inert dataset properties; source selectors use a closed app vocabulary. Do not mix import/report redesign into this work. |
+| Backup / Diagnostics / blocked/error states | `SAFE`: audited public errors are fixed/reduced and rendered as text. Token, provider body, raw activity, and underlying cause remain excluded. |
+| `js/services/api.js` athlete renderer | `UNREACHABLE` from the actual root composition; the root uses `js/tabs/athlete.js`. Its HTML escaping is not a shared security primitive and must not be reused in inline handlers. |
+| FIT device manufacturer/model | `UNREACHABLE`: stored in Canonical device metadata but not projected to a production summary/detail renderer on this baseline. |
+| Demo | `SAFE` as a closed deterministic producer, but repaired renderers must remain equally safe if future synthetic canaries use Demo-shaped values. Demo safety does not excuse a Real sink. |
+| Selector interpolation | No externally controlled selector was established. Source/tab/chart/Run Plus IDs are closed internal values or validated years/indexes. Opaque activity/gear IDs must continue to avoid selector interpolation. |
+
+No `outerHTML`, production `document.write`, `srcdoc`, or production rich Markdown renderer was
+found in the actual graph. `innerHTML` occurrences that receive only constants, finite numeric
+formatting, or closed vocabularies are not included as vulnerabilities.
+
+### Minimal rendering strategy
+
+1. Keep fixed container markup where practical, then create only the dynamic rows/cells/links with
+   `createElement`, `createTextNode`, `replaceChildren`, and `append`.
+2. Use `.textContent`, `.value`, `.title`, and inert DOM properties for untrusted scalar values.
+   `setAttribute` is allowed only with a fixed attribute name and a value already safe for that
+   exact attribute; it is not an HTML-string substitute.
+3. Build internal links with same-origin `URL` plus `URLSearchParams`; build fixed-origin Strava
+   segment links with an encoded path component. Assign the DOM `href` property.
+4. Remove data-bearing inline handlers. Retain IDs/objects in closures and attach
+   `addEventListener`. Do not copy values into `onclick`, `data-*` for later interpretation, or a
+   selector string.
+5. Pass DOM elements/text nodes to Leaflet popup/tooltip APIs. Do not pass a name-bearing HTML
+   string.
+6. Do not introduce a shared/general sanitizer or new dependency. R1 and R2 use native primitives
+   and private, route-local builders. This avoids freezing a public helper API or encouraging
+   context reuse. The seam is behavioral and test-enforced, not a new shared module.
+7. Preserve opaque strings byte-for-JavaScript-string exactly. No `Number`, `parseInt`, truthy
+   fallback that manufactures zero, normalization, or sanitizing rewrite. Use explicit
+   missing/absent/null checks and preserve existing display semantics for real numeric `0` and
+   `-0`.
+
+The literal URL allowlist is: current served origin plus pathname
+`/html/activity-router.html` for activity links; current served origin plus pathname
+`/html/gear.html` for gear links; and origin `https://www.strava.com` plus pathname prefix
+`/segments/` for segment links. Each internal link permits exactly one data-bearing query key,
+`id`. Athlete profile images may retain only the `https:` scheme in R1; an origin allowlist or
+proxy would be a separate external-resource/egress decision and is not silently frozen here.
+
+### Exact candidate implementation allowlists
+
+These are proposed implementation-package allowlists, not A2 write authority. Each package needs
+new control-tower authorization and its own clean exact-base verification.
+
+#### R1 — root summary DOM and opaque-ID hardening
+
+```text
+js/app/main.js
+js/tabs/activities.js
+js/tabs/calendar.js
+js/tabs/wrapped.js
+js/tabs/run-analysis.js
+js/tabs/bike-analysis.js
+js/tabs/swim-analysis.js
+js/tabs/athlete.js
+js/tabs/maps.js
+tests/consumers/summary-consumers.test.js
+tests/consumers/summary-boundaries.test.js
+tests/consumers/summary-browser-smoke.html
+tests/consumers/canonical-summary-browser-smoke.html
+tests/consumers/run-plus-consumers.test.js
+tests/consumers/run-plus-canonical-browser-smoke.html
+```
+
+R1 acceptance: every default-Canonical P0 in the R1 table is closed in the first implementation
+commit series; supported Legacy root sinks in these same owner files are closed before R1 merges.
+Dashboard, Planner, `js/tabs/run-plus.js` and Run Plus/NSM algorithms, Weather, AI, Gear tab,
+Repository, decoders, schemas, storage, CSS, and HTML entries are outside R1. Run Plus tests are
+included only because it embeds the repaired `renderRunAnalysisTab`; they freeze parity without
+authorizing a Run Plus source change.
+
+#### R2 — detail and gear-owned DOM hardening
+
+```text
+js/pages/activity/activity.js
+js/pages/run/run.js
+js/pages/bike/bike.js
+js/pages/swim/swim.js
+js/tabs/gear.js
+js/pages/gear/gear-analysis.js
+tests/consumers/detail-consumers.test.js
+tests/consumers/detail-boundaries.test.js
+tests/consumers/detail-browser-smoke.html
+tests/consumers/canonical-detail-browser-smoke.html
+tests/consumers/summary-consumers.test.js
+tests/legacy/demo-isolation.test.js
+```
+
+R2 acceptance: direct query navigation, R1-produced navigation, default Canonical detail, supported
+Legacy detail, gear cards, gear not-found, gear activity list, and Leaflet gear tooltips all pass.
+`html/gear.html`, `js/pages/activity-router.js`, DetailReadSession, Repository/cache ownership,
+analysis algorithms, exports, weather, CSS, and product copy are outside R2 unless a new material
+decision explicitly expands the allowlist.
+
+The split is necessary: R1 owns the root composition and summary route seam; R2 owns independent
+documents and the gear-local renderer. Combining them would obscure the first mandatory
+default-Canonical closure and make rollback/cross-PR regression less attributable.
+
+### Failure-first deterministic canaries
+
+Implementation tests must use synthetic inline fixtures only. Each value gets a unique inert
+counter/token so the failing sink is attributable.
+
+| Canary class | Synthetic shape | Required assertion |
+| --- | --- | --- |
+| Element/tag | `</a><img src=x onerror="globalThis.__m23Tag+=1">` and a closing `option/select` shape | Exact visible text; no injected element, handler, counter, image request, or DOM sibling. |
+| Double-quoted attribute | `opaque-&quot;-canary` represented as a real `"` plus ` autofocus onfocus=...` | One anchor/option only; no extra attribute/focus handler. |
+| Single-quoted inline JS | `');globalThis.__m23Click+=1;//` | Click performs only the intended same-origin navigation; no counter or popup side effect. |
+| Backtick/line separator | Backtick plus `\\`, U+2028, U+2029, parentheses, and comment markers | Exact text/ID survives; no parse/runtime error. |
+| URL reserved | `id/a?b=c&d=e#frag%25=✓` | `URLSearchParams.get('id')` equals the original string after root -> router -> detail; one `id` parameter only. |
+| Scheme-like | `javascript:...`, `//outside.invalid/x`, `data:text/html,...` used as names and opaque IDs | Values remain text/query data; navigation origin/path stays on the fixed internal route; zero external request. |
+| Special keys | `__proto__`, `constructor`, `prototype` as opaque IDs and Legacy own keys | No prototype mutation/collision, no dropped ID, correct filter/link lookup. |
+| Unicode | Bidi/control marker, combining text, astral emoji, CJK, and normalization lookalikes | Exact JavaScript string round-trip and inert visual text; no normalization used for identity. |
+| Semantic sentinels | absent, `null`, string `"0"`, string `"000123"`, numeric `0`, and `-0` in fields where each is legal | Existing missing/null/zero presentation remains distinct; opaque strings never become numbers. |
+| Gear fields | Independent canaries in id, name, brand, and model | Card/detail/list remain inert; edit/save uses the exact original localStorage key; no inline handler exists. |
+| Error/message | Fixed public error plus a synthetic underlying Error containing a tag canary | Only the fixed/reduced copy is visible; underlying message/cause never reaches DOM or console evidence. |
+
+Depth-1 adversarial coverage must repeat the checks after sort, filter, view switch, rerender, card
+click, back navigation, direct detail URL, missing-record URL, and Leaflet popup/tooltip open. It
+must verify both the immediate renderer and the next consumer across the R1 -> Router -> R2 seam.
+
+### Actual-served disposable browser gate
+
+The implementation gate, not A2, will:
+
+1. start the repository's local server on a fresh loopback port;
+2. launch a disposable browser profile with observation installed before the first navigation;
+3. seed only deterministic synthetic Canonical data through the accepted public Canonical storage
+   boundary, and separately seed the minimum synthetic Legacy metadata/cache needed for supported
+   Legacy R1/R2 routes;
+4. visit actual `/activities`, `/calendar`, `/wrapped`, `/run`, `/bike`, `/swim`, `/trends`, `/map`,
+   `/html/activity-router.html?id=...`, `/html/activity.html`, `/html/run.html`, `/html/bike.html`,
+   `/html/swim.html`, `/gear`, and `/html/gear.html?id=...` routes as applicable;
+5. exercise filter/sort/calendar views, map popup, gear card/list, tooltip, missing gear, and direct
+   crafted query paths;
+6. record Network, Fetch/XHR, WebSocket/EventSource, popup and navigation events, console/runtime,
+   IndexedDB database names/versions and safe synthetic counts, Local/Session Storage key names,
+   Cache Storage, and Service Worker registrations;
+7. assert zero canary execution, injected node/attribute, unexpected navigation/popup, provider or
+   external request, Token/Authorization access, private-data log, and uncaught error; then assert
+   exact text and ID round-trip plus unchanged absent/null/0/-0 behavior;
+8. stop the server/browser and remove only the disposable profile.
+
+It must not read or clean a user profile, existing Legacy/V2 database, real account, Token, route,
+activity, health/power data, export, screenshot, or private fixture. A static fixture page,
+`srcdoc`-only seam, unit DOM stub, or injected renderer call is supporting evidence, not a
+substitute for actual served navigation.
+
+A2 browser status: **NOT RUN**. No browser, server, provider, credential, storage seed, or canary
+execution occurred in this investigation.
+
+### Verification, independent review, CI, and rollback
+
+For each implementation PR:
+
+```text
+npm ci
+npm run check:syntax
+npm run check:privacy
+npm test
+git diff --check
+```
+
+- Focused R1: summary consumer/boundary tests plus both summary browser harnesses and the full R1
+  route matrix.
+- Focused R2: detail consumer/boundary tests, both detail browser harnesses, synthetic Legacy gear
+  coverage, direct-query/missing-record coverage, and the full R2 route matrix.
+- Cross-PR: after R2 is based on merged R1, repeat root -> router -> every detail page and root gear
+  -> gear detail with reserved/Unicode IDs; assert R1 alone cannot be bypassed by direct R2 URLs.
+- Depth review: an independent reviewer traces each changed dynamic value from source to final DOM,
+  searches the changed files for remaining name/id interpolation, inline `on*`, string
+  `bindPopup/bindTooltip`, and URL templates, and validates every allowlist path and no others.
+- Privacy review: no real fixture, Token, Authorization, provider request, precise location, raw
+  activity, or underlying error enters source, tests, logs, artifacts, screenshots, or CI output.
+- CI: required GitHub checks must run on each implementation head and conclude success. A local
+  pass is not CI evidence; the actual-served browser evidence must be attached separately if CI
+  does not run it.
+
+Rollback is code-only: revert R2 first, then R1 if necessary. There is no schema version,
+migration, backfill, storage rewrite, cache clear, data cleanup, reverse-copy, or provider state to
+undo. Rollback must never delete Legacy or V2 data. If R2 is reverted while R1 remains, the seam
+continues to emit encoded internal links but direct detail routes again become unsafe; therefore
+R2 rollback blocks release until repaired.
+
+### Privacy, data, and behavior impact
+
+- A2 changed documentation only. No production behavior, data, DOM, route, CSS, copy, dependency,
+  public API, schema, persistence, Repository, import, analysis, Service Worker, deploy, or release
+  state changed.
+- Planned R1/R2 do not rewrite stored values. Names and opaque IDs remain available exactly as
+  text/data. Legacy/V2 coexistence and rollback ownership remain unchanged.
+- Synthetic tests must be deterministic and contain no realistic GPS track, heart-rate, power,
+  athlete profile, export, credential, or private fixture.
+- AI/provider logging, weather/map external egress, Service Worker policy, and Legacy database
+  probing are explicit non-goals. A DOM repair may not silently claim to close them.
+
+### Material-decision package
+
+| Decision | Recommendation | Material? |
+| --- | --- | --- |
+| Accept ordered R1 -> R2 split and literal allowlists | Approve. It is required for ownership, first-default-Canonical closure, and attributable rollback. | Task/scope decision; no product behavior by itself. |
+| Native DOM primitives; no sanitizer dependency/shared public helper | Approve. Keep route-local private builders and a behavior/test seam. | No public API/dependency change. |
+| Replace dynamic inline handlers with `addEventListener`; add `rel="noopener noreferrer"`; serialize query values with `URLSearchParams` | Approve. Intended navigation/click behavior and routes stay the same; executable DOM attributes are removed and reserved IDs begin round-tripping correctly. | **Yes:** DOM attribute mechanics and malformed/reserved-ID behavior change, although structure/classes/copy/routes remain frozen. |
+| Preserve fixed DOM structure, IDs/classes, CSS, copy, ordering, charts, maps, and empty states | Require. Any exception needs a new explicit decision before implementation. | No change authorized. |
+| Athlete profile image URL policy | Approve the literal `https:` scheme check and omission of invalid/non-HTTPS values; do not add an origin allowlist, proxy, or new fetch in this task. | **Yes:** malformed/non-HTTPS profile image behavior changes on supported Legacy. |
+| Keep gear detail on its inherited cache path for this repair | Approve. Repair output only; do not combine Repository/storage migration. | No architecture change authorized. |
+| Leave AI/logging/weather or map egress/SW/Legacy probe issues outside R1/R2 | Approve and track separately if owners require. | No behavior change authorized. |
+
+No public API, schema, dependency, route, CSS, product copy, persistence, Repository, or analysis
+algorithm change is required for the recommended repair. The two bold material behavior/DOM
+decisions require control-tower acceptance before implementation; A2 does not authorize them.
+
+### A2 completion and stop statement
+
+A2 is complete as a read-only investigation. The only modified path is this Task Brief. No test or
+product implementation was added; no actual-served browser or implementation CI was run. After
+the docs-only A2 commit is pushed and Draft PR #32 is re-verified, the complete package is returned
+to the control tower. The PR remains Draft; Ready, merge, release, deploy, implementation, branch
+cleanup, and worktree cleanup remain prohibited.
