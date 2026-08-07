@@ -339,7 +339,7 @@ test('Demo remains first and Legacy/Shadow remain Legacy reads', () => {
     }]);
     assert.match(
         featureFlagsSource,
-        /dataRepositoryMode:\s*'legacy'/
+        /dataRepositoryMode:\s*'canonical'/
     );
 });
 

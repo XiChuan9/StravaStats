@@ -1,5 +1,5 @@
 export const DEFAULT_FEATURE_FLAGS = Object.freeze({
-    dataRepositoryMode: 'legacy',
+    dataRepositoryMode: 'canonical',
     localImportEnabled: false,
     canonicalShadowWriteEnabled: false,
 });

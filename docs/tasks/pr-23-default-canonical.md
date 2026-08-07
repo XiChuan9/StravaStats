@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 M20 / PR-23 |
-| Status | A2 complete; proposed seven-path A3 allowlist awaiting control-tower freeze |
+| Status | A3.2 approved; failure-first implementation and verification in progress |
 | Branch | `codex/v2/default-canonical` |
 | Base | `integration/v2` at `3d8e17c5fab243b8605d5ddd1ca99450675ed5d8` |
 | Draft PR title | `refactor(v2): make canonical repository the default` |
@@ -243,9 +243,9 @@ The package must include source and runtime evidence, the exact collision, failu
 privacy and data impact, migration and rollback impact, literal candidate paths, recommendation,
 and tradeoffs. No material option may be implemented without explicit approval.
 
-## A3 implementation gate and proposed literal scope
+## A3 approved implementation gate and literal scope
 
-A2 proposes exactly these seven cumulative paths for investigation evidence, implementation,
+A2 proposed and the control tower accepted seven cumulative paths for investigation evidence, implementation,
 tests, browser evidence, findings-first repairs, and Final Review Closure:
 
 ```text
@@ -258,14 +258,55 @@ tests/default-canonical.test.js
 tests/default-canonical-browser-smoke.html
 ```
 
-The seven-path list is a hard maximum with no glob and no implicit generated file. It keeps the
+The first cross-PR focused regression after failure-first implementation exposed one literal
+collision: `tests/shadow/shadow-app-integration.test.js` froze invalid `unknown` mode to the old
+Legacy default. A3.1 Option A was approved to add only that path, split the historical combined
+expectation, and preserve zero shadow-writer activity. The cumulative allowlist is therefore
+exactly these eight paths:
+
+```text
+docs/tasks/pr-23-default-canonical.md
+js/app/feature-flags.js
+js/app/main.js
+tests/feature-flags.test.js
+tests/consumers/run-plus-canonical-cutover.test.js
+tests/default-canonical.test.js
+tests/default-canonical-browser-smoke.html
+tests/shadow/shadow-app-integration.test.js
+```
+
+The eight-path list is a hard maximum with no glob and no implicit generated file. It keeps the
 Factory's omitted-mode Legacy fallback, local-first result schema, Repository/Storage/Import/
 Backup/Diagnostics exports, physical schema, detail and tab modules, user-owned settings, Worker,
 Service Worker, dependencies, deployment, release, and PR-24 outside the diff.
 
-Implementation remains prohibited until the control tower freezes this exact list and behavior
-matrix. Any eighth path, future-hostile boundary collision, or uncovered contract gap requires the
-smallest control-tower supplement and pauses implementation.
+The control tower accepted the A2 behavior matrix and initial seven-path list after commit
+`e9c78aa`, then accepted the single A3.1 test collision as Option A. Implementation is authorized
+failure-first within the exact eight-path hard maximum. Any ninth path,
+future-hostile boundary collision, or uncovered contract gap requires the smallest control-tower
+supplement and pauses implementation.
+
+The first full-suite run then passed 1,456 of 1,457 tests and exposed one further future-hostile
+collision: PR-14 froze the whole-file SHA-256 of `js/app/feature-flags.js`. A3.2 Option B was
+approved to add only `tests/import/decoder-registry-wiring.test.js`, remove only that whole-file
+Feature Flag digest, and replace it with narrow public/runtime semantic assertions. Every Decoder,
+dependency, lockfile, and Service Worker hash remains unchanged. The cumulative literal allowlist
+is therefore exactly nine paths:
+
+```text
+docs/tasks/pr-23-default-canonical.md
+js/app/feature-flags.js
+js/app/main.js
+tests/feature-flags.test.js
+tests/consumers/run-plus-canonical-cutover.test.js
+tests/default-canonical.test.js
+tests/default-canonical-browser-smoke.html
+tests/shadow/shadow-app-integration.test.js
+tests/import/decoder-registry-wiring.test.js
+```
+
+Any tenth path, material contract change, or new boundary collision requires another bounded
+control-tower package before work continues.
 
 After approval, each behavior change begins with a test that fails for the intended reason on the
 exact PR-22 base behavior. Findings-first repair follows the same rule: reproduce each actionable
@@ -318,6 +359,36 @@ After implementation evidence passes, a genuinely independent findings-first rev
 the exact diff, contracts, privacy, rollback, runtime selection, browser evidence, and test gaps.
 After all actionable findings are repaired failure-first, a fresh independent review must report
 no actionable findings.
+
+## Implementation evidence before independent review
+
+- Failure-first tests failed on the exact intended old-default and missing-empty-Canonical guard,
+  then passed after the two production edits.
+- A3.1 cross-PR collision reproduced as one Shadow integration failure; the approved split now
+  proves Demo, explicit Legacy, and disabled Shadow retain Legacy reads while invalid `unknown`
+  normalizes to Canonical with zero shadow-writer activity.
+- A3.2 collision reproduced as the sole full-suite failure (`1456/1457`) at PR-14's whole-file
+  Feature Flag digest. The approved semantic replacement passes while every Decoder, dependency,
+  lockfile, and Service Worker digest remains literal and unchanged.
+- Decoder/PR-23 focused boundary suite: `14/14` passed.
+- Cross-PR focused suite: `411/411` passed.
+- Full suite after A3.2: `1457/1457` passed.
+- `npm ci`, syntax for 238 files, privacy, and `git diff --check` passed.
+- Literal scope audit from the exact PR-22 base reports only the nine approved paths.
+- Actual-served in-app Browser on the disposable loopback origin passed the deterministic PR-23
+  harness for empty default First-run, V2-only default Canonical, explicit Legacy and Shadow
+  non-destructive rollback, Demo isolation, default Canonical detail composition, opaque ID,
+  missing/null/real-zero representation, and offline/provider/auth/token boundaries. It recorded
+  zero provider requests, zero Authorization requests, zero runtime/console errors, and zero
+  external resources in the isolated harness.
+- Actual `/run-plus` and `/run-plus/nsm` navigation used the synthetic Canonical library and showed
+  `Local Library ready · Canonical summaries · provider offline`; NSM selected its exact `nsm`
+  subview. The existing actual-root third-party analytics/chart/map/export resource declarations
+  were recorded as the external-resource baseline; no provider host, credential, account, or
+  private/user activity data was used.
+
+Independent review, fresh re-review, remote depth-1 exact-head checks, Final Review Closure, and
+exact-head CI remain pending at this point.
 
 ## Privacy, migration, rollback, and completion
 

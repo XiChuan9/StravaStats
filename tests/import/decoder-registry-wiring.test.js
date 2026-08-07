@@ -270,13 +270,55 @@ test('PR-14 keeps public/schema/runtime boundaries and decoder sources frozen', 
         ['js/decoders/gpx/decoder.js', 'cb84f3d86c5d6d7cbfa5425b190573d0fab094a7d1ce9124f6231905f1ca664f'],
         ['package.json', '0406287a8b8be5d8c34ff994c8979a2bf585cd33b911617c898a83005842823a'],
         ['package-lock.json', '04c2a7fa76c5daaec25fbe291d33b0b76037166b9b50394929cd7ec21ed8751f'],
-        ['sw.js', '2de27619d86023b65028cd379c80ccc839611930f3445d9c905f935bdb714798'],
-        ['js/app/feature-flags.js', 'eb427fac0ed89027d10bfcbfdc913828765d5a7ccc58b31d15c1d74515c3e59f']
+        ['sw.js', '2de27619d86023b65028cd379c80ccc839611930f3445d9c905f935bdb714798']
     ]);
     for (const [path, expected] of frozenHashes) {
         const digest = createHash('sha256').update(await readFile(new URL(path, ROOT))).digest('hex');
         assert.equal(digest, expected, path);
     }
+
+    const featureFlags = await import(`../../js/app/feature-flags.js?pr14=${Date.now()}`);
+    assert.deepEqual(Object.keys(featureFlags).sort(), [
+        'DEFAULT_FEATURE_FLAGS',
+        'getFeatureFlags',
+        'resolveFeatureFlags'
+    ]);
+    assert.deepEqual(featureFlags.DEFAULT_FEATURE_FLAGS, {
+        dataRepositoryMode: 'canonical',
+        localImportEnabled: false,
+        canonicalShadowWriteEnabled: false
+    });
+    assert.equal(Object.isFrozen(featureFlags.DEFAULT_FEATURE_FLAGS), true);
+
+    for (const mode of ['legacy', 'shadow', 'canonical']) {
+        const resolved = featureFlags.getFeatureFlags({
+            dataRepositoryMode: mode,
+            localImportEnabled: false,
+            canonicalShadowWriteEnabled: true
+        });
+        assert.equal(resolved.dataRepositoryMode, mode);
+        assert.equal(resolved.localImportEnabled, false);
+        assert.equal(resolved.canonicalShadowWriteEnabled, mode === 'shadow');
+        assert.equal(Object.isFrozen(resolved), true);
+    }
+
+    let getterCalls = 0;
+    const hostile = {};
+    Object.defineProperty(hostile, 'dataRepositoryMode', {
+        enumerable: true,
+        get() {
+            getterCalls += 1;
+            return 'legacy';
+        }
+    });
+    for (const invalid of [{ dataRepositoryMode: 'unknown' }, hostile]) {
+        assert.deepEqual(featureFlags.resolveFeatureFlags(invalid), {
+            dataRepositoryMode: 'canonical',
+            localImportEnabled: false,
+            canonicalShadowWriteEnabled: false
+        });
+    }
+    assert.equal(getterCalls, 0);
 });
 
 test('literal scope guard preserves the finalized PR-14 path lifecycle', async () => {
