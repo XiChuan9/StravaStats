@@ -161,14 +161,6 @@ function collectMandatoryAndBucketIndices(series, length, target, bucketCount) {
                 }
                 inNullRun = false;
                 if (!isFiniteNumber(value)) continue;
-                if (value < globalMinimum) {
-                    globalMinimum = value;
-                    globalMinimumIndex = index;
-                }
-                if (value > globalMaximum) {
-                    globalMaximum = value;
-                    globalMaximumIndex = index;
-                }
                 if (value < bucketMinimum) {
                     bucketMinimum = value;
                     bucketMinimumIndex = index;
@@ -185,8 +177,20 @@ function collectMandatoryAndBucketIndices(series, length, target, bucketCount) {
                     }
                 }
             }
-            if (bucketMinimumIndex >= 0) bucketExtrema.add(bucketMinimumIndex);
-            if (bucketMaximumIndex >= 0) bucketExtrema.add(bucketMaximumIndex);
+            if (bucketMinimumIndex >= 0) {
+                bucketExtrema.add(bucketMinimumIndex);
+                if (bucketMinimum < globalMinimum) {
+                    globalMinimum = bucketMinimum;
+                    globalMinimumIndex = bucketMinimumIndex;
+                }
+            }
+            if (bucketMaximumIndex >= 0) {
+                bucketExtrema.add(bucketMaximumIndex);
+                if (bucketMaximum > globalMaximum) {
+                    globalMaximum = bucketMaximum;
+                    globalMaximumIndex = bucketMaximumIndex;
+                }
+            }
         }
         if (globalMinimumIndex >= 0) mandatory.add(globalMinimumIndex);
         if (globalMaximumIndex >= 0) mandatory.add(globalMaximumIndex);

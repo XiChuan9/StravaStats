@@ -211,11 +211,7 @@ function createChart(canvasId, config) {
     return chartInstances[canvasId];
 }
 
-function createStreamPresentationChart(canvasId, config) {
-    const presentation = prepareStreamChartPresentation(
-        config.data.labels,
-        config.data.datasets
-    );
+function renderStreamPresentationState(canvasId, presentation) {
     const canvas = document.getElementById(canvasId);
     if (canvas?.dataset) canvas.dataset.presentationState = presentation.status;
     let status = document.getElementById(`${canvasId}-presentation-status`);
@@ -235,13 +231,22 @@ function createStreamPresentationChart(canvasId, config) {
             status.hidden = false;
             status.textContent = 'Too fragmented to plot.';
         }
-        return null;
+        return false;
     }
     if (canvas) canvas.hidden = false;
     if (status) {
         status.hidden = true;
         status.textContent = '';
     }
+    return true;
+}
+
+function createStreamPresentationChart(canvasId, config) {
+    const presentation = prepareStreamChartPresentation(
+        config.data.labels,
+        config.data.datasets
+    );
+    if (!renderStreamPresentationState(canvasId, presentation)) return null;
     return createChart(canvasId, {
         ...config,
         data: {
@@ -1142,6 +1147,11 @@ function renderCadenceSpeedChart(streams) {
         { speed: speedKmh, cadence },
         { criticalKeys: ['speed', 'cadence'] }
     );
+    if (presentation.status === 'too-fragmented') {
+        renderStreamPresentationState('chart-cadence-speed', presentation);
+        return;
+    }
+    renderStreamPresentationState('chart-cadence-speed', presentation);
     const points = [];
     for (let i = 0; i < presentation.data.speed.length; i += 1) {
         if (presentation.data.cadence[i] > 0 && presentation.data.speed[i] > 0) {

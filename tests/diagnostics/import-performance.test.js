@@ -90,6 +90,23 @@ test('session records retain only the newest fifty and fall back in memory', () 
     assert.equal(records[49].artifactCount, 55);
 });
 
+test('a denied session write keeps the new record in the memory fallback', () => {
+    const storage = {
+        getItem() { return null; },
+        setItem() { throw new Error('synthetic'); }
+    };
+    configureImportPerformance({ storage, now: () => 2 });
+    beginImportPerformanceSelection(2);
+    finishImportPerformanceSelection({
+        outcome: 'completed',
+        terminalCounts: { completed: 2 }
+    });
+
+    const records = readImportPerformanceRecords();
+    assert.equal(records.length, 1);
+    assert.equal(records[0].artifactCount, 2);
+});
+
 test('Diagnostics can read the Source Manager session records after navigation', () => {
     const storage = memoryStorage();
     configureImportPerformance({ storage, now: () => 5 });

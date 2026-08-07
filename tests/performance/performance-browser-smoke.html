@@ -26,6 +26,7 @@
         const FAILURE_CODES = Object.freeze(new Set([
             'REPOSITORY_5K_COUNT',
             'REPOSITORY_10K_COUNT',
+            'REPOSITORY_PAGE_BOUNDARY',
             'REPOSITORY_5K_P95',
             'ACTIVITIES_5K_P95',
             'STARTUP_STREAM_READ',
@@ -50,7 +51,8 @@
             mapLayers: 0,
             startupGetStreams: 0,
             workerRequests: 0,
-            storageWrites: 0
+            repositoryPageReads: 0,
+            repositoryInitializations: 0
         };
 
         addEventListener('error', event => {
@@ -79,32 +81,61 @@
             return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         }
 
-        function syntheticActivities(count) {
+        function syntheticCanonicalActivities(count) {
+            const newest = Date.parse('2026-01-31T12:00:00.000Z');
             return Object.freeze(Array.from({ length: count }, (_, index) => Object.freeze({
-                id: `synthetic-${index}`,
-                sport_type: index % 2 === 0 ? 'Run' : 'Ride',
-                start_date_local: `2026-01-${String((index % 28) + 1).padStart(2, '0')}T06:00:00`,
-                distance: 5_000 + (index % 10) * 100,
-                moving_time: 1_500 + (index % 60),
-                total_elevation_gain: index % 200
+                id: `synthetic-${String(index).padStart(5, '0')}`,
+                sportCategory: index % 2 === 0 ? 'run' : 'ride',
+                sportVariant: null,
+                startTimeUtc: new Date(newest - index * 1_000).toISOString(),
+                timeZone: Object.freeze({ ianaName: null, utcOffsetMinutes: 0 }),
+                distanceMeters: 5_000 + (index % 10) * 100,
+                movingTimeSeconds: 1_500 + (index % 60),
+                elevationGainMeters: index % 200
             })));
         }
 
-        function repositoryFor(data) {
+        function deterministicCanonicalStore(data) {
+            const positions = new Map(data.map((activity, index) => [
+                `${activity.startTimeUtc}\u0000${activity.id}`,
+                index
+            ]));
             return Object.freeze({
-                async listActivities() {
-                    return Object.freeze({
-                        data,
-                        source: 'canonical',
-                        warnings: Object.freeze([]),
-                        partial: false
-                    });
+                async initialize() {
+                    runtime.repositoryInitializations += 1;
                 },
-                async getStreams() {
-                    runtime.startupGetStreams += 1;
-                    return null;
+                async listActivities({ limit, direction, cursor } = {}) {
+                    invariant(limit === 500 && direction === 'desc', 'REPOSITORY_PAGE_BOUNDARY');
+                    runtime.repositoryPageReads += 1;
+                    const start = cursor === undefined
+                        ? 0
+                        : (positions.get(`${cursor.startTimeUtc}\u0000${cursor.id}`) ?? data.length) + 1;
+                    return Object.freeze(data.slice(start, start + limit));
                 }
             });
+        }
+
+        function repositoryFactoryFor(factoryModule, data) {
+            return () => {
+                const repository = factoryModule.createRepositoryWithDependencies({
+                    sessionMode: 'real',
+                    mode: 'canonical'
+                }, {
+                    canonicalStoreFactory: () => deterministicCanonicalStore(data)
+                });
+                return Object.freeze({
+                    listActivities: options => repository.listActivities(options),
+                    getActivity: id => repository.getActivity(id),
+                    getStreams(id, options) {
+                        runtime.startupGetStreams += 1;
+                        return repository.getStreams(id, options);
+                    },
+                    getAthlete: () => repository.getAthlete(),
+                    getZones: () => repository.getZones(),
+                    getGears: () => repository.getGears(),
+                    getGear: id => repository.getGear(id)
+                });
+            };
         }
 
         function resetActivitiesSurface() {
@@ -144,53 +175,103 @@
 
         async function run() {
             let observer = null;
+            let currentStage = 'modules';
             try {
                 document.getElementById('summary').textContent = 'Loading local performance modules.';
-                const [{ adaptRepositoryResult }, { renderActivitiesTab }] = await Promise.all([
+                Object.defineProperty(globalThis, '__STRAVASTATS_FEATURE_FLAGS__', {
+                    configurable: true,
+                    value: Object.freeze({
+                        dataRepositoryMode: 'canonical',
+                        localImportEnabled: false,
+                        canonicalShadowWriteEnabled: false
+                    })
+                });
+                const [app, { renderActivitiesTab }, factoryModule] = await Promise.all([
                     import('../../js/app/main.js'),
-                    import('../../js/tabs/activities.js')
+                    import('../../js/tabs/activities.js'),
+                    import('../../js/repository/factory.js')
                 ]);
-                const datasets = new Map(ACTIVITY_COUNTS.map(count => [count, syntheticActivities(count)]));
+                const canonicalDatasets = new Map(ACTIVITY_COUNTS.map(count => [
+                    count,
+                    syntheticCanonicalActivities(count)
+                ]));
                 const repositorySamples = [];
                 const activitySamples = [];
-                const repository5k = repositoryFor(datasets.get(5_000));
+                let activities5k = null;
 
+                currentStage = 'repository-5k';
                 document.getElementById('summary').textContent = 'Running 5,000-activity Repository gate.';
                 for (let repetition = 0; repetition < REPETITIONS; repetition += 1) {
+                    const established = app.establishSummaryRepositorySession({
+                        activeSessionMode: null,
+                        sessionRepository: null,
+                        requestedSessionMode: app.APP_SESSION_MODE.REAL,
+                        repositoryFactory: repositoryFactoryFor(
+                            factoryModule,
+                            canonicalDatasets.get(5_000)
+                        )
+                    });
+                    const session = app.requireSummaryRepositorySession(
+                        established.activeSessionMode,
+                        established.sessionRepository
+                    );
                     const started = performance.now();
-                    const envelope = await repository5k.listActivities();
-                    const adapted = adaptRepositoryResult(envelope, {
-                        operation: 'listActivities',
-                        dataShape: 'array'
+                    const adapted = await app.loadActivitiesForSession({
+                        sessionRepository: session,
+                        refresh: false
                     });
                     invariant(adapted.data.length === 5_000, 'REPOSITORY_5K_COUNT');
                     repositorySamples.push(performance.now() - started);
+                    activities5k = adapted.data;
+                    if (repetition === 0) {
+                        const metadata = await app.loadInitializeAthleteAndZones(
+                            session,
+                            { timeoutMs: 1_000 }
+                        );
+                        await app.loadOptionalSessionGears(session, metadata.athlete);
+                    }
                 }
 
+                currentStage = 'activities-5k';
                 document.getElementById('summary').textContent = 'Running 5,000-activity Activities gate.';
                 for (let repetition = 0; repetition < REPETITIONS; repetition += 1) {
                     resetActivitiesSurface();
                     const started = performance.now();
-                    renderActivitiesTab(datasets.get(5_000));
+                    renderActivitiesTab(activities5k);
                     await secondAnimationFrame();
                     activitySamples.push(performance.now() - started);
                 }
 
+                currentStage = 'repository-10k';
                 document.getElementById('summary').textContent = 'Running 10,000-activity record-only gate.';
                 resetActivitiesSurface();
+                const established10k = app.establishSummaryRepositorySession({
+                    activeSessionMode: null,
+                    sessionRepository: null,
+                    requestedSessionMode: app.APP_SESSION_MODE.REAL,
+                    repositoryFactory: repositoryFactoryFor(
+                        factoryModule,
+                        canonicalDatasets.get(10_000)
+                    )
+                });
+                const session10k = app.requireSummaryRepositorySession(
+                    established10k.activeSessionMode,
+                    established10k.sessionRepository
+                );
                 const repository10kStarted = performance.now();
-                const envelope10k = await repositoryFor(datasets.get(10_000)).listActivities();
-                const adapted10k = adaptRepositoryResult(envelope10k, {
-                    operation: 'listActivities',
-                    dataShape: 'array'
+                const adapted10k = await app.loadActivitiesForSession({
+                    sessionRepository: session10k,
+                    refresh: false
                 });
                 const repository10kMs = performance.now() - repository10kStarted;
                 invariant(adapted10k.data.length === 10_000, 'REPOSITORY_10K_COUNT');
+                currentStage = 'activities-10k';
                 const activities10kStarted = performance.now();
-                renderActivitiesTab(datasets.get(10_000));
+                renderActivitiesTab(adapted10k.data);
                 await secondAnimationFrame();
                 const activities10kSecondRafMs = performance.now() - activities10kStarted;
 
+                currentStage = 'thresholds';
                 const repositoryStats = stats(repositorySamples);
                 const activityStats = stats(activitySamples);
                 const repositoryEnvelopeP95Ms = repositoryStats.p95Ms;
@@ -199,8 +280,10 @@
                 invariant(activitiesSecondRafP95Ms <= 1_500, 'ACTIVITIES_5K_P95');
                 invariant(runtime.startupGetStreams === 0, 'STARTUP_STREAM_READ');
 
+                currentStage = 'stream-reset';
                 resetActivitiesSurface();
                 await secondAnimationFrame();
+                currentStage = 'stream-200k';
                 document.getElementById('summary').textContent = 'Running 200,000-point Stream gate.';
                 const labels = new Array(POINT_COUNT);
                 const series = Array.from({ length: 5 }, () => new Array(POINT_COUNT));
@@ -296,15 +379,31 @@
                         maximumLongTask
                     },
                     startupGetStreams: runtime.startupGetStreams,
+                    startupBoundary: [
+                        'establishSummaryRepositorySession',
+                        'requireSummaryRepositorySession',
+                        'loadActivitiesForSession',
+                        'loadInitializeAthleteAndZones',
+                        'loadOptionalSessionGears'
+                    ],
+                    repositoryPageReads: runtime.repositoryPageReads,
+                    repositoryInitializations: runtime.repositoryInitializations,
                     uncaught: runtime.uncaught,
                     unhandled: runtime.unhandled,
                     workerRequests: runtime.workerRequests,
-                    storageWrites: runtime.storageWrites,
+                    storageBehavior: {
+                        boundary: 'deterministic read-only paginated Canonical Store stub',
+                        writeMethodsExposed: 0
+                    },
                     externalResources: performance.getEntriesByType('resource')
                         .filter(entry => new URL(entry.name).origin !== location.origin)
                         .length,
                     browserEffects,
-                    recordingStubs: ['RecordingChart', 'RecordingLeaflet']
+                    recordingStubs: [
+                        'RecordingChart',
+                        'RecordingLeaflet',
+                        'DeterministicCanonicalStore'
+                    ]
                 });
                 globalThis.__PR22_STREAM_PERFORMANCE_EVIDENCE__ = evidence;
                 document.getElementById('evidence').textContent = JSON.stringify(evidence);
@@ -316,6 +415,7 @@
                     status: 'failed',
                     code: error instanceof Error && FAILURE_CODES.has(error.message)
                         ? error.message : 'UNKNOWN',
+                    stage: currentStage,
                     uncaught: runtime.uncaught,
                     unhandled: runtime.unhandled
                 });

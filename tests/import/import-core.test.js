@@ -564,6 +564,49 @@ test('cancellation during hashing latches until decoding and retains stored arti
     await core.close();
 });
 
+test('decoder failure observes an in-flight cancellation before scheduling another Worker request', async () => {
+    const indexedDB = new IDBFactory();
+    const importStore = store(indexedDB);
+    let releaseWorker;
+    let reachedWorker;
+    let workerCalls = 0;
+    const workerGate = new Promise(resolve => { releaseWorker = resolve; });
+    const workerReached = new Promise(resolve => { reachedWorker = resolve; });
+    const worker = {
+        async process() {
+            workerCalls += 1;
+            reachedWorker();
+            await workerGate;
+            return {
+                ok: false,
+                decoded: null,
+                code: IMPORT_ERROR_CODE.DECODER_FAILED,
+                retryable: false
+            };
+        },
+        close() {}
+    };
+    const core = service(importStore, { worker });
+    await core.initialize();
+    const first = await artifact();
+    const run = await core.importArtifacts([
+        first,
+        { ...first, content: `${first.content}\n` }
+    ]);
+    await workerReached;
+    assert.deepEqual(await core.cancelJob(run.jobId), {
+        status: 'cancellation-requested'
+    });
+    releaseWorker();
+
+    const report = await core.waitForJob(run.jobId);
+    assert.equal(report.status, 'cancelled');
+    assert.equal(report.totals.failed, 1);
+    assert.equal(report.totals.cancelled, 1);
+    assert.equal(workerCalls, 1);
+    await core.close();
+});
+
 for (const boundary of ['queued', 'validating', 'decoding', 'normalizing', 'matching']) {
     test(`cancellation at ${boundary} stops unfinished items without a Canonical write`, async () => {
         const indexedDB = new IDBFactory();

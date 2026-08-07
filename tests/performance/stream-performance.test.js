@@ -11,6 +11,7 @@ import {
 const POINT_COUNT = 200_000;
 const WARMUPS = 10;
 const SAMPLES = 30;
+const SETTLE_MILLISECONDS = 20_000;
 
 function percentile95(values) {
     const sorted = [...values].sort((a, b) => a - b);
@@ -46,26 +47,29 @@ function makeDataset() {
     });
 }
 
-test('200k aligned Stream reduction meets the deterministic Node latency gate', t => {
+test('200k aligned Stream reduction meets the deterministic Node latency gate', async t => {
     const dataset = makeDataset();
     const options = Object.freeze({
         criticalKeys: Object.freeze(['offset', 'first', 'second', 'third', 'fourth', 'fifth']),
         target: CHART_PRESENTATION_TARGET
     });
+    await new Promise(resolve => setTimeout(resolve, SETTLE_MILLISECONDS));
 
     const coldStarted = performance.now();
     const coldResult = reduceAlignedStreamData(dataset, options);
     const coldMilliseconds = performance.now() - coldStarted;
+    const freshDataset = () => Object.freeze({ ...dataset });
 
     for (let index = 0; index < WARMUPS; index += 1) {
-        reduceAlignedStreamData(dataset, options);
+        reduceAlignedStreamData(freshDataset(), options);
     }
 
     const samples = [];
     let lastResult;
     for (let index = 0; index < SAMPLES; index += 1) {
+        const sampleDataset = freshDataset();
         const started = performance.now();
-        lastResult = reduceAlignedStreamData(dataset, options);
+        lastResult = reduceAlignedStreamData(sampleDataset, options);
         samples.push(performance.now() - started);
     }
 
@@ -91,6 +95,7 @@ test('200k aligned Stream reduction meets the deterministic Node latency gate', 
         hardware: cpus()[0]?.model || 'unavailable',
         dataset: { points: POINT_COUNT, alignedSeries: 6, target: CHART_PRESENTATION_TARGET },
         coldMilliseconds: +coldMilliseconds.toFixed(3),
+        settleMilliseconds: SETTLE_MILLISECONDS,
         warmups: WARMUPS,
         samples: SAMPLES,
         medianMs: +median.toFixed(3),

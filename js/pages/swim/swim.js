@@ -1012,6 +1012,29 @@ function renderStreamCharts(streams, activity) {
         { distance, heartrate, cadence },
         { criticalKeys: ['heartrate', 'cadence'] }
     );
+    DOM.streamCharts.dataset.presentationState = presentation.status;
+    let presentationStatus = document.getElementById('swim-stream-presentation-status');
+    if (!presentationStatus) {
+        presentationStatus = document.createElement('p');
+        presentationStatus.id = 'swim-stream-presentation-status';
+        presentationStatus.setAttribute('role', 'status');
+        DOM.streamCharts.append(presentationStatus);
+    }
+    if (presentation.status === 'too-fragmented') {
+        for (const canvasId of ['chart-heartrate', 'chart-cadence']) {
+            if (chartInstances[canvasId]) {
+                chartInstances[canvasId].destroy();
+                delete chartInstances[canvasId];
+            }
+            setChartContainerVisibility(canvasId, false);
+        }
+        DOM.streamCharts.style.display = 'grid';
+        presentationStatus.hidden = false;
+        presentationStatus.textContent = 'Too fragmented to plot.';
+        return;
+    }
+    presentationStatus.hidden = true;
+    presentationStatus.textContent = '';
     const displayDistance = presentation.data.distance;
     const displayHeartrate = presentation.data.heartrate;
     const displayCadence = presentation.data.cadence;

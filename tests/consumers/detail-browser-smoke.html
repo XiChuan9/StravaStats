@@ -112,6 +112,7 @@
                 const code = typeof error?.message === 'string' && /^[A-Z0-9_-]+$/.test(error.message)
                     ? error.message
                     : 'PRODUCT_OR_HARNESS_EXCEPTION';
+                row.dataset.code = code;
                 const frame = typeof error?.stack === 'string'
                     ? error.stack.match(/(?:js|tests)\/[^\s:)]+:\d+:\d+/)?.[0] || null
                     : null;
@@ -514,6 +515,55 @@
             }
             invariant(counters.fetch === 0);
             return { cases, coreDom: true, chartCalls: runtime.chartCalls.length, mapCalls: runtime.mapCalls.length };
+        });
+
+        await gate('fragmented-stream-renderer-state', async () => {
+            const pointCount = 2_002;
+            const fragmented = {
+                distance: { data: Array.from({ length: pointCount }, (_, index) => index) },
+                time: { data: Array.from({ length: pointCount }, (_, index) => index + 1) },
+                heartrate: { data: Array.from({ length: pointCount }, (_, index) => (
+                    index % 2 === 0 ? 120 + (index % 30) : null
+                )) },
+                cadence: { data: Array.from({ length: pointCount }, (_, index) => (
+                    index % 2 === 0 ? 70 + (index % 20) : null
+                )) },
+                altitude: { data: Array.from({ length: pointCount }, (_, index) => index % 100) },
+                velocity_smooth: { data: Array.from({ length: pointCount }, () => 3) },
+                latlng: { data: [] }
+            };
+            clearFixture();
+            const swimCallsBefore = runtime.chartCalls.length;
+            await swimRenderer.renderSwimPage({
+                activity: syntheticActivity('fragmented-swim', 'Swim'),
+                streams: structuredClone(fragmented),
+                zones,
+                athlete: matchingAthlete,
+                activityId: 'fragmented-swim',
+                allowExternalWeather: false
+            });
+            const swimCalls = runtime.chartCalls.slice(swimCallsBefore);
+            invariant(!swimCalls.includes('chart-heartrate') && !swimCalls.includes('chart-cadence'),
+                'SWIM_FRAGMENTED_CHART_CONSTRUCTED');
+            invariant(document.getElementById('swim-stream-presentation-status')?.textContent
+                === 'Too fragmented to plot.', 'SWIM_FRAGMENTED_STATUS');
+
+            clearFixture();
+            const bikeCallsBefore = runtime.chartCalls.length;
+            await bikeRenderer.renderBikePage({
+                activity: syntheticActivity('fragmented-bike', 'Ride'),
+                streams: structuredClone(fragmented),
+                zones,
+                athlete: null,
+                activityId: 'fragmented-bike',
+                allowExternalWeather: false
+            });
+            const bikeCalls = runtime.chartCalls.slice(bikeCallsBefore);
+            invariant(!bikeCalls.includes('chart-cadence-speed'),
+                'BIKE_FRAGMENTED_CHART_CONSTRUCTED');
+            invariant(document.getElementById('chart-cadence-speed-presentation-status')?.textContent
+                === 'Too fragmented to plot.', 'BIKE_FRAGMENTED_STATUS');
+            return { swimChartCalls: 0, bikeCadenceSpeedCalls: 0, stableStatus: true };
         });
 
         await gate('zones-and-swim-athlete-correction', async () => {

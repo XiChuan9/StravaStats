@@ -675,10 +675,19 @@ test('Stream presentation reduction remains confined to renderer construction se
         assert.match(value, /prepareStreamMapPresentation\(/, relativePath);
         if (relativePath !== 'js/pages/swim/swim.js') {
             const chartAdapter = /function createStreamPresentationChart[\s\S]*?\n}\n/.exec(value)?.[0] ?? '';
-            assert.match(chartAdapter, /presentation\.status === 'too-fragmented'/, relativePath);
-            assert.match(chartAdapter, /Too fragmented to plot\./, relativePath);
+            const stateAdapter = /function renderStreamPresentationState[\s\S]*?\n}\n/.exec(value)?.[0] ?? '';
+            assert.match(`${chartAdapter}\n${stateAdapter}`, /presentation\.status === 'too-fragmented'/, relativePath);
+            assert.match(`${chartAdapter}\n${stateAdapter}`, /Too fragmented to plot\./, relativePath);
         }
     }
+    const swimRenderer = rendererSources.get('js/pages/swim/swim.js');
+    const swimCharts = /function renderStreamCharts[\s\S]*?\n}\n/.exec(swimRenderer)?.[0] ?? '';
+    assert.match(swimCharts, /presentation\.status === 'too-fragmented'/);
+    assert.match(swimCharts, /Too fragmented to plot\./);
+    const bikeRenderer = rendererSources.get('js/pages/bike/bike.js');
+    const cadenceSpeed = /function renderCadenceSpeedChart[\s\S]*?\n}\n/.exec(bikeRenderer)?.[0] ?? '';
+    assert.match(cadenceSpeed, /presentation\.status === 'too-fragmented'/);
+    assert.match(cadenceSpeed, /renderStreamPresentationState\('chart-cadence-speed'/);
     for (const relativePath of [
         'js/pages/activity/advanced-analysis.js',
         'js/tabs/run-plus.js',
@@ -724,6 +733,11 @@ test('Stream performance harnesses are deterministic native modules with recordi
         /repositoryEnvelopeP95Ms\s*<=\s*1_000/,
         /activitiesSecondRafP95Ms\s*<=\s*1_500/,
         /startupGetStreams\s*===\s*0/,
+        /createRepositoryWithDependencies/,
+        /deterministicCanonicalStore/,
+        /repositoryPageReads/,
+        /establishSummaryRepositorySession/,
+        /loadActivitiesForSession/,
         /RecordingChart/,
         /RecordingLeaflet/,
         /PerformanceObserver/,
@@ -733,6 +747,8 @@ test('Stream performance harnesses are deterministic native modules with recordi
     ]) {
         assert.match(browserHarness, pattern);
     }
+    assert.doesNotMatch(browserHarness, /function repositoryFor\(|storageWrites:\s*0/);
+    assert.match(browserHarness, /DeterministicCanonicalStore/);
     assert.doesNotMatch(browserHarness, /https?:\/\/|fixtures\/private|indexedDB|localStorage|sessionStorage/);
 });
 

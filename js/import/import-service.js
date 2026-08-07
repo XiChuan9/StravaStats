@@ -479,9 +479,9 @@ export function createImportService(options) {
                         'decode'
                     );
                     items[index] = await failItem(items[index], I.FAILED_DECODE, error);
-                    continue;
+                } else {
+                    decodedItems.set(items[index].id, resultValues.decoded);
                 }
-                decodedItems.set(items[index].id, resultValues.decoded);
             } catch (error) {
                 const safe = importError(IMPORT_ERROR_CODE.WORKER_CRASHED, true, 'decode');
                 items[index] = await failItem(items[index], I.FAILED_DECODE, safe);

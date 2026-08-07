@@ -16,6 +16,7 @@ const RECORD_FIELDS = Object.freeze([
 const PAIR_FIELDS = Object.freeze(['sum', 'maximum']);
 
 let sink = null;
+let sinkDegraded = false;
 let clock = () => 0;
 let fallback = [];
 let active = null;
@@ -35,6 +36,7 @@ function finiteMilliseconds(value) {
 
 function readSink(selectedSink = sink) {
     if (selectedSink === null) return fallback;
+    if (selectedSink === sink && sinkDegraded) return fallback;
     try {
         const parsed = JSON.parse(selectedSink?.getItem(STORAGE_KEY) ?? '[]');
         return Array.isArray(parsed)
@@ -49,7 +51,9 @@ function writeSink(records) {
     fallback = records.slice(-RECORD_LIMIT);
     try {
         sink?.setItem(STORAGE_KEY, JSON.stringify(fallback));
+        sinkDegraded = false;
     } catch {
+        sinkDegraded = true;
         // The bounded in-memory records remain available for this session.
     }
 }
@@ -153,6 +157,7 @@ export function configureImportPerformance({ storage = null, now } = {}) {
     sink = storage && typeof storage.getItem === 'function' && typeof storage.setItem === 'function'
         ? storage
         : null;
+    sinkDegraded = false;
     clock = typeof now === 'function' ? now : () => 0;
     fallback = readSink();
     active = null;
@@ -245,6 +250,7 @@ export function readImportPerformanceRecords({ storage = sink } = {}) {
 
 export function resetImportPerformanceForTests() {
     sink = null;
+    sinkDegraded = false;
     clock = () => 0;
     fallback = [];
     active = null;
