@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 M19 / PR-22 |
-| Status | A3.2 contracts approved; exact implementation allowlist frozen |
+| Status | Final Review Closure complete; awaiting exact-head CI and Ready handoff |
 | Branch | `codex/v2/diagnostics-performance` |
 | Base | `integration/v2` at `964e88d2cad0bbbfe2139f8b9d46a847199980e1` |
 | Draft PR title | `feat(v2): add diagnostics and performance gates` |
@@ -388,6 +388,121 @@ non-identifying geometry that is never exported, logged or committed as a privat
   must report no actionable findings.
 
 ## Closure and authorization boundaries
+
+### Final Review Closure evidence
+
+The closed implementation head is `7a51ee4fab13b193f03d20365bf984ef3c5a1ad6` on
+`codex/v2/diagnostics-performance`, with exact merge base
+`964e88d2cad0bbbfe2139f8b9d46a847199980e1`. The worktree was clean at closure.
+The diff contains exactly 44 of the 46 approved paths and no path outside the literal allowlist:
+
+```text
+diagnostics.html
+docs/tasks/pr-22-diagnostics-performance.md
+js/analysis/index.js
+js/app/main.js
+js/app/ui.js
+js/diagnostics.js
+js/diagnostics/import-performance.js
+js/diagnostics/index.js
+js/import/import-service.js
+js/import/state-machine.js
+js/main.js
+js/pages/activity-router.js
+js/pages/activity/activity.js
+js/pages/activity/index.js
+js/pages/bike/bike.js
+js/pages/bike/index.js
+js/pages/detail/stream-presentation.js
+js/pages/diagnostics/diagnostics.js
+js/pages/run/index.js
+js/pages/run/run.js
+js/pages/source-manager/source-manager.js
+js/pages/storage-backup/storage-backup.js
+js/pages/swim/index.js
+js/pages/swim/swim.js
+js/source-manager.js
+js/storage-backup.js
+js/storage/import-store.js
+storage-backup.html
+tests/consumers/detail-boundaries.test.js
+tests/consumers/detail-browser-smoke.html
+tests/consumers/stream-presentation.test.js
+tests/diagnostics/diagnostics-boundaries.test.js
+tests/diagnostics/diagnostics-browser-smoke.html
+tests/diagnostics/diagnostics.test.js
+tests/diagnostics/import-performance.test.js
+tests/import/import-core.test.js
+tests/import/import-performance.test.js
+tests/import/import-state-machine.test.js
+tests/import/strava-zip.test.js
+tests/performance/performance-browser-smoke.html
+tests/performance/stream-performance.test.js
+tests/source-manager/source-manager-boundaries.test.js
+tests/source-manager/source-manager-performance-browser-smoke.html
+tests/source-manager/source-manager.test.js
+```
+
+Failure-first and local evidence at the closed implementation head:
+
+- Persistence cancellation first reproduced `INVALID_TRANSITION`; the approved A3.2 repair then
+  proved one in-flight committed item is preserved, one unfinished item is cancelled, the durable
+  job is cancelled and `persistImportItem` is called exactly once. A separate failure-first quota
+  race reproduced `failed_storage` winning incorrectly; the repair now preserves the first safe
+  `failed_storage` terminal item, cancels only the unfinished item, cancels the job, performs zero
+  Canonical commit and makes exactly one persistence call.
+- Final focused Import/state/ZIP coverage passed 48/48; storage transaction regressions passed 7/7.
+  The deterministic 1,000 ordinary-FIT direct-service workload completed with descriptive
+  median/p95 8,240.2 ms and no absolute throughput claim.
+- The deterministic Node 200,000-point fresh-wrapper gate used ten warmups and thirty samples after
+  the disclosed 20-second quiet period; fresh independent evidence recorded p95 9.142 ms and
+  maximum 9.27 ms, within the 25/50 ms hard budgets, with semantic/cap/immutability assertions.
+- `npm run check:syntax` passed 237 files; `npm run check:privacy` passed; the full suite passed
+  1,451/1,451; and `git diff --check` passed.
+
+Actual-served browser evidence used only deterministic synthetic data in an isolated Codex in-app
+Chromium profile: Chrome 150 on macOS, reported hardware concurrency 10. The final isolated run
+recorded 5,000-activity Canonical Repository median/p95 18.4/29.9 ms and Activities second-rAF
+median/p95 557.7/852.8 ms across five repetitions. The mandatory record-only 10,000 workload was
+56.0 ms Repository and 980.6 ms second-rAF. The 200,000-point workload recorded median/p95/maximum
+14.4/30.7/30.7 ms, chart maximum 486, map maximum 1,585, 1,584 layers and maximum long task 0 ms;
+startup `getStreams` was exactly zero. The actual Repository seam performed 76 page reads and six
+initializations through the disclosed deterministic read-only paginated Canonical Store stub.
+Recording stubs were exactly Chart, Leaflet and that Canonical Store.
+
+The same final browser head passed the 1,000-file Source Manager plan with 40 jobs, zero eager
+reads, 2.5 ms planning and zero Worker/storage writes; Diagnostics success/unsupported/unavailable
+Storage Estimate states, two safe errors, one safe Import record and exact MIME exported 1,711
+bytes; and all eleven detail gates including fragmented zero-Chart behavior. Every final page
+recorded zero console entries, uncaught errors, unhandled rejections, external resources,
+provider/auth requests and Service Worker/Cache changes, and zero IndexedDB count delta where
+measured. One earlier performance run under concurrent review/clone load failed closed with
+`ACTIVITIES_5K_P95`; after those workloads ended, the isolated five-repetition run above passed
+without changing data, thresholds or implementation.
+
+The final remote verification used a real GitHub shallow fetch and detached checkout at exact
+`7a51ee4fab13b193f03d20365bf984ef3c5a1ad6`; `git rev-parse --is-shallow-repository` was `true`.
+In that checkout, untouched `npm ci`, syntax for 237 files, privacy, the full 1,451-test suite,
+`git diff --check` and clean status all passed. The incomplete earlier network clone and every
+successful verification directory were retained; no cleanup was performed.
+
+Independent findings-first review found and repaired five initial issues: cancellation after a
+safe Worker failure, a tautological Repository/startup browser seam, write-denied performance
+fallback, a cached rather than production-like Node benchmark, and silent fragmented Bike/Swim
+charts. Later fresh reviews found and failure-first repaired persistence-stage cancellation and the
+quota/cancellation race. A final reviewer uninvolved in implementation reviewed exact `7a51ee4`,
+ran 75 focused Import/state/ZIP/source tests and 303 Diagnostics/detail/Stream/performance tests,
+and reported verbatim: `fresh independent re-review: no actionable findings`.
+
+There is no schema, store, index, version, migration, backup, public API, dependency, Worker
+protocol, Service Worker, deployment, release, provider/auth or default-Repository change. Legacy,
+V2 and backup data are neither deleted nor rewritten. Rollback is code-only: session diagnostics
+are bounded ephemeral records, Stream reduction is presentation-only, and persistence cancellation
+preserves committed terminal items without compensation. Contractual limitations remain explicit:
+Storage Estimate is coarse and origin-wide; 10,000 activities and 1,000 FIT throughput are
+record-only; browser Chart/Leaflet/Canonical Store boundaries are disclosed recording stubs; and
+untouched inherited privacy risks remain release blockers outside this PR rather than being claimed
+fixed.
 
 Final Review Closure is a Task-Brief-only commit recording the frozen contract, exact changed
 paths, implementation head, focused/full/depth/browser/performance/privacy evidence, independent
