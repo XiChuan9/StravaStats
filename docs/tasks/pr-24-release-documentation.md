@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 M21 / PR-24 |
-| Status | A2 evidence and exact scope frozen; docs-contract implementation pending |
+| Status | Documentation and local verification complete; independent review pending |
 | Branch | `codex/v2/release-documentation` |
 | Base | `integration/v2` at `61d7b032305fd8f12d71544315f06d553213801d` |
 | Draft PR title | `docs(v2): complete release candidate documentation` |
@@ -328,6 +328,49 @@ literal allowlist. It may not modify product behavior or become a future-hostile
 Any eleventh path or need to modify product code, historical migration records, package/version,
 Service Worker, workflow, deployment, schema/API/dependency, release artifact, or user data pauses
 for the material-decision gate. A2 found no need for such a package.
+
+## Implementation evidence before independent review
+
+The implementation stays within all ten frozen paths. It replaces the stale provider-first root
+README, updates the documentation index, adds an honest Unreleased changelog, adds the five durable
+guides, and adds one offline docs-contract test. No product, package/version, schema/API/dependency,
+Service Worker, workflow, deployment, migration implementation, release configuration, or user-data
+path changed.
+
+Failure-first evidence:
+
+- Initial `node --test tests/docs/release-docs.test.js` passed only the frozen Task Brief scope test
+  and failed 5/6 on the missing `CHANGELOG.md`/guides, stale README commands/status, missing exact
+  facts, and unqualified compatibility/external-resource prose.
+- The first implementation run passed 4/6 and exposed two test-contract formatting assumptions;
+  each was narrowed to accept Markdown wrapping and the exact `absent V2 database or exact empty`
+  wording without weakening the underlying fact.
+- The final focused suite passes 6/6 and validates every local Markdown link, exact commands and
+  served routes, package/V4/backup constants, critical restore codes, release status language,
+  cross-browser limits, third-party CDN/telemetry, not-fully-offline status, and Ready separation.
+
+Local gates after implementation:
+
+```text
+node --test tests/docs/release-docs.test.js   PASS 6/6
+npm run check:syntax                         PASS 239 files
+npm run check:privacy                        PASS
+npm test                                     PASS 1463/1463
+git diff --check                             PASS
+literal frozen-scope audit                   PASS 10/10, no eleventh path
+```
+
+The three served operator routes and workflows are cross-checked against accepted existing
+evidence rather than rerun in PR-24: PR-14 Source Manager/import; PR-15 First-run; PR-20 Duplicate
+Review; PR-21 Storage & Backup/restore; PR-22 Diagnostics; and PR-23 default Canonical plus explicit
+Legacy/Shadow rollback. Those runs used disposable Chromium/Chrome profiles and deterministic
+synthetic data. PR-24 changes no served source, route, behavior, or fixture and makes no claim that
+the browser gates were rerun during this documentation task.
+
+At this implementation head, the Production row “Migration/Backup/Privacy/Troubleshooting docs
+complete” advances from A2 `PARTIAL` to implementation `PASS`, subject to independent review and
+exact-head CI. “All CI passes” remains `PARTIAL` until the Final Review Closure head receives fresh
+GitHub CI. Every other `PARTIAL`, `BLOCKED`, and `NOT RUN` row remains unchanged.
 
 ## Required documentation contracts
 
