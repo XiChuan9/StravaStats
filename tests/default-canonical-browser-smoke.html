@@ -370,7 +370,13 @@
                 .replace(linkPattern, '');
         }
 
-        async function servedFrame({ name, path, entryPattern, flags = null, runner = '' }) {
+        async function servedFrame({
+            name,
+            path,
+            entryPattern,
+            flags = null,
+            runner = ''
+        }) {
             const token = `pr23-${frameSequence += 1}`;
             const observation = {
                 installed: false,
@@ -386,6 +392,12 @@
             const response = await fetch(path, { cache: 'no-store', credentials: 'omit' });
             assert(response.ok, `SERVED_DOCUMENT_${name.toUpperCase()}`);
             let source = sanitizeDocument(await response.text(), entryPattern);
+            if (runner) {
+                source = source.replace(
+                    "script-src 'self';",
+                    "script-src 'self' 'nonce-pr23-default';"
+                );
+            }
             const prelude = '<scr' + 'ipt nonce="pr23-default">'
                 + `parent.__PR23_INSTALL_CHILD__(window, ${JSON.stringify(token)});`
                 + '</scr' + 'ipt>';
@@ -458,8 +470,55 @@
             assert(observation.runtimeErrors === 0, 'EMPTY_CANONICAL_ZERO_RUNTIME_ERRORS');
             assert(observation.consoleErrors === 0, 'EMPTY_CANONICAL_ZERO_CONSOLE_ERRORS');
             assert(observation.providerRequests === undefined || observations.providerRequests === 0, 'EMPTY_ZERO_PROVIDER');
-            observations.scenarios.push('empty-default');
             frame.remove();
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            const {
+                frame: sourceManagerFrame,
+                observation: sourceManagerObservation
+            } = await servedFrame({
+                name: 'empty-source-manager',
+                path: '/source-manager.html?mode=real',
+                entryPattern: /a^/,
+                runner: '<scr' + 'ipt type="module" nonce="pr23-default">'
+                    + 'const entry=await import("/js/app/source-manager.js");'
+                    + 'window.__PR23_SOURCE_MANAGER_RESULT__=await entry.startSourceManager({'
+                    + 'document,location:{search:"?mode=real"},indexedDB,IDBKeyRange,crypto,Worker});'
+                    + '</scr' + 'ipt>'
+            });
+            await waitFor(
+                () => sourceManagerFrame.contentWindow.__PR23_SOURCE_MANAGER_RESULT__?.status === 'ready'
+                    && !sourceManagerFrame.contentDocument.getElementById('first-run')?.hidden,
+                'EMPTY_SOURCE_MANAGER_FIRST_RUN_UI'
+            );
+            assert(
+                sourceManagerFrame.contentDocument.getElementById('session-label')?.textContent
+                    === 'Real local library',
+                'EMPTY_SOURCE_MANAGER_EXACT_REAL_MODE'
+            );
+            assert(
+                sourceManagerObservation.databaseOpens.length > 0
+                && sourceManagerObservation.databaseOpens.every(name => name === V2_DATABASE_NAME),
+                'EMPTY_SOURCE_MANAGER_ONLY_V2_DATABASE'
+            );
+            assert(
+                !sourceManagerObservation.storageReads.includes('strava_tokens'),
+                'EMPTY_SOURCE_MANAGER_NO_TOKEN_READ'
+            );
+            assert(
+                sourceManagerObservation.network.every(value => !value.authorization),
+                'EMPTY_SOURCE_MANAGER_NO_AUTHORIZATION'
+            );
+            assert(
+                sourceManagerObservation.runtimeErrors === 0,
+                'EMPTY_SOURCE_MANAGER_ZERO_RUNTIME_ERRORS'
+            );
+            assert(
+                sourceManagerObservation.consoleErrors === 0,
+                'EMPTY_SOURCE_MANAGER_ZERO_CONSOLE_ERRORS'
+            );
+            observations.scenarios.push('empty-default');
+            sourceManagerFrame.remove();
         }
 
         async function scenarioDefaultCanonical() {
