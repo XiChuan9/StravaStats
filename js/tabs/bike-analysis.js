@@ -40,6 +40,33 @@ function bikeTypeBadge(r) {
     return `<span class="bike-type-badge bike-type-${bikeType}">${label}</span>`;
 }
 
+function createActivityLink(activity) {
+    const label = activity?.name || '-';
+    const activityId = typeof activity?.id === 'string' && activity.id.length > 0
+        ? activity.id
+        : (Number.isSafeInteger(activity?.id) && activity.id > 0 ? String(activity.id) : null);
+    if (activityId === null) {
+        return document.createTextNode(label);
+    }
+    const params = new URLSearchParams();
+    params.set('id', activityId);
+    const link = document.createElement('a');
+    link.href = `html/activity-router.html?${params.toString()}`;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = label;
+    return link;
+}
+
+function appendTableCell(row, value, dataValue = null) {
+    const cell = document.createElement('td');
+    if (dataValue !== null) cell.dataset.value = String(dataValue);
+    if (value instanceof Node) cell.append(value);
+    else cell.textContent = String(value);
+    row.append(cell);
+    return cell;
+}
+
 
 // ------------------------
 // MAIN ENTRY
@@ -717,11 +744,6 @@ function renderTopActivities(rides) {
         return `${h}h ${m}m`;
     };
 
-    const activityLink = a => {
-        if (!a?.id) return a?.name || '-';
-        return `<a href="html/activity-router.html?id=${encodeURIComponent(a.id)}" target="_blank" rel="noopener noreferrer">${a.name}</a>`;
-    };
-
     el.innerHTML = `
 
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin: 2rem 0;">
@@ -732,11 +754,7 @@ function renderTopActivities(rides) {
 
             <table class="compact-table" id="bike-top-distance-table">
             <thead><tr style="background: #2e7d32; color: #fff;"><th>#</th><th>Ride</th><th data-sort="num">km</th></tr></thead>
-            <tbody>
-                ${topDistance.map((a, i) =>
-        `<tr><td>${i + 1}</td><td>${activityLink(a)}</td><td data-value="${a.distance / 1000}">${(a.distance / 1000).toFixed(1)} km</td></tr>`
-    ).join("")}
-            </tbody>
+            <tbody></tbody>
             </table>
 
         </div>
@@ -747,11 +765,7 @@ function renderTopActivities(rides) {
 
             <table class="compact-table" id="bike-top-elevation-table">
             <thead><tr style="background: #2e7d32; color: #fff;"><th>#</th><th>Ride</th><th data-sort="num">Elev (m)</th></tr></thead>
-            <tbody>
-                ${topElevation.map((a, i) =>
-        `<tr><td>${i + 1}</td><td>${activityLink(a)}</td><td data-value="${a.total_elevation_gain}">${a.total_elevation_gain} m</td></tr>`
-    ).join("")}
-            </tbody>
+            <tbody></tbody>
             </table>
 
         </div>
@@ -762,17 +776,29 @@ function renderTopActivities(rides) {
 
             <table class="compact-table" id="bike-top-speed-table">
             <thead><tr style="background: #2e7d32; color: #fff;"><th>#</th><th>Ride</th><th data-sort="num">km/h</th></tr></thead>
-            <tbody>
-                ${topFastest.map((a, i) =>
-        `<tr><td>${i + 1}</td><td>${activityLink(a)}</td><td data-value="${a.speed}">${utils.formatSpeedBike(a.speed)}</td></tr>`
-    ).join("")}
-            </tbody>
+            <tbody></tbody>
             </table>
 
         </div>
 
         </div>
     `;
+
+    const populateTopTable = (tableId, activities, valueFor, textFor) => {
+        const body = document.getElementById(tableId)?.querySelector('tbody');
+        if (!body) return;
+        const rows = activities.map((activity, index) => {
+            const row = document.createElement('tr');
+            appendTableCell(row, index + 1);
+            appendTableCell(row, createActivityLink(activity));
+            appendTableCell(row, textFor(activity), valueFor(activity));
+            return row;
+        });
+        body.replaceChildren(...rows);
+    };
+    populateTopTable('bike-top-distance-table', topDistance, a => a.distance / 1000, a => `${(a.distance / 1000).toFixed(1)} km`);
+    populateTopTable('bike-top-elevation-table', topElevation, a => a.total_elevation_gain, a => `${a.total_elevation_gain} m`);
+    populateTopTable('bike-top-speed-table', topFastest, a => a.speed, a => utils.formatSpeedBike(a.speed));
 
     makeSortable(document.getElementById('bike-top-distance-table'));
     makeSortable(document.getElementById('bike-top-elevation-table'));
@@ -789,7 +815,7 @@ function renderActivitiesTable(rides) {
     const el = document.getElementById("bike-activities-table");
     if (!el) return;
 
-    const rows = rides
+    const rowValues = rides
         .sort((a, b) => new Date(b.start_date) - new Date(a.start_date))
         .map(a => {
 
@@ -823,13 +849,6 @@ function renderActivitiesTable(rides) {
                 ? elevPerKmValue.toFixed(1)
                 : "-";
 
-            // --- activity link ---
-            const safeName = escapeHTML(a.name || "Untitled");
-
-            const activityLink = a.id
-                ? `<a href="html/activity-router.html?id=${encodeURIComponent(a.id)}" target="_blank" rel="noopener noreferrer">${safeName}</a>`
-                : safeName;
-
             // --- date ---
             const date = a.start_date_local
                 ? a.start_date_local.substring(0, 10)
@@ -843,29 +862,9 @@ function renderActivitiesTable(rides) {
                 ? `${elapsedH}h ${String(elapsedM).padStart(2, '0')}m`
                 : `${elapsedM}m`;
 
-            return `
-            <tr>
-                <td>${date}</td>
-                <td>${activityLink}</td>
-                <td>${bikeTypeBadge(a)}</td>
-
-                <td data-value="${km}">${km.toFixed(1)}</td>
-                <td data-value="${elevation}">${elevation}</td>
-                <td data-value="${elevPerKmValue}">${elevPerKmDisplay}</td>
-
-                <td data-value="${speed}">${speed.toFixed(1)}</td>
-                <td data-value="${difficulty}">${difficulty.toFixed(1)}</td>
-
-                <td data-value="${a.average_watts ?? 0}">
-                    ${a.average_watts != null ? `${a.average_watts} W` : '-'}
-                </td>
-
-                <td data-value="${ratio}">${(ratio * 100).toFixed(0)}%</td>
-                <td data-value="${elapsedTime}">${elapsedStr}</td>
-            </tr>
-            `;
+            return { a, date, km, elevation, elevPerKmValue, elevPerKmDisplay, speed, difficulty, ratio, elapsedTime, elapsedStr };
         })
-        .join("");
+        ;
 
     el.innerHTML = `
         <table id="bike-all-table" style="width: 100%; border-collapse: collapse; margin-top: 2rem; border: 1px solid rgba(46, 125, 50, 0.25); border-radius: 10px; overflow: hidden;">
@@ -885,10 +884,31 @@ function renderActivitiesTable(rides) {
                 </tr>
             </thead>
             <tbody>
-                ${rows}
             </tbody>
         </table>
     `;
+
+    const body = document.getElementById('bike-all-table')?.querySelector('tbody');
+    const rows = rowValues.map(({ a, date, km, elevation, elevPerKmValue, elevPerKmDisplay, speed, difficulty, ratio, elapsedTime, elapsedStr }) => {
+        const row = document.createElement('tr');
+        appendTableCell(row, date);
+        appendTableCell(row, createActivityLink(a));
+        const typeCell = appendTableCell(row, '');
+        const badge = document.createElement('span');
+        badge.className = `bike-type-badge bike-type-${getBikeType(a)}`;
+        badge.textContent = getBikeTypeLabel(a);
+        typeCell.replaceChildren(badge);
+        appendTableCell(row, km.toFixed(1), km);
+        appendTableCell(row, elevation, elevation);
+        appendTableCell(row, elevPerKmDisplay, elevPerKmValue);
+        appendTableCell(row, speed.toFixed(1), speed);
+        appendTableCell(row, difficulty.toFixed(1), difficulty);
+        appendTableCell(row, a.average_watts != null ? `${a.average_watts} W` : '-', a.average_watts ?? 0);
+        appendTableCell(row, `${(ratio * 100).toFixed(0)}%`, ratio);
+        appendTableCell(row, elapsedStr, elapsedTime);
+        return row;
+    });
+    body?.replaceChildren(...rows);
 
     makeSortable(document.getElementById('bike-all-table'));
 }

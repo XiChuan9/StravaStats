@@ -10,6 +10,18 @@ import {
 const projectRoot = new URL('../../', import.meta.url);
 const mainSource = await readFile(new URL('js/app/main.js', projectRoot), 'utf8');
 const runPlusSource = await readFile(new URL('js/tabs/run-plus.js', projectRoot), 'utf8');
+const runAnalysisSource = await readFile(new URL('js/tabs/run-analysis.js', projectRoot), 'utf8');
+
+test('M23 embedded Run summary inherits the native DOM link and opaque-ID contract', () => {
+    assert.match(runPlusSource, /renderRunAnalysisTab/);
+    assert.match(runAnalysisSource, /new URLSearchParams\(\)/);
+    assert.match(runAnalysisSource, /params\.set\('id', activityId\)/);
+    assert.match(runAnalysisSource, /Number\.isSafeInteger\(activity\?\.id\)/);
+    assert.match(runAnalysisSource, /link\.textContent = label/);
+    assert.match(runAnalysisSource, /link\.rel = 'noopener noreferrer'/);
+    assert.doesNotMatch(runAnalysisSource, /<a[^>]*activity-router[^>]*\$\{[^}]*\.id/);
+    assert.doesNotMatch(runAnalysisSource, /<a[^>]*>[\s\S]*?\$\{[^}]*\.name\}/);
+});
 
 function compileMainBoundary(source) {
     const startMarker = '// PR04A_B1_SUMMARY_BOUNDARY_START';

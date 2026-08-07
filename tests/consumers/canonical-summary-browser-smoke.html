@@ -23,6 +23,13 @@
     <script type="module" nonce="pr16-canonical">
         const FIXED_NOW = Date.parse('2026-08-06T08:00:00.000Z');
         const ACTIVITY_COUNT = 503;
+        const DOM_XSS_CANARY = '<img src=x onerror=globalThis.__domSafetyExecuted=1> double" single\' backtick` onclick=globalThis.__domSafetyExecuted=2 javascript:globalThis.__domSafetyExecuted=3 __proto__ constructor prototype 运动🏃‍♀️ é';
+        const OPAQUE_ID_CANARY = 'zz/alpha/beta ?#%&=+;';
+        const SPORT_CANARIES = Object.freeze([
+            Object.freeze({ index: 3, sport: 'run', id: `${OPAQUE_ID_CANARY}run`, name: `${DOM_XSS_CANARY} RUN` }),
+            Object.freeze({ index: 5, sport: 'ride', id: `${OPAQUE_ID_CANARY}ride`, name: `${DOM_XSS_CANARY} RIDE` }),
+            Object.freeze({ index: 7, sport: 'swim', id: `${OPAQUE_ID_CANARY}swim`, name: `${DOM_XSS_CANARY} SWIM` })
+        ]);
         const ROUTES = Object.freeze([
             '/activities',
             '/calendar',
@@ -33,6 +40,7 @@
             '/swim',
             '/gear',
             '/map',
+            '/trends',
             '/planner'
         ]);
         const status = document.getElementById('status');
@@ -59,6 +67,7 @@
                 currentRoute: '/',
                 consoleWarnings: 0,
                 consoleErrors: 0,
+                consolePayloads: [],
                 runtimeErrors: 0,
                 serviceWorkers: []
             },
@@ -247,6 +256,13 @@
                         }
                         constructor(target, config = {}) {
                             this.target = target?.canvas ?? target;
+                            if (
+                                child.__forceAthleteChartFailure === true
+                                && this.target?.id === 'athlete-count-histogram'
+                            ) {
+                                child.__forceAthleteChartFailure = false;
+                                throw new Error(DOM_XSS_CANARY);
+                            }
                             this.config = config;
                             this.data = config.data ?? {};
                             this.options = config.options ?? {};
@@ -279,6 +295,8 @@
                         circleMarker: mapLayer,
                         latLngBounds: () => ({ isValid: () => false })
                     };
+                    child.__domSafetyExecuted = 0;
+                    child.__forceAthleteChartFailure = false;
                     if (child.navigator.serviceWorker?.register) {
                         child.navigator.serviceWorker.register = async () => ({
                             scope: location.origin,
@@ -364,6 +382,7 @@
                     };
                     child.console.error = (...args) => {
                         root.consoleErrors += 1;
+                        root.consolePayloads.push(args.map(value => String(value)).join(' '));
                         childError(...args);
                     };
                     child.addEventListener('error', event => {
@@ -450,11 +469,21 @@
                 ['/swim', 'swim-tab'],
                 ['/gear', 'gear-tab'],
                 ['/map', 'map-tab'],
+                ['/trends', 'trends-tab'],
                 ['/planner', 'planner-tab']
+            ]);
+            const routeCanaries = new Map([
+                ['/activities', SPORT_CANARIES],
+                ['/calendar', SPORT_CANARIES],
+                ['/wrapped', SPORT_CANARIES],
+                ['/run', [SPORT_CANARIES[0]]],
+                ['/bike', [SPORT_CANARIES[1]]],
+                ['/swim', [SPORT_CANARIES[2]]]
             ]);
             for (const [route, tabId] of routeToTab) {
                 const link = childDocument.querySelector(`.tab-link[data-tab="${tabId}"]`);
                 assert(Boolean(link), `ACTUAL_ROOT_LINK_${tabId}`);
+                if (route === '/trends') child.__forceAthleteChartFailure = true;
                 link.click();
                 await waitFor(
                     () => root.currentRoute === route
@@ -465,6 +494,75 @@
                     () => child.requestAnimationFrame(resolve)
                 ));
                 root.routes.push(route);
+                if (route === '/calendar') {
+                    childDocument.querySelector('#calendar-tab .cal-view-btn[data-view="month"]')?.click();
+                    await new Promise(resolve => child.requestAnimationFrame(resolve));
+                    const monthDay = childDocument.querySelector(
+                        '#calendar-tab .cal-day[data-date="2026-08-05"]'
+                    );
+                    assert(
+                        Array.from(monthDay?.querySelectorAll('.cal-pill[title]') ?? []).some(pill => (
+                            SPORT_CANARIES.some(canary => pill.title === canary.name)
+                        )),
+                        'ACTUAL_ROOT_CALENDAR_MONTH_CANARY_TITLE'
+                    );
+                    monthDay?.click();
+                    assert(
+                        SPORT_CANARIES.every(canary => Array.from(
+                            childDocument.querySelectorAll('#calendar-tab .cal-detail-name')
+                        ).some(name => name.textContent === canary.name)),
+                        'ACTUAL_ROOT_CALENDAR_MONTH_DAY_DETAIL'
+                    );
+                    childDocument.querySelector('#calendar-tab .cal-view-btn[data-view="year"]')?.click();
+                    await new Promise(resolve => child.requestAnimationFrame(resolve));
+                    const yearDay = childDocument.querySelector(
+                        '#calendar-tab .cal-year-cell[data-date="2026-08-05"]'
+                    );
+                    assert(
+                        SPORT_CANARIES.every(canary => yearDay?.title.includes(canary.name)),
+                        'ACTUAL_ROOT_CALENDAR_YEAR_CANARY_TITLE'
+                    );
+                    yearDay?.click();
+                    assert(
+                        SPORT_CANARIES.every(canary => Array.from(
+                            childDocument.querySelectorAll('#calendar-tab .cal-detail-name')
+                        ).some(name => name.textContent === canary.name)),
+                        'ACTUAL_ROOT_CALENDAR_YEAR_DAY_DETAIL'
+                    );
+                    childDocument.querySelector('#calendar-tab .cal-view-btn[data-view="week"]')?.click();
+                    await new Promise(resolve => child.requestAnimationFrame(resolve));
+                }
+                for (const canary of routeCanaries.get(route) ?? []) {
+                    const matchingLinks = Array.from(
+                        childDocument.getElementById(tabId).querySelectorAll('a')
+                    ).filter(candidate => (
+                        candidate.textContent === canary.name
+                        || candidate.querySelector('.cal-week-act-name')?.textContent === canary.name
+                    ));
+                    assert(matchingLinks.length > 0, `ACTUAL_ROOT_${canary.sport.toUpperCase()}_CANARY_${tabId}`);
+                    assert(matchingLinks.every(candidate => (
+                        new child.URL(candidate.href).searchParams.get('id') === canary.id
+                        && candidate.relList.contains('noopener')
+                        && candidate.relList.contains('noreferrer')
+                    )), `ACTUAL_ROOT_${canary.sport.toUpperCase()}_ROUND_TRIP_${tabId}`);
+                }
+                if (route === '/activities') {
+                    childDocument.querySelector('#activities-table th[data-col="name"]')?.click();
+                    await new Promise(resolve => child.requestAnimationFrame(resolve));
+                    const runOption = Array.from(childDocument.getElementById('flt-type').options)
+                        .find(option => option.value.includes('Run'));
+                    Array.from(childDocument.getElementById('flt-type').options)
+                        .forEach(option => { option.selected = option === runOption; });
+                    childDocument.getElementById('flt-type').dispatchEvent(
+                        new child.Event('change', { bubbles: true })
+                    );
+                    assert(
+                        Array.from(childDocument.querySelectorAll('#activities-table a'))
+                            .some(candidate => candidate.textContent === SPORT_CANARIES[0].name),
+                        'ACTUAL_ROOT_RUN_CANARY_AFTER_SORT_FILTER'
+                    );
+                    childDocument.getElementById('flt-reset').click();
+                }
                 if (route === '/dashboard') {
                     const elevationCard = Array.from(
                         childDocument.querySelectorAll('#dashboard-summary .card')
@@ -475,7 +573,32 @@
                         'ACTUAL_ROOT_CANONICAL_ELEVATION_VISIBLE'
                     );
                 }
+                assert(child.__domSafetyExecuted === 0, `ACTUAL_ROOT_ZERO_CANARY_EXECUTION_${tabId}`);
+                assert(
+                    childDocument.querySelector('img[src="x"]') === null,
+                    `ACTUAL_ROOT_ZERO_CANARY_ELEMENT_${tabId}`
+                );
             }
+
+            const canaryLinks = Array.from(childDocument.querySelectorAll('a')).filter(link => (
+                SPORT_CANARIES.some(canary => (
+                    link.textContent === canary.name
+                    || link.querySelector('.cal-week-act-name')?.textContent === canary.name
+                ))
+            ));
+            assert(canaryLinks.length > 0, 'ACTUAL_ROOT_CANARY_RENDERED_AS_TEXT');
+            assert(canaryLinks.every(link => (
+                SPORT_CANARIES.some(canary => (
+                    (
+                        canary.name === link.textContent
+                        || canary.name === link.querySelector('.cal-week-act-name')?.textContent
+                    )
+                    && new child.URL(link.href).searchParams.get('id') === canary.id
+                ))
+            )), 'ACTUAL_ROOT_OPAQUE_ID_URLSEARCHPARAMS_ROUND_TRIP');
+            assert(canaryLinks.every(link => (
+                link.relList.contains('noopener') && link.relList.contains('noreferrer')
+            )), 'ACTUAL_ROOT_NEW_WINDOW_LINK_REL');
 
             assert(
                 childDocument.getElementById('act-counter')
@@ -485,7 +608,7 @@
             assert(
                 root.routes.length === ROUTES.length
                     && root.routes.every((route, index) => route === ROUTES[index]),
-                'ACTUAL_ROOT_TEN_ROUTE_PARITY'
+                'ACTUAL_ROOT_ELEVEN_ROUTE_PARITY'
             );
             assert(
                 root.databaseOpens.length > 0
@@ -501,7 +624,16 @@
                 'ACTUAL_ROOT_ZERO_PROVIDER_OR_AUTHORIZATION_IO'
             );
             assert(root.runtimeErrors === 0, 'ACTUAL_ROOT_ZERO_RUNTIME_ERRORS');
-            assert(root.consoleErrors === 0, 'ACTUAL_ROOT_ZERO_CONSOLE_ERRORS');
+            assert(root.consoleErrors === 1, 'ACTUAL_ROOT_ONE_FORCED_CHART_ERROR');
+            assert(
+                root.consolePayloads.every(payload => !payload.includes(DOM_XSS_CANARY)),
+                'ACTUAL_ROOT_UNDERLYING_ERROR_NOT_LOGGED'
+            );
+            assert(
+                childDocument.getElementById('trends-tab').textContent.includes('Error rendering chart.')
+                && !childDocument.getElementById('trends-tab').textContent.includes(DOM_XSS_CANARY),
+                'ACTUAL_ROOT_FIXED_CHART_ERROR_COPY'
+            );
 
             root.serviceWorkers = child.navigator.serviceWorker?.getRegistrations
                 ? (await child.navigator.serviceWorker.getRegistrations()).map(registration => ({
@@ -523,8 +655,9 @@
         }
 
         function canonicalActivity(index) {
-            const specialIds = ['10', '2', '0002', 'alpha/beta ?#%'];
-            const id = specialIds[index]
+            const canary = SPORT_CANARIES.find(value => value.index === index);
+            const specialIds = ['10', '2', '0002'];
+            const id = canary?.id ?? specialIds[index]
                 ?? `synthetic-${String(index).padStart(4, '0')}`;
             const activity = {
                 schemaVersion: 1,
@@ -547,8 +680,8 @@
                     hasCadence: false,
                     hasLaps: false
                 },
-                name: index === 0 ? null : `Synthetic activity ${index}`,
-                distanceMeters: index === 1 ? 0 : 1000 + index,
+                name: index === 0 ? null : (canary?.name ?? `Synthetic activity ${index}`),
+                distanceMeters: index === 1 ? 0 : (canary ? 1_000_000_000 - index : 1000 + index),
                 movingTimeSeconds: index === 2 ? 0 : 300 + index,
                 elapsedTimeSeconds: 360 + index,
                 averagePowerWatts: index === 3 ? null : 0
@@ -650,7 +783,9 @@
             assert(result.warnings.length === 0, 'CANONICAL_WARNINGS_EMPTY');
             assert(result.data.length === ACTIVITY_COUNT, 'CANONICAL_503_COMPLETE');
             assert(new Set(result.data.map(value => value.id)).size === ACTIVITY_COUNT, 'CANONICAL_NO_DUPLICATES');
-            assert(result.data.some(value => value.id === 'alpha/beta ?#%'), 'OPAQUE_ID_PRESERVED');
+            assert(SPORT_CANARIES.every(canary => (
+                result.data.some(value => value.id === canary.id && value.name === canary.name)
+            )), 'SPORT_DOM_XSS_CANARIES_PRESERVED_AS_DATA');
             assert(result.data.some(value => Object.is(value.distance, 0)), 'REAL_ZERO_PRESERVED');
             assert(result.data.some(value => Object.is(value.total_elevation_gain, 0)), 'ELEVATION_ZERO_PRESERVED');
             assert(result.data.some(value => value.total_elevation_gain === 123), 'ELEVATION_GAIN_PROJECTED');
@@ -676,8 +811,8 @@
                 detailCode = error?.code ?? null;
             }
             assert(
-                detailCode === errorsModule.REPOSITORY_ERROR_CODE.UNSUPPORTED_MODE,
-                'DETAIL_CUTOVER_DEFERRED'
+                detailCode === errorsModule.REPOSITORY_ERROR_CODE.NOT_FOUND,
+                'DETAIL_UNKNOWN_ID_NOT_FOUND'
             );
 
             const demo = factoryModule.createRepositoryWithDependencies({
@@ -737,7 +872,7 @@
                 'ZERO_PROVIDER_OR_AUTHORIZATION_IO'
             );
             assert(observations.runtimeErrors === 0, 'ZERO_RUNTIME_ERRORS');
-            assert(ROUTES.length === 10 && new Set(ROUTES).size === 10, 'TEN_UNIQUE_SUMMARY_ROUTES');
+            assert(ROUTES.length === 11 && new Set(ROUTES).size === 11, 'ELEVEN_UNIQUE_SUMMARY_ROUTES');
 
             rootFrame.remove();
 

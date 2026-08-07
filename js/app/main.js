@@ -961,9 +961,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const setOptions = (selectEl, options) => {
             if (!selectEl) return;
-            selectEl.innerHTML = options
-                .map(option => `<option value="${option.value}">${option.label}</option>`)
-                .join('');
+            const optionElements = options.map(option => {
+                const optionEl = document.createElement('option');
+                optionEl.value = String(option.value);
+                optionEl.textContent = String(option.label);
+                return optionEl;
+            });
+            selectEl.replaceChildren(...optionElements);
         };
 
         setOptions(runGearFilterEl, runOptions);

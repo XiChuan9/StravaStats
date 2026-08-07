@@ -10,6 +10,31 @@ let uiCharts = {}; // cache chart instances for athlete tab
 let interactiveMatrixChart;
 let athleteActivities = [];
 
+function createActivityLink(activityId, label = 'View') {
+    const routeId = typeof activityId === 'string' && activityId.length > 0
+        ? activityId
+        : (Number.isSafeInteger(activityId) && activityId >= 0 ? String(activityId) : null);
+    if (routeId === null) {
+        return document.createTextNode(label);
+    }
+    const params = new URLSearchParams();
+    params.set('id', routeId);
+    const link = document.createElement('a');
+    link.href = `html/activity-router.html?${params.toString()}`;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = label;
+    return link;
+}
+
+function createChartError() {
+    const errorText = document.createElement('p');
+    errorText.style.color = 'red';
+    errorText.style.padding = '20px';
+    errorText.textContent = 'Error rendering chart.';
+    return errorText;
+}
+
 // -------------------------
 // Public API
 // -------------------------
@@ -434,7 +459,12 @@ function renderTransitions(activities) {
 
     const entries = Object.entries(transitionCounts).sort((a, b) => b[1] - a[1]);
     if (entries.length === 0) {
-        if (detailsEl) detailsEl.innerHTML = '<p style="color:#888;">No multi-sport transitions found (activities within 2h of each other).</p>';
+        if (detailsEl) {
+            const empty = document.createElement('p');
+            empty.style.color = '#888';
+            empty.textContent = 'No multi-sport transitions found (activities within 2h of each other).';
+            detailsEl.replaceChildren(empty);
+        }
         return;
     }
 
@@ -472,17 +502,41 @@ function renderTransitions(activities) {
     // Details table
     if (detailsEl) {
         const triathlon = (transitionCounts['Swim→Bike'] || 0) + (transitionCounts['Bike→Run'] || 0);
-        const rows = entries.slice(0, 8).map(([key, count]) =>
-            `<tr><td>${key}</td><td>${count}</td><td style="color:#888;font-size:0.85em;">${(transitionExamples[key] || []).join(', ')}</td></tr>`
-        ).join('');
-
-        detailsEl.innerHTML = `
-            ${triathlon > 0 ? `<p style="margin-bottom:0.75rem;"><strong>Triathlon-style transitions:</strong> ${triathlon} (Swim→Bike + Bike→Run)</p>` : ''}
-            <table class="compact-table">
-                <thead><tr><th>Transition</th><th>Count</th><th>Examples</th></tr></thead>
-                <tbody>${rows}</tbody>
-            </table>
-        `;
+        const children = [];
+        if (triathlon > 0) {
+            const summary = document.createElement('p');
+            summary.style.marginBottom = '0.75rem';
+            const strong = document.createElement('strong');
+            strong.textContent = 'Triathlon-style transitions:';
+            summary.append(strong, document.createTextNode(` ${triathlon} (Swim→Bike + Bike→Run)`));
+            children.push(summary);
+        }
+        const table = document.createElement('table');
+        table.className = 'compact-table';
+        const thead = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+        for (const label of ['Transition', 'Count', 'Examples']) {
+            const th = document.createElement('th');
+            th.textContent = label;
+            headerRow.append(th);
+        }
+        thead.append(headerRow);
+        const tbody = document.createElement('tbody');
+        for (const [key, count] of entries.slice(0, 8)) {
+            const row = document.createElement('tr');
+            const transition = document.createElement('td');
+            transition.textContent = key;
+            const countCell = document.createElement('td');
+            countCell.textContent = String(count);
+            const examples = document.createElement('td');
+            examples.style.color = '#888';
+            examples.style.fontSize = '0.85em';
+            examples.textContent = (transitionExamples[key] || []).join(', ');
+            row.append(transition, countCell, examples);
+            tbody.append(row);
+        }
+        table.append(thead, tbody);
+        detailsEl.replaceChildren(...children, table);
     }
 }
 
@@ -549,20 +603,31 @@ function renderRecordStats(activities) {
     const soloPct = activities.length ? ((soloCount / activities.length) * 100).toFixed(1) : 0;
     const groupPct = activities.length ? ((groupCount / activities.length) * 100).toFixed(1) : 0;
 
-    container.innerHTML = `
-            <ul style="list-style: none; padding-left: 0; line-height: 1.8;">
-                <li><strong>Longest Activity:</strong> ${(longestActivity.distance / 1000).toFixed(2)} km (<a href="html/activity-router.html?id=${longestActivity.id}" target="_blank">View</a>)</li>
-                <li><strong>Fastest Activity (Pace):</strong> ${paceStr} /km over ${(fastestActivity.distance / 1000).toFixed(1)}k (<a href="html/activity-router.html?id=${fastestActivity.id}" target="_blank">View</a>)</li>
-                <li><strong>Most Elevation:</strong> ${Math.round(mostElev.total_elevation_gain)} m (<a href="html/activity-router.html?id=${mostElev.id}" target="_blank">View</a>)</li>
-                <li><strong>Time Span:</strong> ${timeDiffDays} days (${oldestActivity.start_date_local.substring(0, 10)} to ${newestActivity.start_date_local.substring(0, 10)})</li>
-                <li><strong>Favourite Hour:</strong> ${favHour}:00</li>
-                <li><strong>Favourite Day:</strong> ${favDay}</li>
-                <li><strong>Average Distance:</strong> ${avgDist} km</li>
-                <li><strong>Average Pace:</strong> ${avgPaceStr} /km</li>
-                <li><strong>Solo Activities:</strong> ${soloCount} (${soloPct}%)</li>
-                <li><strong>Group Activities:</strong> ${groupCount} (${groupPct}%)</li>
-            </ul>
-        `;
+    const list = document.createElement('ul');
+    list.style.listStyle = 'none';
+    list.style.paddingLeft = '0';
+    list.style.lineHeight = '1.8';
+    const appendItem = (label, value, activityId = null) => {
+        const item = document.createElement('li');
+        const strong = document.createElement('strong');
+        strong.textContent = label;
+        item.append(strong, document.createTextNode(` ${value}`));
+        if (activityId !== null) {
+            item.append(document.createTextNode(' ('), createActivityLink(activityId), document.createTextNode(')'));
+        }
+        list.append(item);
+    };
+    appendItem('Longest Activity:', `${(longestActivity.distance / 1000).toFixed(2)} km`, longestActivity.id);
+    appendItem('Fastest Activity (Pace):', `${paceStr} /km over ${(fastestActivity.distance / 1000).toFixed(1)}k`, fastestActivity.id);
+    appendItem('Most Elevation:', `${Math.round(mostElev.total_elevation_gain)} m`, mostElev.id);
+    appendItem('Time Span:', `${timeDiffDays} days (${oldestActivity.start_date_local.substring(0, 10)} to ${newestActivity.start_date_local.substring(0, 10)})`);
+    appendItem('Favourite Hour:', `${favHour}:00`);
+    appendItem('Favourite Day:', favDay);
+    appendItem('Average Distance:', `${avgDist} km`);
+    appendItem('Average Pace:', `${avgPaceStr} /km`);
+    appendItem('Solo Activities:', `${soloCount} (${soloPct}%)`);
+    appendItem('Group Activities:', `${groupCount} (${groupPct}%)`);
+    container.replaceChildren(list);
 }
 
 function renderStartTimeHistogram(activities, dataType = 'count') {
@@ -1520,11 +1585,11 @@ function renderMonthHourMatrix(runs, dataType = 'count') {
             }
         });
         console.log(`✅ Month-hour matrix rendered successfully`);
-    } catch (error) {
-        console.error('❌ Error rendering month-hour matrix:', error);
+    } catch {
+        console.error('❌ Error rendering month-hour matrix.');
         const container = document.getElementById('month-hour-matrix')?.parentElement;
         if (container) {
-            container.innerHTML = `<p style="color: red; padding: 20px;">Error rendering chart: ${error.message}</p>`;
+            container.replaceChildren(createChartError());
         }
     }
 }
@@ -1878,14 +1943,31 @@ export function renderAthleteProfile(athlete) {
     const contentDiv = container.querySelector('.profile-content');
     if (!contentDiv) return;
 
-    contentDiv.innerHTML = `
-        <img src="${athlete.profile_medium}" alt="Athlete profile picture">
-        <div class="profile-details">
-            <span class="name">${athlete.firstname} ${athlete.lastname}</span>
-            <span class="location">${athlete.city || ''}, ${athlete.country || ''}</span>
-            <span class="stats">Followers: ${athlete.follower_count} | Friends: ${athlete.friend_count}</span>
-        </div>
-    `;
+    const children = [];
+    try {
+        const profileUrl = new URL(String(athlete.profile_medium));
+        if (profileUrl.protocol === 'https:') {
+            const image = document.createElement('img');
+            image.src = profileUrl.href;
+            image.alt = 'Athlete profile picture';
+            children.push(image);
+        }
+    } catch {
+        // Invalid or non-absolute profile URLs are omitted.
+    }
+    const details = document.createElement('div');
+    details.className = 'profile-details';
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = `${athlete.firstname} ${athlete.lastname}`;
+    const location = document.createElement('span');
+    location.className = 'location';
+    location.textContent = `${athlete.city || ''}, ${athlete.country || ''}`;
+    const stats = document.createElement('span');
+    stats.className = 'stats';
+    stats.textContent = `Followers: ${athlete.follower_count} | Friends: ${athlete.friend_count}`;
+    details.append(name, location, stats);
+    contentDiv.replaceChildren(...children, details);
 }
 
 export function renderTrainingZones(zones) {
@@ -1894,7 +1976,7 @@ export function renderTrainingZones(zones) {
     const contentDiv = container.querySelector('.zones-content');
     if (!contentDiv) return;
 
-    let html = '';
+    const groups = [];
 
     // Renderizar Zonas de Frecuencia Cardíaca (Versión Robusta)
     if (zones.heart_rate && zones.heart_rate.zones && zones.heart_rate.custom_zones) {
@@ -1902,29 +1984,41 @@ export function renderTrainingZones(zones) {
 
         // La API a veces devuelve la primera zona con min y max 0, la filtramos.
         // También nos aseguramos de que haya zonas válidas.
-        const validZones = hrZones.filter(z => typeof z.min !== 'undefined' && typeof z.max !== 'undefined' && z.max > 0);
+        const validZones = hrZones.filter(z => (
+            Number.isFinite(z?.min)
+            && Number.isFinite(z?.max)
+            && z.max > 0
+            && z.max >= z.min
+        ));
 
         if (validZones.length > 0) {
             // Calculamos el ancho total de las zonas para la proporcionalidad
             const totalRange = validZones[validZones.length - 1].max - validZones[0].min;
+            if (Number.isFinite(totalRange) && totalRange > 0) {
+                // Generamos dinámicamente cada segmento de la barra
+                const zoneBar = document.createElement('div');
+                zoneBar.className = 'zone-bar';
+                validZones.forEach((zone, index) => {
+                    const zoneWidth = ((zone.max - zone.min) / totalRange) * 100;
+                    if (!Number.isFinite(zoneWidth) || zoneWidth < 0) return;
+                    const zoneNumber = index + 1;
+                    // Si es la última zona, el texto es "min+"
+                    const zoneText = (index === validZones.length - 1) ? `${zone.min}+` : zone.max;
 
-            // Generamos dinámicamente cada segmento de la barra
-            const zonesHtml = validZones.map((zone, index) => {
-                const zoneWidth = ((zone.max - zone.min) / totalRange) * 100;
-                const zoneNumber = index + 1;
-                // Si es la última zona, el texto es "min+"
-                const zoneText = (index === validZones.length - 1) ? `${zone.min}+` : zone.max;
-
-                return `<div class="zone-segment hr-z${zoneNumber}" style="flex-basis: ${zoneWidth}%;" title="Z${zoneNumber}: ${zone.min}-${zone.max}">${zoneText}</div>`;
-            }).join('');
-
-            html += `
-                <div class="zone-group">
-                    <h4>Heart Rate Zones (bpm)</h4>
-                    <div class="zone-bar">
-                        ${zonesHtml}
-                    </div>
-                </div>`;
+                    const segment = document.createElement('div');
+                    segment.className = `zone-segment hr-z${zoneNumber}`;
+                    segment.style.flexBasis = `${zoneWidth}%`;
+                    segment.title = `Z${zoneNumber}: ${zone.min}-${zone.max}`;
+                    segment.textContent = String(zoneText);
+                    zoneBar.append(segment);
+                });
+                const group = document.createElement('div');
+                group.className = 'zone-group';
+                const heading = document.createElement('h4');
+                heading.textContent = 'Heart Rate Zones (bpm)';
+                group.append(heading, zoneBar);
+                groups.push(group);
+            }
         }
     }
 
@@ -1933,15 +2027,27 @@ export function renderTrainingZones(zones) {
         // Buscamos el FTP, que es el inicio de la Zona 4 (o la última zona si hay menos)
         const ftpZone = zones.power.zones.find(z => z.name === 'Z4') || zones.power.zones[zones.power.zones.length - 1];
         if (ftpZone) {
-            html += `
-                <div class="zone-group">
-                    <h4>Functional Threshold Power (FTP)</h4>
-                    <p style="font-size: 1.5rem; font-weight: bold; color: var(--text-dark); margin: 0;">${ftpZone.min} W</p>
-                </div>`;
+            const group = document.createElement('div');
+            group.className = 'zone-group';
+            const heading = document.createElement('h4');
+            heading.textContent = 'Functional Threshold Power (FTP)';
+            const value = document.createElement('p');
+            value.style.fontSize = '1.5rem';
+            value.style.fontWeight = 'bold';
+            value.style.color = 'var(--text-dark)';
+            value.style.margin = '0';
+            value.textContent = `${ftpZone.min} W`;
+            group.append(heading, value);
+            groups.push(group);
         }
     }
 
-    contentDiv.innerHTML = html || '<p>No custom training zones configured in your Strava profile.</p>';
+    if (groups.length === 0) {
+        const empty = document.createElement('p');
+        empty.textContent = 'No custom training zones configured in your Strava profile.';
+        groups.push(empty);
+    }
+    contentDiv.replaceChildren(...groups);
 }
 
 // let uiCharts = {}; // Almacén de gráficos para la pestaña "Athlete" para no interferir con los del dashboard principal
@@ -1957,9 +2063,9 @@ function createUiChart(canvasId, config) {
     try {
         uiCharts[canvasId] = new Chart(canvas, config);
         console.log(`✅ Chart rendered: ${canvasId}`);
-    } catch (error) {
-        console.error(`❌ Error rendering chart ${canvasId}:`, error);
-        canvas.parentElement.innerHTML = `<p style="color: red; padding: 20px;">Error rendering chart: ${error.message}</p>`;
+    } catch {
+        console.error(`❌ Error rendering chart ${canvasId}.`);
+        canvas.parentElement.replaceChildren(createChartError());
     }
 }
 
@@ -1977,10 +2083,14 @@ function populateAthleteSportOptions(sportSelect, selectedSports = []) {
         .map(([sport]) => sport);
 
     sportSelect.size = Math.min(8, Math.max(4, topSports.length));
-    sportSelect.innerHTML = topSports.map(sport => {
+    const options = topSports.map(sport => {
         const count = sportCounts[sport];
-        return `<option value="${sport}">${sport} (${count})</option>`;
-    }).join('');
+        const option = document.createElement('option');
+        option.value = sport;
+        option.textContent = `${sport} (${count})`;
+        return option;
+    });
+    sportSelect.replaceChildren(...options);
 
     Array.from(sportSelect.options).forEach(opt => {
         opt.selected = selectedSports.length === 0 || selectedSports.includes(opt.value);
