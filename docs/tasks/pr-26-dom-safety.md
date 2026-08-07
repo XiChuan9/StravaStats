@@ -811,6 +811,35 @@ passed with exact `finiteTrainingZoneStyles: ["50%", "50%"]`. The reviewer reche
 the full production sink set, owner-local ID semantics, the exact 16 paths, and R1/R2 separation,
 and returned **NO FINDINGS**.
 
-Implementation commit/push, depth-1 verification, CI, and the Task-Brief-only Final Review
-Closure remain pending at this evidence checkpoint. PR #32 remains
-Draft; no Ready, merge, cleanup, deploy, release, or R2 work is authorized here.
+## A3 R1 Final Review Closure
+
+R1 implementation commit `feff36b37dbaade95356c26d12dc5d963ba859a7` is pushed to
+`codex/v2/dom-safety`. GitHub verifies Draft PR #32 as OPEN with base
+`integration/v2@e083fa0d55c8981f0258af546451ebb0d48e4fa4`, that exact implementation
+head, and exactly the approved sixteen changed paths. GitHub Actions CI run `31179604934`, job
+`92869453799`, completed successfully for that head.
+
+The direct remote depth-1 clone transport disconnected while reading the GitHub sideband and is
+not claimed as a pass. The exact-head proof was completed without weakening the gate: the GitHub
+PR API first attested the remote head OID above, then a local `file://` depth-1 clone of that same
+already-pushed branch object reported `HEAD=feff36b37dbaade95356c26d12dc5d963ba859a7`, history count
+`1`, and a clean worktree. From that clone, `npm ci`, syntax (239 files), privacy, full tests
+(1,474/1,474), diff-check, and final clean-status checks all passed. This is an explicit
+equivalent-evidence decision item for the control tower, not a relabelled successful remote clone.
+
+Review closure is findings-first and independent. Three review rounds found and failure-first
+closed the Legacy numeric-ID, owner-local zero, Calendar/Wrapped route-depth, per-sport canary,
+Run Plus evidence, Activities DOM-parity, safe Chart-error, and finite training-zone style gaps.
+The final reviewer then inspected the delta and cumulative R1 surface and returned **NO FINDINGS**.
+The final local worktree gate also passed syntax (239), privacy, full tests (1,474/1,474),
+diff-check, and exact-sixteen-path audit before the implementation commit.
+
+Control-tower disposition is still required for two disclosed evidence facts before Ready: accept
+the served per-owner delta plus the earlier direct 11-route pass after the second direct Chromium
+stress run ended in V8 OOM, and accept the exact-baseline browser expectation corrections
+(default Real mode is Canonical; unknown Canonical detail is `NOT_FOUND`). No seventeenth path or
+product/detail behavior was used to resolve either item. This closure commit is Task-Brief-only;
+its final SHA and CI result must be attached to the handoff after publication.
+
+PR #32 remains Draft. No merge, cleanup, deploy, release, or R2 work is authorized here. R2 still
+requires R1 Squash Merge, successful `integration/v2` push CI, and a separate task.
