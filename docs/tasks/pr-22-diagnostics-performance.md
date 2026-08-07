@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 M19 / PR-22 |
-| Status | A3.1 contracts approved; exact implementation allowlist frozen |
+| Status | A3.2 contracts approved; exact implementation allowlist frozen |
 | Branch | `codex/v2/diagnostics-performance` |
 | Base | `integration/v2` at `964e88d2cad0bbbfe2139f8b9d46a847199980e1` |
 | Draft PR title | `feat(v2): add diagnostics and performance gates` |
@@ -181,11 +181,12 @@ freezes a literal exact cumulative path allowlist. A next path, future-hostile b
 or contract gap pauses implementation for the smallest possible supplemental decision. No
 implementation begins while any required material decision is open.
 
-## A3 and A3.1 approved contracts
+## A3, A3.1 and A3.2 approved contracts
 
-The user approved the default A3 package verbatim with `批准 M19 A3 默认方案`, then approved the
-Import collision supplement verbatim with `批准 M19 A3.1 默认 S1–S4 方案`. These approvals freeze
-the following implementation contracts.
+The user approved the default A3 package verbatim with `批准 M19 A3 默认方案`, approved the Import
+collision supplement verbatim with `批准 M19 A3.1 默认 S1–S4 方案`, and approved the persistence
+cancellation supplement verbatim with `批准 M19 A3.2 S5-A`. These approvals freeze the following
+implementation contracts.
 
 ### Diagnostics export and recent errors
 
@@ -242,6 +243,11 @@ the following implementation contracts.
   preserves earlier commits, projects only safe code/count, best-effort terminalizes, and never
   evicts, deletes or cleans data. Four direct concurrent-job tests prove isolation and atomicity,
   not parallel speedup.
+- Cancellation may latch while one `persistImportItem` transaction is in flight. The transaction is
+  never aborted or compensated. Immediately after it returns, the existing atomic
+  `cancelImportJob` transaction preserves committed terminal items, changes only unfinished items
+  to `cancelled`, changes the durable job from `persisting` to `cancelled`, and prevents every later
+  persistence or chunk schedule. No other storage or state transition changes.
 
 ### Storage Estimate and presentation-only Stream reduction
 
@@ -291,9 +297,12 @@ the following implementation contracts.
 
 The collision audit found no further material boundary after the A3.1 supplement. A later pure-test
 collision added only `tests/import/strava-zip.test.js` under delegated control-tower authority so
-the inherited quota regression can assert the approved stop-scheduling behavior. The following
-43 paths are the literal hard maximum for every implementation, test, repair and closure change in
-PR-22. A path not listed here requires a supplemental decision before it is edited.
+the inherited quota regression can assert the approved stop-scheduling behavior. Fresh independent
+review then proved persistence cancellation required the existing state-machine and Import Store
+transaction boundaries; A3.2 S5-A added exactly those two production paths and one direct state-
+machine test path. The following 46 paths are the literal hard maximum for every implementation,
+test, repair and closure change in PR-22. A path not listed here requires a supplemental decision
+before it is edited.
 
 ```text
 docs/tasks/pr-22-diagnostics-performance.md
@@ -322,6 +331,8 @@ js/pages/bike/bike.js
 js/pages/swim/swim.js
 js/pages/detail/stream-presentation.js
 js/import/import-service.js
+js/import/state-machine.js
+js/storage/import-store.js
 js/analysis/index.js
 tests/diagnostics/diagnostics.test.js
 tests/diagnostics/diagnostics-boundaries.test.js
@@ -329,6 +340,7 @@ tests/diagnostics/diagnostics-browser-smoke.html
 tests/diagnostics/import-performance.test.js
 tests/import/import-core.test.js
 tests/import/import-performance.test.js
+tests/import/import-state-machine.test.js
 tests/import/strava-zip.test.js
 tests/source-manager/source-manager.test.js
 tests/source-manager/source-manager-boundaries.test.js
@@ -342,7 +354,8 @@ tests/performance/performance-browser-smoke.html
 ```
 
 In particular, the allowlist excludes `package.json`, lockfiles, styles, `source-manager.html`,
-`index.html`, every `js/storage/**`, `js/repository/**`, `js/data/**`, `js/backup/**`,
+`index.html`, every `js/storage/**` except the literal `js/storage/import-store.js`,
+`js/repository/**`, `js/data/**`, `js/backup/**`,
 `js/import/index.js`, Worker client/implementation and protocol paths, migrations, schema, Service
 Worker, deploy/release, provider/auth, public API and dependency files. Existing synthetic
 generators may be imported by tests but are not modified. Map tests use deterministic abstract,
