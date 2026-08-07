@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 M19 / PR-22 |
-| Status | A1 Task Brief; A2 read-only investigation pending |
+| Status | A3.1 contracts approved; exact implementation allowlist frozen |
 | Branch | `codex/v2/diagnostics-performance` |
 | Base | `integration/v2` at `964e88d2cad0bbbfe2139f8b9d46a847199980e1` |
 | Draft PR title | `feat(v2): add diagnostics and performance gates` |
@@ -180,6 +180,170 @@ After approval, this Task Brief records the accepted contract verbatim enough to
 freezes a literal exact cumulative path allowlist. A next path, future-hostile boundary collision,
 or contract gap pauses implementation for the smallest possible supplemental decision. No
 implementation begins while any required material decision is open.
+
+## A3 and A3.1 approved contracts
+
+The user approved the default A3 package verbatim with `批准 M19 A3 默认方案`, then approved the
+Import collision supplement verbatim with `批准 M19 A3.1 默认 S1–S4 方案`. These approvals freeze
+the following implementation contracts.
+
+### Diagnostics export and recent errors
+
+- Export is an explicit-click-only, standalone, deterministic, versioned JSON snapshot with MIME
+  `application/vnd.stravastats.diagnostics+json;version=1`, fixed field ordering, and an exact
+  256 KiB UTF-8 hard cap. It contains only approved closed codes and safe aggregates, session error
+  and Import performance aggregates, and a rounded Storage Estimate. Oldest bounded records are
+  removed first when necessary and only omitted counts are exposed. It is never restore-compatible.
+- Export, DOM, console, tests, and session records exclude IDs, filenames, paths, URLs and queries,
+  Tokens, Authorization, settings values, user agent or fingerprints, raw messages, stacks, causes,
+  payloads, activity or Stream data, route coordinates, heart-rate, power, device or athlete data,
+  user-owned analysis values, and backup bytes.
+- Recent errors use `sessionStorage` for the current tab/session, with a bounded in-memory fallback.
+  At most 20 records are retained; adjacent identical records coalesce. The exact record is
+  `{version:1, occurredAt, page, category, code, count}`. Page, category and code are closed enums;
+  `occurredAt` is ISO time and `count` is an integer. There is no TTL or automatic deletion and the
+  records are excluded from backup.
+- Handled V2 entry failures record only a selected fixed code. Global `error` and
+  `unhandledrejection` listeners record category-only events, never inspect the event error, reason,
+  message or filename, and never call `preventDefault`. Diagnostics never reads console, DOM
+  datasets, arbitrary `window` state or raw caught objects.
+
+### Import performance, batching, cancellation and quota
+
+- One safe `sessionStorage` performance aggregate represents one user selection, with at most 50
+  records and an in-memory fallback. It uses a monotonic clock and only the frozen fields: version,
+  fixed outcome, artifact count, fixed terminal counts, total milliseconds, fixed stage
+  milliseconds, decoder sum/maximum, persistence sum/maximum, cancellation-observed milliseconds
+  or `null`, and peak Worker requests. It contains no identifiers, names, formats, paths, hashes,
+  sizes, timestamps beyond array order, raw errors, private values or per-item records.
+- The internal, non-index-exported recorder seam lives in
+  `js/diagnostics/import-performance.js`. `js/source-manager.js` configures its session sink and
+  monotonic clock. `js/import/import-service.js` emits fixed timing events without changing
+  `createImportService` options, `js/import/index.js`, the public Import report or handle, Repository,
+  schema, backup, Worker messages or Worker protocol.
+- The 1,000-file batching contract applies to ordinary FIT, TCX and GPX local files. Deterministic
+  ordinary-file chunks contain at most 25 files and at most 32 MiB selected input. The existing
+  16 MiB per-file limit remains. The exact total selected-input ceiling is 256 MiB.
+- CSV and ZIP behavior and accepted limits remain unchanged. Each selected CSV or ZIP is a
+  singleton container job outside the ordinary-file 32 MiB chunk budget. Existing container
+  expansion limits remain 10,000 entries and 256 MiB. Evidence may claim the 1,000 FIT workload is
+  bounded; it must not claim a general bound on CSV or ZIP expansion memory.
+- One user selection is a transient batch that sequentially creates existing durable Import Jobs,
+  with at most one active UI job and the existing single shared Worker. Completed chunks remain
+  durable and appear as the existing per-job Import Log. A cancellation request latches before
+  awaiting the current job, requests cancellation of that job, and creates no later jobs. Later
+  files are transient `not started`, never durable cancelled Import Items. Reselection recovers by
+  the existing exact-duplicate path.
+- A page-local closed `SELECTION_TOO_LARGE` code has exact copy
+  `Select files totaling no more than 256 MiB.` and is not added to public Import errors or reports.
+- Internal cancellation checkpoints occur between items in validation, hashing, decoding,
+  normalization, matching and before persistence scheduling. They never abort an in-flight Worker
+  message or transaction and never change the Worker protocol. Quota stops future scheduling,
+  preserves earlier commits, projects only safe code/count, best-effort terminalizes, and never
+  evicts, deletes or cleans data. Four direct concurrent-job tests prove isolation and atomicity,
+  not parallel speedup.
+
+### Storage Estimate and presentation-only Stream reduction
+
+- Diagnostics requests `navigator.storage.estimate()` only on page load and explicit Refresh.
+  Labels are exactly `Estimated origin storage use`, `Estimated origin storage quota`, and
+  `Estimated origin storage headroom`. Values are rounded to MiB and percent to at most one decimal
+  and are explicitly described as coarse, origin-wide and not guaranteed. Missing support is
+  `unsupported`; rejection or malformed/nonfinite results are `unavailable`; zero quota avoids
+  division; headroom is `max(quota - usage, 0)`. No `usageDetails`, `persist()`, inferred V2 size,
+  import-success promise, or database creation/upgrade is allowed.
+- Stream reduction is presentation-only aligned critical-index min/max bucket selection after
+  full-resolution derivation or smoothing and immediately before Chart or Leaflet construction.
+  Inputs of at most 2,000 points are unchanged. Larger chart output is at most 1,000 points; map
+  output and layers are at most 2,000.
+- Selection preserves first/last, deterministic first-occurring per-series bucket extrema, global
+  extrema, one positive-zero and negative-zero anchor when present, a null marker and adjacent
+  finite boundaries for each null run, strictly increasing original indices, duplicate-offset
+  order and missing-series omission. Smoothing-dependent charts reapply the original gap mask.
+  Mandatory anchors beyond the cap produce a stable bounded `too fragmented to plot` state and
+  never a full-data fallback.
+- Canonical, Repository, persistence, backup, public APIs, formulas, Advanced Analysis and Run Plus
+  retain full-resolution inputs and unchanged missing, `null`, zero and negative-zero semantics.
+
+### Performance and privacy gates
+
+- The deterministic Node Stream gate uses 200,000 points, at most six aligned series, target 1,000,
+  ten warmups and thirty samples; p95 is at most 25 ms and no sample exceeds 50 ms, in addition to
+  semantic, cap and immutability assertions.
+- The 1,000 FIT direct-service gates make correctness, per-file atomicity, cancellation and quota
+  hard requirements and record median/p95 without an absolute throughput budget.
+- Actual-served disposable-browser gates use five repetitions: cold 5,000-activity Repository
+  envelope p95 at most 1,000 ms and Activities second-`requestAnimationFrame` p95 at most 1,500 ms.
+  The 10,000 workload is mandatory and record-only. The 200,000-point detail has chart input at most
+  1,000, map input/layers at most 2,000, zero uncaught errors, maximum observed post-seed long task
+  below 100 ms, and application startup `getStreams` calls exactly zero.
+- Browser evidence records runtime/browser/hardware, external-resource baseline, warmups, samples,
+  median/p95/maximum, exceptions, long tasks, Worker and storage behavior honestly. Hard adapter
+  assertions use deterministic recording stubs. CDN pinning or vendoring is prohibited.
+- Raw Error or private-value logging is removed only from paths PR-22 newly touches or exercises.
+  Diagnostics never ingests console, DOM or arbitrary window state. Untouched inherited disclosure
+  risks remain documented release blockers rather than a repo-wide cleanup.
+- No production dependency, public API, physical schema/store/index/version, migration, backup
+  format, Repository contract, Worker protocol, Service Worker, deployment, release, provider/auth
+  route, CDN pin/vendor or default Repository change is authorized.
+
+## A3 exact cumulative path allowlist
+
+The collision audit found no further material boundary after the A3.1 supplement. The following
+42 paths are the literal hard maximum for every implementation, test, repair and closure change in
+PR-22. A path not listed here requires a supplemental decision before it is edited.
+
+```text
+docs/tasks/pr-22-diagnostics-performance.md
+diagnostics.html
+storage-backup.html
+js/diagnostics.js
+js/diagnostics/index.js
+js/diagnostics/import-performance.js
+js/pages/diagnostics/diagnostics.js
+js/main.js
+js/app/main.js
+js/app/ui.js
+js/source-manager.js
+js/app/source-manager.js
+js/pages/source-manager/source-manager.js
+js/storage-backup.js
+js/pages/storage-backup/storage-backup.js
+js/pages/activity-router.js
+js/pages/activity/index.js
+js/pages/run/index.js
+js/pages/bike/index.js
+js/pages/swim/index.js
+js/pages/activity/activity.js
+js/pages/run/run.js
+js/pages/bike/bike.js
+js/pages/swim/swim.js
+js/pages/detail/stream-presentation.js
+js/import/import-service.js
+js/analysis/index.js
+tests/diagnostics/diagnostics.test.js
+tests/diagnostics/diagnostics-boundaries.test.js
+tests/diagnostics/diagnostics-browser-smoke.html
+tests/diagnostics/import-performance.test.js
+tests/import/import-core.test.js
+tests/import/import-performance.test.js
+tests/source-manager/source-manager.test.js
+tests/source-manager/source-manager-boundaries.test.js
+tests/source-manager/source-manager-performance-browser-smoke.html
+tests/consumers/stream-presentation.test.js
+tests/consumers/detail-consumers.test.js
+tests/consumers/detail-boundaries.test.js
+tests/consumers/detail-browser-smoke.html
+tests/performance/stream-performance.test.js
+tests/performance/performance-browser-smoke.html
+```
+
+In particular, the allowlist excludes `package.json`, lockfiles, styles, `source-manager.html`,
+`index.html`, every `js/storage/**`, `js/repository/**`, `js/data/**`, `js/backup/**`,
+`js/import/index.js`, Worker client/implementation and protocol paths, migrations, schema, Service
+Worker, deploy/release, provider/auth, public API and dependency files. Existing synthetic
+generators may be imported by tests but are not modified. Map tests use deterministic abstract,
+non-identifying geometry that is never exported, logged or committed as a private fixture.
 
 ## Failure-first implementation and verification
 
