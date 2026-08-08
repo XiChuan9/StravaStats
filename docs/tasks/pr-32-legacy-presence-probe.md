@@ -96,9 +96,40 @@ state, or private storage contents.
 - Demo performs zero Real storage, provider, network, Cache Storage, or Service Worker I/O.
 - Legacy data and explicit Legacy/Shadow rollback remain intact.
 
-## Candidate implementation allowlist
+## A2 findings and approved minimum decision package
 
-The A2 decision package may approve only the minimum paths needed from this hard maximum:
+The source-to-decision graph has two independent Real paths:
+
+```text
+OAuth response
+  -> js/app/auth.js browserAuthLifecycle
+  -> inspectLegacyIndexedDbPresence
+  -> localStorage key-name inspection
+  -> Legacy IndexedDB presence/count inspection
+  -> acceptOAuthTokenResponse
+  -> identity guard
+  -> firstLogin or blocked Token write
+
+Real application startup
+  -> inspectLocalFirstBootstrap
+  -> Canonical presence inspection
+  -> readLegacyIndexedDb
+  -> readLegacyLocalStorage
+  -> dashboard | first-run | blocked
+```
+
+The auth probe treated `indexedDB.databases()` as an optimization. Missing/rejected enumeration fell
+through to `open(LEGACY_DB_NAME)`. A missing-database upgrade was aborted, but an abort failure and
+late success invoked `deleteDatabase`; the existing test explicitly required that deletion before
+returning confirmed absent. This is the direct P0-09 defect.
+
+The bootstrap Rescue Reader had the same preflight gap: it opened the name without first proving
+that the database existed. A missing-database upgrade attempted abort; abort failure could leave a
+new empty Legacy database after the reader returned an error. Bootstrap itself correctly maps a
+reader error to `blocked`, but that safe classification did not prevent the storage mutation.
+
+The control tower approved Option A on 2026-08-08. The cumulative literal implementation allowlist
+is frozen to:
 
 ```text
 docs/tasks/pr-32-legacy-presence-probe.md
@@ -106,10 +137,17 @@ js/app/auth-lifecycle.js
 tests/legacy/auth-lifecycle.test.js
 tests/bootstrap/local-first-bootstrap.test.js
 tests/bootstrap/local-first-bootstrap-boundaries.test.js
+js/services/legacy-cache/reader.js
+tests/legacy/legacy-cache-rescue.test.js
 ```
 
-Any additional production or test path requires a minimal failure-evidence package and explicit
-scope approval before it is changed.
+For both chains, `indexedDB.databases()` missing, rejected, throwing, malformed, non-finite,
+descriptor-hostile, accessor, Proxy, or otherwise unsafe means unknown/unavailable. It must perform
+zero `open` and cannot establish first-login or First-run. Only a descriptor-safe complete database
+list that explicitly contains the Legacy name may authorize an unversioned open followed by the
+minimum readonly inspection and close. A descriptor-safe list that omits the name proves absence
+without opening it. No shared public module/API, schema, dependency, provider, or unrelated release
+surface is approved. Any further path requires a new minimal failure-evidence package and approval.
 
 ## Failure-first acceptance matrix
 
