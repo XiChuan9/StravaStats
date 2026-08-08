@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 release hardening R5 |
-| Status | A2 findings-first inventory complete; implementation allowlist frozen |
+| Status | Final Review Closure complete; exact Closure-head CI pending |
 | Branch | `codex/v2/client-log-redaction` |
 | Exact base | `integration/v2@c04be67a71b672933a908d7c976dcd36cea69a53` |
 | Product authority | Client production logging and debug-exposure hardening only |
@@ -251,3 +251,75 @@ eventual frozen allowlist, real credentials/account/provider/private data, produ
 external incident action, history rewrite, destructive operation, or GitHub App 403. Otherwise the
 task advances automatically through investigation, failure-first repair, verification, review,
 Closure, exact-head CI, and Ready handoff.
+
+## Final Review Closure
+
+### Implementation result
+
+- The Task-Brief-only first commit was `33ec06d`; the findings-first scope freeze was `3f48d60`.
+- Failure-first focused tests initially failed 3/3 on the eleven production responsibility paths,
+  Run Plus diagnostics/NSM debug publication, and seven hostile storage console outputs. Failure
+  evidence contained only paths, categories, counts, and fixed assertion codes.
+- Implementation commit `3a3bcfc` removed unnecessary console output, stopped caught-value/key/
+  object publication, preserved the one existing fixed one-argument cache rollback event, and
+  removed diagnostics/NSM DOM and window publication.
+- The first independent review found remaining Run Plus Chart.js `window` publication and missing
+  runtime verification. New static assertions failed on both direct and computed window exposure.
+  Repair commit `64724cd` made five chart holders module-private and added deterministic cache,
+  weather, and Run Plus runtime capture across console, DOM, window, storage, and network seams.
+- A fresh review found only that the weather success label covered no-data rather than populated
+  rendering. Test commit `57ded2a` added deterministic `ok:true` populated output, alongside
+  no-data, hostile thrown, and revoked-input paths. The final independent exact-range review returned
+  no actionable findings.
+
+The final implementation head before this Closure is
+`57ded2af4b4b3ee35e8370d53c6ad600de2da75d`. The exact range from the frozen base changes only the
+thirteen-path allowlist. No server/API, external-egress behavior, missing-value behavior, AI, maps,
+Service Worker, Legacy probe, telemetry/CDN, public API, schema, migration, Repository, Import,
+analysis algorithm, dependency, route, default mode, deployment, release, or user-data contract
+changed.
+
+### Verification evidence
+
+Final local evidence at the implementation head:
+
+```text
+npm ci                                      PASS (6 packages installed)
+focused client logging/privacy              PASS (5/5)
+focused Legacy/Repository/consumer           PASS (232/232 before review repair)
+focused final Run Plus/Legacy/privacy        PASS (103/103)
+npm run check:syntax                         PASS (242 files)
+npm run check:privacy                        PASS
+npm test                                    PASS (1,527/1,527)
+git diff --check                            PASS
+worktree status                             CLEAN
+```
+
+One earlier full-suite run passed 1,524/1,525 with only the unchanged 200k Stream performance
+sample above its latency threshold. The isolated performance test immediately passed at its normal
+budget, and the next full run passed 1,525/1,525. After the review repairs, final local and remote
+full suites passed 1,527/1,527.
+
+A fresh true remote depth-one clone resolved exactly to the implementation head, had history count
+one and clean start/end status, and passed install, focused 5/5, syntax 242, privacy, diff, and full
+1,527/1,527. The first sandboxed remote full attempt was blocked only by `listen EPERM` in the
+inherited R4 loopback test; the approved ephemeral-loopback rerun passed the full suite. Pull-request
+CI run `31240292373` completed successfully on the exact implementation head.
+
+Static inventory, Node runtime seams, existing consumer tests, and the inherited loopback test were
+sufficient for the changed sinks. A disposable-browser run was not required and is recorded as
+`NOT RUN`; no user profile, login, Token, provider, private fixture, private storage, screenshot, or
+production environment was used.
+
+### Review, privacy, migration, and rollback closure
+
+The final independent review confirmed the weather populated/no-data/hostile/revoked paths, zero
+console/storage/window output, zero hostile getter/coercion/Proxy/descriptor reads, module-private
+Run Plus charts, the single frozen fixed cache event, and no remaining raw output or debug exposure
+inside the complete thirteen-path range.
+
+Privacy impact is removal of the R5 production release blocker within this package. Migration and
+data impact remain none. Rollback remains code-only; raw logging or global debug publication must
+not be restored. R3/R4 branches and worktrees remain retained. This Closure changes only this Task
+Brief. Exact Closure-head remote/CI validation and the authorized control-tower Ready transition
+remain after this commit; merge, cleanup, deploy, release, and R6/R9 remain unauthorized.
