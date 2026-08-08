@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 release hardening / R6 |
-| Status | A0-A3 complete; Option A plus reviewed Demo injection path frozen; implementation in review repair |
+| Status | Closure complete locally; final Closure-head remote depth-1 and GitHub CI required before Ready |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/weather-consent` |
 | Exact base | `integration/v2@8b4521ad9f45af9f6056f04cf0c8fd4cd6e6a97e` |
@@ -472,6 +472,88 @@ and moves Draft to Ready under the standing authorization.
 Ready is not merge authorization. Squash Merge requires a separate user decision. Merge,
 auto-merge, cleanup of this or retained R3/R4/R5/R9/R10 worktrees/branches, deployment, release,
 R7, R8, R11, and D3 remain prohibited.
+
+## Closure evidence
+
+R6 implementation and review repair are complete within the exact 20-path cumulative allowlist.
+The production result is deny-by-default: root initialization and refresh never request weather;
+Real Weather views require the exact affirmative action `Allow for this tab`; Demo resolves its
+embedded synthetic weather before consent storage, cache, or fetch; and unknown session modes fail
+closed. Authorized requests use one two-decimal start point, one local calendar date, the frozen
+eight hourly fields, `timezone=auto`, a four-second abortable timeout, and no retry. Missing,
+invalid, malformed, non-hour, HTTP, network, timeout, and abort results remain `null`/unavailable,
+while literal finite zero remains valid.
+
+### Commits and findings-first repair
+
+- `21b4ad245f2cd8cfd92422546566f980db4e253e` was the required Task-Brief-only first commit.
+- `b0f452a`, `ab75492`, and `3cd16b8` recorded the read-only findings, A/B/C package, and selected
+  Option A freeze before implementation; `35733ce` recorded the initial failure-first tests.
+- `7e337af` implemented the frozen 19-path contract. The first independent review found four
+  actionable defects: Demo could reuse a same-tab grant, a day-level key cached an hour-selected
+  result, malformed hourly objects were accepted, and missing pressure could add five difficulty
+  points. `be58380` repaired the latter three with failing regressions.
+- The user explicitly approved only `js/app/main.js` as path 20. Task-Brief-only commit `7bca7d0`
+  froze that decision; `4b17adbfd92f6b2d6ecd7fdd2c0cd590af84e891` injected the frozen session
+  mode and made Demo and unknown modes local/fail-closed before consent or weather I/O.
+- A fresh independent review of `4b17adb` found that non-hour timestamps and accessor-backed
+  hourly records were still accepted. Both reproductions failed first. Commit
+  `aec4fcaede9b92cf557728849fc391a721adefef` added ordinary own-data-property response validation
+  and exact `YYYY-MM-DDTHH:00` parsing; no new path was added.
+- A different fresh reviewer then examined the complete 20-path diff at `aec4fca`, independently
+  reproduced all six prior defect classes with deterministic in-memory data, and returned exact
+  `NO FINDINGS`.
+
+### Local and served verification
+
+- `npm ci`: passed after the final repair.
+- Focused privacy/detail gates: 313/313 passed locally; the fresh reviewer ran its broader focused
+  selection at 388/388.
+- Summary/detail/Advanced Analysis and Legacy/Demo/Canonical/Shadow/Service Worker related gates:
+  912/912 passed.
+- `npm run check:syntax`: passed for 245 files.
+- `npm run check:privacy`: passed.
+- `npm test`: 1644/1644 passed on the final implementation head.
+- `git diff --check`: passed; the worktree was clean; the exact-base diff contained exactly the
+  frozen 20 literal paths and no twenty-first path.
+- A disposable actual-served loopback page installed its fetch interception before exercising the
+  weather modules. All seven gates passed: default external weather requests 0; the affirmative
+  request contained only latitude `12.35`, longitude `-98.77`, one point, one date, the eight
+  approved fields, and genuine zero; Demo with a pre-existing grant added 0 weather requests and
+  rendered embedded `7.0°C`; malformed/missing presentation was `N/A`; revoke produced one abort
+  and 0 post-revoke requests; offline returned unavailable; real external resources,
+  Authorization, console, runtime, and Token/provider/private canaries were all 0. Every apparent
+  Open-Meteo URL in this run was handled by the page interceptor; no real Open-Meteo request was
+  made. Cache Storage and Service Worker invariants are corroborated by unchanged ownership paths,
+  privacy checks, and the passing Service Worker policy suites rather than a browser cache-write
+  hook.
+
+### Remote implementation evidence and final post-Closure gate
+
+- A preserved true depth-one clone at `/tmp/stravastats-r6-depth1.xmIX3H/repo` resolved remote
+  branch head to `aec4fcaede9b92cf557728849fc391a721adefef`, had revision count 1, and matched
+  the local tree `d733549a0bc652c3eaeb9a6d76ba97f10c66b58f` exactly.
+- GitHub Actions run `31254580462`, job `93095981295`, completed successfully on exact
+  implementation head `aec4fca`, including dependency installation, syntax, privacy, and tests.
+- This Task-Brief-only Closure commit necessarily creates the final PR head. After it is pushed,
+  a second preserved depth-one clone must match that exact Closure head/tree and GitHub Actions
+  must succeed on the same SHA. Those post-commit facts are recorded in the safe PR body by the
+  control tower before Draft is changed to Ready; no follow-up documentation commit is created,
+  because that would create a new unverified head.
+
+### Privacy, migration, rollback, limitations, and Not-run
+
+No schema, dependency, Repository, IndexedDB, Import, Backup, Diagnostics, Worker, Service Worker,
+Cache Storage, provider, public API, or durable weather-response change was made. No migration is
+needed. Existing activity libraries and user-owned settings remain untouched. Revocation changes
+only the exact session-scoped consent record, aborts registered weather requests, and clears the
+module-local memory cache; code rollback requires no data deletion or repair. The selected product
+tradeoff remains explicit: only a single approximate point is used, so route-level and multi-sample
+wind panels stay honestly unavailable.
+
+Not run by design: real Open-Meteo traffic; real account/Token/provider activity; private GPS,
+route, heart-rate, power, setting, export, or browser profile; deployment; release; merge;
+auto-merge; cleanup; R7; R8; R11; or D3.
 
 ## Privacy, migration, and rollback
 
