@@ -515,3 +515,80 @@ Pause and delegate the minimum evidence package to the control tower if completi
 
 Do not merge, auto-merge, deploy, release, clean this or retained R3/R4/R5/R6/R9/R10 branches or
 worktrees, start R8/R11/D3, or modify `main`, `maintenance/v1`, or `integration/v2`.
+
+## Final Review Closure — 2026-08-08
+
+R7 is implementation-complete on reviewed implementation head
+`29ebd0ad8558371db191cc6284c3ae43e543f1e0`. The cumulative base-relative diff remains exactly the
+twelve frozen paths. No public API, schema, dependency, Repository, Storage, Backup, Diagnostics,
+Worker, Service Worker, Import, analysis, default-mode, provider, model, or endpoint contract
+changed.
+
+### Delivered boundary
+
+- Real mode is deny-by-default and requires the exact per-request affirmative action after a
+  preview of the captured question, destination, approved field names, and minimized values.
+- The provider boundary owns the exact endpoint, `x-goog-api-key` header, `store: false`, four-second
+  timeout, redirect rejection, no-cache/no-referrer credentials policy, abort, and zero retry.
+- Only the current question and two relative 28-day sport/count/rounded distance, duration, and
+  elevation aggregate buckets can enter the request. Prior conversation and every prohibited
+  identity, date, health, equipment, PB, location, source, credential, and raw-stream field remain
+  excluded.
+- Main converts trusted post-Repository/preprocessed primitives into an opaque session-private
+  snapshot. `prepare` first authenticates the token by private `WeakSet.has` membership, then obtains
+  the frozen minimized values from a private `WeakMap`; direct objects, foreign brands, structured
+  clones, Proxy, and revoked Proxy inputs fail without user accessor or trap execution.
+- API key and bounded conversation exist only in current-document memory. Clear, revoke, reload, or
+  navigation cancellation cannot be defeated by a late response; the first terminal cause wins.
+  Legacy durable key/history access remains separate and explicit, with no automatic read, copy,
+  migration, overwrite, or delete.
+- Same-document entry into Demo revokes and replaces the Real capability before Demo login. Demo
+  performs zero AI consent, key, provider, history, or durable-storage I/O.
+
+### Failure-first findings and repairs
+
+Independent findings-first review produced focused red regressions before each minimum repair. The
+repairs covered authoritative timeout/revoke checks after response headers and body, transactional
+64 KiB history retention, redirect rejection, finite aggregate overflow, private-brand zero-trap
+input rejection, same-document Demo capability replacement, captured-question preview/composer
+locking, actual-root browser coverage, provider-error and UTF-16 wording, navigation/refresh
+cancellation, Clear-versus-late-response retention, cancellation-versus-timeout first-cause
+ordering, and stale documentation that described durable conversation persistence. A final literal
+contract check added the exact private `WeakSet.has` membership seam. A different fresh reviewer
+returned no P0/P1/P2 findings on the complete implementation, and another independent reviewer
+returned no findings on the final two-path WeakSet delta. Review agents made no file changes.
+
+### Verification evidence
+
+- `npm ci`: PASS (six packages installed from the untouched lockfile).
+- Focused privacy/consumer/Demo matrix: 64/64 PASS.
+- `npm run check:syntax`: PASS for 247 files.
+- `npm run check:privacy`: PASS.
+- Default-concurrency `npm test`: 1665/1665 PASS twice consecutively on the final implementation
+  tree.
+- `git diff --check`: PASS; literal base-relative path audit: exactly 12/12 approved paths.
+- Implementation-head GitHub Actions run `31261744111`, job `93113529346`: SUCCESS on exact head
+  `29ebd0ad8558371db191cc6284c3ae43e543f1e0`.
+- Fresh disposable in-app Browser served exact head `29ebd0a` from loopback with interception before
+  module import: all eleven named component and production-root gates PASS. Existing-user default
+  and pre-confirmation provider requests were zero; the confirmed production-root request count was
+  exactly one; navigation, refresh, and same-document Demo added zero requests; legacy automatic
+  actions were zero; timeout was 4000 ms; retries were zero; revoked retained messages were zero.
+  The synthetic harness intercepted seven deterministic provider observations in total, while
+  `realProviderReached`, private-value recording, private console spill, and runtime errors were all
+  false/zero. Direct synthetic-key console, error, and warning searches were empty. Tabs and server
+  were finalized and the loopback port was closed.
+
+### Privacy, migration, rollback, and not-run ledger
+
+There is no data migration. Existing durable key/history, Legacy/V2 libraries, settings, provider
+state, Backup, Cache Storage, and Service Worker state are not automatically read, mutated, deleted,
+or rewritten. Rollback is code-only: disable or revert the AI Coach path while preserving all local
+data; rollback must not restore misleading disclosure or consent-free egress.
+
+No real Gemini/provider request, real API key, account, Token, private activity, GPS/route, heart
+rate, power, user browser profile/login, external network, deploy, release, merge, cleanup, R8, R11,
+D3, or R3 incident disposition was run. PR #41 remains Draft at this Closure point. The required
+post-Closure gates are a true remote depth-one exact-head verification and GitHub Actions SUCCESS on
+the exact Closure SHA; only then may the control tower update the PR body and move Draft to Ready
+under the standing authorization. Ready is not merge.
