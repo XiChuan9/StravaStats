@@ -128,8 +128,9 @@ that the database existed. A missing-database upgrade attempted abort; abort fai
 new empty Legacy database after the reader returned an error. Bootstrap itself correctly maps a
 reader error to `blocked`, but that safe classification did not prevent the storage mutation.
 
-The control tower approved Option A on 2026-08-08. The cumulative literal implementation allowlist
-is frozen to:
+The control tower approved the descriptor-safe preflight contract on 2026-08-08. After independent
+review proved that IndexedDB has no atomic "open existing only" primitive, the user explicitly chose
+compatibility Option B. The cumulative literal implementation allowlist is frozen to:
 
 ```text
 docs/tasks/pr-32-legacy-presence-probe.md
@@ -149,6 +150,21 @@ minimum readonly inspection and close. A descriptor-safe list that omits the nam
 without opening it. No shared public module/API, schema, dependency, provider, or unrelated release
 surface is approved. Any further path requires a new minimal failure-evidence package and approval.
 
+### Accepted IndexedDB residual
+
+Option B preserves Legacy Rescue and valid-empty authentication/First-run behavior. After a safe
+`databases()` result explicitly reports the Legacy database, the probe may issue one unversioned
+`open`, perform only the minimum readonly store/key count, and close. There is one accepted residual:
+if another context deletes that database after the safe preflight but before `open`, and the
+resulting `onupgradeneeded` transaction can no longer be aborted, the browser may leave a version 1
+database with zero object stores and zero user records. This residual must be classified unknown or
+unavailable and must not establish first-login or First-run.
+
+The residual never authorizes compensation. Production probe and Rescue Reader code must contain
+zero `deleteDatabase` calls and must never clear, repair, overwrite, upgrade, or write Legacy, V2,
+settings, cache, or user data. Missing, rejected, throwing, or descriptor-hostile enumeration still
+performs zero `open`. Any broader residual requires a new material decision.
+
 ## Failure-first acceptance matrix
 
 Tests must cover existing compatible DB, absent DB, valid empty DB, malformed store, old/current/
@@ -158,7 +174,9 @@ accessor/Proxy inputs. They must prove:
 
 - `indexedDB.deleteDatabase`, IDB delete/clear/write/upgrade, localStorage/sessionStorage writes,
   Cache Storage, Service Worker, provider, fetch, and network calls are exactly zero;
-- database names, counts, and versions are unchanged before and after every probe schedule;
+- database names, counts, and versions are unchanged before and after every probe schedule except
+  the single accepted preflight-delete plus abort-failure residual above; that test must instead
+  prove the only possible remainder is version 1 with zero stores and zero user records;
 - failure and unproved states do not trigger First-run/first-login or persistent writes;
 - compatible existing Legacy data is detected without reading activity payloads;
 - imports and Demo paths remain side-effect free and all mutated globals are restored.
