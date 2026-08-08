@@ -270,7 +270,6 @@ function createChart(canvasId, config) {
     const resolvedCanvasId = scopedId(canvasId);
     const canvas = getElement(canvasId);
     if (!canvas) {
-        console.error(`Canvas with id ${resolvedCanvasId} not found.`);
         return;
     }
     // Si ya existe un gráfico en ese canvas, lo destruimos primero
@@ -883,8 +882,7 @@ export async function renderGearGanttChart(runs) {
         allGears.forEach(gear => {
             gearIdToName[gear.id] = gear.name || [gear.brand_name, gear.model_name].filter(Boolean).join(' ');
         });
-    } catch (error) {
-        console.error("Failed to fetch gear details:", error);
+    } catch {
         return;
     }
 

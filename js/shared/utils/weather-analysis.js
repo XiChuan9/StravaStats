@@ -408,8 +408,7 @@ export async function renderWeatherAnalysis(activity, coords) {
         });
 
         activate('summary');
-    } catch (error) {
-        console.error('Weather analysis render failed:', error);
+    } catch {
         section.classList.remove('hidden');
         const body = section.querySelector('.weather-analysis__body');
         if (body) {
@@ -459,7 +458,6 @@ export async function renderWeatherMapDetails(activity, coords, map, enabled) {
 
             marker.addTo(layer);
         });
-    } catch (error) {
-        console.error('Weather map overlay failed:', error);
+    } catch {
     }
 }

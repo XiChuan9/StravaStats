@@ -39,8 +39,7 @@ function getFromCache(key, ttlKey = 'activities') {
 
     try {
         return JSON.parse(cached);
-    } catch (e) {
-        console.warn(`Cache parse error for ${key}:`, e);
+    } catch {
         return null;
     }
 }
@@ -49,8 +48,7 @@ function saveToCache(key, data) {
     try {
         localStorage.setItem(key, JSON.stringify(data));
         localStorage.setItem(`${key}_timestamp`, Date.now().toString());
-    } catch (e) {
-        console.warn(`Cache save error for ${key}:`, e);
+    } catch {
     }
 }
 

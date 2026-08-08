@@ -20,8 +20,7 @@ function canUseIndexedDb() {
 function safeGetLocalStorage(key) {
     try {
         return localStorage.getItem(key);
-    } catch (error) {
-        console.warn(`Failed to read localStorage key ${key}:`, error);
+    } catch {
         return null;
     }
 }
@@ -30,8 +29,7 @@ function safeSetLocalStorage(key, value) {
     try {
         localStorage.setItem(key, value);
         return true;
-    } catch (error) {
-        console.warn(`Failed to write localStorage key ${key}:`, error);
+    } catch {
         return false;
     }
 }
@@ -39,8 +37,7 @@ function safeSetLocalStorage(key, value) {
 function safeRemoveLocalStorage(key) {
     try {
         localStorage.removeItem(key);
-    } catch (error) {
-        console.warn(`Failed to remove localStorage key ${key}:`, error);
+    } catch {
     }
 }
 
@@ -130,8 +127,7 @@ function readLocalStorageActivityCache({ cacheVersion, maxAgeMs }) {
             timestamp,
             cacheVersion: storedVersion || null
         };
-    } catch (error) {
-        console.warn('Failed to read localStorage activity cache:', error);
+    } catch {
         return null;
     }
 }
@@ -156,8 +152,8 @@ function restoreLocalStorageActivityCache(snapshot, changedKeys) {
             const value = snapshot[key];
             if (value === null) localStorage.removeItem(key);
             else localStorage.setItem(key, value);
-        } catch (error) {
-            failures.push({ key, cause: error?.name || 'Error' });
+        } catch {
+            failures.push(true);
         }
     }
     return failures;
@@ -173,8 +169,7 @@ export async function getCachedActivities({ cacheVersion = null, maxAgeMs = Infi
                 return entry;
             }
         }
-    } catch (error) {
-        console.warn('IndexedDB activity cache unavailable, falling back to localStorage:', error);
+    } catch {
     }
 
     return readLocalStorageActivityCache({ cacheVersion, maxAgeMs });
@@ -196,23 +191,20 @@ export async function saveCachedActivities(activities, cacheVersion) {
         safeSetLocalStorage(ACTIVITIES_TIMESTAMP_KEY, String(timestamp));
         if (cacheVersion) safeSetLocalStorage(CACHE_VERSION_KEY, cacheVersion);
         return true;
-    } catch (error) {
-        console.warn('Failed to save activities in IndexedDB, trying localStorage fallback:', error);
+    } catch {
     }
 
     let serializedActivities;
     try {
         serializedActivities = JSON.stringify(activities);
-    } catch (error) {
-        console.warn('Activity cache fallback skipped because activities could not be serialized:', error);
+    } catch {
         return false;
     }
 
     let fallbackSnapshot;
     try {
         fallbackSnapshot = snapshotLocalStorageActivityCache();
-    } catch (error) {
-        console.warn('Activity cache fallback skipped because its previous state could not be read:', error);
+    } catch {
         return false;
     }
 
@@ -227,17 +219,13 @@ export async function saveCachedActivities(activities, cacheVersion) {
         localStorage.setItem(ACTIVITIES_KEY, serializedActivities);
         changedKeys.push(ACTIVITIES_KEY);
         return true;
-    } catch (error) {
-        console.warn('Activity cache skipped because browser storage quota was exceeded:', error);
+    } catch {
         const rollbackFailures = restoreLocalStorageActivityCache(
             fallbackSnapshot,
             changedKeys
         );
         if (rollbackFailures.length > 0) {
-            console.warn(
-                'Failed to fully restore the previous localStorage activity cache:',
-                rollbackFailures
-            );
+            console.warn('Failed to fully restore the previous localStorage activity cache:');
         }
         return false;
     }
@@ -248,7 +236,6 @@ export async function clearCachedActivities() {
 
     try {
         await runStoreTransaction('readwrite', store => store.delete(ACTIVITIES_KEY));
-    } catch (error) {
-        console.warn('Failed to clear IndexedDB activity cache:', error);
+    } catch {
     }
 }

@@ -8,7 +8,7 @@ export async function renderWeatherTab(allActivities) {
     const summaryCardsContainer = document.getElementById("wa-stats-row");
 
     if (!weatherTabContainer) {
-        return console.error("weather-tab container not found. Ensure the main container has this ID.");
+        return;
     }
 
     const runs = allActivities.filter(
@@ -38,8 +38,7 @@ export async function renderWeatherTab(allActivities) {
                 try {
                     const w = await getWeatherForRun(run);
                     return w ? { run, ...w } : null;
-                } catch (e) {
-                    console.error(e);
+                } catch {
                     return null;
                 }
             }));
@@ -61,8 +60,6 @@ export async function renderWeatherTab(allActivities) {
 
         // Calculate environmental difficulty using utils helper
         const envDifficulty = utils.calculateEnvironmentalDifficulty({ weather: { temperature: temp, humidity: hum, wind_speed: wind, precipitation: wr.precipitation, pressure: wr.pressure } });
-
-        console.log(`🌧️ Run: "${run.name}" - Env Difficulty: ${envDifficulty}% (Temp: ${temp}°C, Wind: ${wind}km/h, Rain: ${wr.precipitation}mm)`);
 
         return {
             run, // Include the full run object for table rendering
@@ -138,15 +135,12 @@ export async function renderWeatherTab(allActivities) {
             else if (v === "cloudcover") { dataToRender = cloudcovers; labelText = "Cloud Cover (%)"; }
             else if (v === "pressure") { dataToRender = pressures; labelText = "Pressure (hPa)"; }
             else {
-                console.warn(`Unknown histogram type selected: ${v}`);
                 histogramTitle.innerText = "Histogram (Invalid Type)";
                 return;
             }
             histChart = renderHistogram(ctxHist, dataToRender, labelText);
             histogramTitle.innerText = `${e.target.options[e.target.selectedIndex].text} Histogram`;
         });
-    } else {
-        console.warn("Histogram elements (canvas weather-histogram, select histogram-select, title histogram-title) not found.");
     }
 
     // 3. Renderizar todos los demás gráficos en sus respectivos canvases/divs del HTML
@@ -154,8 +148,6 @@ export async function renderWeatherTab(allActivities) {
     const monthlyWeatherCtx = document.getElementById("monthly-weather");
     if (monthlyWeatherCtx) {
         renderMonthlyMulti(monthlyWeatherCtx, weatherResults);
-    } else {
-        console.warn("#monthly-weather canvas not found.");
     }
 
 
@@ -163,24 +155,18 @@ export async function renderWeatherTab(allActivities) {
     const conditionPieCtx = document.getElementById("condition-pie");
     if (conditionPieCtx) {
         renderPie(conditionPieCtx, conditions);
-    } else {
-        console.warn("#condition-pie canvas not found.");
     }
 
     // Tabla de Estadísticas Mensuales
     const monthlyTableBody = document.getElementById("monthly-table")?.querySelector("tbody");
     if (monthlyTableBody) {
         renderMonthlyStatsTable(monthlyTableBody, weatherResults);
-    } else {
-        console.warn("#monthly-table tbody not found.");
     }
 
     // Matriz de Correlación
     const corrMatrixDiv = document.getElementById("corr-matrix");
     if (corrMatrixDiv) {
         renderCorrelationMatrix(corrMatrixDiv, { temps, rains, winds, humidities, paces, distances, pressures, cloudcovers });
-    } else {
-        console.warn("#corr-matrix div not found.");
     }
 
 
@@ -195,8 +181,6 @@ export async function renderWeatherTab(allActivities) {
             runsTableContainer.classList.toggle("hidden");
             toggleRunsButton.textContent = runsTableContainer.classList.contains("hidden") ? "Show/Hide Runs" : "Hide Runs";
         });
-    } else {
-        console.warn("Runs list elements (runs-table tbody, toggle-runs button, runs-table-container) not found.");
     }
 
     // --- NUEVA SECCIÓN: Interactive Scatter Plot ---
@@ -284,8 +268,6 @@ export async function renderWeatherTab(allActivities) {
         // Renderizar el gráfico inicial
         updateScatterChart();
 
-    } else {
-        console.warn("Interactive Scatter Plot elements (canvas custom-scatter-chart, selects, inputs) not found.");
     }
     // --- FIN NUEVA SECCIÓN ---
 }
@@ -293,7 +275,6 @@ export async function renderWeatherTab(allActivities) {
 // ---------------- FETCH WEATHER ----------------
 async function getWeatherForRun(run) {
     if (!run.start_latlng || run.start_latlng.length < 2) {
-        console.warn(`Run ${run.name} does not have valid start latitude/longitude.`);
         return null;
     }
 
@@ -309,7 +290,6 @@ async function getWeatherForRun(run) {
         const data = await res.json();
 
         if (!data.hourly || !data.hourly.time || !data.hourly.time.length) {
-            console.warn("No hourly weather data available for run", run.name, dateStr);
             return null;
         }
 
@@ -317,7 +297,6 @@ async function getWeatherForRun(run) {
         let idx = data.hourly.time.findIndex(t => new Date(t).getHours() === hour);
 
         if (idx === -1) {
-            console.warn(`Exact hour ${hour} not found for ${dateStr}. Using closest available index.`);
             idx = Math.min(hour, data.hourly.time.length - 1);
         }
 
@@ -333,8 +312,7 @@ async function getWeatherForRun(run) {
             pressure: numericSafe(data.hourly.surface_pressure ? data.hourly.surface_pressure[idx] : null),
         };
 
-    } catch (err) {
-        console.error(`Weather fetch for ${run.name} (${dateStr}) failed:`, err);
+    } catch {
         return null;
     }
 }
@@ -385,7 +363,6 @@ function renderHistogram(ctx, data, label) {
 
     const bins = 10;
     if (!data || data.length === 0) {
-        console.warn(`No data for histogram: ${label}`);
         const chart = new Chart(ctx, { type: "bar", data: { labels: [], datasets: [{ label, data: [] }] } });
         // Intentar dibujar un mensaje en el canvas si está vacío
         const ctx2d = ctx.getContext('2d');
@@ -543,7 +520,6 @@ function renderCustomScatter(ctx, data, xVar, yVar, pointSize, colorScheme) {
     if (existingChart) existingChart.destroy();
 
     if (!data || data.length === 0 || !xVar || !yVar) {
-        console.warn(`No data or variables for custom scatter plot: ${xVar} vs ${yVar}`);
         const chart = new Chart(ctx, { type: "scatter", data: { datasets: [] } });
         const ctx2d = ctx.getContext('2d');
         if (ctx2d) {
@@ -774,8 +750,6 @@ function getUnit(metric) {
 function renderRunsList(tbodyElement, weatherResults) {
     tbodyElement.innerHTML = "";
 
-    console.log(`📋 Rendering ${weatherResults.length} runs with environmental difficulty data...`);
-
     weatherResults.forEach((item, idx) => {
         const { run, temperature, precipitation, wind_speed, humidity, pressure, cloudcover, weather_text, envDifficulty } = item;
 
@@ -807,7 +781,6 @@ function renderRunsList(tbodyElement, weatherResults) {
         }
     });
     
-    console.log(`✅ Rendered ${weatherResults.length} runs with environmental difficulty`);
 }
 
 
@@ -959,4 +932,3 @@ function renderWeatherPredictor(weatherData, currentWeatherData) {
 function numericSafe(v) {
     return v === null || v === undefined || isNaN(v) ? 0 : Number(v);
 }
-

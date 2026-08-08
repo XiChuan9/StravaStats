@@ -112,12 +112,8 @@ async function getWeatherForRun(run) {
 
         return { ...weather, difficulty };
 
-    } catch (err) {
+    } catch {
         clearTimeout(timerId);
-        // AbortError means timeout — silent skip; log other errors
-        if (err.name !== 'AbortError') {
-            console.warn(`Weather fetch for ${run.name} (${dateStr}) failed:`, err);
-        }
         return null;
     }
 }
@@ -322,7 +318,6 @@ async function groupByDay(activities) {
     const weatherStart = Date.now();
     for (let i = 0; i < runs.length; i += batches) {
         if (Date.now() - weatherStart > WEATHER_TOTAL_TIMEOUT_MS) {
-            console.warn(`[Weather] Total timeout reached after ${WEATHER_TOTAL_TIMEOUT_MS}ms — skipping remaining ${runs.length - i} runs`);
             break;
         }
         const batch = runs.slice(i, i + batches);

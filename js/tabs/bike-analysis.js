@@ -88,9 +88,6 @@ export function renderBikeAnalysisTab(allActivities, dateFilterFrom, dateFilterT
         .filter(a => rideTypes.has(a.type) || rideSportTypes.has(a.sport_type))
         .filter(a => gearFilter === 'all' || a.gear_id === gearFilter);
 
-    console.log("Rendering bike analysis for", rides.length, "rides");
-    console.log(rides);
-
     if (!rides.length) return;
 
     renderSummaryCards(rides);

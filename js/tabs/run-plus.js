@@ -5477,8 +5477,7 @@ function bindNsmRegistry(root, model, allActivities, dateFilterFrom, dateFilterT
             }
             saveNsmIntervalAnalysis(activityId, row.run, analysis);
             renderRunPlusTab(allActivities, dateFilterFrom, dateFilterTo, gearFilter, options);
-        } catch (_err) {
-            console.warn('NSM repository analysis unavailable');
+        } catch {
             button.disabled = false;
             button.textContent = failedLabel;
             button.title = 'Unable to analyze intervals';
@@ -5561,37 +5560,6 @@ function bindRunPlusControls(root, model, allActivities, dateFilterFrom, dateFil
     }
 
     bindDiagnosisToggles(root);
-    publishRunPlusDiagnostics(root, model.diagnostics);
-}
-
-function publishRunPlusDiagnostics(root, diagnostics) {
-    if (!root) return;
-    root.runPlusDiagnostics = diagnostics;
-    root.dataset.runPlusDiagnostics = JSON.stringify(diagnostics);
-    window.runPlusDiagnostics = diagnostics;
-}
-
-function publishRunPlusNsm(root, nsm) {
-    if (!root || !nsm) return;
-    const summary = {
-        settings: nsm.settings,
-        latestWeek: nsm.latestWeek,
-        recent7: nsm.recent7,
-        recent28: nsm.recent28,
-        block: nsm.block,
-        easyDiscipline: nsm.easyDiscipline,
-        subThreshold: {
-            sessions: nsm.subThreshold.sessions,
-            overcooked: nsm.subThreshold.overcooked,
-            share: nsm.subThreshold.share
-        },
-        tests: nsm.tests,
-        recommendations: nsm.recommendations,
-        dataTrust: nsm.dataTrust
-    };
-    root.runPlusNsm = summary;
-    root.dataset.runPlusNsm = JSON.stringify(summary);
-    window.runPlusNsm = summary;
 }
 
 // ─── Main render ────────────────────────────────────────
@@ -5622,8 +5590,6 @@ export function renderRunPlusTab(allActivities, dateFilterFrom, dateFilterTo, ge
         destroyNsmEasyCharts();
         destroyNsmWeeklyScoreChart();
         destroyNsmSubtCharts();
-        publishRunPlusDiagnostics(root, model.diagnostics);
-        publishRunPlusNsm(root, model.nsm);
         root.innerHTML = `
             <div class="run-plus-shell">
                 ${renderRunPlusFilters(allActivities, effectiveDateFilterFrom, effectiveDateFilterTo, gearFilter, options.gears)}
@@ -5652,8 +5618,6 @@ export function renderRunPlusTab(allActivities, dateFilterFrom, dateFilterTo, ge
                 ${renderNsmPage(model)}
             </div>
         `;
-        publishRunPlusDiagnostics(root, model.diagnostics);
-        publishRunPlusNsm(root, model.nsm);
         bindRunPlusControls(root, model, allActivities, dateFilterFrom, dateFilterTo, gearFilter, options);
         renderNsmEasyCharts(model);
         renderNsmWeeklyScoreChart(model);
@@ -5692,9 +5656,6 @@ export function renderRunPlusTab(allActivities, dateFilterFrom, dateFilterTo, ge
             ${auxiliaryHtml}
         </div>
     `;
-
-    publishRunPlusDiagnostics(root, model.diagnostics);
-    publishRunPlusNsm(root, model.nsm);
 
     renderRunAnalysisTab(
         allActivities,
