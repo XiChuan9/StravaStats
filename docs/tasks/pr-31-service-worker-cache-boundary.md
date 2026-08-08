@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 release hardening / R9 |
-| Status | A2 findings-first audit complete; minimum cache decision pending owner approval |
+| Status | Option A and security-first review correction approved; implementation verification in progress |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/service-worker-cache-boundary` |
 | Exact base | `integration/v2@fe32274dabd7f41adcb255572b5a4a6460f492a4` |
@@ -19,9 +19,11 @@
 
 Close release blocker P0-07 by making the production Service Worker fail closed for private,
 dynamic, credential-bearing, query-bearing, provider/auth/API, and other non-static requests. Only
-an explicitly approved literal same-origin static-shell allowlist may be matched, written to, or
-served from Cache Storage. Preserve the allowed offline shell without changing application data,
+an explicitly approved literal same-origin static-subresource allowlist may be matched, written to,
+or served from Cache Storage. Preserve that bounded subresource fallback without changing application data,
 Repository, Import, Storage, Backup, Diagnostics, analysis, default mode, or provider behavior.
+The credential-omit document install seed remains, but all runtime document navigations are
+network-only because real navigation requests use credentials mode `include`.
 
 This task does not authorize P0-08 lifecycle work. `skipWaiting`, `clients.claim`, activate-time
 cache deletion/eviction, mixed-version behavior, production rollout, deployment, and rollback-worker
@@ -151,9 +153,9 @@ offline shell.
 Approve option A, the minimum emergency boundary:
 
 ```text
-exact document paths
-  /
-  /index.html
+recognized document paths (not runtime fetch candidates)
+  /           install seed only
+  /index.html inert; not install-seeded
 
 script paths
   /classifyRun.js
@@ -174,8 +176,8 @@ exact manifest/image paths
 Eligibility additionally requires all of the following:
 
 - `http:` or `https:`, exact `self.location.origin`, `GET`, empty username/password/search/hash;
-- the exact path class above and matching browser destination: document, script/worker, style,
-  manifest, or image;
+- for runtime fetch, the exact static-subresource path class above and matching browser destination:
+  script/worker, style, manifest, or image; documents are install-seed response candidates only;
 - no `Authorization`, `Proxy-Authorization`, `Cookie`, `Range`, `X-API-Key`, or `X-Auth-Token`
   header category, and credentials mode is not `include`;
 - descriptor/brand-safe inspection; any missing, hostile, throwing, accessor, or Proxy boundary
@@ -188,7 +190,9 @@ query-bearing static path, or a programmatic fetch with an empty destination rem
 Everything else is network-only: the fetch event does not call `respondWith`, `caches.open`,
 `cache.match`, `cache.put`, `cache.addAll`, or global `caches.match`. This includes every `/api/`,
 auth/provider request, `/_vercel/`, third-party CDN/analytics/weather/AI/map request, query-bearing
-navigation or module, non-GET, Range request, and credentials-mode `include` request.
+navigation or module, non-GET, Range request, credentials-mode `include` request, and every runtime
+document navigation. Real `/` and `/index.html` navigation requests are modeled as `mode=navigate`,
+`destination=document`, `credentials=include` and bypass the worker without Cache Storage access.
 
 ### Recommended response allowlist
 
@@ -197,7 +201,7 @@ response with status exactly 200, URL equal to the request URL, and content type
 request class:
 
 ```text
-document  text/html
+document  text/html (install seeds only)
 script    text/javascript or application/javascript
 style     text/css
 manifest  application/manifest+json or application/json
@@ -211,7 +215,7 @@ network but never stored. The same response contract is re-applied after `cache.
 cached response can be served. Thus an old or hostile entry cannot be replayed merely because its
 key now looks static.
 
-Network-first remains only for eligible static requests. `open`, `clone`, `put`, and response
+Network-first remains only for eligible static subresource requests. `open`, `clone`, `put`, and response
 inspection failures return the successful network response without logging raw values. Network,
 `open`, `match`, or cached-response validation failure returns one fixed synthetic 503 response.
 `put` is awaited so rejection cannot become an unhandled promise. Global `caches.match` is never
@@ -223,6 +227,11 @@ The exact install seed remains `/`, `/manifest.json`, and `/icon-sport.svg`, but
 with credentials omitted and must pass the same response contract before `put`. `cache.addAll` is
 not used because it cannot enforce the response allowlist. A seed failure does not prevent the
 emergency worker from installing; it produces no raw log and no unsafe entry.
+
+The `/` document entry is install-only and inert for runtime navigation. It is not matched, put, or
+served for a navigation FetchEvent. The bounded runtime offline fallback claim applies only to
+allowlisted static subresources whose credentials mode is `same-origin` or `omit`; it makes no
+offline document-shell claim.
 
 Keep cache name `strava-dashboard-v1` in R9. A new name would interact with the existing
 activate-time delete-all-other-caches behavior and cross into P0-08. Existing private API, query,
@@ -239,7 +248,7 @@ rollback, or cleanup evidence.
 
 - **A — Recommended:** approve the request/response allowlists and inert-old-entry handling above.
   This closes P0-07 without a destructive operation or lifecycle change and preserves a bounded
-  static offline path.
+  static-subresource offline path; it does not provide offline document navigation.
 - **B — Network-only worker fetch:** intercept/cache nothing at runtime. This is simpler and safer
   for privacy but materially removes the existing offline shell and is a product architecture
   decision.
@@ -247,10 +256,14 @@ rollback, or cleanup evidence.
   private-query and rewrite ambiguity; not recommended without a separate exact route inventory
   and owner acceptance.
 
-Owner approval is required before production or test implementation. Approval of A authorizes only
-`sw.js`, `tests/service-worker-fetch-policy.test.js`, and this Task Brief as the eventual literal
-cumulative allowlist. Any additional path or any delete/eviction/lifecycle/deployment change
-requires a new minimum collision package and delegation.
+The owner approved A and later approved the test-only fourth path
+`tests/import/decoder-registry-wiring.test.js` solely to remove PR-14's obsolete whole-file `sw.js`
+hash tuple; every decoder and package hash remains unchanged. The owner also approved the
+security-first review correction: every credentials-mode `include` request and every runtime
+document navigation remains network-only, while the document install seed remains inert. The exact
+cumulative allowlist is this Task Brief, `sw.js`, `tests/service-worker-fetch-policy.test.js`, and
+`tests/import/decoder-registry-wiring.test.js`. Any additional path or any
+delete/eviction/lifecycle/deployment change requires a new minimum collision package and delegation.
 
 ## Failure-first verification contract
 
@@ -259,13 +272,16 @@ then prove:
 
 - Token/Authorization, query, private-response, opaque-ID, API/auth/provider, weather, AI, map, and
   telemetry categories never reach `cache.match`, `cache.put`, or `cache.addAll`;
+- real `/` and `/index.html` navigations are modeled as `navigate`/`document`/`include`, and both
+  they and synthetic same-origin document navigations make zero Cache Storage calls;
 - GET and non-GET, navigation/static module/style/image, Range, error, redirect, opaque, and
   Cache-Control `no-store`/`private` cases obey the frozen contract;
 - hostile Request/Response/accessor/Proxy inputs fail closed without getter/trap execution or raw
   disclosure;
 - `cache.match`, `cache.put`, `cache.addAll`, clone, and fetch failures have deterministic safe
   behavior; and
-- approved static assets remain available through the intended offline fallback.
+- approved static subresources remain available through the intended offline fallback; document
+  install seeds remain inert for runtime navigation.
 
 If Node seams cannot prove the served worker boundary, use only a fresh disposable browser profile
 and fresh loopback origin with deterministic synthetic data. Record Cache Storage names, entry
