@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 release hardening / R3 |
-| Status | Investigating |
+| Status | A2 complete; implementation authorized and in progress |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/identity-redaction` |
 | Exact base | `integration/v2@e760946583f163085b0a8bac887b66fc5c9cec3d` |
@@ -143,6 +143,105 @@ defects and prove:
 - Demo isolation and Legacy/Canonical rollback plus provider/auth boundaries remain unchanged.
 
 Failure output uses only safe assertion labels, field categories, paths, counts, and digests.
+
+## A2 findings and implementation authorization
+
+### Findings-first current-tree inventory
+
+The exact-base read-only audit confirmed four identity categories without emitting their values:
+
+| Category | Current-tree owners | Reachability and flow | Disposition |
+| --- | --- | --- | --- |
+| Athlete-specific matcher constants | `js/shared/preprocessing/core.js`, `js/pages/swim/swim.js` | Real/Legacy/Canonical summary preprocessing and Swim detail can select and mutate one athlete's historical swim values; summary preprocessing also reads a Legacy athlete cache fallback | Remove the entire implicit correction/matcher and fallback path |
+| Numeric athlete-ID coercion | `js/shared/preprocessing/core.js` | `profile.id` is coerced through `Number` before athlete-specific selection | Removed with the matcher; add a static/content guard |
+| Demo profile/activity identity | `js/demo/generator.js` | Deterministic Demo generation and Demo-only storage/Repository/UI; no Real fallback, but one specific profile and numeric activity/athlete/upload IDs are tracked | Replace with explicit deterministic synthetic strings |
+| Example activity-ID coercion | `js/pages/activity/quick-start-example.js` | Tracked example, not imported by an actual served production entry; query ID is parsed numerically before the analyzer boundary | Preserve the exact non-empty string and fail closed otherwise |
+
+The same identity digests occur in historical Task Brief evidence and deterministic tests/browser
+harnesses. Those current-tree occurrences are not production inputs, but retaining them would
+defeat a tracked-content regression guard. They are replaced with category-safe prose or new
+deterministic synthetic sentinels. No private fixture or real data is required.
+
+Existing Legacy compatibility adapters were classified separately and remain unchanged. They may
+accept an established numeric Legacy/provider DTO ID and serialize it once to a string at the
+compatibility boundary. They do not parse an opaque string, and R1/R2 explicitly froze those
+Legacy numeric-ID outcomes. Changing them here would violate the required Legacy rollback and
+provider/auth boundary freeze. Canonical, Import, Storage, Repository, and page-local opaque-string
+contracts already reject or preserve strings as required.
+
+### Source-to-runtime trace
+
+```text
+Root initial load / refresh
+  -> main selects an injected preprocessing athlete
+  -> preprocessActivities
+  -> exact-base athlete-specific matcher
+  -> exact-base summary activity mutation
+  -> summary analysis and DOM
+
+Router -> DetailReadSession -> Swim renderer
+  -> injected activity plus optional athlete
+  -> descriptor-safe exact-base athlete-specific matcher
+  -> cloned detail activity/lap/split mutation
+  -> Swim analysis and DOM
+
+Demo generator
+  -> Demo namespace only
+  -> DemoRepository
+  -> shared summary/detail consumers
+
+Tracked quick-start example
+  -> query string
+  -> numeric parse on exact base
+  -> analyzer initializer
+```
+
+The repair removes the first two selection/mutation flows, keeps Demo isolated with synthetic
+strings, and retains the example query ID byte-for-byte. It adds no storage, network, logging,
+provider, auth, or migration operation.
+
+### Read-only history finding and owner disposition
+
+The affected identity categories have multiple count-changing commits across public remote ref
+classes, with the earliest category exposure predating V2 and the latest reaching the current
+release-hardening ancestry. Only commit counts, time ranges, ref classes, and digests were
+reported. The owner disposition is to proceed with current-tree removal while recording public
+history as a disclosed release blocker. This task must not rewrite history, refs, tags, Releases,
+PR artifacts, or perform incident notification or real-account verification.
+
+### Frozen cumulative implementation allowlist
+
+The minimum literal hard maximum is exactly these seventeen paths:
+
+```text
+docs/engineering/git-worktree-workflow.md
+docs/tasks/pr-01-legacy-cache-rescue.md
+docs/tasks/pr-04a-summary-consumers.md
+docs/tasks/pr-26-dom-safety.md
+docs/tasks/pr-28-identity-redaction.md
+js/demo/generator.js
+js/pages/activity/quick-start-example.js
+js/pages/swim/swim.js
+js/shared/preprocessing/core.js
+scripts/check-privacy.mjs
+tests/consumers/detail-boundaries.test.js
+tests/consumers/detail-browser-smoke.html
+tests/consumers/detail-consumers.test.js
+tests/consumers/summary-browser-smoke.html
+tests/demo-generator.test.js
+tests/legacy/demo-isolation.test.js
+tests/privacy/tracked-identity.test.js
+```
+
+An additional path requires a minimal failure/collision package and control-tower decision. No other
+source, test, documentation, package, workflow, schema, storage, Repository, Import, analysis,
+provider/auth, Worker, Service Worker, deployment, or release path is authorized.
+
+### Implementation authorization
+
+The delegated user contract explicitly authorizes current-tree removal and the opaque string-ID
+guard after this A2 freeze. Implementation may proceed automatically within the literal allowlist.
+Public-history handling remains paused under the disposition above.
 
 ## Prohibited scope and operations
 
