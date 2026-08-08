@@ -405,6 +405,25 @@ Any thirteenth path, field expansion, stronger precision, durable/session consen
 behavior, automatic legacy action, or provider/model/endpoint change must stop and return a new
 minimum collision package for explicit approval.
 
+### A3 trusted activity snapshot clarification
+
+On 2026-08-08 the control tower returned the user's additional exact selection, case-insensitive
+`a`, for the browser-language collision found by failure-first review. This freezes the internal
+trusted snapshot/private-brand seam:
+
+- main converts post-Repository/preprocessed activity primitives from the existing trusted
+  composition provenance into a module-owned, privately branded minimized snapshot;
+- `prepare` accepts only that private brand and rejects a directly supplied unbranded object,
+  accessor-bearing value, Proxy, or revoked Proxy through private `WeakSet` membership without
+  executing a user accessor or Proxy trap;
+- the zero-accessor/zero-Proxy-trap guarantee applies at the AI egress boundary to unbranded input;
+  the existing upstream Repository/preprocessing provenance remains the trusted activity source;
+- this is an internal injected-capability seam only. It does not change a public API, schema,
+  Repository, Storage, provider field, model, or endpoint.
+
+The twelve-path cumulative allowlist remains unchanged. Option B (reflecting on arbitrary raw
+activity objects) and Option C (pausing for a future platform primitive) remain rejected.
+
 ## Non-negotiable safety contract
 
 All options must satisfy:
