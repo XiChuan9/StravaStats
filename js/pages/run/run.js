@@ -869,9 +869,18 @@ function renderActivityInfo(activity, activitySource) {
     if (heroDescription) heroDescription.textContent = description || 'No description provided.';
     if (heroType) heroType.textContent = activityType;
     if (heroGear) {
-        heroGear.innerHTML = gearId
-            ? `<a href="../html/gear.html?id=${gearId}">${gear || gearId}</a>`
-            : (gear || 'No gear');
+        if (gearId) {
+            const params = new URLSearchParams();
+            params.set('id', String(gearId));
+            const url = new URL('/html/gear.html', new URL(document.baseURI).origin);
+            url.search = params.toString();
+            const gearLink = document.createElement('a');
+            gearLink.href = url.href;
+            gearLink.textContent = gear || gearId;
+            heroGear.replaceChildren(gearLink);
+        } else {
+            heroGear.textContent = gear || 'No gear';
+        }
     }
     if (heroKudos) heroKudos.textContent = `❤️ ${kudos !== null ? kudos : '—'}`;
     if (heroComments) heroComments.textContent = `💬 ${commentCount !== null ? commentCount : '—'}`;
@@ -1381,29 +1390,27 @@ function renderBestEfforts(bestEfforts) {
 
     section.classList.remove('hidden');
 
-    const tableHeader = `
-    <thead>
-        <tr>
-            <th>Distance</th>
-            <th>Time</th>
-            <th>Pace</th>
-            <th>Achievements</th>
-        </tr>
-    </thead>`;
-
-    const tableBody = bestEfforts.map(effort => {
+    const tableHead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    for (const label of ['Distance', 'Time', 'Pace', 'Achievements']) {
+        const cell = document.createElement('th');
+        cell.textContent = label;
+        headerRow.append(cell);
+    }
+    tableHead.append(headerRow);
+    const tableBody = document.createElement('tbody');
+    for (const effort of bestEfforts) {
         const pace = formatPace(effort.distance / effort.moving_time);
         const achievements = effort.pr_rank ? `🏆 PR #${effort.pr_rank}` : (effort.achievements.length > 0 ? '🏅' : '');
-        return `
-        <tr>
-            <td>${effort.name}</td>
-            <td>${formatTime(effort.moving_time)}</td>
-            <td>${pace}</td>
-            <td>${achievements}</td>
-        </tr>`;
-    }).join('');
-
-    table.innerHTML = tableHeader + `<tbody>${tableBody}</tbody>`;
+        const row = document.createElement('tr');
+        for (const value of [effort.name, formatTime(effort.moving_time), pace, achievements]) {
+            const cell = document.createElement('td');
+            cell.textContent = String(value);
+            row.append(cell);
+        }
+        tableBody.append(row);
+    }
+    table.replaceChildren(tableHead, tableBody);
 }
 
 /**
@@ -1540,18 +1547,16 @@ function renderSegments(segments) {
 
     section.classList.remove('hidden');
 
-    const tableHeader = `
-    <thead>
-        <tr>
-            <th>Segment Name</th>
-            <th>Time</th>
-            <th>Pace</th>
-            <th>Avg HR</th>
-            <th>Rank</th>
-        </tr>
-    </thead>`;
-
-    const tableBody = segments.map(effort => {
+    const tableHead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    for (const label of ['Segment Name', 'Time', 'Pace', 'Avg HR', 'Rank']) {
+        const cell = document.createElement('th');
+        cell.textContent = label;
+        headerRow.append(cell);
+    }
+    tableHead.append(headerRow);
+    const tableBody = document.createElement('tbody');
+    for (const effort of segments) {
         const pace = formatPace(effort.distance / effort.moving_time);
         let rank = '';
         if (effort.pr_rank === 1) {
@@ -1563,17 +1568,28 @@ function renderSegments(segments) {
         } else if (effort.kom_rank) {
             rank = `Top ${effort.kom_rank}`;
         }
-        return `
-        <tr>
-            <td><a href="https://www.strava.com/segments/${effort.segment.id}" target="_blank">${effort.name}</a></td>
-            <td>${formatTime(effort.moving_time)}</td>
-            <td>${pace}</td>
-            <td>${effort.average_heartrate ? Math.round(effort.average_heartrate) : '-'} bpm</td>
-            <td>${rank}</td>
-        </tr>`;
-    }).join('');
-
-    table.innerHTML = tableHeader + `<tbody>${tableBody}</tbody>`;
+        const row = document.createElement('tr');
+        const nameCell = document.createElement('td');
+        const segmentLink = document.createElement('a');
+        segmentLink.href = `https://www.strava.com/segments/${encodeURIComponent(String(effort.segment.id))}`;
+        segmentLink.target = '_blank';
+        segmentLink.rel = 'noopener noreferrer';
+        segmentLink.textContent = String(effort.name);
+        nameCell.append(segmentLink);
+        row.append(nameCell);
+        for (const value of [
+            formatTime(effort.moving_time),
+            pace,
+            `${effort.average_heartrate ? Math.round(effort.average_heartrate) : '-'} bpm`,
+            rank
+        ]) {
+            const cell = document.createElement('td');
+            cell.textContent = String(value);
+            row.append(cell);
+        }
+        tableBody.append(row);
+    }
+    table.replaceChildren(tableHead, tableBody);
 }
 
 // =====================================================

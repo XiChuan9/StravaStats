@@ -44,6 +44,23 @@ function statRow(label, value) {
     </div>`;
 }
 
+function styledElement(tagName, cssText, text = null) {
+    const element = document.createElement(tagName);
+    if (cssText) element.style.cssText = cssText;
+    if (text !== null) element.textContent = text;
+    return element;
+}
+
+function createStatCellNode(value, label) {
+    const cell = styledElement('div', 'background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:0.9rem 0.75rem;text-align:center;');
+    const valueNode = styledElement('div', 'font-size:1.25rem;font-weight:700;color:#0f172a;line-height:1.2;');
+    if (value instanceof Node) valueNode.append(value);
+    else valueNode.textContent = value;
+    const labelNode = styledElement('div', 'font-size:0.7rem;color:#64748b;margin-top:0.25rem;text-transform:uppercase;letter-spacing:0.4px;', label);
+    cell.append(valueNode, labelNode);
+    return cell;
+}
+
 // ===================================================================
 // MAIN ENTRY POINT
 // ===================================================================
@@ -55,11 +72,14 @@ export async function renderGearDetailPage(gearId) {
     const gear = allGears.find(g => g.id === gearId);
 
     if (!gear) {
-        document.body.innerHTML = `<div style="padding:2rem;text-align:center;">
-            <h2>Gear not found</h2>
-            <p style="color:#64748b;">ID "${gearId}" not in local cache.</p>
-            <button onclick="window.history.back()" style="margin-top:1rem;padding:8px 16px;border:1px solid #ddd;border-radius:6px;cursor:pointer;">← Back</button>
-        </div>`;
+        const notFound = styledElement('div', 'padding:2rem;text-align:center;');
+        const heading = document.createElement('h2');
+        heading.textContent = 'Gear not found';
+        const message = styledElement('p', 'color:#64748b;', `ID "${gearId}" not in local cache.`);
+        const back = styledElement('button', 'margin-top:1rem;padding:8px 16px;border:1px solid #ddd;border-radius:6px;cursor:pointer;', '← Back');
+        back.addEventListener('click', () => window.history.back());
+        notFound.append(heading, message, back);
+        document.body.replaceChildren(notFound);
         return;
     }
 
@@ -99,38 +119,34 @@ function renderGearHero(gear, activities) {
         ? (frameTypes[gear.frame_type] || 'Bike')
         : (trailRatio > 0.3 ? 'Trail Running Shoe' : 'Road Running Shoe');
 
-    const badgeStyle = (bg, color) => `display:inline-block;padding:0.2rem 0.6rem;border-radius:999px;font-size:0.7rem;font-weight:700;background:${bg};color:${color};text-transform:uppercase;letter-spacing:0.5px;`;
-    const badges = [
-        gear.primary ? `<span style="${badgeStyle('#fef3c7', '#92400e')}">Primary</span>` : '',
-        gear.retired ? `<span style="${badgeStyle('#fee2e2', '#991b1b')}">Retired</span>` : '',
-    ].filter(Boolean).join(' ');
-
     const meta = [
         gear.brand_name, gear.model_name,
         gear.type === 'bike' && gear.weight ? `${(gear.weight / 1000).toFixed(2)} kg` : null
     ].filter(Boolean).join(' · ');
 
-    container.innerHTML = `
-        <div style="background:white;border:1px solid #e2e8f0;border-radius:14px;padding:1.75rem;margin-bottom:1.5rem;display:flex;gap:1.5rem;align-items:flex-start;flex-wrap:wrap;">
-            <div style="font-size:3.5rem;width:72px;height:72px;background:#f1f5f9;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-                ${gear.type === 'bike' ? '🚴' : '👟'}
-            </div>
-            <div style="flex:1;min-width:180px;">
-                <div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;margin-bottom:0.3rem;">
-                    <h2 style="margin:0;font-size:1.45rem;font-weight:700;color:#0f172a;">${gear.name || [gear.brand_name, gear.model_name].filter(Boolean).join(' ') || 'Unnamed Gear'}</h2>
-                    ${badges}
-                </div>
-                <p style="margin:0 0 1.25rem;color:#64748b;font-size:0.875rem;">${gearSubtype}${meta ? ' · ' + meta : ''}</p>
-                <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:0.6rem;">
-                    ${statCell(totalKm.toFixed(0) + ' km', 'Total Distance')}
-                    ${statCell(activities.length, 'Activities')}
-                    ${statCell(totalHours.toFixed(1) + ' h', 'Total Time')}
-                    ${avgPaceSec > 0 && gear.type !== 'bike' ? statCell(formatPace(avgPaceSec, 1), 'Avg Pace') : ''}
-                    ${avgPaceSec > 0 && gear.type === 'bike' ? statCell(formatSpeedBike(totalKm / totalHours), 'Avg Speed') : ''}
-                </div>
-            </div>
-        </div>
-    `;
+    const hero = styledElement('div', 'background:white;border:1px solid #e2e8f0;border-radius:14px;padding:1.75rem;margin-bottom:1.5rem;display:flex;gap:1.5rem;align-items:flex-start;flex-wrap:wrap;');
+    const icon = styledElement('div', 'font-size:3.5rem;width:72px;height:72px;background:#f1f5f9;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;', gear.type === 'bike' ? '🚴' : '👟');
+    const content = styledElement('div', 'flex:1;min-width:180px;');
+    const titleRow = styledElement('div', 'display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;margin-bottom:0.3rem;');
+    const heading = styledElement('h2', 'margin:0;font-size:1.45rem;font-weight:700;color:#0f172a;', gear.name || [gear.brand_name, gear.model_name].filter(Boolean).join(' ') || 'Unnamed Gear');
+    titleRow.append(heading);
+    const appendBadge = (text, background, color) => {
+        titleRow.append(styledElement('span', `display:inline-block;padding:0.2rem 0.6rem;border-radius:999px;font-size:0.7rem;font-weight:700;background:${background};color:${color};text-transform:uppercase;letter-spacing:0.5px;`, text));
+    };
+    if (gear.primary) appendBadge('Primary', '#fef3c7', '#92400e');
+    if (gear.retired) appendBadge('Retired', '#fee2e2', '#991b1b');
+    const metadata = styledElement('p', 'margin:0 0 1.25rem;color:#64748b;font-size:0.875rem;', `${gearSubtype}${meta ? ' · ' + meta : ''}`);
+    const stats = styledElement('div', 'display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:0.6rem;');
+    stats.append(
+        createStatCellNode(totalKm.toFixed(0) + ' km', 'Total Distance'),
+        createStatCellNode(activities.length, 'Activities'),
+        createStatCellNode(totalHours.toFixed(1) + ' h', 'Total Time')
+    );
+    if (avgPaceSec > 0 && gear.type !== 'bike') stats.append(createStatCellNode(formatPace(avgPaceSec, 1), 'Avg Pace'));
+    if (avgPaceSec > 0 && gear.type === 'bike') stats.append(createStatCellNode(formatSpeedBike(totalKm / totalHours), 'Avg Speed'));
+    content.append(titleRow, metadata, stats);
+    hero.append(icon, content);
+    container.replaceChildren(hero);
 }
 
 // ===================================================================
@@ -166,45 +182,59 @@ function renderGearHealth(gear, activities) {
 
         const barColor = pct > 90 ? '#ef4444' : pct > 75 ? '#f59e0b' : '#22c55e';
 
-        container.innerHTML = `
-            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:0.75rem;margin-bottom:1.25rem;">
-                ${statCell(`<span style="color:${barColor};">${pct.toFixed(0)}%</span>`, 'Durability Used')}
-                ${statCell(remainingKm.toFixed(0) + ' km', 'Remaining')}
-                ${statCell(weeklyKm.toFixed(1) + ' km', 'Weekly Avg')}
-                ${weeksLeft != null ? statCell(`<span style="font-size:0.9rem;">${estDate}</span><br><small style="color:#64748b;">~${weeksLeft} wks</small>`, 'Est. End') : ''}
-                ${statCell(euroPerKm + ' €', '€ / km')}
-            </div>
-            <div style="height:10px;background:#e2e8f0;border-radius:999px;overflow:hidden;margin-bottom:0.5rem;">
-                <div style="width:${pct}%;height:100%;background:${barColor};border-radius:999px;transition:width 0.6s;"></div>
-            </div>
-            <div style="display:flex;justify-content:space-between;font-size:0.8rem;color:#64748b;margin-bottom:1rem;">
-                <span>${totalKm.toFixed(0)} km used</span>
-                <span>${durationKm} km lifespan</span>
-            </div>
-            <details>
-                <summary style="cursor:pointer;font-size:0.85rem;color:#64748b;padding:0.25rem 0;user-select:none;">✏️ Edit lifespan &amp; price</summary>
-                <div style="margin-top:0.75rem;display:flex;gap:0.75rem;flex-wrap:wrap;align-items:flex-end;">
-                    <div>
-                        <label style="display:block;font-size:0.8rem;color:#64748b;margin-bottom:0.25rem;">Price (€)</label>
-                        <input type="number" id="hp-${gear.id}" value="${price}" min="0" step="0.01"
-                            style="width:110px;padding:0.4rem 0.6rem;border:1px solid #e2e8f0;border-radius:6px;font-size:0.9rem;">
-                    </div>
-                    <div>
-                        <label style="display:block;font-size:0.8rem;color:#64748b;margin-bottom:0.25rem;">Lifespan (km)</label>
-                        <input type="number" id="hd-${gear.id}" value="${durationKm}" min="1"
-                            style="width:110px;padding:0.4rem 0.6rem;border:1px solid #e2e8f0;border-radius:6px;font-size:0.9rem;">
-                    </div>
-                    <button id="hs-${gear.id}"
-                        style="padding:0.45rem 1rem;background:#0f172a;color:white;border:none;border-radius:6px;cursor:pointer;font-size:0.85rem;">
-                        Save
-                    </button>
-                </div>
-            </details>
-        `;
+        const grid = styledElement('div', 'display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:0.75rem;margin-bottom:1.25rem;');
+        const percent = styledElement('span', `color:${barColor};`, `${pct.toFixed(0)}%`);
+        grid.append(
+            createStatCellNode(percent, 'Durability Used'),
+            createStatCellNode(remainingKm.toFixed(0) + ' km', 'Remaining'),
+            createStatCellNode(weeklyKm.toFixed(1) + ' km', 'Weekly Avg')
+        );
+        if (weeksLeft != null) {
+            const estimate = document.createElement('span');
+            estimate.append(
+                styledElement('span', 'font-size:0.9rem;', estDate),
+                document.createElement('br'),
+                styledElement('small', 'color:#64748b;', `~${weeksLeft} wks`)
+            );
+            grid.append(createStatCellNode(estimate, 'Est. End'));
+        }
+        grid.append(createStatCellNode(euroPerKm + ' €', '€ / km'));
 
-        document.getElementById(`hs-${gear.id}`)?.addEventListener('click', () => {
-            const p = parseFloat(document.getElementById(`hp-${gear.id}`).value);
-            const d = parseInt(document.getElementById(`hd-${gear.id}`).value, 10);
+        const progress = styledElement('div', 'height:10px;background:#e2e8f0;border-radius:999px;overflow:hidden;margin-bottom:0.5rem;');
+        const progressFill = styledElement('div', `width:${pct}%;height:100%;background:${barColor};border-radius:999px;transition:width 0.6s;`);
+        progress.append(progressFill);
+        const usage = styledElement('div', 'display:flex;justify-content:space-between;font-size:0.8rem;color:#64748b;margin-bottom:1rem;');
+        usage.append(
+            styledElement('span', '', `${totalKm.toFixed(0)} km used`),
+            styledElement('span', '', `${durationKm} km lifespan`)
+        );
+
+        const details = document.createElement('details');
+        const summary = styledElement('summary', 'cursor:pointer;font-size:0.85rem;color:#64748b;padding:0.25rem 0;user-select:none;', '✏️ Edit lifespan & price');
+        const controls = styledElement('div', 'margin-top:0.75rem;display:flex;gap:0.75rem;flex-wrap:wrap;align-items:flex-end;');
+        const makeInput = (labelText, id, value, min, step = null) => {
+            const wrapper = document.createElement('div');
+            const label = styledElement('label', 'display:block;font-size:0.8rem;color:#64748b;margin-bottom:0.25rem;', labelText);
+            const input = styledElement('input', 'width:110px;padding:0.4rem 0.6rem;border:1px solid #e2e8f0;border-radius:6px;font-size:0.9rem;');
+            input.type = 'number';
+            input.id = id;
+            input.value = value;
+            input.min = min;
+            if (step !== null) input.step = step;
+            wrapper.append(label, input);
+            return { wrapper, input };
+        };
+        const priceControl = makeInput('Price (€)', `hp-${gear.id}`, price, '0', '0.01');
+        const durationControl = makeInput('Lifespan (km)', `hd-${gear.id}`, durationKm, '1');
+        const save = styledElement('button', 'padding:0.45rem 1rem;background:#0f172a;color:white;border:none;border-radius:6px;cursor:pointer;font-size:0.85rem;', 'Save');
+        save.id = `hs-${gear.id}`;
+        controls.append(priceControl.wrapper, durationControl.wrapper, save);
+        details.append(summary, controls);
+        container.replaceChildren(grid, progress, usage, details);
+
+        save.addEventListener('click', () => {
+            const p = parseFloat(priceControl.input.value);
+            const d = parseInt(durationControl.input.value, 10);
             if (isNaN(p) || isNaN(d) || p < 0 || d <= 0) return;
             saveCustomData(gear.id, { price: p, durationKm: d });
             redraw();
@@ -349,12 +379,16 @@ function renderGearMap(activities) {
         let coords = null;
         if (act.map?.summary_polyline || act.map?.polyline) coords = decodePolyline(act.map.summary_polyline || act.map.polyline);
         if (coords?.length) {
+            const tooltip = document.createElement('span');
+            tooltip.textContent = `${act.name || 'Activity'} · ${(act.distance / 1000).toFixed(1)} km`;
             L.polyline(coords, { color, weight: 2.5, opacity: 0.7 }).addTo(map)
-                .bindTooltip(`${act.name || 'Activity'} · ${(act.distance / 1000).toFixed(1)} km`);
+                .bindTooltip(tooltip);
             coords.forEach(c => bounds.push(c));
         } else if (act.start_latlng?.length === 2) {
             bounds.push(act.start_latlng);
-            L.circleMarker(act.start_latlng, { radius: 5, color, fillOpacity: 0.8 }).addTo(map).bindTooltip(act.name || 'Activity');
+            const tooltip = document.createElement('span');
+            tooltip.textContent = act.name || 'Activity';
+            L.circleMarker(act.start_latlng, { radius: 5, color, fillOpacity: 0.8 }).addTo(map).bindTooltip(tooltip);
         }
     });
 
@@ -499,6 +533,7 @@ function renderGearActivitiesList(activities, gearType) {
 
     const typeIcon = t => ({ Run: '🏃', TrailRun: '🏔️', VirtualRun: '🖥️', Ride: '🚴', VirtualRide: '💻', GravelRide: '🪨', MountainBikeRide: '⛰️', Walk: '🚶', Hike: '🥾', Swim: '🏊' }[t] || '🏅');
 
+    const summary = styledElement('p', 'font-size:0.85rem;color:#64748b;margin-bottom:0.75rem;', `${activities.length} activities`);
     const rows = activities.map(a => {
         const km = (a.distance / 1000).toFixed(1);
         const time = formatTime(a.moving_time);
@@ -507,35 +542,35 @@ function renderGearActivitiesList(activities, gearType) {
             ? `${(((a.distance || 0) / 1000) / ((a.moving_time || 0) / 3600)).toFixed(1)} km/h`
             : '—';
         const effortValue = gearType === 'bike' ? speed : pace;
-        const elev = a.total_elevation_gain > 0 ? `<span style="color:#64748b;">↑${a.total_elevation_gain.toFixed(0)} m</span>` : '';
-        const hr = a.average_heartrate ? `<span style="color:#ef4444;">♥ ${Math.round(a.average_heartrate)}</span>` : '';
         const type = a.sport_type || a.type || '';
-        const ach = a.achievement_count > 0 ? `<span style="font-size:0.75rem;color:#f59e0b;margin-left:0.25rem;">🏆${a.achievement_count}</span>` : '';
+        const row = styledElement('div', 'display:flex;align-items:center;gap:0.75rem;padding:0.7rem 0.9rem;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer;background:white;transition:background 0.15s;margin-bottom:0.4rem;');
+        row.addEventListener('mouseenter', () => { row.style.background = '#f8fafc'; });
+        row.addEventListener('mouseleave', () => { row.style.background = 'white'; });
+        row.addEventListener('click', () => {
+            const params = new URLSearchParams();
+            params.set('id', String(a.id));
+            const url = new URL(window.location.href);
+            url.pathname = '/html/activity-router.html';
+            url.search = params.toString();
+            url.hash = '';
+            const opened = window.open(url.href, '_blank', 'noopener,noreferrer');
+            if (opened) opened.opener = null;
+        });
 
-        return `
-            <div onclick="window.open('activity-router.html?id=${a.id}', '_blank')"
-                 style="display:flex;align-items:center;gap:0.75rem;padding:0.7rem 0.9rem;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer;background:white;transition:background 0.15s;margin-bottom:0.4rem;"
-                 onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
-                <span style="font-size:1.3rem;width:24px;text-align:center;flex-shrink:0;">${typeIcon(type)}</span>
-                <div style="flex:1;min-width:0;">
-                    <div style="font-weight:600;font-size:0.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#0f172a;">
-                        ${a.name || 'Unnamed Activity'}${ach}
-                    </div>
-                    <div style="font-size:0.75rem;color:#94a3b8;">${formatDate(new Date(a.start_date_local))}</div>
-                </div>
-                <div style="display:flex;gap:0.9rem;font-size:0.85rem;font-weight:500;color:#374151;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;">
-                    <span>${km} km</span>
-                    <span>${time}</span>
-                    <span>${effortValue}</span>
-                    ${elev}
-                    ${hr}
-                </div>
-            </div>
-        `;
-    }).join('');
+        const icon = styledElement('span', 'font-size:1.3rem;width:24px;text-align:center;flex-shrink:0;', typeIcon(type));
+        const identity = styledElement('div', 'flex:1;min-width:0;');
+        const name = styledElement('div', 'font-weight:600;font-size:0.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#0f172a;', a.name || 'Unnamed Activity');
+        if (a.achievement_count > 0) {
+            name.append(styledElement('span', 'font-size:0.75rem;color:#f59e0b;margin-left:0.25rem;', `🏆${a.achievement_count}`));
+        }
+        identity.append(name, styledElement('div', 'font-size:0.75rem;color:#94a3b8;', formatDate(new Date(a.start_date_local))));
+        const metrics = styledElement('div', 'display:flex;gap:0.9rem;font-size:0.85rem;font-weight:500;color:#374151;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;');
+        for (const value of [`${km} km`, time, effortValue]) metrics.append(styledElement('span', '', value));
+        if (a.total_elevation_gain > 0) metrics.append(styledElement('span', 'color:#64748b;', `↑${a.total_elevation_gain.toFixed(0)} m`));
+        if (a.average_heartrate) metrics.append(styledElement('span', 'color:#ef4444;', `♥ ${Math.round(a.average_heartrate)}`));
+        row.append(icon, identity, metrics);
+        return row;
+    });
 
-    container.innerHTML = `
-        <p style="font-size:0.85rem;color:#64748b;margin-bottom:0.75rem;">${activities.length} activities</p>
-        ${rows}
-    `;
+    container.replaceChildren(summary, ...rows);
 }

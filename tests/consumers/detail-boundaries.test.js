@@ -119,6 +119,8 @@ const rendererSources = new Map(
         await source(relativePath)
     ]))
 );
+const gearTabSource = await source('js/tabs/gear.js');
+const gearDetailSource = await source('js/pages/gear/gear-analysis.js');
 const advancedSource = await source('js/pages/activity/advanced-analysis.js');
 const streamPresentationSource = await source('js/pages/detail/stream-presentation.js');
 
@@ -260,7 +262,7 @@ test('detail renderers are injected-only consumers with no provider fallback', (
         assert.match(value, /structuredClone\(streams\)/, relativePath);
         assert.match(value, /allowExternalWeatherForPage\s*=\s*allowExternalWeather\s*===\s*true/, relativePath);
         for (const prohibited of [
-            /new\s+URLSearchParams/,
+            /new\s+URLSearchParams\(window\.location\.search\)/,
             /getAuthPayload|fetchFromApi|fetchActivityDetails|fetchActivityStreams/,
             /strava_tokens|strava_training_zones|strava_zones|strava_athlete_data/,
             /Authorization|\/api\/strava-/,
@@ -429,6 +431,46 @@ test('opaque ID paths contain no numeric conversion or arithmetic coercion', () 
     }
     assert.match(routerSource, /Number\.isSafeInteger\(value\)/);
     assert.match(routerSource, /encodeURIComponent\(activityId\)/);
+});
+
+test('M23 R2 detail and gear renderers keep persistent strings out of HTML and inline handlers', () => {
+    const genericSource = rendererSources.get('js/pages/activity/activity.js');
+    const runSource = rendererSources.get('js/pages/run/run.js');
+    const bikeSource = rendererSources.get('js/pages/bike/bike.js');
+    const swimSource = rendererSources.get('js/pages/swim/swim.js');
+
+    assert.doesNotMatch(genericSource, /DOM\.info\.innerHTML\s*=/);
+    for (const [relativePath, value] of [
+        ['js/pages/activity/activity.js', genericSource],
+        ['js/pages/run/run.js', runSource],
+        ['js/pages/bike/bike.js', bikeSource]
+    ]) {
+        assert.doesNotMatch(value, /segments\/\$\{effort\.segment\.id\}/, relativePath);
+        assert.doesNotMatch(value, /<td>\$\{effort\.name\}<\/td>/, relativePath);
+        assert.match(value, /encodeURIComponent\(String\(effort\.segment\.id\)\)/, relativePath);
+        assert.match(value, /segmentLink\.rel\s*=\s*'noopener noreferrer'/, relativePath);
+    }
+    for (const [relativePath, value] of [
+        ['js/pages/run/run.js', runSource],
+        ['js/pages/bike/bike.js', bikeSource],
+        ['js/pages/swim/swim.js', swimSource]
+    ]) {
+        assert.doesNotMatch(value, /heroGear\.innerHTML\s*=/, relativePath);
+        assert.match(value, /new URLSearchParams\(\)/, relativePath);
+        assert.match(value, /gearLink\.textContent\s*=/, relativePath);
+    }
+
+    assert.doesNotMatch(gearTabSource, /onclick\s*=/i);
+    assert.doesNotMatch(gearTabSource, /window\.open\('html\/gear\.html\?id=/);
+    assert.match(gearTabSource, /new URLSearchParams\(\)/);
+    assert.match(gearTabSource, /card\.addEventListener\('click'/);
+
+    assert.doesNotMatch(gearDetailSource, /onclick\s*=|onmouseover\s*=|onmouseout\s*=/i);
+    assert.doesNotMatch(gearDetailSource, /document\.body\.innerHTML\s*=/);
+    assert.doesNotMatch(gearDetailSource, /bindTooltip\(`\$\{act\.name/);
+    assert.doesNotMatch(gearDetailSource, /window\.open\('activity-router\.html\?id=/);
+    assert.match(gearDetailSource, /new URLSearchParams\(\)/);
+    assert.match(gearDetailSource, /tooltip\.textContent\s*=/);
 });
 
 test('Router HTML has one module boundary and no Legacy provider implementation', () => {

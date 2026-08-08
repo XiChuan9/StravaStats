@@ -840,15 +840,17 @@ test('Gear filter rerender keeps its injected snapshot and preserves UI-owned st
     storage.forbiddenReads.add('strava_gears');
 
     const registry = new Map();
+    const allElements = new Set();
     const chartConfigs = [];
     let filterDiv = null;
     const classList = () => ({ add() {}, remove() {}, toggle() {} });
 
     class FakeElement {
         constructor(id = '') {
+            allElements.add(this);
             this._id = '';
             this.id = id;
-            this.style = {};
+            this.style = { setProperty(name, value) { this[name] = value; } };
             this.dataset = {};
             this.classList = classList();
             this.listeners = new Map();
@@ -856,7 +858,7 @@ test('Gear filter rerender keeps its injected snapshot and preserves UI-owned st
             this.checked = false;
             this.firstChild = null;
             this.nextSibling = null;
-            this.textContent = '';
+            this._textContent = '';
             this._innerHTML = '';
             this.heading = null;
         }
@@ -873,10 +875,20 @@ test('Gear filter rerender keeps its injected snapshot and preserves UI-owned st
 
         set innerHTML(value) {
             this._innerHTML = value;
+            this.children = [];
         }
 
         get innerHTML() {
             return this._innerHTML;
+        }
+
+        set textContent(value) {
+            this._textContent = String(value);
+            this.children = [];
+        }
+
+        get textContent() {
+            return this._textContent + this.children.map(child => child.textContent || '').join('');
         }
 
         addEventListener(type, callback) {
@@ -891,6 +903,22 @@ test('Gear filter rerender keeps its injected snapshot and preserves UI-owned st
         appendChild(child) {
             this.children.push(child);
             child.parentElement = this;
+        }
+
+        append(...children) {
+            for (const child of children) this.appendChild(child);
+        }
+
+        replaceChildren(...children) {
+            this._innerHTML = '';
+            this._textContent = '';
+            this.children = [];
+            this.append(...children);
+        }
+
+        getAttribute(name) {
+            if (name === 'data-gearid') return this.dataset.gearid ?? null;
+            return null;
         }
 
         remove() {
@@ -931,16 +959,6 @@ test('Gear filter rerender keeps its injected snapshot and preserves UI-owned st
     new FakeElement('gear-tab');
     new FakeElement('gearChart');
     new FakeElement('gear-gantt-chart');
-    const toggleEdit = new FakeElement('toggle-gear-edit');
-    const saveButton = new FakeElement();
-    saveButton.getAttribute = name => (
-        name === 'data-gearid' ? 'shoe-1' : null
-    );
-    const priceInput = new FakeElement('price-shoe-1');
-    priceInput.value = '155';
-    const durationInput = new FakeElement('duration-shoe-1');
-    durationInput.value = '900';
-
     globalThis.document = {
         body: new FakeElement(),
         getElementById: id => registry.get(id) ?? null,
@@ -951,7 +969,9 @@ test('Gear filter rerender keeps its injected snapshot and preserves UI-owned st
                 : null
         ),
         querySelectorAll: selector => (
-            selector === '.save-gear-btn' ? [saveButton] : []
+            selector === '.save-gear-btn'
+                ? [...allElements].filter(element => element.className === 'save-gear-btn')
+                : []
         )
     };
     globalThis.localStorage = storage;
@@ -996,7 +1016,7 @@ test('Gear filter rerender keeps its injected snapshot and preserves UI-owned st
         ];
         renderGearTab(activities, gears);
         assert.ok(filterDiv);
-        assert.match(list.innerHTML, /Synthetic Shoe Duplicate/);
+        assert.match(list.textContent, /Synthetic Shoe Duplicate/);
         assert.equal(
             storage.getItemCalls.filter(key => key === 'gear-custom-shoe-1').length > 0,
             true
@@ -1022,7 +1042,7 @@ test('Gear filter rerender keeps its injected snapshot and preserves UI-owned st
             0
         );
 
-        toggleEdit.listeners.get('click')({ stopPropagation() {} });
+        registry.get('toggle-gear-edit').listeners.get('click')({ stopPropagation() {} });
         assert.equal(storage.getItem('gearEditMode'), 'true');
         assert.equal(
             storage.operations.some(operation => (
@@ -1032,6 +1052,9 @@ test('Gear filter rerender keeps its injected snapshot and preserves UI-owned st
             true
         );
 
+        registry.get('price-shoe-1').value = '155';
+        registry.get('duration-shoe-1').value = '900';
+        const saveButton = [...allElements].reverse().find(element => element.className === 'save-gear-btn');
         saveButton.listeners.get('click')({ stopPropagation() {} });
         assert.deepEqual(
             JSON.parse(storage.getItem('gear-custom-shoe-1')),
