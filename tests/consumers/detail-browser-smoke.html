@@ -79,12 +79,24 @@
         <select id="analysis-mode"><option value="normal">Normal</option></select>
         <button id="advanced-analysis-btn" type="button">Analyze</button>
         <section id="analysis-results-container"><div id="analysis-loading"></div><div id="analysis-content"></div></section>
+        <section id="gear-info-section"><div id="gear-info-list"></div></section>
+        <section id="gear-chart-container"><h4></h4><canvas id="gearChart"></canvas></section>
+        <section id="gear-gantt-chart-container"><h4></h4><canvas id="gear-gantt-chart"></canvas></section>
+        <div id="gear-tab"></div>
+        <div id="gear-hero"></div><div id="gear-health-content"></div>
+        <div id="gear-stats-content"></div><div id="gear-advanced-content"></div>
+        <div id="gear-map"></div><canvas id="gear-usage-chart"></canvas>
+        <canvas id="gear-pace-chart"></canvas><canvas id="gear-elevation-chart"></canvas>
+        <div id="gear-activities-list"></div>
     </main>
 
     <script src="../../classifyRun.js"></script>
     <script src="../../classifyBike.js"></script>
     <script type="module">
         const SYNTHETIC_SECRET = 'SYNTHETIC_B3_SECRET_MUST_NOT_ESCAPE';
+        const R2_TEXT_CANARY = '<img data-r2-canary onerror="window.__R2_EXECUTED__=true"> "\'`\\()/* */ \u2028\u2029 e\u0301 é אבג 🧪';
+        const R2_GEAR_ID = 'javascript:data://outside.invalid/?#%&=+/__proto__/constructor/prototype/零🧪';
+        const R2_SEGMENT_ID = 'data:?/#%&=+ __proto__ constructor prototype 零🧪';
         const results = [];
         const counters = {
             fetch: 0, xhr: 0, websocket: 0, btoa: 0, indexedDB: 0,
@@ -171,6 +183,7 @@
             return {
                 addTo(target) { runtime.mapCalls.push(kind); return this; },
                 getBounds() { return [[0, 0], [0.001, 0.001]]; },
+                bindTooltip(content) { runtime.tooltips ??= []; runtime.tooltips.push(content); return this; },
                 remove() {}
             };
         }
@@ -178,6 +191,7 @@
             map() { return { setView() { return this; }, fitBounds() { return this; }, remove() {} }; },
             tileLayer() { return inertLayer('tileLayer'); },
             polyline() { return inertLayer('polyline'); },
+            circleMarker() { return inertLayer('circleMarker'); },
             featureGroup() { return inertLayer('featureGroup'); }
         };
         const realKeys = new Set([
@@ -205,7 +219,7 @@
         ];
         function syntheticActivity(id, sportType) {
             return {
-                id, name: `SYNTHETIC ${sportType} DETAIL`, description: 'SYNTHETIC OFFLINE FIXTURE',
+                id, name: `${R2_TEXT_CANARY} ${sportType}`, description: R2_TEXT_CANARY,
                 sport_type: sportType, type: sportType, start_date: '2025-01-02T10:00:00Z',
                 start_date_local: '2025-01-02T10:00:00', distance: sportType.includes('Swim') ? 1000 : 600,
                 moving_time: 150, elapsed_time: 160, average_speed: 4, max_speed: 5,
@@ -213,15 +227,17 @@
                 average_cadence: 82, average_watts: 180, max_watts: 220, weighted_average_watts: 185,
                 calories: 100, kudos_count: 0, comment_count: 0, trainer: sportType === 'Swim',
                 pool_length: sportType === 'Swim' ? 25 : undefined, total_strokes: sportType === 'Swim' ? 400 : undefined,
+                gear_id: R2_GEAR_ID, gear_name: R2_TEXT_CANARY,
+                gear: { id: R2_GEAR_ID, name: R2_TEXT_CANARY },
                 map: { summary_polyline: '????' }, laps: structuredClone(syntheticLaps),
                 splits_metric: structuredClone(syntheticLaps), splits_swim: sportType === 'Swim' ? structuredClone(syntheticLaps) : undefined,
-                best_efforts: [{ name: 'SYNTHETIC EFFORT', distance: 100, moving_time: 25, achievements: [] }],
+                best_efforts: [{ name: R2_TEXT_CANARY, distance: 100, moving_time: 25, achievements: [] }],
                 segment_efforts: [{
-                    name: 'SYNTHETIC SEGMENT',
+                    name: R2_TEXT_CANARY,
                     distance: 100,
                     moving_time: 25,
                     average_heartrate: 140,
-                    segment: { id: 'synthetic-segment-001' }
+                    segment: { id: R2_SEGMENT_ID }
                 }]
             };
         }
@@ -268,6 +284,8 @@
         const runRenderer = await import('../../js/pages/run/run.js');
         const bikeRenderer = await import('../../js/pages/bike/bike.js');
         const swimRenderer = await import('../../js/pages/swim/swim.js');
+        const gearTab = await import('../../js/tabs/gear.js');
+        const gearDetail = await import('../../js/pages/gear/gear-analysis.js');
         const streamPresentation = await import('../../js/pages/detail/stream-presentation.js');
         const advanced = await import('../../js/pages/activity/advanced-analysis.js');
         const analysisUi = await import('../../js/pages/activity/analysis-ui-components.js');
@@ -380,6 +398,7 @@
                 const ok = await page.initialize({
                     search: `?id=${encodeURIComponent('000123')}`,
                     demoModeReader: () => { calls.mode += 1; return false; },
+                    featureFlagsReader: () => ({ dataRepositoryMode: 'legacy' }),
                     repositoryFactory: options => { calls.factory += 1; invariant(options.sessionMode === 'real' && options.mode === 'legacy'); return {}; },
                     sessionFactory: options => {
                         calls.session += 1;
@@ -452,6 +471,7 @@
                     async getAthlete() { calls.athlete += 1; return envelope(matchingAthlete, repository.REPOSITORY_SOURCE.NETWORK); }
                 };
                 const ok = await page.initialize({ search: `?id=${page.id}`, demoModeReader: () => false,
+                    featureFlagsReader: () => ({ dataRepositoryMode: 'legacy' }),
                     repositoryFactory: options => { calls.factory += 1; invariant(options.sessionMode === 'real' && options.mode === 'legacy'); return realRepo; },
                     sessionFactory: options => { calls.session += 1; const session = detailSession.createDetailReadSession(options); return { load() { calls.load += 1; return session.load(); } }; },
                     renderer: input => { calls.render += 1; invariant(input.activity === activityPayload && input.streams === streamsPayload); invariant(input.allowExternalWeather === true); },
@@ -515,6 +535,103 @@
             }
             invariant(counters.fetch === 0);
             return { cases, coreDom: true, chartCalls: runtime.chartCalls.length, mapCalls: runtime.mapCalls.length };
+        });
+
+        await gate('m23-r2-persistent-dom-and-url-canaries', async () => {
+            globalThis.__R2_EXECUTED__ = false;
+            for (const page of pages) {
+                clearFixture();
+                await page.render({
+                    activity: syntheticActivity(page.id, page.sport),
+                    streams: structuredClone(syntheticStreams),
+                    zones,
+                    athlete: page.athlete ? matchingAthlete : null,
+                    activityId: page.id,
+                    allowExternalWeather: false
+                });
+                invariant(!document.querySelector('[data-r2-canary]'), `R2_INJECTED_NODE_${page.name.toUpperCase()}`);
+                invariant(globalThis.__R2_EXECUTED__ !== true, `R2_CANARY_EXECUTED_${page.name.toUpperCase()}`);
+                if (page.name === 'Generic') {
+                    invariant(document.getElementById('activity-info').textContent.includes(R2_TEXT_CANARY), 'R2_GENERIC_TEXT_EXACT');
+                } else {
+                    const gearLink = document.querySelector('#activity-hero-gear a');
+                    const gearUrl = new URL(gearLink.href);
+                    invariant(gearUrl.origin === location.origin && gearUrl.pathname === '/html/gear.html', `R2_GEAR_ROUTE_${page.name.toUpperCase()}`);
+                    invariant(gearUrl.searchParams.getAll('id').length === 1 && [...gearUrl.searchParams.keys()].length === 1,
+                        `R2_GEAR_QUERY_COUNT_${page.name.toUpperCase()}`);
+                    invariant(gearUrl.searchParams.get('id') === R2_GEAR_ID, `R2_GEAR_ID_EXACT_${page.name.toUpperCase()}`);
+                    invariant(gearLink.textContent === R2_TEXT_CANARY, `R2_GEAR_TEXT_EXACT_${page.name.toUpperCase()}`);
+                }
+                if (page.name !== 'Swim') {
+                    invariant(document.getElementById('best-efforts-table').textContent.includes(R2_TEXT_CANARY),
+                        `R2_EFFORT_TEXT_EXACT_${page.name.toUpperCase()}`);
+                    const segmentLink = document.querySelector('#segments-table a');
+                    invariant(segmentLink.textContent === R2_TEXT_CANARY, `R2_SEGMENT_TEXT_EXACT_${page.name.toUpperCase()}`);
+                    invariant(segmentLink.href === `https://www.strava.com/segments/${encodeURIComponent(R2_SEGMENT_ID)}`,
+                        `R2_SEGMENT_ROUTE_EXACT_${page.name.toUpperCase()}`);
+                    invariant(segmentLink.rel === 'noopener noreferrer' && segmentLink.target === '_blank',
+                        `R2_SEGMENT_NEW_WINDOW_${page.name.toUpperCase()}`);
+                }
+            }
+
+            const gearCases = [
+                ['missing', undefined, false],
+                ['null', null, false],
+                ['string-zero', '0', true],
+                ['leading-zero', '000123', true],
+                ['numeric-zero', 0, false],
+                ['negative-zero', -0, false]
+            ];
+            for (const page of pages.filter(value => value.name !== 'Generic')) {
+                for (const [label, gearId, shouldLink] of gearCases) {
+                    clearFixture();
+                    const activity = syntheticActivity(`${page.id}-${label}`, page.sport);
+                    delete activity.gear;
+                    delete activity.gear_name;
+                    if (label === 'missing') delete activity.gear_id;
+                    else activity.gear_id = gearId;
+                    await page.render({ activity, streams: {}, zones: null, athlete: null,
+                        activityId: activity.id, allowExternalWeather: false });
+                    const link = document.querySelector('#activity-hero-gear a');
+                    invariant(Boolean(link) === shouldLink, `R2_GEAR_SEMANTICS_${page.name.toUpperCase()}_${label.toUpperCase().replaceAll('-', '_')}`);
+                    if (link) invariant(new URL(link.href).searchParams.get('id') === gearId,
+                        `R2_GEAR_ROUNDTRIP_${page.name.toUpperCase()}_${label.toUpperCase().replaceAll('-', '_')}`);
+                    else invariant(document.getElementById('activity-hero-gear').textContent === 'No gear',
+                        `R2_GEAR_COPY_${page.name.toUpperCase()}_${label.toUpperCase().replaceAll('-', '_')}`);
+                }
+            }
+            const tableCases = [
+                ['missing', undefined, 'undefined'],
+                ['null', null, 'null'],
+                ['string-zero', '0', '0'],
+                ['leading-zero', '000123', '000123'],
+                ['numeric-zero', 0, '0'],
+                ['negative-zero', -0, '0']
+            ];
+            const genericPage = pages[0];
+            for (const [label, value, expected] of tableCases) {
+                clearFixture();
+                const activity = syntheticActivity(`table-${label}`, genericPage.sport);
+                if (label === 'missing') {
+                    delete activity.best_efforts[0].name;
+                    delete activity.segment_efforts[0].name;
+                    delete activity.segment_efforts[0].segment.id;
+                } else {
+                    activity.best_efforts[0].name = value;
+                    activity.segment_efforts[0].name = value;
+                    activity.segment_efforts[0].segment.id = value;
+                }
+                await genericPage.render({ activity, streams: {}, zones, athlete: null,
+                    activityId: activity.id, allowExternalWeather: false });
+                invariant(document.querySelector('#best-efforts-table tbody td').textContent === expected,
+                    `R2_EFFORT_SEMANTICS_${label.toUpperCase().replaceAll('-', '_')}`);
+                const segmentLink = document.querySelector('#segments-table tbody a');
+                invariant(segmentLink.textContent === expected,
+                    `R2_SEGMENT_NAME_SEMANTICS_${label.toUpperCase().replaceAll('-', '_')}`);
+                invariant(decodeURIComponent(new URL(segmentLink.href).pathname.slice('/segments/'.length)) === expected,
+                    `R2_SEGMENT_ID_SEMANTICS_${label.toUpperCase().replaceAll('-', '_')}`);
+            }
+            return { pages: 4, identityCases: gearCases.length * 3 + tableCases.length * 3, canaryExecuted: false };
         });
 
         await gate('fragmented-stream-renderer-state', async () => {
@@ -663,6 +780,85 @@
                 ui: 'summary/insights/climbs/segments/export',
                 exportFormats
             };
+        });
+
+        await gate('m23-r2-gear-card-detail-query-list-and-tooltip', async () => {
+            const opened = [];
+            const originalOpen = window.open;
+            const originalWarn = console.warn;
+            const indexedDbDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'indexedDB');
+            window.open = (...args) => { opened.push(args); return { opener: window }; };
+            console.warn = () => {};
+            try {
+                const gearActivity = syntheticActivity('gear/activity ?#%&=+ 零🧪', 'Run');
+                gearActivity.gear_id = R2_GEAR_ID;
+                gearActivity.name = R2_TEXT_CANARY;
+                const gear = {
+                    id: R2_GEAR_ID,
+                    name: R2_TEXT_CANARY,
+                    brand_name: R2_TEXT_CANARY,
+                    model_name: R2_TEXT_CANARY,
+                    distance: 600,
+                    primary: true
+                };
+                nativeSetItem.call(localStorage, 'gearEditMode', 'false');
+                gearTab.renderGearTab([gearActivity], [gear]);
+                const card = document.querySelector('#gear-info-list .gear-card');
+                invariant(card && card.textContent.includes(R2_TEXT_CANARY), 'R2_GEAR_CARD_TEXT_EXACT');
+                invariant(!card.querySelector('[data-r2-canary]') && !card.hasAttribute('onclick'), 'R2_GEAR_CARD_NO_INJECTION');
+                card.click();
+                const cardUrl = new URL(opened.at(-1)[0]);
+                invariant(cardUrl.origin === location.origin && cardUrl.pathname === '/html/gear.html', 'R2_GEAR_CARD_ROUTE');
+                invariant(cardUrl.searchParams.getAll('id').length === 1 && [...cardUrl.searchParams.keys()].length === 1,
+                    'R2_GEAR_CARD_SINGLE_ID');
+                invariant(cardUrl.searchParams.get('id') === R2_GEAR_ID, 'R2_GEAR_CARD_ID_EXACT');
+                invariant(opened.at(-1)[2] === 'noopener,noreferrer', 'R2_GEAR_CARD_NOOPENER');
+
+                document.getElementById('toggle-gear-edit').click();
+                const editCard = document.querySelector('#gear-info-list .gear-card');
+                invariant(!editCard.querySelector('[onclick]'), 'R2_GEAR_EDIT_NO_INLINE_HANDLER');
+                invariant(document.getElementById(`price-${R2_GEAR_ID}`), 'R2_GEAR_EDIT_OPAQUE_INPUT_ID');
+
+                Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: undefined });
+                nativeSetItem.call(localStorage, 'strava_activities', JSON.stringify([gearActivity]));
+                nativeSetItem.call(localStorage, 'strava_gears', JSON.stringify([gear]));
+                runtime.tooltips = [];
+                await gearDetail.renderGearDetailPage(R2_GEAR_ID);
+                invariant(document.getElementById('gear-hero').textContent.includes(R2_TEXT_CANARY), 'R2_GEAR_HERO_TEXT_EXACT');
+                invariant(!document.getElementById('gear-hero').querySelector('[data-r2-canary]'), 'R2_GEAR_HERO_NO_INJECTION');
+                invariant(document.getElementById(`hp-${R2_GEAR_ID}`), 'R2_GEAR_HEALTH_OPAQUE_INPUT_ID');
+                invariant(runtime.tooltips.length > 0 && runtime.tooltips.every(value => value instanceof Node), 'R2_GEAR_TOOLTIP_DOM_ONLY');
+                invariant(runtime.tooltips.some(value => value.textContent.includes(R2_TEXT_CANARY)), 'R2_GEAR_TOOLTIP_TEXT_EXACT');
+                const activityRow = document.getElementById('gear-activities-list').children[1];
+                invariant(activityRow.textContent.includes(R2_TEXT_CANARY) && !activityRow.hasAttribute('onclick'), 'R2_GEAR_LIST_TEXT_AND_HANDLER');
+                activityRow.click();
+                const activityUrl = new URL(opened.at(-1)[0]);
+                invariant(activityUrl.origin === location.origin && activityUrl.pathname === '/html/activity-router.html', 'R2_GEAR_ACTIVITY_ROUTE');
+                invariant(activityUrl.searchParams.getAll('id').length === 1 && [...activityUrl.searchParams.keys()].length === 1,
+                    'R2_GEAR_ACTIVITY_SINGLE_ID');
+                invariant(activityUrl.searchParams.get('id') === gearActivity.id, 'R2_GEAR_ACTIVITY_ID_EXACT');
+                invariant(opened.at(-1)[2] === 'noopener,noreferrer', 'R2_GEAR_ACTIVITY_NOOPENER');
+
+                const savedBody = [...document.body.childNodes];
+                const missingId = `${R2_TEXT_CANARY} ${R2_GEAR_ID}`;
+                await gearDetail.renderGearDetailPage(missingId);
+                invariant(document.body.textContent.includes(`ID "${missingId}" not in local cache.`), 'R2_GEAR_QUERY_TEXT_EXACT');
+                invariant(!document.body.querySelector('[data-r2-canary]'), 'R2_GEAR_QUERY_NO_INJECTION');
+                invariant(!document.body.querySelector('[onclick]'), 'R2_GEAR_QUERY_NO_INLINE_HANDLER');
+                document.body.replaceChildren(...savedBody);
+                invariant(globalThis.__R2_EXECUTED__ !== true, 'R2_GEAR_CANARY_NOT_EXECUTED');
+                const tooltipNodes = runtime.tooltips.length;
+                runtime.tooltips = [];
+                return { cards: 1, detailActivities: 1, tooltipNodes, popupsObserved: opened.length };
+            } finally {
+                window.open = originalOpen;
+                console.warn = originalWarn;
+                if (indexedDbDescriptor) Object.defineProperty(globalThis, 'indexedDB', indexedDbDescriptor);
+                nativeRemoveItem.call(localStorage, 'strava_activities');
+                nativeRemoveItem.call(localStorage, 'strava_gears');
+                nativeRemoveItem.call(localStorage, 'gearEditMode');
+                nativeRemoveItem.call(localStorage, `gear-custom-${R2_GEAR_ID}`);
+            }
         });
 
         await gate('storage-network-console-boundary', async () => {

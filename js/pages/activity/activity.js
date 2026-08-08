@@ -805,19 +805,25 @@ function renderActivityInfo(activity) {
         tempStr = `${activity.average_temp}°C`;
     }
 
-    DOM.info.innerHTML = `
-        <h3>Info</h3>
-        <ul>
-            <li><b>Title:</b> ${name}</li>
-            ${description ? `<li><b>Description:</b> ${description}</li>` : ''}
-            <li><b>Date:</b> ${date}</li>
-            <li><b>Type:</b> ${activityType}</li>
-            <li><b>Gear:</b> ${gear}</li>
-            <li><b>Temperature:</b> ${tempStr}</li>
-            <li><b>Comments:</b> ${commentCount}</li>
-            <li><b>Kudos:</b> ${kudos}</li>
-        </ul>
-    `;
+    const heading = document.createElement('h3');
+    heading.textContent = 'Info';
+    const list = document.createElement('ul');
+    const appendInfoRow = (label, value) => {
+        const item = document.createElement('li');
+        const strong = document.createElement('b');
+        strong.textContent = `${label}:`;
+        item.append(strong, document.createTextNode(` ${value}`));
+        list.append(item);
+    };
+    appendInfoRow('Title', name);
+    if (description) appendInfoRow('Description', description);
+    appendInfoRow('Date', date);
+    appendInfoRow('Type', activityType);
+    appendInfoRow('Gear', gear);
+    appendInfoRow('Temperature', tempStr);
+    appendInfoRow('Comments', commentCount);
+    appendInfoRow('Kudos', kudos);
+    DOM.info.replaceChildren(heading, list);
 }
 
 /**
@@ -1241,29 +1247,27 @@ function renderBestEfforts(bestEfforts) {
 
     section.classList.remove('hidden');
 
-    const tableHeader = `
-    <thead>
-        <tr>
-            <th>Distance</th>
-            <th>Time</th>
-            <th>Pace</th>
-            <th>Achievements</th>
-        </tr>
-    </thead>`;
-
-    const tableBody = bestEfforts.map(effort => {
+    const tableHead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    for (const label of ['Distance', 'Time', 'Pace', 'Achievements']) {
+        const cell = document.createElement('th');
+        cell.textContent = label;
+        headerRow.append(cell);
+    }
+    tableHead.append(headerRow);
+    const tableBody = document.createElement('tbody');
+    for (const effort of bestEfforts) {
         const pace = formatPace(effort.distance / effort.moving_time);
         const achievements = effort.pr_rank ? `🏆 PR #${effort.pr_rank}` : (effort.achievements.length > 0 ? '🏅' : '');
-        return `
-        <tr>
-            <td>${effort.name}</td>
-            <td>${formatTime(effort.moving_time)}</td>
-            <td>${pace}</td>
-            <td>${achievements}</td>
-        </tr>`;
-    }).join('');
-
-    table.innerHTML = tableHeader + `<tbody>${tableBody}</tbody>`;
+        const row = document.createElement('tr');
+        for (const value of [effort.name, formatTime(effort.moving_time), pace, achievements]) {
+            const cell = document.createElement('td');
+            cell.textContent = String(value);
+            row.append(cell);
+        }
+        tableBody.append(row);
+    }
+    table.replaceChildren(tableHead, tableBody);
 }
 
 /**
@@ -1400,18 +1404,16 @@ function renderSegments(segments) {
 
     section.classList.remove('hidden');
 
-    const tableHeader = `
-    <thead>
-        <tr>
-            <th>Segment Name</th>
-            <th>Time</th>
-            <th>Pace</th>
-            <th>Avg HR</th>
-            <th>Rank</th>
-        </tr>
-    </thead>`;
-
-    const tableBody = segments.map(effort => {
+    const tableHead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    for (const label of ['Segment Name', 'Time', 'Pace', 'Avg HR', 'Rank']) {
+        const cell = document.createElement('th');
+        cell.textContent = label;
+        headerRow.append(cell);
+    }
+    tableHead.append(headerRow);
+    const tableBody = document.createElement('tbody');
+    for (const effort of segments) {
         const pace = formatPace(effort.distance / effort.moving_time);
         let rank = '';
         if (effort.pr_rank === 1) {
@@ -1423,17 +1425,29 @@ function renderSegments(segments) {
         } else if (effort.kom_rank) {
             rank = `Top ${effort.kom_rank}`;
         }
-        return `
-        <tr>
-            <td><a href="https://www.strava.com/segments/${effort.segment.id}" target="_blank">${effort.name}</a></td>
-            <td>${formatTime(effort.moving_time)}</td>
-            <td>${pace}</td>
-            <td>${effort.average_heartrate ? Math.round(effort.average_heartrate) : '-'} bpm</td>
-            <td>${rank}</td>
-        </tr>`;
-    }).join('');
-
-    table.innerHTML = tableHeader + `<tbody>${tableBody}</tbody>`;
+        const row = document.createElement('tr');
+        const nameCell = document.createElement('td');
+        const segmentLink = document.createElement('a');
+        segmentLink.href = `https://www.strava.com/segments/${encodeURIComponent(String(effort.segment.id))}`;
+        segmentLink.target = '_blank';
+        segmentLink.rel = 'noopener noreferrer';
+        segmentLink.textContent = String(effort.name);
+        nameCell.append(segmentLink);
+        const values = [
+            formatTime(effort.moving_time),
+            pace,
+            `${effort.average_heartrate ? Math.round(effort.average_heartrate) : '-'} bpm`,
+            rank
+        ];
+        row.append(nameCell);
+        for (const value of values) {
+            const cell = document.createElement('td');
+            cell.textContent = String(value);
+            row.append(cell);
+        }
+        tableBody.append(row);
+    }
+    table.replaceChildren(tableHead, tableBody);
 }
 
 // =====================================================

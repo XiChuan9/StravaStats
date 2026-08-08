@@ -23,6 +23,8 @@
     <script type="module" nonce="pr17-detail">
         const FIXED_NOW = Date.parse('2026-08-06T08:00:00.000Z');
         const V2_DATABASE = 'strava-stats-v2';
+        const R2_TEXT_CANARY = '<img data-r2-canary onerror="window.__R2_EXECUTED__=true"> "\'`\\()/* */ \u2028\u2029 e\u0301 é אבג 🧪';
+        const R2_GEAR_ID = 'javascript:data://outside.invalid/?#%&=+/__proto__/constructor/prototype/零🧪';
         const status = document.getElementById('status');
         const output = document.getElementById('result');
         const frames = document.getElementById('frames');
@@ -64,7 +66,10 @@
                     hasCadence: false,
                     hasLaps: false
                 },
-                name: `Synthetic ${sportCategory} detail`,
+                name: `${R2_TEXT_CANARY} ${sportCategory}`,
+                extensions: {
+                    shadowCanonicalWriterV1: { gearExternalId: R2_GEAR_ID }
+                },
                 distanceMeters: 0,
                 movingTimeSeconds: 0,
                 elapsedTimeSeconds: 0,
@@ -466,6 +471,8 @@
                 .replace(externalLink, '')
                 .replace(/<script\b[^>]*src=["']\/_vercel\/[^>]*><\/script>/gi, '')
                 .replace(entryScript, '')
+                .replace(/<script\b(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/script>/gi, '')
+                .replace(/<link\b[^>]*>/gi, '')
                 .replace(/(["'])\.\.\//g, '$1/');
         }
 
@@ -573,10 +580,25 @@
             const frame = await instrumentedServedFrame(configuration);
             const child = frame.contentWindow;
             const childDocument = frame.contentDocument;
+            const primaryDomId = fixture.page === 'generic' ? 'activity-info' : 'activity-stats';
             assert(
-                childDocument.getElementById('activity-info')?.textContent.trim().length > 0,
+                childDocument.getElementById(primaryDomId)?.textContent.trim().length > 0,
                 `INSTRUMENTED_DOM_${fixture.page.toUpperCase()}`
             );
+            assert(!childDocument.querySelector('[data-r2-canary]'), `R2_NO_INJECTED_NODE_${fixture.page.toUpperCase()}`);
+            assert(child.__R2_EXECUTED__ !== true, `R2_NO_CANARY_EXECUTION_${fixture.page.toUpperCase()}`);
+            if (fixture.page === 'generic') {
+                assert(childDocument.getElementById('activity-info').textContent.includes(R2_TEXT_CANARY), 'R2_GENERIC_TEXT_EXACT');
+            } else {
+                const gearLink = childDocument.querySelector('#activity-hero-gear a');
+                const gearUrl = new URL(gearLink.href);
+                assert(gearUrl.origin === location.origin, `R2_GEAR_ORIGIN_${fixture.page.toUpperCase()}`);
+                assert(gearUrl.pathname === '/html/gear.html', `R2_GEAR_PATH_${fixture.page.toUpperCase()}`);
+                assert([...gearUrl.searchParams.keys()].length === 1 && gearUrl.searchParams.getAll('id').length === 1,
+                    `R2_GEAR_SINGLE_ID_${fixture.page.toUpperCase()}`);
+                assert(gearUrl.searchParams.get('id') === R2_GEAR_ID, `R2_GEAR_ID_EXACT_${fixture.page.toUpperCase()}`);
+                assert(gearLink.textContent === `Gear ${R2_GEAR_ID}`, `R2_GEAR_TEXT_EXACT_${fixture.page.toUpperCase()}`);
+            }
             assert(
                 !/NaN|Infinity|undefined/.test(childDocument.getElementById('laps-table')?.innerHTML || ''),
                 `INSTRUMENTED_FINITE_LAPS_${fixture.page.toUpperCase()}`
@@ -686,10 +708,10 @@
                             return {};
                         },
                         sessionFactory: () => ({
-                            load: async () => detailBundleForMode(`rollback-${index}`, 'legacy')
+                            load: async () => detailBundleForMode(`rollback-${index}`, 'cache')
                         }),
                         renderer: async () => {},
-                        errorRenderer: () => { throw new Error('ROLLBACK_RENDER_FAILED'); }
+                        errorRenderer: () => { throw new Error(`ROLLBACK_RENDER_FAILED_${mode.toUpperCase()}_${index}`); }
                     });
                     assert(result === true, `ROLLBACK_${mode.toUpperCase()}_${index}`);
                     assert(calls.length === 1 && calls[0].mode === 'legacy', `ROLLBACK_MODE_${mode.toUpperCase()}_${index}`);
@@ -826,7 +848,9 @@
                 status: 'failed',
                 error: {
                     name: error instanceof Error ? error.name : 'UnknownError',
-                    code: 'PR17_BROWSER_GATE_FAILED'
+                    code: error instanceof Error && /^[A-Z0-9_]+$/.test(error.message)
+                        ? error.message
+                        : 'PR17_BROWSER_GATE_FAILED'
                 },
                 observations
             }, null, 2);

@@ -14,6 +14,7 @@ const APP_SESSION_MODE = Object.freeze({
 });
 const projectRoot = new URL('../../', import.meta.url);
 const mainSource = await readFile(new URL('js/app/main.js', projectRoot), 'utf8');
+const gearSource = await readFile(new URL('js/tabs/gear.js', projectRoot), 'utf8');
 
 test('M23 main gear-filter seam uses native option nodes for persistent gear IDs and labels', () => {
     assert.match(mainSource, /const setOptions = \(selectEl, options\) => \{/);
@@ -22,6 +23,15 @@ test('M23 main gear-filter seam uses native option nodes for persistent gear IDs
     assert.match(mainSource, /optionEl\.textContent = String\(option\.label\)/);
     assert.match(mainSource, /selectEl\.replaceChildren\(\.\.\.optionElements\)/);
     assert.doesNotMatch(mainSource, /selectEl\.innerHTML\s*=\s*options/);
+});
+
+test('M23 R2 gear cards use native text and closure-bound same-origin navigation', () => {
+    assert.match(gearSource, /heading\.textContent\s*=/);
+    assert.match(gearSource, /brandLine\.textContent\s*=/);
+    assert.match(gearSource, /params\.set\('id', String\(gear\.id\)\)/);
+    assert.match(gearSource, /url\.pathname\s*=\s*'\/html\/gear\.html'/);
+    assert.doesNotMatch(gearSource, /window\.open\('html\/gear\.html\?id=/);
+    assert.doesNotMatch(gearSource, /onclick\s*=/i);
 });
 
 function compileBoundary(source, {
