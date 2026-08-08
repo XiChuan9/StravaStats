@@ -138,29 +138,71 @@ function isDenseDataArray(value, expectedLength = null) {
     }
 }
 
+function readOwnDataProperties(value, keys) {
+    try {
+        if (
+            value === null
+            || typeof value !== 'object'
+            || Array.isArray(value)
+            || Object.getPrototypeOf(value) !== Object.prototype
+        ) return null;
+        const properties = [];
+        for (const key of keys) {
+            const descriptor = Object.getOwnPropertyDescriptor(value, key);
+            if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) return null;
+            properties.push(descriptor.value);
+        }
+        return properties;
+    } catch {
+        return null;
+    }
+}
+
+function parseWeatherHour(value) {
+    if (typeof value !== 'string') return null;
+    const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):00$/.exec(value);
+    if (!match) return null;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const hour = Number(match[4]);
+    if (!validCalendarDate(year, month, day) || hour < 0 || hour > 23) return null;
+    return Object.freeze({
+        date: `${match[1]}-${match[2]}-${match[3]}`,
+        hour
+    });
+}
+
 function normalizedWeatherDay(data, date) {
     try {
-        const hourly = data?.hourly;
-        if (hourly === null || typeof hourly !== 'object' || Array.isArray(hourly)) return null;
-        if (!isDenseDataArray(hourly.time) || hourly.time.length === 0) return null;
-        for (const field of WEATHER_HOURLY_FIELDS) {
-            if (!isDenseDataArray(hourly[field], hourly.time.length)) return null;
+        const dataProperties = readOwnDataProperties(data, ['hourly']);
+        if (dataProperties === null) return null;
+        const hourlyProperties = readOwnDataProperties(
+            dataProperties[0],
+            ['time', ...WEATHER_HOURLY_FIELDS]
+        );
+        if (hourlyProperties === null) return null;
+        const [times, temperatures, precipitation, windSpeeds, windDirections, weatherCodes,
+            cloudCover, surfacePressure, relativeHumidity] = hourlyProperties;
+        if (!isDenseDataArray(times) || times.length === 0) return null;
+        for (const values of hourlyProperties.slice(1)) {
+            if (!isDenseDataArray(values, times.length)) return null;
         }
         const hours = new Set();
-        const rows = hourly.time.map((weatherTime, index) => {
-            const parsed = parseLocalStart(weatherTime);
+        const rows = times.map((weatherTime, index) => {
+            const parsed = parseWeatherHour(weatherTime);
             if (parsed?.date !== date || hours.has(parsed.hour)) return null;
             hours.add(parsed.hour);
             return Object.freeze({
                 hour: parsed.hour,
-                temperature: finiteOrNull(hourly.temperature_2m[index]),
-                precipitation: finiteOrNull(hourly.precipitation[index]),
-                wind_speed: finiteOrNull(hourly.wind_speed_10m[index]),
-                wind_direction: finiteOrNull(hourly.wind_direction_10m[index]),
-                weather_code: finiteOrNull(hourly.weathercode[index]),
-                humidity: finiteOrNull(hourly.relativehumidity_2m[index]),
-                cloudcover: finiteOrNull(hourly.cloudcover[index]),
-                pressure: finiteOrNull(hourly.surface_pressure[index]),
+                temperature: finiteOrNull(temperatures[index]),
+                precipitation: finiteOrNull(precipitation[index]),
+                wind_speed: finiteOrNull(windSpeeds[index]),
+                wind_direction: finiteOrNull(windDirections[index]),
+                weather_code: finiteOrNull(weatherCodes[index]),
+                humidity: finiteOrNull(relativeHumidity[index]),
+                cloudcover: finiteOrNull(cloudCover[index]),
+                pressure: finiteOrNull(surfacePressure[index]),
                 weather_time: weatherTime
             });
         });

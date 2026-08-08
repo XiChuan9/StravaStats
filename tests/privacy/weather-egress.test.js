@@ -331,6 +331,9 @@ test('HTTP, network, malformed, time, and timeout failures remain unavailable', 
         ['malformed matching hour', async () => okResponse(hourly({
             time: ['2031-02-03T04:not-a-time']
         }))],
+        ['non-hour timestamp', async () => okResponse(hourly({
+            time: ['2031-02-03T04:30:59']
+        }))],
         ['non-array hourly fields', async () => okResponse(hourly({
             temperature_2m: { 0: 17 },
             precipitation: { 0: 1 },
@@ -384,6 +387,26 @@ test('hourly accessors fail closed without execution', async () => {
     });
     const service = createWeatherConsentService(serviceDependencies({
         fetch: async () => okResponse(hourly({ temperature_2m: temperatures }))
+    }));
+    service.grant();
+    assert.equal(await service.request(VALID_INPUT), null);
+    assert.equal(reads, 0);
+});
+
+test('hourly record accessors fail closed without execution', async () => {
+    const { createWeatherConsentService } = await consentModule('hourly-record-accessor');
+    let reads = 0;
+    const hourlyRecord = hourly();
+    Object.defineProperty(hourlyRecord, 'time', {
+        configurable: true,
+        enumerable: true,
+        get() {
+            reads += 1;
+            return ['2031-02-03T04:00'];
+        }
+    });
+    const service = createWeatherConsentService(serviceDependencies({
+        fetch: async () => okResponse(hourlyRecord)
     }));
     service.grant();
     assert.equal(await service.request(VALID_INPUT), null);
