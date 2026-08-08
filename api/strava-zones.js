@@ -1,4 +1,4 @@
-import { getValidAccessToken } from './_shared.js';
+import { getValidAccessToken, logServerEvent, SERVER_API_EVENT } from './_shared.js';
 
 export default async function handler(req, res) {
     if (req.method !== 'GET') {
@@ -13,15 +13,15 @@ export default async function handler(req, res) {
         });
 
         if (!stravaResponse.ok) {
-            const errData = await stravaResponse.json();
-            return res.status(stravaResponse.status).json({ error: 'Failed to fetch zones from Strava', details: errData });
+            logServerEvent(SERVER_API_EVENT.ZONES_FAILED);
+            return res.status(stravaResponse.status).json({ error: 'Failed to fetch zones from Strava' });
         }
 
         const zonesData = await stravaResponse.json();
         return res.status(200).json({ zones: zonesData, tokens: updatedTokens });
 
-    } catch (error) {
-        console.error('Error in /api/strava-zones:', error.message);
-        return res.status(500).json({ error: error.message });
+    } catch {
+        logServerEvent(SERVER_API_EVENT.ZONES_FAILED);
+        return res.status(500).json({ error: 'Internal Server Error' });
     }
 }

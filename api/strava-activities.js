@@ -1,4 +1,4 @@
-import { getValidAccessToken } from './_shared.js';
+import { getValidAccessToken, logServerEvent, SERVER_API_EVENT } from './_shared.js';
 
 export default async function handler(req, res) {
     try {
@@ -17,8 +17,8 @@ export default async function handler(req, res) {
             });
 
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(`Strava API: ${errorData.message}`);
+                logServerEvent(SERVER_API_EVENT.ACTIVITIES_FAILED);
+                return res.status(500).json({ error: 'Failed to fetch activities from Strava' });
             }
 
             const pageActivities = await response.json();
@@ -31,8 +31,8 @@ export default async function handler(req, res) {
 
         return res.status(200).json({ activities: allActivities, tokens: updatedTokens });
 
-    } catch (error) {
-        console.error('Error in strava-activities:', error);
-        return res.status(500).json({ error: error.message });
+    } catch {
+        logServerEvent(SERVER_API_EVENT.ACTIVITIES_FAILED);
+        return res.status(500).json({ error: 'Internal Server Error' });
     }
 }

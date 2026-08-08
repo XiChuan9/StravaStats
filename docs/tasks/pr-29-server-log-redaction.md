@@ -9,7 +9,6 @@
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/server-log-redaction` |
 | Exact base | `integration/v2@35cef332b1e9214e32040baeff67dc2c3e35a0ed` |
-| Worktree | `/Users/wangchuanliang/.codex/worktrees/d176/StravaStats` |
 | Owner | Codex |
 | Reviewer | Independent findings-first reviewer required |
 | Dependencies | R3 PR #34 Squash Merged; exact-base integration push CI successful |
@@ -237,8 +236,10 @@ requires a new minimum failure/collision package and delegation before modificat
 
 - The server event vocabulary is a literal closed set with one fixed console string per failure
   category. Calls accept no raw value, ID, route, status, body, count, or arbitrary context.
-- Provider non-success status codes stay unchanged. Their bodies retain only the endpoint's fixed
-  error category and never include `details` or a provider-derived message.
+- Each handler's existing failure-status behavior stays unchanged. Provider non-success statuses
+  remain forwarded where they were already forwarded; the activities aggregate remains 500. Their
+  bodies retain only the endpoint's fixed error category and never include `details` or a
+  provider-derived message.
 - Handler-caught 500 and token-network 502 bodies use fixed existing-category copy and never inspect
   the thrown value. Auth provider rejection remains 400 with fixed auth-failure copy.
 - Successful payloads, refreshed-token envelopes, methods, endpoint paths, query requirements, and
