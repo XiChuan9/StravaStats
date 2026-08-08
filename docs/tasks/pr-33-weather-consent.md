@@ -241,6 +241,155 @@ The recommendation may be deny-by-default with no request before explicit consen
 copy, persistence key, precision, date range, or cache behavior is self-authorized. The control
 tower must obtain and return the user's decision before implementation begins.
 
+## A3 material decision package (not yet selected)
+
+All three options share these non-negotiable correctness and safety rules:
+
+- absent consent is deny; Demo uses embedded synthetic weather and performs no consent-storage or
+  weather request; Legacy, Shadow, and Canonical Real modes use the same selected consent rule;
+- only literal finite numeric hourly values are present, including genuine numeric zero; missing,
+  `null`, numeric strings, non-finite values, malformed shapes/times, rejected/aborted fetches,
+  HTTP failure, and timeout remain `null`/unavailable and never enter aggregates as zero;
+- coordinates and dates fail closed before URL construction; no activity ID/name, full provider
+  payload, Token, Authorization, heart rate, or power is sent; activity IDs remain opaque strings;
+- the query requests only the existing eight UI inputs: temperature, precipitation, wind speed,
+  wind direction, weather code, humidity, cloud cover, and surface pressure, plus
+  `timezone=auto`; there is no retry and each request has a four-second abortable timeout; and
+- responses are never written to IndexedDB, Repository, Cache Storage, Service Worker, Backup,
+  Diagnostics, or logs. Revocation/cancellation aborts registered in-flight work before clearing
+  only the selected weather module's own memory/consent state.
+
+### Option A — session-scoped, one approximate point (recommended)
+
+- Default/startup: dashboard initialization and refresh never fetch weather. An inline Weather
+  card in the Weather tab or a detail page is the only grant surface. The exact positive button is
+  `Allow for this tab`; `Not now` leaves the state denied. Direct `/weather` navigation is safe.
+- Exact copy: “To retrieve historical weather, StravaStats uses Open-Meteo. If you choose ‘Allow
+  for this tab’, it sends one approximate start coordinate (rounded to 2 decimals) and the local
+  calendar date for each eligible activity in the Weather view you open. It does not send activity
+  IDs or names, full routes, tokens, heart rate, or power. You can revoke here at any time;
+  revocation cancels requests still in progress and blocks future requests.”
+- Persistence/revocation: strict versioned state in `sessionStorage` under the exact key
+  `stravastats_weather_egress_consent_v1`; it lasts only for the current browser tab. Every Weather
+  grant surface changes to `Revoke weather access` after grant. Revocation records denied state,
+  aborts in-flight requests, clears the weather memory cache, and requires a new affirmative click.
+- Precision/range: one valid route/start point rounded to two decimals (roughly one-kilometre
+  latitude granularity) and exactly one valid local calendar date per activity with
+  `start_date=end_date`. No route shape, additional samples, current-date fallback, or cross-day
+  expansion is sent. Detail route-point/wind panels are hidden as unavailable because this option
+  does not collect the samples required to support them honestly.
+- Cache: per-document memory only, keyed by the rounded coordinate/date/field contract, maximum
+  256 entries and 30-minute TTL, bound to the current granted epoch. Navigation naturally drops
+  it; revocation aborts and clears it. No weather response is durable.
+- Existing behavior: users without the exact setting are denied. Existing automatically enriched
+  `run.weather`/`run.difficulty` output becomes absent until an explicit Weather view is granted;
+  historical activity records and all user-owned settings remain untouched. This intentionally
+  trades route-level weather fidelity for the minimum disclosed location/date surface.
+- Exact literal implementation allowlist if selected:
+
+```text
+docs/tasks/pr-33-weather-consent.md
+js/app/weather-consent.js
+js/shared/preprocessing/core.js
+js/shared/utils/weather-analysis.js
+js/tabs/weather.js
+js/pages/activity/index.js
+js/pages/run/index.js
+js/pages/bike/index.js
+js/pages/swim/index.js
+js/pages/activity/activity.js
+js/pages/run/run.js
+js/pages/bike/bike.js
+js/pages/swim/swim.js
+tests/privacy/weather-egress.test.js
+tests/privacy/client-logging.test.js
+tests/consumers/detail-consumers.test.js
+tests/consumers/detail-boundaries.test.js
+tests/consumers/detail-browser-smoke.html
+tests/consumers/weather-consent-browser-smoke.html
+```
+
+### Option B — durable opt-in, approximate route fidelity
+
+- Default/startup: absent consent is still deny. The exact positive button is
+  `Always allow weather`; after grant, dashboard initialization/refresh may enrich eligible runs,
+  and Weather/detail views may request without another prompt. `Not now` remains denied.
+- Exact copy: “Historical weather is provided by Open-Meteo. If you choose ‘Always allow
+  weather’, StravaStats may send an activity’s approximate start or route coordinates (rounded to
+  3 decimals, up to 14 samples) and the local calendar date or dates needed for that activity when
+  the dashboard or a Weather view loads. It does not send activity IDs or names, tokens, heart
+  rate, or power. This choice is stored only in this browser and is not included in StravaStats
+  backups. You can revoke it from any Weather view; revocation cancels in-progress and future
+  requests.”
+- Persistence/revocation: strict versioned state in `localStorage` under the exact key
+  `stravastats_weather_egress_consent_v1`. It is intentionally outside the frozen Backup setting
+  allowlist. Every Weather surface exposes `Revoke weather access`; revocation records denied
+  state, aborts in-flight work, clears memory results, and prevents later automatic requests.
+- Precision/range: summary preprocessing/Weather tab use one start point; detail may use two to
+  fourteen route samples. Coordinates are rounded to three decimals (roughly one-hundred-metre
+  latitude granularity). Each request has equal valid `start_date`/`end_date`; detail may send a
+  second local date only if a sampled route time actually crosses midnight. There is no
+  current-date fallback.
+- Cache: per-document memory only, maximum 512 rounded-coordinate/date entries with 30-minute TTL,
+  bound to the current consent epoch and cleared on revoke. Consent is durable; weather responses
+  are not.
+- Existing behavior: all existing users begin denied because there is no pre-existing grant.
+  Users who opt in recover automatic enrichment and approximate route-level panels. Demo remains
+  isolated; Real Legacy, Shadow, and Canonical behave identically.
+- Exact literal implementation allowlist if selected:
+
+```text
+docs/tasks/pr-33-weather-consent.md
+js/app/main.js
+js/app/weather-consent.js
+js/shared/preprocessing/core.js
+js/shared/utils/weather-analysis.js
+js/tabs/weather.js
+js/pages/activity/index.js
+js/pages/run/index.js
+js/pages/bike/index.js
+js/pages/swim/index.js
+js/pages/activity/activity.js
+js/pages/run/run.js
+js/pages/bike/bike.js
+js/pages/swim/swim.js
+tests/privacy/weather-egress.test.js
+tests/privacy/client-logging.test.js
+tests/consumers/summary-consumers.test.js
+tests/consumers/detail-consumers.test.js
+tests/consumers/detail-boundaries.test.js
+tests/consumers/detail-browser-smoke.html
+tests/consumers/weather-consent-browser-smoke.html
+```
+
+### Option C — one-view authorization, no stored consent
+
+- Default/startup: dashboard initialization and refresh never fetch weather. Each Weather tab or
+  detail render offers `Fetch this Weather view once`; `Not now` performs no request. A later view
+  requires another affirmative click, including after direct `/weather` navigation.
+- Exact copy: “Fetch this Weather view once from Open-Meteo? StravaStats will send approximate
+  activity start or route coordinates (rounded to 2 decimals, up to 14 samples) and only the local
+  calendar date or dates needed for this view. It does not send activity IDs or names, tokens,
+  heart rate, or power. No permission is saved. You can cancel requests still in progress, but
+  data already sent cannot be recalled.”
+- Persistence/revocation: no `localStorage`, `sessionStorage`, IndexedDB, or cookie state. The grant
+  is an in-memory single-view capability. `Cancel weather request` aborts outstanding work; the
+  capability expires when that render completes or the user leaves the view.
+- Precision/range: Weather tab uses one rounded start point/date per eligible activity; detail may
+  use two to fourteen route samples rounded to two decimals and only the valid local date(s) those
+  samples occupy. There is no exact coordinate or current-date fallback.
+- Cache: only a render-local promise/result map may coalesce duplicate analysis/marker work for
+  that single view. It is discarded after render, cancellation, or navigation and is never reused
+  as authorization.
+- Existing behavior: every existing user is denied until each one-shot action. Demo stays entirely
+  synthetic; all Real repository modes behave identically. This minimizes consent persistence but
+  requires repeated prompts and may make multi-activity Weather views more cumbersome.
+- Exact literal implementation allowlist if selected is the same 19 paths as Option A.
+
+Selection must be exactly `A`, `B`, or `C`; mixed profiles require a revised package and another
+material decision. Until the control tower returns the selection, the only writable path remains
+this Task Brief and no production/test implementation is authorized.
+
 ## Failure-first implementation and verification contract
 
 After the decision is frozen, add deterministic tests that fail first for every approved path and
