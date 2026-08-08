@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 release hardening / R10 regression stabilization |
-| Status | Approved for test-only investigation and implementation under the frozen gates below |
+| Status | Closure complete locally; final Closure-head remote depth-1 and CI required before Ready |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/legacy-probe-residual-test` |
 | Exact base | `integration/v2@166af12a5a42dcef865af09991c4142282e8b265` |
@@ -125,4 +125,66 @@ Do not merge, clean any branch/worktree, deploy, release, or start R7/R8/R11/D3.
 
 ## Closure evidence
 
-Pending implementation, review, remote depth-1 verification, and exact-head CI.
+This stabilization closed against exact baseline
+`integration/v2@166af12a5a42dcef865af09991c4142282e8b265`. A0 confirmed a clean detached
+worktree, live local/remote `0/0`, PR #39's exact squash merge, and successful integration push CI
+run `31255261244`, job `93097591353`. The first feature commit was Task-Brief-only
+`d6c351f1136d6dfb460c16b55a7341c006e42abe`; Draft PR #40 was created by the control tower after
+the GitHub App returned 403, with exact base/head readback and only this Task Brief changed.
+
+Failure-first evidence used the unmodified tests. One ordinary default-concurrency full run passed
+1644/1644, then 120 isolated runners at concurrency 60 repeatedly reproduced both former failures:
+each assertion observed `actual=[]` against the mandatory singleton version 1 descriptor. The
+findings-first audit traced this to the fixed timer assertions racing fake-indexeddb's Node
+`setImmediate` connection and versionchange task queues.
+
+Implementation commit `8f8791982b104cc0d998758d9ef44f921a9f69de` changed only the two approved
+test files. Both tests now wait for their deterministic synthetic late-open terminal event, retain
+the original unknown/error, abort, zero-delete, zero-store-creation/versioned-open, Token-write, and
+classification assertions, and accept only these final physical states:
+
+```text
+[]
+[{ name: "strava-dashboard-cache", version: 1 }]
+```
+
+The singleton path performs an actual unversioned open and requires version 1 and zero object
+stores, which permits zero user records, before closing. A second database, another name/version,
+or any store still fails. The no-database path performs no inspection open. No conditional skip,
+retry, production compensation, delete, repair, clear, data write, or user-data change was added.
+
+Final local verification after `npm ci`:
+
+```text
+post-fix pressure loop 1          60 runners / 120 tests PASS
+post-fix pressure loop 2          60 runners / 120 tests PASS
+R10 focused matrix                108/108 PASS
+weather/privacy/SW/Demo related   146/146 PASS
+two-file joint matrix             92/92 PASS (fresh reviewer)
+fresh reviewer residual pressure  100/100 PASS
+default full run 1                1644/1644 PASS
+default full run 2                1644/1644 PASS
+npm run check:syntax              PASS (245 files)
+npm run check:privacy             PASS
+git diff --check                  PASS
+exact cumulative changed paths    3/3 allowed
+worktree before Closure           clean
+```
+
+The first independent findings-first review returned no findings and specifically confirmed the
+terminal-event ordering, closed final-state set, actual unversioned residual inspection, and
+preserved zero-delete/identity boundaries. A fresh reviewer independently returned no findings,
+confirmed `js/**` has zero diff, and found no late background mutation or conditional state swallow.
+Its only noted coverage characteristic is fail-visible: if the deterministic fake factory never
+emits a terminal event, the test hangs instead of falsely passing.
+
+Implementation-head CI succeeded at run `31255911134`, job `93099107712`, including install,
+syntax, privacy, and full tests. This Task-Brief-only Closure commit requires true remote depth-1
+verification and its own exact-head CI before the control tower may update the safe PR body and
+transition Draft to Ready. Squash merge, cleanup, deploy, release, and R7/R8/R11/D3 remain
+unauthorized.
+
+No real credential, Token, account, provider/private activity, location, route, heart-rate, power,
+user setting, private fixture, export, screenshot, browser profile, Legacy record, or V2 record was
+read. There is no production, schema, version, migration, privacy, persistence, or rollback-path
+change. Rollback is an ordinary test commit revert while preserving all Legacy and V2 data.
