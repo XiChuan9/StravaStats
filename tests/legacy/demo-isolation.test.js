@@ -35,6 +35,7 @@ import {
     REPOSITORY_SOURCE,
     REPOSITORY_WARNING_CODE
 } from '../../js/repository/index.js';
+import { createAICoachSession } from '../../js/app/ai-coach-egress.js';
 
 const FIXED_NOW = '2026-07-29T08:30:00.000Z';
 const FIXED_NOW_MS = Date.parse(FIXED_NOW);
@@ -1760,4 +1761,41 @@ test('Source and privacy boundaries enforce production-path isolation', async ()
         /id="logout-button"[\s\S]*?aria-label="Disconnect Strava"[\s\S]*?title="Disconnect Strava"/
     );
     assert.doesNotMatch(indexSource, /Delete Local Data/i);
+});
+
+test('R7 Demo AI Coach capability performs zero consent, key, provider, history, or storage I/O', () => {
+    const storage = new MemoryStorage({
+        gemini_api_key: 'synthetic-existing-key',
+        ai_chat_history: '[{"role":"user","text":"synthetic-existing-history"}]'
+    });
+    let fetches = 0;
+    const session = createAICoachSession({
+        sessionMode: 'demo',
+        legacyStorage: storage,
+        fetch: async () => {
+            fetches += 1;
+            throw new Error('Demo AI Coach must never fetch');
+        }
+    });
+
+    assert.equal(session.enabled, false);
+    assert.equal(session.hasApiKey(), false);
+    assert.deepEqual(session.getHistory(), []);
+    assert.throws(
+        () => session.prepare('Synthetic question', [{
+            type: 'Run',
+            start_date: '2031-02-20T00:00:00.000Z',
+            distance: 0,
+            moving_time: 0,
+            total_elevation_gain: 0
+        }]),
+        error => error?.code === 'AI_COACH_DEMO_DISABLED'
+    );
+    assert.throws(
+        () => session.inspectLegacyData(),
+        error => error?.code === 'AI_COACH_DEMO_DISABLED'
+    );
+    assert.equal(fetches, 0);
+    assert.deepEqual(storage.getItemCalls, []);
+    assert.deepEqual(storage.operations, []);
 });

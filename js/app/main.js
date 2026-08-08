@@ -38,6 +38,7 @@ import {
     runLocalFirstBootstrap
 } from './local-first-bootstrap.js';
 import { recordDiagnosticError } from '../diagnostics/index.js';
+import { createAICoachSession } from './ai-coach-egress.js';
 
 export const APP_SESSION_MODE = Object.freeze({
     DEMO: 'demo',
@@ -705,6 +706,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return APP_SESSION_MODE.REAL;
         }
     })();
+    const aiCoachSession = createAICoachSession({
+        sessionMode: documentSessionMode,
+        legacyStorage: documentSessionMode === APP_SESSION_MODE.REAL
+            ? globalThis.localStorage
+            : null
+    });
     let consumerRenderingEnabled = true;
     let sessionAthlete = null;
     let sessionZones = null;
@@ -734,7 +741,12 @@ document.addEventListener('DOMContentLoaded', () => {
         'weather-tab': { render: () => renderWeatherTab(allActivities, { sessionMode: activeSessionMode }) },
         'map-tab': { render: () => renderMapTab(allActivities, dateFilterFrom, dateFilterTo), usesFilters: true },
         'wrapped-tab': { render: () => renderWrappedTab(allActivities) },
-        'ai-chat-tab': { render: () => renderAIChatTab(allActivities) },
+        'ai-chat-tab': {
+            render: () => renderAIChatTab(allActivities, {
+                sessionMode: activeSessionMode,
+                aiCoach: aiCoachSession
+            })
+        },
     };
     const renderedTabs = new Set();
 
@@ -1572,7 +1584,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (demoButton) demoButton.addEventListener('click', () => {
         loginWithDemo(initializeApp);
     });
-    if (logoutButton) logoutButton.addEventListener('click', logout);
+    if (logoutButton) logoutButton.addEventListener('click', () => {
+        aiCoachSession.revoke();
+        logout();
+    });
     if (refreshButton) refreshButton.addEventListener('click', refreshActivities);
     if (kofiButton) kofiButton.addEventListener('click', showKofiModal);
 

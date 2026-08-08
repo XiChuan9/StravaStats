@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>R7 AI Coach consent browser smoke</title>
+</head>
+<body>
+    <h1>R7 AI Coach consent browser smoke</h1>
+    <ol id="gates"></ol>
+    <pre id="evidence"></pre>
+    <section id="ai-chat-tab"></section>
+
+    <script type="module">
+        const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+        const params = new URLSearchParams(location.search);
+        if (!LOOPBACK_HOSTS.has(location.hostname)) throw new Error('DISPOSABLE_LOOPBACK_ORIGIN_REQUIRED');
+        if (params.get('synthetic') !== '1') throw new Error('EXPLICIT_SYNTHETIC_MODE_REQUIRED');
+
+        const PRIVATE_CANARIES = Object.freeze([
+            'SYNTHETIC_PROVIDER_KEY_CANARY',
+            'SYNTHETIC_LEGACY_KEY_CANARY',
+            'PRIVATE_ATHLETE_NAME_CANARY',
+            'PRIVATE_ACTIVITY_NAME_CANARY',
+            'opaque/activity?id=000123',
+            'opaque-gear-id-000456',
+            'PRIVATE_GEAR_NAME_CANARY',
+            'PRIVATE_FILE_CANARY.fit',
+            'PRIVATE_ROUTE_GPS_CANARY',
+            'PRIVATE_STRAVA_TOKEN_CANARY',
+            'PRIVATE_HR_CANARY',
+            'PRIVATE_POWER_CANARY',
+            'PRIVATE_STREAM_CANARY',
+            'PRIVATE_PRIOR_CHAT_CANARY'
+        ]);
+        const LEGACY_KEY = 'gemini_api_key';
+        const LEGACY_HISTORY = 'ai_chat_history';
+        const FIXED_NOW = Date.parse('2031-03-01T00:00:00.000Z');
+        const observations = {
+            requests: 0,
+            aborts: 0,
+            legacyReads: [],
+            legacyWrites: [],
+            legacyRemoves: [],
+            consoleCalls: 0,
+            runtimeErrors: 0,
+            gates: []
+        };
+        const requests = [];
+        const gateList = document.getElementById('gates');
+        const evidence = document.getElementById('evidence');
+        let responseMode = 'ok';
+
+        function invariant(value, code) {
+            if (!value) throw new Error(code);
+        }
+
+        async function waitFor(predicate, code) {
+            for (let index = 0; index < 200; index += 1) {
+                if (predicate()) return;
+                await new Promise(resolve => setTimeout(resolve, 5));
+            }
+            throw new Error(code);
+        }
+
+        async function gate(name, operation) {
+            const item = document.createElement('li');
+            item.textContent = `${name}: running`;
+            gateList.append(item);
+            try {
+                const detail = await operation();
+                observations.gates.push({ name, status: 'pass', detail });
+                item.textContent = `${name}: pass`;
+            } catch (error) {
+                observations.gates.push({ name, status: 'fail', code: String(error?.message ?? 'UNKNOWN') });
+                item.textContent = `${name}: fail`;
+                throw error;
+            }
+        }
+
+        const originalConsole = Object.freeze({
+            log: console.log,
+            info: console.info,
+            warn: console.warn,
+            error: console.error,
+            debug: console.debug
+        });
+        for (const method of Object.keys(originalConsole)) {
+            console[method] = () => { observations.consoleCalls += 1; };
+        }
+        addEventListener('error', () => { observations.runtimeErrors += 1; });
+        addEventListener('unhandledrejection', () => { observations.runtimeErrors += 1; });
+        globalThis.confirm = () => true;
+
+        localStorage.clear();
+        localStorage.setItem(LEGACY_KEY, 'SYNTHETIC_LEGACY_KEY_CANARY');
+        localStorage.setItem(
+            LEGACY_HISTORY,
+            JSON.stringify([{ role: 'user', text: 'PRIVATE_PRIOR_CHAT_CANARY' }])
+        );
+        const trackedLegacyStorage = Object.freeze({
+            getItem(key) {
+                observations.legacyReads.push(key);
+                return localStorage.getItem(key);
+            },
+            setItem(key, value) {
+                observations.legacyWrites.push(key);
+                localStorage.setItem(key, value);
+            },
+            removeItem(key) {
+                observations.legacyRemoves.push(key);
+                localStorage.removeItem(key);
+            }
+        });
+
+        const interceptedFetch = async (input, options = {}) => {
+            const url = new URL(String(input?.url ?? input), location.href);
+            const headers = new Headers(options.headers || input?.headers || undefined);
+            const body = typeof options.body === 'string' ? options.body : '';
+            observations.requests += 1;
+            requests.push({ url, headers, body, options });
+            if (responseMode === 'pending') {
+                return new Promise((_resolve, reject) => {
+                    options.signal.addEventListener('abort', () => {
+                        observations.aborts += 1;
+                        const error = new Error('SYNTHETIC_ABORT');
+                        error.name = 'AbortError';
+                        reject(error);
+                    }, { once: true });
+                });
+            }
+            if (responseMode === 'http') {
+                return {
+                    ok: false,
+                    status: 429,
+                    async text() {
+                        return JSON.stringify({ error: { message: 'PRIVATE_PROVIDER_ERROR_CANARY' } });
+                    }
+                };
+            }
+            if (responseMode === 'malformed') {
+                return { ok: true, status: 200, async text() { return '{not-json'; } };
+            }
+            return {
+                ok: true,
+                status: 200,
+                async text() {
+                    return JSON.stringify({
+                        candidates: [{ content: { parts: [{ text: 'Synthetic safe coach reply.' }] } }]
+                    });
+                }
+            };
+        };
+
+        const boundary = await import('/js/app/ai-coach-egress.js?r7-browser=1');
+        const tab = await import('/js/tabs/ai-chat.js?r7-browser=1');
+        const activities = [{
+            id: 'opaque/activity?id=000123',
+            athlete_name: 'PRIVATE_ATHLETE_NAME_CANARY',
+            name: 'PRIVATE_ACTIVITY_NAME_CANARY',
+            type: 'TrailRun',
+            start_date: '2031-02-20T10:00:00.000Z',
+            start_date_local: '2031-02-20T18:00:00',
+            distance: 1499,
+            moving_time: 899,
+            total_elevation_gain: 149,
+            average_heartrate: 'PRIVATE_HR_CANARY',
+            average_watts: 'PRIVATE_POWER_CANARY',
+            gear_id: 'opaque-gear-id-000456',
+            gear_name: 'PRIVATE_GEAR_NAME_CANARY',
+            filename: 'PRIVATE_FILE_CANARY.fit',
+            route: 'PRIVATE_ROUTE_GPS_CANARY',
+            token: 'PRIVATE_STRAVA_TOKEN_CANARY',
+            streams: 'PRIVATE_STREAM_CANARY'
+        }];
+        const sessionOptions = {
+            sessionMode: 'real',
+            fetch: interceptedFetch,
+            now: () => FIXED_NOW,
+            online: () => true,
+            setTimeout,
+            clearTimeout,
+            AbortController,
+            legacyStorage: trackedLegacyStorage
+        };
+        const session = boundary.createAICoachSession(sessionOptions);
+        const renderOptions = { sessionMode: 'real', aiCoach: session };
+
+        try {
+            await gate('existing-user-default-zero-egress', async () => {
+                tab.renderAIChatTab(activities, renderOptions);
+                invariant(observations.requests === 0, 'DEFAULT_PROVIDER_REQUEST');
+                invariant(observations.legacyReads.length === 0, 'DEFAULT_LEGACY_READ');
+                invariant(observations.legacyWrites.length === 0, 'DEFAULT_LEGACY_WRITE');
+                invariant(observations.legacyRemoves.length === 0, 'DEFAULT_LEGACY_REMOVE');
+                const aiDom = document.getElementById('ai-chat-tab');
+                invariant(aiDom.textContent.includes('Google Gemini API'), 'DISCLOSURE_PROVIDER_MISSING');
+                invariant(aiDom.textContent.includes('approximate 28-day training aggregates'), 'DISCLOSURE_FIELDS_MISSING');
+                invariant(!aiDom.textContent.includes('No data sent to servers'), 'FALSE_DISCLOSURE_PRESENT');
+                invariant(PRIVATE_CANARIES.every(value => !aiDom.outerHTML.includes(value)), 'PRIVATE_CANARY_IN_DOM');
+                return { providerRequests: 0, legacyReads: 0 };
+            });
+
+            await gate('memory-key-and-preview-before-affirmation', async () => {
+                const keyInput = document.getElementById('ai-apikey-input');
+                keyInput.value = 'SYNTHETIC_PROVIDER_KEY_CANARY';
+                document.getElementById('ai-apikey-save').click();
+                invariant(observations.legacyWrites.length === 0, 'KEY_DURABLE_WRITE');
+                invariant(!document.getElementById('ai-chat-tab').outerHTML.includes('SYNTHETIC_PROVIDER_KEY_CANARY'), 'KEY_IN_DOM');
+                const question = document.getElementById('ai-chat-input');
+                question.value = 'How should I train next?';
+                document.getElementById('ai-chat-send').click();
+                invariant(observations.requests === 0, 'REQUEST_BEFORE_AFFIRMATION');
+                const confirm = document.getElementById('ai-confirm-send');
+                invariant(confirm?.textContent === boundary.AI_COACH_CONFIRM_LABEL, 'AFFIRMATIVE_GESTURE_NOT_EXACT');
+                invariant(document.getElementById('ai-chat-tab').textContent.includes('Request preview — nothing has been sent'), 'PREVIEW_COPY_MISSING');
+                const preview = document.querySelector('.ai-request-preview-values')?.textContent ?? '';
+                invariant(preview.includes('recent_28_days'), 'RECENT_BUCKET_MISSING');
+                invariant(preview.includes('previous_28_days'), 'PREVIOUS_BUCKET_MISSING');
+                invariant(PRIVATE_CANARIES.every(value => !preview.includes(value)), 'PRIVATE_CANARY_IN_PREVIEW');
+                invariant(!/2031-\d\d-\d\d/.test(preview), 'CALENDAR_DATE_IN_PREVIEW');
+                return { providerRequestsBeforeAffirmation: 0, buckets: 2 };
+            });
+
+            await gate('affirmed-exact-request-and-memory-history', async () => {
+                document.getElementById('ai-confirm-send').click();
+                await waitFor(() => document.getElementById('ai-chat-tab').textContent.includes('Synthetic safe coach reply.'), 'REPLY_NOT_RENDERED');
+                invariant(observations.requests === 1, 'AUTHORIZED_REQUEST_COUNT');
+                const request = requests[0];
+                invariant(request.url.origin === 'https://generativelanguage.googleapis.com', 'DESTINATION_INVALID');
+                invariant(request.url.pathname.endsWith('/v1beta/models/gemini-3-flash-preview:generateContent'), 'MODEL_ENDPOINT_INVALID');
+                invariant(request.url.search === '', 'CREDENTIAL_QUERY_PRESENT');
+                invariant(request.headers.get('x-goog-api-key') === 'SYNTHETIC_PROVIDER_KEY_CANARY', 'KEY_HEADER_MISSING');
+                invariant(!request.headers.has('authorization'), 'AUTHORIZATION_HEADER_PRESENT');
+                invariant(request.options.credentials === 'omit', 'CREDENTIAL_MODE_INVALID');
+                invariant(request.options.cache === 'no-store', 'CACHE_MODE_INVALID');
+                invariant(request.options.referrerPolicy === 'no-referrer', 'REFERRER_POLICY_INVALID');
+                const body = JSON.parse(request.body);
+                invariant(JSON.stringify(Object.keys(body).sort()) === JSON.stringify(['contents', 'generationConfig', 'store', 'system_instruction']), 'BODY_KEYS_INVALID');
+                invariant(body.store === false, 'STORE_NOT_FALSE');
+                invariant(body.contents.length === 1 && body.contents[0].parts.length === 2, 'TRANSCRIPT_SHAPE_INVALID');
+                invariant(PRIVATE_CANARIES.every(value => !request.body.includes(value)), 'PRIVATE_CANARY_IN_BODY');
+                invariant(!request.body.includes('SYNTHETIC_PROVIDER_KEY_CANARY'), 'KEY_IN_BODY');
+                invariant(observations.legacyWrites.length === 0, 'HISTORY_DURABLE_WRITE');
+                invariant(!document.getElementById('ai-chat-tab').outerHTML.includes('SYNTHETIC_PROVIDER_KEY_CANARY'), 'KEY_RENDERED_AFTER_SEND');
+                return { providerRequests: 1, requestBodyKeys: Object.keys(body).sort(), historyLocation: 'memory' };
+            });
+
+            await gate('fresh-confirmation-no-transcript-resend', async () => {
+                const question = document.getElementById('ai-chat-input');
+                question.value = 'Second independent question';
+                document.getElementById('ai-chat-send').click();
+                invariant(observations.requests === 1, 'SECOND_REQUEST_BEFORE_CONFIRM');
+                invariant(document.getElementById('ai-confirm-send'), 'SECOND_CONFIRM_MISSING');
+                document.getElementById('ai-confirm-send').click();
+                await waitFor(() => observations.requests === 2, 'SECOND_REQUEST_MISSING');
+                invariant(!requests[1].body.includes('How should I train next?'), 'PRIOR_QUESTION_RESENT');
+                invariant(!requests[1].body.includes('Synthetic safe coach reply.'), 'PRIOR_REPLY_RESENT');
+                return { confirmations: 2, transcriptMessagesSent: 0 };
+            });
+
+            await gate('revoke-aborts-and-discards-memory', async () => {
+                responseMode = 'pending';
+                const question = document.getElementById('ai-chat-input');
+                question.value = 'Pending request';
+                document.getElementById('ai-chat-send').click();
+                document.getElementById('ai-confirm-send').click();
+                await waitFor(() => observations.requests === 3, 'PENDING_REQUEST_MISSING');
+                document.getElementById('ai-revoke-access').click();
+                await waitFor(() => observations.aborts === 1, 'REVOKE_DID_NOT_ABORT');
+                invariant(session.hasApiKey() === false, 'REVOKE_KEY_RETAINED');
+                invariant(session.getHistory().length === 0, 'REVOKE_HISTORY_RETAINED');
+                responseMode = 'ok';
+                return { abortedRequests: 1, retainedMessages: 0 };
+            });
+
+            await gate('legacy-data-explicit-copy-and-separate-delete', async () => {
+                invariant(observations.legacyReads.length === 0, 'LEGACY_READ_BEFORE_REVIEW');
+                document.getElementById('ai-review-legacy').click();
+                invariant(JSON.stringify(observations.legacyReads) === JSON.stringify([LEGACY_KEY, LEGACY_HISTORY]), 'LEGACY_REVIEW_READS_INVALID');
+                invariant(!document.getElementById('ai-chat-tab').outerHTML.includes('SYNTHETIC_LEGACY_KEY_CANARY'), 'LEGACY_KEY_RENDERED');
+                invariant(!document.getElementById('ai-chat-tab').outerHTML.includes('PRIVATE_PRIOR_CHAT_CANARY'), 'LEGACY_HISTORY_RENDERED');
+                document.getElementById('ai-copy-legacy-key').click();
+                invariant(session.hasApiKey() === true, 'LEGACY_KEY_NOT_COPIED_TO_MEMORY');
+                invariant(localStorage.getItem(LEGACY_KEY) === 'SYNTHETIC_LEGACY_KEY_CANARY', 'COPY_DELETED_LEGACY_KEY');
+                invariant(observations.legacyRemoves.length === 0, 'COPY_TRIGGERED_DELETE');
+
+                document.getElementById('ai-review-legacy').click();
+                document.getElementById('ai-delete-legacy-key').click();
+                document.getElementById('ai-review-legacy').click();
+                document.getElementById('ai-delete-legacy-history').click();
+                invariant(JSON.stringify(observations.legacyRemoves) === JSON.stringify([LEGACY_KEY, LEGACY_HISTORY]), 'LEGACY_DELETES_NOT_SEPARATE');
+                invariant(localStorage.getItem(LEGACY_KEY) === null, 'LEGACY_KEY_NOT_DELETED');
+                invariant(localStorage.getItem(LEGACY_HISTORY) === null, 'LEGACY_HISTORY_NOT_DELETED');
+                invariant(observations.legacyWrites.length === 0, 'LEGACY_VALUE_OVERWRITTEN');
+                return { explicitReads: observations.legacyReads.length, separateDeletes: 2, automaticActions: 0 };
+            });
+
+            await gate('served-error-matrix-safe-codes-no-retry', async () => {
+                const matrix = [
+                    ['offline', { online: () => false, fetch: interceptedFetch }, 'AI_COACH_OFFLINE', 0],
+                    ['http', { online: () => true, fetch: async (...args) => {
+                        responseMode = 'http';
+                        return interceptedFetch(...args);
+                    } }, 'AI_COACH_PROVIDER_ERROR', 1],
+                    ['malformed', { online: () => true, fetch: async (...args) => {
+                        responseMode = 'malformed';
+                        return interceptedFetch(...args);
+                    } }, 'AI_COACH_RESPONSE_INVALID', 1]
+                ];
+                for (const [name, overrides, code, expectedDelta] of matrix) {
+                    const before = observations.requests;
+                    const isolated = boundary.createAICoachSession({ ...sessionOptions, ...overrides });
+                    isolated.setApiKey('SYNTHETIC_PROVIDER_KEY_CANARY');
+                    try {
+                        await isolated.send(isolated.prepare(`${name} question`, []));
+                        throw new Error(`${name.toUpperCase()}_DID_NOT_FAIL`);
+                    } catch (error) {
+                        invariant(error?.code === code, `${name.toUpperCase()}_CODE_INVALID`);
+                    }
+                    invariant(observations.requests - before === expectedDelta, `${name.toUpperCase()}_RETRY_OR_COUNT_INVALID`);
+                }
+                responseMode = 'ok';
+                return { offlineRequests: 0, httpAttempts: 1, malformedAttempts: 1, retries: 0 };
+            });
+
+            await gate('demo-zero-io', async () => {
+                const before = {
+                    requests: observations.requests,
+                    reads: observations.legacyReads.length,
+                    writes: observations.legacyWrites.length,
+                    removes: observations.legacyRemoves.length
+                };
+                const denyStorage = new Proxy({}, {
+                    get() { throw new Error('DEMO_STORAGE_IO'); }
+                });
+                const demo = boundary.createAICoachSession({
+                    sessionMode: 'demo',
+                    legacyStorage: denyStorage,
+                    fetch: async () => { throw new Error('DEMO_PROVIDER_IO'); }
+                });
+                tab.renderAIChatTab(activities, { sessionMode: 'demo', aiCoach: demo });
+                invariant(document.getElementById('ai-chat-tab').textContent.includes('Demo performs no consent'), 'DEMO_COPY_MISSING');
+                invariant(observations.requests === before.requests, 'DEMO_REQUEST');
+                invariant(observations.legacyReads.length === before.reads, 'DEMO_LEGACY_READ');
+                invariant(observations.legacyWrites.length === before.writes, 'DEMO_LEGACY_WRITE');
+                invariant(observations.legacyRemoves.length === before.removes, 'DEMO_LEGACY_REMOVE');
+                return { providerRequests: 0, consentIO: 0, keyIO: 0, historyIO: 0, storageIO: 0 };
+            });
+
+            invariant(observations.consoleCalls === 0, 'CONSOLE_OUTPUT_PRESENT');
+            invariant(observations.runtimeErrors === 0, 'RUNTIME_ERROR_PRESENT');
+            invariant(document.querySelectorAll('script[src],link[href],img[src],iframe[src]').length === 0, 'EXTERNAL_RESOURCE_PRESENT');
+            document.documentElement.dataset.r7AiCoachStatus = 'pass';
+            evidence.textContent = JSON.stringify({
+                status: 'pass',
+                gates: observations.gates,
+                providerRequests: observations.requests,
+                abortedRequests: observations.aborts,
+                legacyReadKeys: [...new Set(observations.legacyReads)].sort(),
+                legacyWriteCount: observations.legacyWrites.length,
+                legacyRemoveKeys: observations.legacyRemoves,
+                consoleCalls: observations.consoleCalls,
+                runtimeErrors: observations.runtimeErrors,
+                realProviderReached: false,
+                privateValuesRecorded: false
+            }, null, 2);
+        } catch (error) {
+            document.documentElement.dataset.r7AiCoachStatus = 'fail';
+            evidence.textContent = JSON.stringify({
+                status: 'fail',
+                code: String(error?.message ?? 'UNKNOWN'),
+                gates: observations.gates
+            }, null, 2);
+        } finally {
+            for (const [method, original] of Object.entries(originalConsole)) console[method] = original;
+        }
+    </script>
+</body>
+</html>

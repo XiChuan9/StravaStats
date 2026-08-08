@@ -545,3 +545,30 @@ test('Speed Insights production injection is same-origin, queued, and idempotent
         else Reflect.deleteProperty(globalThis, 'document');
     }
 });
+
+test('R7 main injects one frozen AI Coach session while the tab owns no provider or storage I/O', async () => {
+    const aiTabSource = await source('js/tabs/ai-chat.js');
+    const aiBoundarySource = await source('js/app/ai-coach-egress.js');
+    assert.match(
+        mainSource,
+        /import\s*\{\s*createAICoachSession\s*\}\s*from\s*['"]\.\/ai-coach-egress\.js['"]/
+    );
+    assert.match(
+        mainSource,
+        /const aiCoachSession = createAICoachSession\(\{[\s\S]*?sessionMode:\s*documentSessionMode[\s\S]*?legacyStorage:[\s\S]*?APP_SESSION_MODE\.REAL/
+    );
+    assert.match(
+        mainSource,
+        /renderAIChatTab\(allActivities,\s*\{\s*sessionMode:\s*activeSessionMode,\s*aiCoach:\s*aiCoachSession\s*\}\)/
+    );
+    assert.doesNotMatch(
+        aiTabSource,
+        /\bfetch\s*\(|localStorage|sessionStorage|indexedDB|caches\s*\.|serviceWorker|Authorization/
+    );
+    assert.match(aiTabSource, /prepared\.confirmLabel/);
+    assert.match(aiTabSource, /Request preview — nothing has been sent/);
+    assert.match(aiBoundarySource, /x-goog-api-key/);
+    assert.match(aiBoundarySource, /store:\s*false/);
+    assert.match(aiBoundarySource, /REQUEST_TIMEOUT_MS = 4_000/);
+    assert.doesNotMatch(aiBoundarySource, /\?key=|Authorization/);
+});

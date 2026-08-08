@@ -549,3 +549,24 @@ test('response and document-memory history enforce 16,384 code units, 12 message
     assert.equal(session.hasApiKey(), false);
 });
 
+test('served browser harness freezes interception-before-import and safe evidence boundaries', async () => {
+    const harness = await source('tests/consumers/ai-consent-browser-smoke.html');
+    for (const pattern of [
+        /DISPOSABLE_LOOPBACK_ORIGIN_REQUIRED/,
+        /EXPLICIT_SYNTHETIC_MODE_REQUIRED/,
+        /const interceptedFetch[\s\S]*?await import\('\/js\/app\/ai-coach-egress\.js/,
+        /existing-user-default-zero-egress/,
+        /memory-key-and-preview-before-affirmation/,
+        /affirmed-exact-request-and-memory-history/,
+        /fresh-confirmation-no-transcript-resend/,
+        /revoke-aborts-and-discards-memory/,
+        /legacy-data-explicit-copy-and-separate-delete/,
+        /served-error-matrix-safe-codes-no-retry/,
+        /demo-zero-io/,
+        /realProviderReached:\s*false/,
+        /privateValuesRecorded:\s*false/
+    ]) {
+        assert.match(harness, pattern);
+    }
+    assert.doesNotMatch(harness, /tests\/fixtures\/private/);
+});
