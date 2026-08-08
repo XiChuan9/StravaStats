@@ -218,3 +218,67 @@ credentials/account/private data, user data deletion/repair/migration, a browser
 First-run product choice, architecture-level change, or a path beyond the frozen hard maximum. A
 GitHub App 403 is delegated immediately. Do not use the user's Chrome/login, merge, clean retained
 R3/R4/R5/R9 branches or worktrees, deploy, release, or start another release-hardening package.
+
+## Closure evidence
+
+R10 closed against the exact baseline
+`integration/v2@4efccfe030aa263cc4727fe110ca058b37d3ff30`. A0 confirmed a clean worktree,
+local/origin `0/0`, the supplied integration push CI success (run `31245240740`, job
+`93072639116`), and untouched `npm ci`, syntax 243, privacy, full 1602/1602, and diff checks.
+The first commit was Task-Brief-only (`b0c023e`); the decision package (`53611e3`), accepted
+Option B residual (`23a1fe2`), and implementation (`bf2b9a6`) remained inside the cumulative literal
+allowlist. PR #38 remained Draft throughout implementation and review.
+
+Failure-first evidence reproduced and repaired each material failure:
+
+- the former abort-failure expectation required one `deleteDatabase`; the replacement asserts zero
+  delete and the accepted residual's exact version 1, zero-store, zero-user-record shape;
+- direct auth and Rescue Reader TOCTOU tests first proved that a stale-positive preflight plus abort
+  failure can leave only that accepted empty database;
+- missing, rejected, malformed, non-finite, accessor, Proxy, reflection-hostile, and pending
+  enumeration tests prove zero `open`, delete, Token write, and First-run/first-login authorization;
+- pending enumeration initially remained unresolved, then late hostile fulfillment initially ran
+  one reflection trap after return; bounded enumeration plus the pre-reflection settled guard made
+  both tests pass with zero late trap or continuation;
+- existing, absent, valid-empty, malformed-store, old/current/future version, blocked, abort, error,
+  timeout, late success/error, versionchange, and Demo schedules preserve the required state and
+  resource boundaries. Confirmed absent and valid-empty remain distinct internally while retaining
+  the public compatibility envelope and valid-empty first-login/First-run behavior.
+
+Final local verification after `npm ci`:
+
+```text
+focused R10/bootstrap/Demo matrix  141/141 PASS
+npm run check:syntax              PASS (243 files)
+npm run check:privacy             PASS
+npm test                          PASS (1615/1615)
+git diff --check                  PASS
+worktree                          clean
+```
+
+One sandboxed full run recorded the known unrelated Stream p95 fluctuation and an ephemeral local
+listen `EPERM`; the performance test passed in isolation, and the required unrestricted full run
+passed 1615/1615. No performance threshold, server, or unrelated production path changed.
+
+An actual-served disposable in-app-browser origin used only deterministic synthetic records and
+safe aggregate evidence. Confirmed absence created no Legacy database. For an existing version 3
+Legacy database, the before/after database descriptors, one store, and one record count were
+identical; auth classified present, Rescue Reader classified found, unversioned opens totaled two,
+and deletes totaled zero. Rejected enumeration produced auth unknown and Reader error with zero
+open/delete. localStorage, Cache Storage, and Service Worker deltas were all zero. The temporary
+same-origin harness was removed and no user profile, login, credential, or private value was used.
+The broader historical PR-15 smoke encountered its pre-R10 `CANONICAL_NO_PROVIDER_REFRESH` gate and
+was not used as R10 pass evidence.
+
+The first independent findings-first review exposed the unavoidable IndexedDB TOCTOU and missing
+matrix coverage. After the user's Option B decision and repairs, fresh review found pending
+enumeration and late hostile-reflection continuations; both were fixed failure-first. The final
+fresh independent re-review reported no findings and confirmed no public API, schema, dependency,
+architecture, or scope expansion.
+
+A true remote depth-1 fetch of implementation head
+`bf2b9a6aa419ec89b02168dc1e5a7e8a8a0ba2a9` produced one reachable commit and exact local/remote
+tree `ad512d2ffcb2729fff01144f8cfb5d8333c53464`. Exact-head CI succeeded at run
+`31247730126`, job `93078957461`. The Closure commit requires its own exact-head CI before PR body
+update and Draft-to-Ready transition. Merge, cleanup, deploy, release, and R6-R8/R11 remain
+unauthorized.
