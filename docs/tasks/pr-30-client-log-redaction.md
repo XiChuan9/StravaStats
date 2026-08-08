@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 release hardening R5 |
-| Status | A1 scope frozen; A2 findings-first investigation pending |
+| Status | A2 findings-first inventory complete; implementation allowlist frozen |
 | Branch | `codex/v2/client-log-redaction` |
 | Exact base | `integration/v2@c04be67a71b672933a908d7c976dcd36cea69a53` |
 | Product authority | Client production logging and debug-exposure hardening only |
@@ -66,6 +66,97 @@ tests/privacy/client-logging.test.js
 Until A2 freezes a smaller literal allowlist, the cumulative write allowlist is only this Task
 Brief. A required additional path must be justified by a minimum source-to-runtime-to-sink failure
 trace and must not collide with R4 or R6-R11.
+
+## A2 findings and implementation authorization
+
+### Complete inventory result
+
+Static inspection enumerated 110 explicit client-side console call sites outside tests, server/API,
+and tooling. Three belong exclusively to the Service Worker and remain R9. The remaining browser
+graph was traced from the root tab barrel, detail entry documents, and the Advanced Analysis dynamic
+import. Calls were classified as production-reachable raw/dynamic, production-reachable closed
+fixed/coarse, R8/R9-owned, or example-only. No captured runtime value was printed.
+
+The production-reachable raw/dynamic responsibility surface is:
+
+| Category | Paths | Source -> runtime -> sink | Minimum disposition |
+| --- | --- | --- | --- |
+| Legacy API cache | `js/services/api.js` | storage key/error -> root and detail metadata reads -> console | Remove raw key and caught value output |
+| Legacy activity cache | `js/services/activity-cache.js` | storage operation/error/rollback descriptor -> Legacy repository -> console | Preserve fallback behavior; emit no raw caught value/object |
+| Automatic weather preprocessing | `js/shared/preprocessing/core.js` | activity name/date and thrown value -> root preprocessing -> console | Remove raw output only; do not change request or missing-value behavior |
+| Detail weather rendering | `js/shared/utils/weather-analysis.js` | caught value -> detail weather UI -> console | Replace with fixed safe event code; preserve fixed UI recovery copy |
+| Summary analysis tabs | `js/tabs/bike-analysis.js`, `js/tabs/weather.js`, `js/tabs/athlete.js`, `js/tabs/run-analysis.js` | activity arrays/names/dates/health or chart values/caught values -> root tabs -> console | Remove unnecessary output; retain only exact fixed safe categories |
+| Advanced analysis | `js/analysis/analyzers/index.js`, `js/models/climb.js` | provider sport or activity distance/elevation -> detail Advanced Analysis -> console | Remove dynamic debug output; retain analysis results and algorithms |
+| Run Plus debug publication | `js/tabs/run-plus.js` | diagnostics and NSM summary -> root element property + DOM dataset + `window` | Remove default-reachable debug publication; retain internal render model |
+
+Other client call sites use fixed copy, necessary coarse non-identifying counts, internal fixed DOM
+IDs, or are not imported by a production entry. `js/app/main.js` receives only internal fixed
+categories, a closed Repository operation vocabulary and bounded counts; it does not receive raw
+caught values. `classifyRun.js` and `classifyBike.js` use required classic-script globals consumed by
+detail pages and are product runtime interfaces rather than debug publication. Maps and Service
+Worker calls remain owned by R8 and R9 and are not changed.
+
+The Run Plus publication has no documented product contract and no production reader anywhere in
+the repository. Its three copies expose the same private analysis structures through a DOM element
+property, serialized DOM attribute, and `window`; removing them leaves the internal render model,
+visible UI, settings, algorithms and exports unchanged. This is therefore the minimum default-debug
+repair, not a material observability product decision.
+
+### Frozen source-to-sink trace
+
+```text
+storage key / storage failure / rollback descriptor
+  -> Legacy cache compatibility and fallback
+  -> current raw console arguments
+
+activity collection / name / date / location / health and analysis values
+  -> root preprocessing, summary tabs, Advanced Analysis
+  -> current interpolated or object console arguments
+
+hostile caught value
+  -> cache, weather, and gear failure recovery
+  -> current raw console argument
+
+Run Plus diagnostics and NSM summary
+  -> render-local model
+  -> current DOM property + serialized dataset + window global
+```
+
+### Frozen literal cumulative allowlist
+
+The smallest cumulative hard maximum is exactly these thirteen paths:
+
+```text
+docs/tasks/pr-30-client-log-redaction.md
+js/analysis/analyzers/index.js
+js/models/climb.js
+js/services/api.js
+js/services/activity-cache.js
+js/shared/preprocessing/core.js
+js/shared/utils/weather-analysis.js
+js/tabs/athlete.js
+js/tabs/bike-analysis.js
+js/tabs/run-analysis.js
+js/tabs/run-plus.js
+js/tabs/weather.js
+tests/privacy/client-logging.test.js
+```
+
+The five production paths beyond the historical candidate list are required by direct
+production-entry traces above. No schema, dependency, public API, network, storage, algorithm,
+weather semantics, map, Service Worker, telemetry, or Diagnostics expansion is authorized. A
+fourteenth path requires a new minimum failure/collision package and delegation before modification.
+
+### Frozen output and test decision
+
+Unnecessary dynamic/debug calls are removed. Necessary failure observability uses only exact fixed
+one-argument codes; storage and weather recovery behavior does not inspect the caught value for
+logging. Fixed UI copy/status is unchanged. Tests will combine a complete static production
+inventory with executable cache, weather-render and Run Plus exposure seams. Hostile accessor,
+Proxy, revoked and thrown-value canaries must remain absent from console, DOM, globals, storage and
+network capture; existing functional access required by serialization/rendering is not broadened.
+
+Implementation is now authorized only within the thirteen-path allowlist.
 
 ## A2 findings-first investigation
 
