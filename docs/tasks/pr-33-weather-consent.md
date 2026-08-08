@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 release hardening / R6 |
-| Status | A0/A1 complete; Draft PR #39 open; A2 findings-first audit complete; material decision pending |
+| Status | A0-A2 complete; Option A selected and frozen; failure-first implementation authorized |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/weather-consent` |
 | Exact base | `integration/v2@8b4521ad9f45af9f6056f04cf0c8fd4cd6e6a97e` |
@@ -241,7 +241,13 @@ The recommendation may be deny-by-default with no request before explicit consen
 copy, persistence key, precision, date range, or cache behavior is self-authorized. The control
 tower must obtain and return the user's decision before implementation begins.
 
-## A3 material decision package (not yet selected)
+## A3 material decision package and frozen selection
+
+The control tower returned the user's explicit selection of **Option A**. The decision is not an
+inference, default, or mixed profile. Option A's copy, session scope, exact storage key, one-point
+precision/date contract, cache limits, revocation behavior, existing-user behavior, and literal
+19-path allowlist below are frozen together. Options B and C remain rejected alternatives and do
+not authorize any of their persistence, automatic-enrichment, route-sampling, or cache behavior.
 
 All three options share these non-negotiable correctness and safety rules:
 
@@ -259,7 +265,7 @@ All three options share these non-negotiable correctness and safety rules:
   Diagnostics, or logs. Revocation/cancellation aborts registered in-flight work before clearing
   only the selected weather module's own memory/consent state.
 
-### Option A — session-scoped, one approximate point (recommended)
+### Option A — session-scoped, one approximate point (selected and frozen)
 
 - Default/startup: dashboard initialization and refresh never fetch weather. An inline Weather
   card in the Weather tab or a detail page is the only grant surface. The exact positive button is
@@ -309,7 +315,7 @@ tests/consumers/detail-browser-smoke.html
 tests/consumers/weather-consent-browser-smoke.html
 ```
 
-### Option B — durable opt-in, approximate route fidelity
+### Option B — durable opt-in, approximate route fidelity (not selected)
 
 - Default/startup: absent consent is still deny. The exact positive button is
   `Always allow weather`; after grant, dashboard initialization/refresh may enrich eligible runs,
@@ -362,7 +368,7 @@ tests/consumers/detail-browser-smoke.html
 tests/consumers/weather-consent-browser-smoke.html
 ```
 
-### Option C — one-view authorization, no stored consent
+### Option C — one-view authorization, no stored consent (not selected)
 
 - Default/startup: dashboard initialization and refresh never fetch weather. Each Weather tab or
   detail render offers `Fetch this Weather view once`; `Not now` performs no request. A later view
@@ -386,9 +392,9 @@ tests/consumers/weather-consent-browser-smoke.html
   requires repeated prompts and may make multi-activity Weather views more cumbersome.
 - Exact literal implementation allowlist if selected is the same 19 paths as Option A.
 
-Selection must be exactly `A`, `B`, or `C`; mixed profiles require a revised package and another
-material decision. Until the control tower returns the selection, the only writable path remains
-this Task Brief and no production/test implementation is authorized.
+The cumulative implementation and Closure write allowlist is now exactly Option A's 19 literal
+paths. Mixed behavior or any twentieth path requires a revised package and a new user decision.
+Failure-first test work may begin only after this selection freeze is committed by itself.
 
 ## Failure-first implementation and verification contract
 
