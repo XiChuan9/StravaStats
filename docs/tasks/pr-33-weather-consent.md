@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 release hardening / R6 |
-| Status | A0-A2 complete; Option A selected and frozen; failure-first implementation authorized |
+| Status | A0-A3 complete; Option A plus reviewed Demo injection path frozen; implementation in review repair |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/weather-consent` |
 | Exact base | `integration/v2@8b4521ad9f45af9f6056f04cf0c8fd4cd6e6a97e` |
@@ -392,9 +392,49 @@ tests/consumers/weather-consent-browser-smoke.html
   requires repeated prompts and may make multi-activity Weather views more cumbersome.
 - Exact literal implementation allowlist if selected is the same 19 paths as Option A.
 
-The cumulative implementation and Closure write allowlist is now exactly Option A's 19 literal
-paths. Mixed behavior or any twentieth path requires a revised package and a new user decision.
-Failure-first test work may begin only after this selection freeze is committed by itself.
+The initial implementation and Closure write allowlist was exactly Option A's 19 literal paths.
+Mixed behavior or any twentieth path required a revised package and a new user decision.
+Failure-first test work could begin only after this selection freeze was committed by itself.
+
+### A3 review repair decision — Demo session-mode injection (selected and frozen)
+
+The independent findings-first review proved that `js/tabs/weather.js` could not distinguish Demo
+from Real when the same browser tab already held the exact positive consent value. The existing
+root composition had frozen `activeSessionMode`, but did not inject it into `renderWeatherTab`.
+With a prior grant, a synthetic Demo activity therefore caused consent reads and an intercepted
+weather request instead of remaining purely local.
+
+The control tower returned the user's explicit **A** decision: add only `js/app/main.js` as the
+twentieth cumulative path for an architecture-consistent, frozen `sessionMode` injection into the
+existing Weather-tab renderer. `sessionMode === 'demo'` must select only embedded synthetic weather
+before any consent-service read, weather cache access, or fetch. Unknown or malformed mode fails
+closed before those operations. This decision does not authorize root weather enrichment, another
+main composition change, a public API/schema/dependency change, or any twenty-first path.
+
+The cumulative implementation and Closure allowlist is now exactly these 20 literal paths:
+
+```text
+docs/tasks/pr-33-weather-consent.md
+js/app/main.js
+js/app/weather-consent.js
+js/shared/preprocessing/core.js
+js/shared/utils/weather-analysis.js
+js/tabs/weather.js
+js/pages/activity/index.js
+js/pages/run/index.js
+js/pages/bike/index.js
+js/pages/swim/index.js
+js/pages/activity/activity.js
+js/pages/run/run.js
+js/pages/bike/bike.js
+js/pages/swim/swim.js
+tests/privacy/weather-egress.test.js
+tests/privacy/client-logging.test.js
+tests/consumers/detail-consumers.test.js
+tests/consumers/detail-boundaries.test.js
+tests/consumers/detail-browser-smoke.html
+tests/consumers/weather-consent-browser-smoke.html
+```
 
 ## Failure-first implementation and verification contract
 
