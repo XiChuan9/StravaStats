@@ -1,5 +1,5 @@
 // js/preprocessing.js
-import { rollingMean, calculateEnvironmentalDifficulty } from '../utils/index.js';
+import { rollingMean } from '../utils/index.js';
 
 // ===================================================================
 // CONFIGURACIÓN
@@ -49,73 +49,6 @@ function estimatePoolLengths(activities) {
             a.pool_length = candidates[0];
         }
     });
-}
-
-// ===================================================================
-// WEATHER API FUNCTION
-// ===================================================================
-function numericSafe(v) {
-    return v === null || v === undefined || isNaN(v) ? 0 : Number(v);
-}
-
-const WEATHER_REQUEST_TIMEOUT_MS = 4000; // abort individual request after 4 s
-const WEATHER_TOTAL_TIMEOUT_MS = 12000;  // stop fetching weather after 12 s total
-
-function isDemoModeFromStorage() {
-    if (typeof localStorage === 'undefined') return false;
-    return localStorage.getItem('strava_demo_mode') === 'true';
-}
-
-async function getWeatherForRun(run) {
-    if (!run.start_latlng || run.start_latlng.length < 2) {
-        return null;
-    }
-
-    const [lat, lon] = run.start_latlng;
-    const start = new Date(run.start_date_local);
-    const dateStr = start.toISOString().split("T")[0];
-
-    const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,precipitation,wind_speed_10m,wind_direction_10m,weathercode,cloudcover,surface_pressure,relativehumidity_2m&start_date=${dateStr}&end_date=${dateStr}&timezone=auto`;
-
-    const controller = new AbortController();
-    const timerId = setTimeout(() => controller.abort(), WEATHER_REQUEST_TIMEOUT_MS);
-
-    try {
-        const res = await fetch(url, { signal: controller.signal });
-        clearTimeout(timerId);
-        if (!res.ok) throw new Error(`HTTP ${res.status} - ${res.statusText}`);
-        const data = await res.json();
-
-        if (!data.hourly || !data.hourly.time || !data.hourly.time.length) {
-            return null;
-        }
-
-        const hour = start.getHours();
-        let idx = data.hourly.time.findIndex(t => new Date(t).getHours() === hour);
-
-        if (idx === -1) {
-            idx = Math.min(hour, data.hourly.time.length - 1);
-        }
-
-        const weather = {
-            temperature: numericSafe(data.hourly.temperature_2m[idx]),
-            precipitation: numericSafe(data.hourly.precipitation[idx]),
-            wind_speed: numericSafe(data.hourly.wind_speed_10m[idx]),
-            wind_direction: numericSafe(data.hourly.wind_direction_10m[idx]),
-            weather_code: data.hourly.weathercode ? data.hourly.weathercode[idx] : null,
-            humidity: numericSafe(data.hourly.relativehumidity_2m ? data.hourly.relativehumidity_2m[idx] : null),
-            cloudcover: numericSafe(data.hourly.cloudcover ? data.hourly.cloudcover[idx] : null),
-            pressure: numericSafe(data.hourly.surface_pressure ? data.hourly.surface_pressure[idx] : null),
-        };
-
-        const difficulty = calculateEnvironmentalDifficulty({ weather });
-
-        return { ...weather, difficulty };
-
-    } catch {
-        clearTimeout(timerId);
-        return null;
-    }
 }
 
 // ===================================================================
@@ -290,53 +223,10 @@ function computeVO2max(activity, maxHr = MAX_HR_DEFAULT) {
 }
 
 // ===================================================================
-// 3. Agrupar por día (con weather para runs)
+// 3. Group by day without external enrichment
 // ===================================================================
 async function groupByDay(activities) {
     const daily = {};
-    const runs = activities.filter(a => a.type === 'Run' && a.start_latlng);
-
-    // Demo data already includes synthetic weather fields and should avoid network/weather logs.
-    if (isDemoModeFromStorage()) {
-        activities.forEach(a => {
-            const date = a.start_date_local?.split('T')[0];
-            if (!date) return;
-
-            computeVO2max(a);
-
-            if (!daily[date]) {
-                daily[date] = { tss: 0, count: 0 };
-            }
-            daily[date].tss += a.tss;
-            daily[date].count += 1;
-        });
-        return daily;
-    }
-
-    // Fetch weather in batches with a hard total-time cap
-    const batches = 5;
-    const weatherStart = Date.now();
-    for (let i = 0; i < runs.length; i += batches) {
-        if (Date.now() - weatherStart > WEATHER_TOTAL_TIMEOUT_MS) {
-            break;
-        }
-        const batch = runs.slice(i, i + batches);
-        const weatherPromises = batch.map(run => getWeatherForRun(run));
-        const weatherResults = await Promise.all(weatherPromises);
-
-        batch.forEach((run, idx) => {
-            const weather = weatherResults[idx];
-            if (weather) {
-                run.weather = weather;
-                run.difficulty = weather.difficulty;
-            } else {
-                run.difficulty = 0; // default
-            }
-        });
-
-        // Sleep to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 100));
-    }
 
     activities.forEach(a => {
         const date = a.start_date_local?.split('T')[0];

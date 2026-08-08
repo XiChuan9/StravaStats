@@ -214,6 +214,7 @@ test('Weather render success, failure, and hostile inputs keep output inside fix
             else if (value.includes('Allow for this tab')) bodyWrites.push('consent');
             else if (value.includes('Loading weather analysis')) bodyWrites.push('loading');
             else if (value.includes('No weather data available')) bodyWrites.push('no-data');
+            else if (value.includes('Weather is unavailable for this activity')) bodyWrites.push('unavailable');
             else if (value.includes('Weather analysis could not be loaded')) bodyWrites.push('failed');
             else bodyWrites.push('unexpected');
         }
@@ -352,7 +353,7 @@ test('Weather render success, failure, and hostile inputs keep output inside fix
             'consent',
             'consent',
             'consent',
-            'failed'
+            'unavailable'
         ], 'WEATHER_DOM_OUTPUT_CHANGED');
     } finally {
         for (const [name, descriptor] of descriptors) restoreGlobal(name, descriptor);

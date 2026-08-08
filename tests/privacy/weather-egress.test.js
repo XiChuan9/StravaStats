@@ -281,6 +281,7 @@ test('invalid coordinates and dates fail closed before fetch', async () => {
         { coordinate: [Number.NaN, 0], startDateLocal: VALID_INPUT.startDateLocal },
         { coordinate: [0, 0], startDateLocal: null },
         { coordinate: [0, 0], startDateLocal: '2031-02-30T04:05:06' },
+        { coordinate: [0, 0], startDateLocal: '2031-02-03T04:05:06+99:99' },
         { coordinate: [0, 0], startDateLocal: '2031-02-03' },
         { coordinate: [0, 0], startDateLocal: 'not-a-date' }
     ];
@@ -298,7 +299,10 @@ test('HTTP, network, malformed, time, and timeout failures remain unavailable', 
         ['network', async () => { throw new Error('SYNTHETIC_NETWORK_FAILURE'); }],
         ['json', async () => ({ ok: true, async json() { throw new Error('SYNTHETIC_JSON'); } })],
         ['shape', async () => okResponse(null)],
-        ['time', async () => okResponse(hourly({ time: ['invalid-time'] }))]
+        ['time', async () => okResponse(hourly({ time: ['invalid-time'] }))],
+        ['malformed matching hour', async () => okResponse(hourly({
+            time: ['2031-02-03T04:not-a-time']
+        }))]
     ];
     for (const [name, fetch] of cases) {
         await t.test(name, async () => {
@@ -384,4 +388,109 @@ test('revoke aborts in-flight work and denies later requests until a new grant',
     assert.equal(await pending, null);
     assert.equal(await service.request(VALID_INPUT), null);
     assert.equal(fetches, 1);
+});
+
+test('revoke remains deny when recording denied session state fails', async () => {
+    const { createWeatherConsentService } = await consentModule('revoke-storage-failure');
+    const storage = new MemoryStorage({
+        [CONSENT_KEY]: '{"version":1,"granted":true}'
+    });
+    storage.setItem = () => {
+        throw new Error('SYNTHETIC_SESSION_WRITE_FAILURE');
+    };
+    let fetches = 0;
+    const service = createWeatherConsentService(serviceDependencies({
+        storage,
+        fetch: async () => {
+            fetches += 1;
+            return okResponse();
+        }
+    }));
+    assert.equal(service.isGranted(), true);
+    service.revoke();
+    assert.equal(service.isGranted(), false);
+    assert.equal(await service.request(VALID_INPUT), null);
+    assert.equal(fetches, 0);
+});
+
+test('Weather tab exposes revoke while authorized requests are in flight', async () => {
+    const names = ['document', 'fetch', 'sessionStorage'];
+    const descriptors = new Map(names.map(name => [
+        name,
+        Object.getOwnPropertyDescriptor(globalThis, name)
+    ]));
+    const storage = new MemoryStorage({
+        [CONSENT_KEY]: '{"version":1,"granted":true}'
+    });
+    let summaryHtml = '';
+    let revokeHandler = null;
+    let observedSignal = null;
+    let finishFetch = null;
+    let rendering = null;
+    const summary = {
+        get innerHTML() {
+            return summaryHtml;
+        },
+        set innerHTML(value) {
+            summaryHtml = value;
+        },
+        querySelector(selector) {
+            if (selector !== '[data-weather-consent-revoke]' || !summaryHtml.includes(selector.slice(1, -1))) {
+                return null;
+            }
+            return {
+                addEventListener(_event, handler) {
+                    revokeHandler = handler;
+                }
+            };
+        }
+    };
+    Object.defineProperty(globalThis, 'sessionStorage', {
+        configurable: true,
+        value: storage
+    });
+    Object.defineProperty(globalThis, 'document', {
+        configurable: true,
+        value: {
+            getElementById(id) {
+                if (id === 'weather-tab') return {};
+                if (id === 'wa-stats-row') return summary;
+                return null;
+            }
+        }
+    });
+    Object.defineProperty(globalThis, 'fetch', {
+        configurable: true,
+        value: async (_url, { signal }) => {
+            observedSignal = signal;
+            return new Promise((resolve, reject) => {
+                finishFetch = () => resolve({ ok: false });
+                signal.addEventListener('abort', () => reject(new Error('SYNTHETIC_REVOKE')), {
+                    once: true
+                });
+            });
+        }
+    });
+
+    try {
+        const { renderWeatherTab } = await import('../../js/tabs/weather.js?in-flight-revoke=1');
+        rendering = renderWeatherTab([{
+            type: 'Run',
+            start_latlng: [12.3456, -98.7654],
+            start_date_local: '2031-02-03T04:05:06'
+        }]);
+        await Promise.resolve();
+        assert.equal(typeof revokeHandler, 'function', 'IN_FLIGHT_REVOKE_CONTROL_MISSING');
+        revokeHandler();
+        await rendering;
+        assert.equal(observedSignal?.aborted, true);
+        assert.equal(storage.values.get(CONSENT_KEY), '{"version":1,"granted":false}');
+    } finally {
+        finishFetch?.();
+        await rendering;
+        for (const [name, descriptor] of descriptors) {
+            if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+            else delete globalThis[name];
+        }
+    }
 });

@@ -204,7 +204,7 @@ export async function initializeRunPage({
             zones: readEnvelopeData(detail.zones, true),
             athlete: readEnvelopeData(detail.athlete, true),
             activityId,
-            allowExternalWeather: !demo
+            weatherFeatureEnabled: !demo
         });
         return true;
     } catch {
