@@ -157,6 +157,106 @@ real or suspected credential, identity, provider response, private activity, pat
 heart-rate, or power value. Failure output uses only safe assertion labels, paths, categories,
 counts, and fixed codes.
 
+## A2 findings and implementation authorization
+
+### Findings-first inventory
+
+The exact-base audit found nine explicit production-reachable `console.error` sinks across the
+deployed API graph. None uses a closed safe contract:
+
+| Category | Current-tree owners | Reachability and flow | Minimum disposition |
+| --- | --- | --- | --- |
+| Token-refresh response logging | `api/_shared.js` | Provider failure body is read and passed to the console before a fixed throw | Do not read the failure body; emit one closed fixed event |
+| Token-exchange logging and response | `api/strava-auth.js` | Raw thrown cause/message or provider object reaches the console and browser failure body | Emit closed events and fixed failure bodies without inspecting thrown values |
+| Activities provider/catch logging | `api/strava-activities.js` | Provider failure message is embedded in an Error; the raw Error and message reach console/browser | Preserve status behavior with fixed event and fixed failure body |
+| Detail/metadata provider responses | `api/strava-activity.js`, `api/strava-athlete.js`, `api/strava-gear.js`, `api/strava-streams.js`, `api/strava-zones.js` | Provider details/messages or caught messages reach browser responses; caught messages reach console | Remove provider details and use fixed events/bodies while preserving statuses |
+
+`api/config.js` has no log sink and requires no change. There is no logger abstraction or existing
+server/API logging test. Existing tests do not invoke the API handlers as a closed logging contract.
+Tool-only syntax/privacy output and browser/client console paths are outside this package.
+
+The direct development adapter in `scripts/local-dev-server.mjs` imports and dispatches the same
+`api/*.js` handlers. Its handler boundary logs a request-derived route plus the raw caught value and
+returns a raw caught message. URL/route decoding and the async server callback also lack a closed
+outer error boundary. This is the same server/API responsibility surface required by the A2
+contract, not R5 client logging. The historical candidate list omitted this path, so the exact
+runtime trace is the minimum failure evidence authorizing its inclusion. Its fixed local-ready
+notice is development-only coarse telemetry and is not a disclosure finding.
+
+### Source-to-sink trace
+
+```text
+Authorization header
+  -> shared decode / token validation / optional refresh
+  -> provider request
+  -> fixed handler success response
+  -> current provider/raw failure log and response sinks
+
+Authorization-code request body
+  -> token exchange provider request
+  -> current raw cause/provider-object log and response sinks
+
+Opaque query values
+  -> provider request URL
+  -> current provider failure details/message response sinks
+
+Local development HTTP request
+  -> URL/body parsing and dynamic API dispatch
+  -> the same handler graph
+  -> current raw route/error console and response sink
+```
+
+Success provider payloads and refreshed tokens are existing endpoint semantics and are not removed
+or broadened by R4. Failure sinks never need their values. The repair therefore changes only
+failure observability and proven failure-body disclosures.
+
+### Frozen literal allowlist
+
+The minimum cumulative hard maximum is exactly these eleven paths:
+
+```text
+docs/tasks/pr-29-server-log-redaction.md
+api/_shared.js
+api/strava-auth.js
+api/strava-activities.js
+api/strava-activity.js
+api/strava-athlete.js
+api/strava-gear.js
+api/strava-streams.js
+api/strava-zones.js
+scripts/local-dev-server.mjs
+tests/privacy/server-api-logging.test.js
+```
+
+The shared API utility owns the internal literal event allowlist. No logger dependency or public
+client API is introduced. The single test path owns unit handler capture, hostile-value proofs,
+static boundary guards, and isolated loopback actual-served synthetic HTTP evidence. A twelfth path
+requires a new minimum failure/collision package and delegation before modification.
+
+### Frozen safe output contract
+
+- The server event vocabulary is a literal closed set with one fixed console string per failure
+  category. Calls accept no raw value, ID, route, status, body, count, or arbitrary context.
+- Provider non-success status codes stay unchanged. Their bodies retain only the endpoint's fixed
+  error category and never include `details` or a provider-derived message.
+- Handler-caught 500 and token-network 502 bodies use fixed existing-category copy and never inspect
+  the thrown value. Auth provider rejection remains 400 with fixed auth-failure copy.
+- Successful payloads, refreshed-token envelopes, methods, endpoint paths, query requirements, and
+  request/provider behavior remain unchanged.
+- Local development handler failures emit one fixed event and fixed 500 body. Route/body parsing,
+  dynamic import, handler execution, and response serialization are contained by the same safe
+  boundary. The fixed ready notice remains development-only coarse telemetry.
+- No accessor, descriptor, Proxy trap, custom inspection hook, coercion, or stringification is
+  performed on a caught value for logging or response construction.
+
+### Implementation authorization
+
+The delegated R4 contract authorizes implementation after this exact findings-first freeze. The
+development runtime path expansion is supported by the direct same-handler raw-sink evidence above
+and does not change schema, dependencies, client behavior, Service Worker, provider lifecycle,
+migration, data, rollback, deployment, or release scope. Implementation may proceed only within
+the eleven-path allowlist.
+
 ## Prohibited scope and operations
 
 - No modification of `main`, `maintenance/v1`, or `integration/v2`.
