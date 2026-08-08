@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 release hardening / R3 |
-| Status | A2 complete; implementation authorized and in progress |
+| Status | Closure complete; Ready-for-review handoff pending exact Closure-head CI |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/identity-redaction` |
 | Exact base | `integration/v2@e760946583f163085b0a8bac887b66fc5c9cec3d` |
@@ -13,7 +13,7 @@
 | Owner | Codex |
 | Reviewer | Independent findings-first reviewer required |
 | Dependencies | R1 PR #32 and R2 PR #33 Squash Merged; exact-base integration push CI successful |
-| Pull request | Pending Draft PR |
+| Pull request | Draft PR #34; Ready transition and merge are not authorized |
 | Control tower | `019fa697-6cbf-70f1-a120-bf31ecc9e2ba` |
 
 ## Goal
@@ -315,6 +315,46 @@ release, and R4 require explicit control-tower or user authorization.
 
 ## Completion evidence
 
-Pending A2 inventory, implementation allowlist freeze, failure-first evidence, implementation,
-browser determination, full verification, independent reviews, Closure, remote clone, and exact-
-head CI.
+### Failure-first and implementation
+
+- The Task-Brief-only first commit and the A2-only scope-freeze commit preceded production edits.
+- The initial focused run failed in four expected assertions: Demo opaque-string IDs and a
+  current-tree guard reporting twelve affected paths. The privacy command also failed using only
+  safe path and category labels; no identity value was emitted.
+- The implementation removed both athlete-specific match/correction paths and the Legacy profile
+  fallback, replaced Demo profile/activity/upload identity fields with deterministic non-empty
+  synthetic strings, and preserved the tracked example query ID as a validated opaque string.
+- The repository privacy command now scans tracked text with non-reversible frozen digests and
+  categorical structural rules. Its tests construct synthetic regression inputs without embedding
+  a prohibited identity value.
+- The implementation commit is `13f5537f6cd3b6b59558ba74ff22e2249c5bf7fa`. All implementation
+  writes are within the frozen seventeen-path allowlist.
+
+### Verification
+
+- Focused tests passed 318/318 after the failure-first repair.
+- Local syntax passed for 240 files, privacy passed, full tests passed 1482/1482, and
+  `git diff --check` passed.
+- Two actual-served loopback browser harnesses ran in an isolated browser context with synthetic
+  data. The detail harness passed thirteen deterministic gates and the summary harness returned an
+  overall passed status. The isolated tabs and temporary server were closed afterward.
+- A true remote depth-one fetch of the feature branch resolved exact head
+  `13f5537f6cd3b6b59558ba74ff22e2249c5bf7fa`, reported a shallow history count of one, and was
+  clean. In that checkout, `npm ci`, syntax 240, privacy, full 1482/1482, diff, and final clean
+  checks passed.
+- Pull-request CI run `31235286903`, job `93046494028`, completed successfully on that exact
+  implementation head; install, syntax, privacy, and tests all succeeded.
+
+### Independent review and remaining blocker
+
+- An independent findings-first review returned no findings across the exact seventeen-path
+  allowlist and the frozen runtime, privacy, ID, migration, rollback, provider/auth, storage,
+  Repository, Import, schema, and algorithm boundaries.
+- A separate fresh exact-head re-review also returned no findings. It independently reran the
+  focused 318/318 suite, privacy, and exact-range diff check.
+- Public Git-history exposure remains a disclosed release blocker requiring a separate owner
+  decision. No history/ref/tag/Release/PR artifact rewrite, force push, incident notification,
+  credential/account action, external notice, or real-account verification was performed.
+- This Closure changes only this Task Brief. The PR remains Draft. Exact Closure-head remote clone
+  and CI evidence are final external handoff gates; Ready transition, merge, cleanup, deploy,
+  release, and R4 remain unauthorized.
