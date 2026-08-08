@@ -1,13 +1,10 @@
-// Local dev only: corporate proxies use self-signed CA certs that Node.js doesn't trust.
-// This flag is safe here because this file is never executed in production (Vercel runs the
-// api/ handlers directly). Never set this in production code.
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+
+import { logServerEvent, SERVER_API_EVENT } from '../api/_shared.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -175,11 +172,11 @@ async function handleApi(req, res, url) {
     if (!apiRes.ended) {
       res.end();
     }
-  } catch (error) {
-    console.error(`[api:${apiName}]`, error);
+  } catch {
+    logServerEvent(SERVER_API_EVENT.LOCAL_HANDLER_FAILED);
     if (!res.writableEnded) {
       res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ error: error.message || 'Internal Server Error' }));
+      res.end(JSON.stringify({ error: 'Internal Server Error' }));
     }
   }
 }
@@ -219,19 +216,42 @@ function resolveStaticPath(url) {
   return path.join(rootDir, decodedPathname);
 }
 
-await loadEnv();
+export function createLocalDevServer() {
+  return createServer(async (req, res) => {
+    try {
+      const url = new URL(req.url, `http://${req.headers.host || `localhost:${port}`}`);
 
-const server = createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host || `localhost:${port}`}`);
+      if (url.pathname.startsWith('/api/')) {
+        await handleApi(req, res, url);
+        return;
+      }
 
-  if (url.pathname.startsWith('/api/')) {
-    await handleApi(req, res, url);
-    return;
-  }
+      await serveFile(res, resolveStaticPath(url));
+    } catch {
+      logServerEvent(SERVER_API_EVENT.LOCAL_HANDLER_FAILED);
+      if (!res.writableEnded) {
+        res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'Internal Server Error' }));
+      }
+    }
+  });
+}
 
-  await serveFile(res, resolveStaticPath(url));
-});
+async function startLocalDevServer() {
+  // Local dev only: corporate proxies use self-signed CA certs that Node.js doesn't trust.
+  // Vercel runs the API handlers directly, so this is never set by the production runtime.
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+  await loadEnv();
 
-server.listen(port, '127.0.0.1', () => {
-  console.log(`Local dev server ready at http://127.0.0.1:${port}`);
-});
+  const server = createLocalDevServer();
+  server.listen(port, '127.0.0.1', () => {
+    console.log(`Local dev server ready at http://127.0.0.1:${port}`);
+  });
+}
+
+const isDirectExecution = process.argv[1]
+  && path.resolve(process.argv[1]) === __filename;
+
+if (isDirectExecution) {
+  await startLocalDevServer();
+}
