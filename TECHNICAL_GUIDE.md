@@ -399,7 +399,7 @@ Interactivity is implemented through DOM controls rather than a framework state 
 - sort toggles on tables
 - predictor weight sliders
 - map mode switching
-- AI chat suggestions and conversation history persistence
+- AI chat suggestions and bounded document-memory conversation history
 
 ## 10. Detailed Feature Breakdown By Tab
 

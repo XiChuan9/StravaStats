@@ -1,5 +1,5 @@
 const SAFE_STATUS = Object.freeze({
-    AI_COACH_INPUT_INVALID: 'Enter a question of 4,000 characters or fewer.',
+    AI_COACH_INPUT_INVALID: 'Enter a question of 4,000 UTF-16 code units or fewer.',
     AI_COACH_ACTIVITY_INVALID: 'Training aggregates could not be prepared safely. Nothing was sent.',
     AI_COACH_API_KEY_INVALID: 'Enter a valid API key. It will remain only in this page memory.',
     AI_COACH_API_KEY_REQUIRED: 'Enter an API key in page memory before preparing a request.',
@@ -8,7 +8,7 @@ const SAFE_STATUS = Object.freeze({
     AI_COACH_TIMEOUT: 'The request timed out after four seconds and was cancelled.',
     AI_COACH_CANCELLED: 'The request was cancelled.',
     AI_COACH_BUSY: 'One AI Coach request is already in progress.',
-    AI_COACH_PROVIDER_ERROR: 'Google Gemini returned an error. No provider details were retained.',
+    AI_COACH_PROVIDER_ERROR: 'Google Gemini returned an error. StravaStats did not retain the provider error details.',
     AI_COACH_RESPONSE_INVALID: 'Google Gemini returned an invalid or oversized response.',
     AI_COACH_NETWORK_ERROR: 'The request could not be completed. No automatic retry was made.',
     AI_COACH_LEGACY_STORAGE_ERROR: 'Previously saved AI data could not be inspected safely.'
@@ -53,7 +53,7 @@ function renderDisabled(container) {
     container.replaceChildren(wrapper);
 }
 
-export function renderAIChatTab(allActivities, options = {}) {
+export function renderAIChatTab(activitySnapshot, options = {}) {
     const container = document.getElementById('ai-chat-tab');
     if (!container) return;
     const session = options?.aiCoach;
@@ -166,6 +166,14 @@ export function renderAIChatTab(allActivities, options = {}) {
     let prepared = null;
     let sending = false;
 
+    function setComposerLocked(locked) {
+        question.disabled = locked;
+        sendButton.disabled = locked;
+        messages.querySelectorAll('.ai-suggestion-btn').forEach(suggestion => {
+            suggestion.disabled = locked;
+        });
+    }
+
     function setStatus(text) {
         status.textContent = text;
     }
@@ -174,6 +182,7 @@ export function renderAIChatTab(allActivities, options = {}) {
         if (prepared !== null) session.cancel(prepared);
         prepared = null;
         previewHost.replaceChildren();
+        if (!sending) setComposerLocked(false);
     }
 
     function showPreview() {
@@ -183,16 +192,21 @@ export function renderAIChatTab(allActivities, options = {}) {
             return;
         }
         try {
-            prepared = session.prepare(question.value, allActivities);
+            prepared = session.prepare(question.value, activitySnapshot);
         } catch (error) {
             setStatus(statusText(error));
             return;
         }
         const panel = element('section', 'ai-request-preview');
         panel.setAttribute('aria-label', 'Google Gemini request preview');
+        const previewQuestion = element('pre', 'ai-request-preview-question');
+        previewQuestion.id = 'ai-request-preview-question';
+        previewQuestion.textContent = prepared.question;
         panel.append(
             element('h3', '', 'Request preview — nothing has been sent'),
             element('p', '', prepared.disclosure),
+            element('strong', '', 'Current question'),
+            previewQuestion,
             element('strong', '', 'Destination'),
             element('p', '', prepared.destination),
             element('strong', '', 'Included fields')
@@ -210,6 +224,7 @@ export function renderAIChatTab(allActivities, options = {}) {
         );
         panel.append(actions);
         previewHost.replaceChildren(panel);
+        setComposerLocked(true);
         setStatus('Review the disclosed destination, fields, and minimized values before deciding.');
 
         panel.querySelector('#ai-cancel-preview')?.addEventListener('click', () => {
@@ -221,8 +236,7 @@ export function renderAIChatTab(allActivities, options = {}) {
             const approved = prepared;
             prepared = null;
             sending = true;
-            question.disabled = true;
-            sendButton.disabled = true;
+            setComposerLocked(true);
             const pending = element('div', 'ai-request-pending');
             pending.append(
                 element('span', '', 'Sending one request to Google Gemini…'),
@@ -234,11 +248,10 @@ export function renderAIChatTab(allActivities, options = {}) {
             });
             try {
                 await session.send(approved);
-                renderAIChatTab(allActivities, options);
+                renderAIChatTab(activitySnapshot, options);
             } catch (error) {
                 sending = false;
-                question.disabled = false;
-                sendButton.disabled = false;
+                setComposerLocked(false);
                 previewHost.replaceChildren();
                 setStatus(statusText(error));
             }
@@ -250,7 +263,7 @@ export function renderAIChatTab(allActivities, options = {}) {
         try {
             session.setApiKey(input?.value ?? '');
             if (input) input.value = '';
-            renderAIChatTab(allActivities, options);
+            renderAIChatTab(activitySnapshot, options);
         } catch (error) {
             if (input) input.value = '';
             setStatus(statusText(error));
@@ -260,19 +273,19 @@ export function renderAIChatTab(allActivities, options = {}) {
     wrapper.querySelector('#ai-apikey-forget')?.addEventListener('click', () => {
         closePreview();
         session.forgetApiKey();
-        renderAIChatTab(allActivities, options);
+        renderAIChatTab(activitySnapshot, options);
     });
 
     clearButton.addEventListener('click', () => {
         closePreview();
         session.clearHistory();
-        renderAIChatTab(allActivities, options);
+        renderAIChatTab(activitySnapshot, options);
     });
 
     revokeButton.addEventListener('click', () => {
         prepared = null;
         session.revoke();
-        renderAIChatTab(allActivities, options);
+        renderAIChatTab(activitySnapshot, options);
     });
 
     wrapper.querySelector('#ai-review-legacy')?.addEventListener('click', () => {
@@ -302,7 +315,7 @@ export function renderAIChatTab(allActivities, options = {}) {
         panel.querySelector('#ai-copy-legacy-key')?.addEventListener('click', () => {
             try {
                 session.copyLegacyKeyToMemory();
-                renderAIChatTab(allActivities, options);
+                renderAIChatTab(activitySnapshot, options);
             } catch (error) {
                 setStatus(statusText(error));
             }
@@ -311,7 +324,7 @@ export function renderAIChatTab(allActivities, options = {}) {
             if (!globalThis.confirm?.('Delete only the previously saved Gemini API key? This cannot be undone.')) return;
             try {
                 session.deleteLegacyKey();
-                renderAIChatTab(allActivities, options);
+                renderAIChatTab(activitySnapshot, options);
             } catch (error) {
                 setStatus(statusText(error));
             }
@@ -320,7 +333,7 @@ export function renderAIChatTab(allActivities, options = {}) {
             if (!globalThis.confirm?.('Delete only the previously saved AI chat history? This cannot be undone.')) return;
             try {
                 session.deleteLegacyHistory();
-                renderAIChatTab(allActivities, options);
+                renderAIChatTab(activitySnapshot, options);
             } catch (error) {
                 setStatus(statusText(error));
             }

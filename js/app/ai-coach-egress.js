@@ -54,56 +54,6 @@ function fail(code) {
     throw new AICoachError(code);
 }
 
-function safeDataProperty(record, field) {
-    try {
-        const descriptor = Object.getOwnPropertyDescriptor(record, field);
-        if (descriptor === undefined) return { kind: 'absent' };
-        if (!descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) return { kind: 'unsafe' };
-        return { kind: 'value', value: descriptor.value };
-    } catch {
-        return { kind: 'unsafe' };
-    }
-}
-
-function inspectDenseArray(value) {
-    try {
-        if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) return null;
-        const keys = Reflect.ownKeys(value);
-        const length = Object.getOwnPropertyDescriptor(value, 'length');
-        if (!length || !Object.hasOwn(length, 'value') || !Number.isSafeInteger(length.value)
-            || length.value < 0 || keys.length !== length.value + 1) return null;
-        const result = [];
-        for (let index = 0; index < length.value; index += 1) {
-            const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
-            if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) return null;
-            result.push(descriptor.value);
-        }
-        return result;
-    } catch {
-        return null;
-    }
-}
-
-function inspectActivity(value) {
-    try {
-        if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
-        const prototype = Object.getPrototypeOf(value);
-        if (prototype !== Object.prototype && prototype !== null) return null;
-    } catch {
-        return null;
-    }
-    const fields = Object.create(null);
-    for (const field of [
-        'type', 'sport_type', 'start_date', 'start_date_local',
-        'distance', 'moving_time', 'total_elevation_gain'
-    ]) {
-        const property = safeDataProperty(value, field);
-        if (property.kind === 'unsafe') return null;
-        if (property.kind === 'value') fields[field] = property.value;
-    }
-    return fields;
-}
-
 function normalizedCategory(activity) {
     const source = typeof activity.type === 'string'
         ? activity.type
@@ -136,7 +86,9 @@ function newSport(category) {
 
 function addMetric(target, value) {
     if (!Number.isFinite(value) || value < 0) return;
-    target.sum += value;
+    const next = target.sum + value;
+    if (!Number.isFinite(next)) fail('AI_COACH_ACTIVITY_INVALID');
+    target.sum = next;
     target.valid_samples += 1;
 }
 
@@ -158,14 +110,11 @@ function finalizeSport(source) {
 }
 
 function buildAggregates(values, nowValue) {
-    const activities = inspectDenseArray(values);
-    if (activities === null || !Number.isFinite(nowValue)) fail('AI_COACH_ACTIVITY_INVALID');
+    if (!Number.isFinite(nowValue)) fail('AI_COACH_ACTIVITY_INVALID');
     const recentStart = nowValue - 28 * DAY_MS;
     const previousStart = nowValue - 56 * DAY_MS;
     const buckets = { recent_28_days: new Map(), previous_28_days: new Map() };
-    for (const value of activities) {
-        const activity = inspectActivity(value);
-        if (activity === null) fail('AI_COACH_ACTIVITY_INVALID');
+    for (const activity of values) {
         const instant = activityInstant(activity);
         if (instant === null || instant < previousStart || instant >= nowValue) continue;
         const bucket = instant >= recentStart ? buckets.recent_28_days : buckets.previous_28_days;
@@ -223,13 +172,14 @@ function historyBytes(history) {
 }
 
 function appendBoundedHistory(history, question, reply) {
-    history.push(
+    const candidate = history.concat(
         Object.freeze({ role: 'user', text: question }),
         Object.freeze({ role: 'model', text: reply })
     );
-    while (history.length > HISTORY_MESSAGE_LIMIT
-        || (history.length > 2 && historyBytes(history) > HISTORY_BYTE_LIMIT)) history.shift();
-    if (historyBytes(history) > HISTORY_BYTE_LIMIT) fail('AI_COACH_RESPONSE_INVALID');
+    while (candidate.length > HISTORY_MESSAGE_LIMIT
+        || (candidate.length > 2 && historyBytes(candidate) > HISTORY_BYTE_LIMIT)) candidate.shift();
+    if (historyBytes(candidate) > HISTORY_BYTE_LIMIT) fail('AI_COACH_RESPONSE_INVALID');
+    history.splice(0, history.length, ...candidate);
 }
 
 function safeLegacyRead(storage, key) {
@@ -265,8 +215,10 @@ function disabledSession(code) {
         setApiKey: deny,
         forgetApiKey: () => {},
         prepare: deny,
+        createActivitySnapshot: deny,
         send: async () => deny(),
         cancel: () => {},
+        cancelPending: () => {},
         revoke: () => {},
         clearHistory: () => {},
         inspectLegacyData: deny,
@@ -295,6 +247,7 @@ export function createAICoachSession(options = {}) {
 
     const preparedGenerations = new WeakMap();
     const consumed = new WeakSet();
+    const activitySnapshots = new WeakMap();
     const history = [];
     let generation = 0;
     let apiKey = null;
@@ -311,8 +264,52 @@ export function createAICoachSession(options = {}) {
         return true;
     }
 
+    function createActivitySnapshot() {
+        const activities = [];
+        let open = true;
+
+        function add(type, sportType, startDate, startDateLocal, distance, movingTime, elevationGain) {
+            if (!open) fail('AI_COACH_ACTIVITY_INVALID');
+            for (const value of [type, sportType, startDate, startDateLocal]) {
+                if (value !== undefined && value !== null
+                    && (typeof value !== 'string' || value.length > 64)) {
+                    fail('AI_COACH_ACTIVITY_INVALID');
+                }
+            }
+            for (const value of [distance, movingTime, elevationGain]) {
+                if (value !== undefined && value !== null
+                    && (typeof value !== 'number' || !Number.isFinite(value) || value < 0)) {
+                    fail('AI_COACH_ACTIVITY_INVALID');
+                }
+            }
+            activities.push(Object.freeze({
+                type,
+                sport_type: sportType,
+                start_date: startDate,
+                start_date_local: startDateLocal,
+                distance,
+                moving_time: movingTime,
+                total_elevation_gain: elevationGain
+            }));
+        }
+
+        function finish() {
+            if (!open) fail('AI_COACH_ACTIVITY_INVALID');
+            open = false;
+            const brand = Object.freeze(Object.create(null));
+            activitySnapshots.set(brand, Object.freeze(activities.slice()));
+            return brand;
+        }
+
+        return Object.freeze({ add, finish });
+    }
+
     function prepare(questionValue, activities) {
         const question = safeQuestion(questionValue);
+        const activityValues = (activities !== null && typeof activities === 'object')
+            ? activitySnapshots.get(activities)
+            : undefined;
+        if (activityValues === undefined) fail('AI_COACH_ACTIVITY_INVALID');
         let nowValue;
         try {
             nowValue = now();
@@ -326,7 +323,7 @@ export function createAICoachSession(options = {}) {
             model: AI_COACH_MODEL,
             fields: PREVIEW_FIELDS,
             question,
-            aggregates: buildAggregates(activities, nowValue)
+            aggregates: buildAggregates(activityValues, nowValue)
         });
         preparedGenerations.set(prepared, generation);
         return prepared;
@@ -340,7 +337,7 @@ export function createAICoachSession(options = {}) {
     function cancel(prepared) {
         if (prepared !== null && typeof prepared === 'object') consumed.add(prepared);
         if (active?.prepared === prepared) {
-            active.reason = 'cancelled';
+            if (active.reason === null) active.reason = 'cancelled';
             active.controller.abort();
         }
     }
@@ -350,8 +347,24 @@ export function createAICoachSession(options = {}) {
         apiKey = null;
         history.splice(0, history.length);
         if (active !== null) {
-            active.reason = 'cancelled';
+            if (active.reason === null) active.reason = 'cancelled';
             active.controller.abort();
+        }
+    }
+
+    function cancelPending() {
+        generation += 1;
+        if (active !== null) {
+            if (active.reason === null) active.reason = 'cancelled';
+            active.controller.abort();
+        }
+    }
+
+    function enforceActiveState(state) {
+        if (state.reason === 'cancelled') fail('AI_COACH_CANCELLED');
+        if (state.reason === 'timeout') fail('AI_COACH_TIMEOUT');
+        if (state.controller.signal.aborted || state.generation !== generation) {
+            fail('AI_COACH_CANCELLED');
         }
     }
 
@@ -369,10 +382,10 @@ export function createAICoachSession(options = {}) {
         if (active !== null) fail('AI_COACH_BUSY');
 
         const controller = new AbortControllerImpl();
-        const state = { controller, prepared, reason: null, timedOut: false };
+        const state = { controller, prepared, reason: null, generation };
         active = state;
         const timeout = schedule(() => {
-            state.timedOut = true;
+            if (state.reason === null) state.reason = 'timeout';
             controller.abort();
         }, REQUEST_TIMEOUT_MS);
         const body = {
@@ -398,20 +411,24 @@ export function createAICoachSession(options = {}) {
                 credentials: 'omit',
                 cache: 'no-store',
                 referrerPolicy: 'no-referrer',
+                redirect: 'error',
                 signal: controller.signal
             });
-            if (controller.signal.aborted) fail('AI_COACH_CANCELLED');
+            enforceActiveState(state);
             if (result?.ok !== true) fail('AI_COACH_PROVIDER_ERROR');
             if (typeof result.text !== 'function') fail('AI_COACH_RESPONSE_INVALID');
             const raw = await result.text();
+            enforceActiveState(state);
             if (typeof raw !== 'string' || raw.length > RESPONSE_BODY_LIMIT) fail('AI_COACH_RESPONSE_INVALID');
             const reply = responseText(raw);
+            enforceActiveState(state);
             appendBoundedHistory(history, prepared.question, reply);
             return reply;
         } catch (error) {
+            if (state.reason === 'cancelled') fail('AI_COACH_CANCELLED');
+            if (state.reason === 'timeout') fail('AI_COACH_TIMEOUT');
+            if (controller.signal.aborted) fail('AI_COACH_CANCELLED');
             if (error instanceof AICoachError) throw error;
-            if (state.timedOut) fail('AI_COACH_TIMEOUT');
-            if (state.reason === 'cancelled' || controller.signal.aborted) fail('AI_COACH_CANCELLED');
             fail('AI_COACH_NETWORK_ERROR');
         } finally {
             cancelSchedule(timeout);
@@ -443,11 +460,20 @@ export function createAICoachSession(options = {}) {
         getHistory: () => history.map(message => ({ role: message.role, text: message.text })),
         setApiKey,
         forgetApiKey: () => { apiKey = null; },
+        createActivitySnapshot,
         prepare,
         send,
         cancel,
+        cancelPending,
         revoke,
-        clearHistory: () => { history.splice(0, history.length); },
+        clearHistory: () => {
+            generation += 1;
+            if (active !== null) {
+                if (active.reason === null) active.reason = 'cancelled';
+                active.controller.abort();
+            }
+            history.splice(0, history.length);
+        },
         inspectLegacyData,
         copyLegacyKeyToMemory,
         deleteLegacyKey: () => safeLegacyDelete(legacyStorage, LEGACY_KEY),

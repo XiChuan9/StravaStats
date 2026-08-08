@@ -706,12 +706,13 @@ document.addEventListener('DOMContentLoaded', () => {
             return APP_SESSION_MODE.REAL;
         }
     })();
-    const aiCoachSession = createAICoachSession({
+    let aiCoachSession = createAICoachSession({
         sessionMode: documentSessionMode,
         legacyStorage: documentSessionMode === APP_SESSION_MODE.REAL
             ? globalThis.localStorage
             : null
     });
+    let aiCoachActivitySnapshot = null;
     let consumerRenderingEnabled = true;
     let sessionAthlete = null;
     let sessionZones = null;
@@ -742,7 +743,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'map-tab': { render: () => renderMapTab(allActivities, dateFilterFrom, dateFilterTo), usesFilters: true },
         'wrapped-tab': { render: () => renderWrappedTab(allActivities) },
         'ai-chat-tab': {
-            render: () => renderAIChatTab(allActivities, {
+            render: () => renderAIChatTab(aiCoachActivitySnapshot, {
                 sessionMode: activeSessionMode,
                 aiCoach: aiCoachSession
             })
@@ -760,6 +761,27 @@ document.addEventListener('DOMContentLoaded', () => {
     const appSection = document.getElementById('app-section');
     const localFirstError = document.getElementById('local-first-error');
     const sourceStatus = document.getElementById('source-status');
+
+    function buildAICoachActivitySnapshot(activities) {
+        if (activeSessionMode !== APP_SESSION_MODE.REAL || aiCoachSession.enabled !== true) return null;
+        try {
+            const builder = aiCoachSession.createActivitySnapshot();
+            for (const activity of activities) {
+                builder.add(
+                    activity.type,
+                    activity.sport_type,
+                    activity.start_date,
+                    activity.start_date_local,
+                    activity.distance,
+                    activity.moving_time,
+                    activity.total_elevation_gain
+                );
+            }
+            return builder.finish();
+        } catch {
+            return null;
+        }
+    }
 
     // Run Tab
     const applyFilterButton = document.getElementById('apply-date-filter');
@@ -1045,6 +1067,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (tabId === activeTabId) {
             if (tabId === 'run-plus-tab' && tabConfig[tabId]) {
                 requestAnimationFrame(() => tabConfig[tabId].render());
+            } else if (tabId === 'ai-chat-tab'
+                && !renderedTabs.has(tabId)
+                && tabConfig[tabId]) {
+                renderedTabs.add(tabId);
+                requestAnimationFrame(() => tabConfig[tabId].render());
             }
             return; // skip if already active
         }
@@ -1052,6 +1079,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const link = document.querySelector(`.tab-link[data-tab="${tabId}"]`);
         const content = document.getElementById(tabId);
         if (!link || !content) return;
+
+        if (activeTabId === 'ai-chat-tab' && tabId !== 'ai-chat-tab') {
+            aiCoachSession.cancelPending();
+            renderedTabs.delete('ai-chat-tab');
+        }
 
         // Deactivate previous tab directly instead of looping all
         if (activeTabId) {
@@ -1457,6 +1489,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 gears
             );
             allActivities = preprocessed;
+            aiCoachActivitySnapshot = buildAICoachActivitySnapshot(allActivities);
             if (!localOnly) console.log(`Activities prepared (${allActivities.length})`);
 
             progress = 100;
@@ -1547,6 +1580,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 zones,
                 gears
             );
+            aiCoachActivitySnapshot = buildAICoachActivitySnapshot(allActivities);
             if (
                 activityLoad.source === REPOSITORY_SOURCE.CANONICAL
                 && sourceStatus
@@ -1582,13 +1616,22 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- EVENT LISTENERS ---
     if (loginButton) loginButton.addEventListener('click', redirectToStrava);
     if (demoButton) demoButton.addEventListener('click', () => {
+        aiCoachSession.revoke();
+        aiCoachActivitySnapshot = null;
+        aiCoachSession = createAICoachSession({
+            sessionMode: APP_SESSION_MODE.DEMO
+        });
         loginWithDemo(initializeApp);
     });
     if (logoutButton) logoutButton.addEventListener('click', () => {
         aiCoachSession.revoke();
+        aiCoachActivitySnapshot = null;
         logout();
     });
-    if (refreshButton) refreshButton.addEventListener('click', refreshActivities);
+    if (refreshButton) refreshButton.addEventListener('click', () => {
+        aiCoachSession.cancelPending();
+        refreshActivities();
+    });
     if (kofiButton) kofiButton.addEventListener('click', showKofiModal);
 
     // --- SERVICE WORKER REGISTRATION (PWA) ---

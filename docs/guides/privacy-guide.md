@@ -76,7 +76,7 @@ Other established pages are not fully offline:
 - weather/maps can send exact activity date and coordinates to external services when invoked;
 - AI Coach names Google Gemini and `generativelanguage.googleapis.com`, shows a local preview, and
   requires `Send this request to Google Gemini` for every request. The request contains only the
-  current question (maximum 4,000 characters) plus two relative 28-day buckets of closed sport,
+  current question (maximum 4,000 UTF-16 code units) plus two relative 28-day buckets of closed sport,
   activity-count, and rounded distance/time/elevation aggregates. It excludes names, IDs, calendar
   dates, gear, PBs, routes/GPS, Tokens, heart rate, power, raw activity/streams, and earlier chat.
   The API key and bounded conversation remain only in current-page memory; Demo performs zero AI
