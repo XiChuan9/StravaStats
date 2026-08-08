@@ -292,8 +292,9 @@ test('weather, zones, and Swim athlete behavior stays behind injected boundaries
     }
     const swimSource = rendererSources.get('js/pages/swim/swim.js');
     assert.match(swimSource, /zones\?\.heart_rate\?\.zones/);
-    assert.match(swimSource, /maybeCorrectIndoorSwimForAlex\(structuredClone\(activity\), athlete\)/);
-    assert.match(swimSource, /Object\.getOwnPropertyDescriptor\(athlete, key\)/);
+    assert.match(swimSource, /const activityData = structuredClone\(activity\)/);
+    assert.equal(swimSource.includes(['TARGET', 'ATHLETE', 'ID'].join('_')), false);
+    assert.equal(swimSource.includes(['maybeCorrect', 'IndoorSwim'].join('')), false);
     assert.match(swimSource, /function\s+decodePolyline\(value\)/);
     assert.match(swimSource, /function\s+getRouteColorSeries\(streams, mode, pointCount\)/);
 });

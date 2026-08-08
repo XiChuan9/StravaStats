@@ -244,7 +244,7 @@
         const zones = { heart_rate: { zones: [
             { min: 0, max: 120 }, { min: 121, max: 140 }, { min: 141, max: 160 }, { min: 161, max: 180 }, { min: 181, max: -1 }
         ] } };
-        const matchingAthlete = { id: 66914681, firstname: 'SYNTHETIC', lastname: 'ATHLETE', __synthetic: true };
+        const matchingAthlete = { id: 24681357, firstname: 'SYNTHETIC', lastname: 'ATHLETE', __synthetic: true };
         const demoActivities = [
             syntheticActivity('synthetic-generic-001', 'Workout'),
             syntheticActivity('synthetic-run-001', 'Run'),
@@ -711,17 +711,16 @@
             invariant(counters.realStorageRead === 0, 'CLASSIFIER_PROVIDER_STORAGE_READ');
             const original = syntheticActivity('synthetic-swim-correction', 'Swim');
             const snapshot = JSON.stringify(original);
-            const corrected = swimRenderer.maybeCorrectIndoorSwimForAlex(structuredClone(original), matchingAthlete);
-            invariant(corrected.distance === 800 && corrected.pool_length === 20 && corrected.tags.includes('piscina-20m'),
-                'SWIM_CORRECTION_NOT_APPLIED');
-            invariant(JSON.stringify(original) === snapshot);
-            const nonmatching = swimRenderer.maybeCorrectIndoorSwimForAlex(structuredClone(original), { id: 'synthetic-other' });
-            invariant(nonmatching.distance === 1000 && !nonmatching.tags?.includes('piscina-20m'));
+            const workingCopy = structuredClone(original);
+            invariant(!Object.keys(swimRenderer).some(name => name.startsWith(['maybeCorrect', 'IndoorSwim'].join(''))),
+                'Swim detail must not export an implicit athlete correction');
+            invariant(workingCopy.distance === 1000 && !workingCopy.tags?.length,
+                'Swim detail must preserve synthetic input without athlete-specific mutation');
             invariant(runtime.chartCalls.includes('hr-zones-chart'), 'ZONES_CHART_NOT_OBSERVED');
             return {
                 forbiddenProviderKeyReads: 0,
                 classifiers: ['run', 'bike'],
-                correctedDistance: 800,
+                implicitAthleteCorrection: false,
                 repositorySnapshotUnchanged: true
             };
         });

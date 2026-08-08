@@ -43,7 +43,18 @@ test('demo generation is timezone-independent and rejects invalid reference date
 });
 
 test('demo athlete metadata uses the fixed demo reference date by default', () => {
-  assert.equal(generateDemoAthlete().updated_at, DEFAULT_DEMO_REFERENCE_DATE);
+  const athlete = generateDemoAthlete();
+  assert.equal(athlete.updated_at, DEFAULT_DEMO_REFERENCE_DATE);
+  assert.equal(typeof athlete.id, 'string');
+  assert.equal(athlete.id.length > 0, true);
+});
+
+test('demo activity, upload, and nested athlete IDs are opaque strings', () => {
+  const [activity] = generateDemoData({ seed: 42 });
+  for (const id of [activity.id, activity.upload_id, activity.athlete?.id]) {
+    assert.equal(typeof id, 'string');
+    assert.equal(id.length > 0, true);
+  }
 });
 
 test('demo activity output is identical across host timezones', () => {

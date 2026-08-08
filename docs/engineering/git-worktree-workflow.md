@@ -22,7 +22,7 @@ Worktree 只是分支的另一个检出目录，不是第二套分支系统。
 
 ```text
 origin    → XiChuan9/StravaStats，个人维护仓库
-upstream  → alexgasconn/StravaStats，原作者仓库
+upstream  → synthetic-athlete-alias-3/StravaStats，原作者仓库
 ```
 
 `upstream` 只允许 fetch，不应作为 push 目标。推荐本地配置：

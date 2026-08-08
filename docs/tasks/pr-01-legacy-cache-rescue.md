@@ -937,7 +937,7 @@ B2-C.2 preprocessing test-evidence correction:
 B2-C.2 correction reason:
   The B2-C.1 preprocessing isolation test passed an empty activities array, so
   preprocessActivities returned before applyIndoorSwimPool20mCorrection and
-  isTargetAthleteAlexGascon could evaluate the Demo marker or attempt the Legacy
+  isSpecificAthlete could evaluate the Demo marker or attempt the Legacy
   athlete fallback
 B2-C.2 corrected evidence:
   null, array, empty-object and ID-only Demo athlete inputs each use a fresh,
