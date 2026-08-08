@@ -1,9 +1,12 @@
+import { types as utilTypes } from 'node:util';
+
 import { logServerEvent, SERVER_API_EVENT } from './_shared.js';
 
 function readOwnData(value, key) {
   if ((typeof value !== 'object' && typeof value !== 'function') || value === null) {
     return undefined;
   }
+  if (utilTypes.isProxy(value)) return undefined;
 
   try {
     const descriptor = Object.getOwnPropertyDescriptor(value, key);

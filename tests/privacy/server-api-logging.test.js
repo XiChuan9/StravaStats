@@ -379,6 +379,47 @@ test('token exchange rejects absent and accessor-backed request bodies before si
     }
 });
 
+test('token exchange rejects Proxy request shapes without executing traps', async t => {
+    for (const target of ['request', 'body']) {
+        await t.test(target, async () => {
+            let traps = 0;
+            const hostile = new Proxy(Object.create(null), {
+                get() {
+                    traps += 1;
+                    throw new Error('synthetic-proxy-get-marker');
+                },
+                getOwnPropertyDescriptor() {
+                    traps += 1;
+                    throw new Error('synthetic-proxy-descriptor-marker');
+                },
+                ownKeys() {
+                    traps += 1;
+                    throw new Error('synthetic-proxy-keys-marker');
+                }
+            });
+            const request = target === 'request'
+                ? hostile
+                : { method: 'POST', body: hostile };
+            let fetchCalls = 0;
+
+            await withCapturedRuntime(
+                async () => {
+                    fetchCalls += 1;
+                    return providerSuccess({});
+                },
+                async logs => {
+                    const response = createResponse();
+                    await invokeWithoutRawRejection(authHandler, request, response);
+                    assert.equal(traps, 0, 'safe request Proxy trap count');
+                    assert.equal(fetchCalls, 0, 'safe Proxy preflight fetch count');
+                    assert.equal(response.statusCode, target === 'request' ? 405 : 400, 'safe Proxy request status');
+                    assertClosedLogs(logs, []);
+                }
+            );
+        });
+    }
+});
+
 test('token refresh failure does not read the provider body and emits only closed events', async () => {
     let textReads = 0;
     await withCapturedRuntime(
@@ -590,6 +631,14 @@ test('isolated actual-served local API failures are closed and synthetic', async
         assert.equal(result.status, 500, 'safe served status');
         assert.equal(result.body === JSON.stringify({ error: 'Internal Server Error' }), true, 'safe served body');
         assertClosedLogs(logs, [EXPECTED_EVENTS.LOCAL_HANDLER_FAILED]);
+
+        const outerResult = await requestLoopback(address.port, ['/api/', '%'].join(''), '');
+        assert.equal(outerResult.status, 500, 'safe outer served status');
+        assert.equal(outerResult.body === JSON.stringify({ error: 'Internal Server Error' }), true, 'safe outer served body');
+        assertClosedLogs(logs, [
+            EXPECTED_EVENTS.LOCAL_HANDLER_FAILED,
+            EXPECTED_EVENTS.LOCAL_HANDLER_FAILED
+        ]);
     } finally {
         console.error = originalConsoleError;
         await new Promise(resolve => server.close(resolve));
