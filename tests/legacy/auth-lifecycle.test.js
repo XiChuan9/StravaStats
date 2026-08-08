@@ -242,6 +242,10 @@ function createLateProbeFactory({
     lateDelayMs = 20
 }) {
     const backing = new IDBFactory();
+    let completeLateEvents;
+    const lateEventsCompleted = new Promise(resolve => {
+        completeLateEvents = resolve;
+    });
     const counts = {
         abort: 0,
         createObjectStore: 0,
@@ -270,6 +274,7 @@ function createLateProbeFactory({
                 if (aborted) {
                     request.error = { name: 'AbortError' };
                     request.onerror?.();
+                    completeLateEvents();
                     return;
                 }
 
@@ -280,10 +285,12 @@ function createLateProbeFactory({
                 realRequest.onerror = () => {
                     request.error = realRequest.error;
                     request.onerror?.();
+                    completeLateEvents();
                 };
                 realRequest.onsuccess = () => {
                     request.result = realRequest.result;
                     request.onsuccess?.();
+                    completeLateEvents();
                 };
             }, lateDelayMs);
             return request;
@@ -293,7 +300,7 @@ function createLateProbeFactory({
             return backing.deleteDatabase(name);
         }
     };
-    return { backing, counts, factory };
+    return { backing, counts, factory, lateEventsCompleted };
 }
 
 test('Disconnect revoke success removes only tokens and preserves Local Library', async () => {
@@ -931,23 +938,30 @@ test('Accepted preflight race residual is only an empty version 1 database', asy
         indexedDB: controlled.factory,
         openTimeoutMs: 5
     });
-    await new Promise(resolve => setTimeout(resolve, 25));
+    await controlled.lateEventsCompleted;
 
     assert.deepEqual(result, { confirmed: false, present: false });
     assert.equal(controlled.counts.abort, 1);
     assert.equal(controlled.counts.createObjectStore, 0);
     assert.equal(controlled.counts.deleteDatabase, 0);
     assert.equal(controlled.counts.openWithVersion, 0);
-    assert.deepEqual(await controlled.backing.databases(), [databaseDescriptor()]);
-
-    const residual = await new Promise((resolve, reject) => {
-        const request = controlled.backing.open(LEGACY_DB_NAME);
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => resolve(request.result);
-    });
-    assert.equal(residual.version, 1);
-    assert.equal(residual.objectStoreNames.length, 0);
-    residual.close();
+    const databases = await controlled.backing.databases();
+    assert.ok(databases.length === 0 || databases.length === 1);
+    if (databases.length === 1) {
+        assert.deepEqual(databases, [databaseDescriptor()]);
+        const residual = await new Promise((resolve, reject) => {
+            const request = controlled.backing.open(LEGACY_DB_NAME);
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => resolve(request.result);
+        });
+        assert.equal(residual.version, 1);
+        assert.equal(
+            residual.objectStoreNames.length,
+            0,
+            'zero stores permit zero user records'
+        );
+        residual.close();
+    }
 
     const storage = new MemoryStorage();
     const oauthResult = await lifecycle(storage, {

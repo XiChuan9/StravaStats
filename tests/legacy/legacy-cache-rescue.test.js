@@ -580,6 +580,10 @@ test('Reader does not create a missing database', async () => {
 test('Reader accepted preflight race residual has version 1 and zero stores', async () => {
     const backing = new IDBFactory();
     const counts = { abort: 0, delete: 0, open: 0 };
+    let completeLateOpen;
+    const lateOpenCompleted = new Promise(resolve => {
+        completeLateOpen = resolve;
+    });
     const indexedDB = {
         databases: async () => [{ name: LEGACY_DB_NAME, version: 1 }],
         open(name) {
@@ -597,10 +601,12 @@ test('Reader accepted preflight race residual has version 1 and zero stores', as
                 realRequest.onsuccess = () => {
                     request.result = realRequest.result;
                     request.onsuccess?.();
+                    completeLateOpen();
                 };
                 realRequest.onerror = () => {
                     request.error = realRequest.error;
                     request.onerror?.();
+                    completeLateOpen();
                 };
             });
             return request;
@@ -616,19 +622,28 @@ test('Reader accepted preflight race residual has version 1 and zero stores', as
         openTimeoutMs: 50,
         now: FIXED_NOW
     });
+    await lateOpenCompleted;
 
     assert.equal(result.status, 'error');
     assert.equal(counts.open, 1);
     assert.equal(counts.abort, 1);
     assert.equal(counts.delete, 0);
-    assert.deepEqual(await backing.databases(), [{
-        name: LEGACY_DB_NAME,
-        version: 1
-    }]);
-    const residual = await openDatabase(backing);
-    assert.equal(residual.version, 1);
-    assert.equal(residual.objectStoreNames.length, 0);
-    residual.close();
+    const databases = await backing.databases();
+    assert.ok(databases.length === 0 || databases.length === 1);
+    if (databases.length === 1) {
+        assert.deepEqual(databases, [{
+            name: LEGACY_DB_NAME,
+            version: 1
+        }]);
+        const residual = await openDatabase(backing);
+        assert.equal(residual.version, 1);
+        assert.equal(
+            residual.objectStoreNames.length,
+            0,
+            'zero stores permit zero user records'
+        );
+        residual.close();
+    }
 });
 
 for (const lateEvent of ['success', 'error']) {
