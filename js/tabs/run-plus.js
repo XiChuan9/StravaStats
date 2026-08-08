@@ -73,6 +73,11 @@ const NSM_TEMPLATE_DEFINITIONS = {
     '3x12': { reps: 3, workSec: 720, recoverySec: 180, family: '3x12' }
 };
 let runPlusRollingWindow = 26;
+let runPlusNsmEasyCharts = [];
+let runPlusNsmWeeklyScoreChart = null;
+let runPlusNsmSubtPaceChart = null;
+let runPlusNsmSubtHrChart = null;
+let runPlusMechanicalLoadChart = null;
 
 function readPlainDataRecord(value, allowedKeys = null) {
     try {
@@ -4486,24 +4491,19 @@ function getCssColor(varName, fallback) {
 }
 
 function destroyNsmEasyCharts() {
-    if (!Array.isArray(window.runPlusNsmEasyCharts)) {
-        window.runPlusNsmEasyCharts = [];
-        return;
-    }
-    window.runPlusNsmEasyCharts.forEach(chart => {
+    runPlusNsmEasyCharts.forEach(chart => {
         try {
             chart.destroy();
         } catch (_err) {
             // Ignore stale Chart.js instances after route-level rerenders.
         }
     });
-    window.runPlusNsmEasyCharts = [];
+    runPlusNsmEasyCharts = [];
 }
 
 function registerNsmEasyChart(chart) {
     if (!chart) return;
-    if (!Array.isArray(window.runPlusNsmEasyCharts)) window.runPlusNsmEasyCharts = [];
-    window.runPlusNsmEasyCharts.push(chart);
+    runPlusNsmEasyCharts.push(chart);
 }
 
 function renderNsmEasyCharts(model) {
@@ -4719,9 +4719,9 @@ function renderNsmEasyCharts(model) {
 }
 
 function destroyNsmWeeklyScoreChart() {
-    if (window.runPlusNsmWeeklyScoreChart) {
-        try { window.runPlusNsmWeeklyScoreChart.destroy(); } catch (_e) { /* */ }
-        window.runPlusNsmWeeklyScoreChart = null;
+    if (runPlusNsmWeeklyScoreChart) {
+        try { runPlusNsmWeeklyScoreChart.destroy(); } catch (_e) { /* */ }
+        runPlusNsmWeeklyScoreChart = null;
     }
 }
 
@@ -4738,7 +4738,7 @@ function renderNsmWeeklyScoreChart(model) {
     const borderColor = getCssColor('--color-border', '#e5e7eb');
     const runColor = getCssColor('--color-sport-run', '#fc5200');
 
-    window.runPlusNsmWeeklyScoreChart = new Chart(canvas.getContext('2d'), {
+    runPlusNsmWeeklyScoreChart = new Chart(canvas.getContext('2d'), {
         data: {
             labels: rows.map(r => r.week),
             datasets: [
@@ -4814,12 +4814,12 @@ function renderNsmWeeklyScoreChart(model) {
 }
 
 function destroyNsmSubtCharts() {
-    ['runPlusNsmSubtPaceChart', 'runPlusNsmSubtHrChart'].forEach(key => {
-        if (window[key]) {
-            try { window[key].destroy(); } catch (_e) { /* */ }
-            window[key] = null;
-        }
-    });
+    for (const chart of [runPlusNsmSubtPaceChart, runPlusNsmSubtHrChart]) {
+        if (!chart) continue;
+        try { chart.destroy(); } catch (_e) { /* */ }
+    }
+    runPlusNsmSubtPaceChart = null;
+    runPlusNsmSubtHrChart = null;
 }
 
 function renderNsmSubtCharts(model) {
@@ -4839,7 +4839,7 @@ function renderNsmSubtCharts(model) {
     const paceCanvas = document.getElementById(runPlusId('nsm-subt-pace-chart'));
     const paceRows = subtRows.filter(r => r.intervalAnalysis?.summary?.avgWorkPaceSec > 0);
     if (paceCanvas && paceRows.length) {
-        window.runPlusNsmSubtPaceChart = new Chart(paceCanvas.getContext('2d'), {
+        runPlusNsmSubtPaceChart = new Chart(paceCanvas.getContext('2d'), {
             type: 'line',
             data: {
                 labels: paceRows.map(r => r.date),
@@ -4896,7 +4896,7 @@ function renderNsmSubtCharts(model) {
             const overlay = getNsmRowHrOverlay(r);
             return { date: r.date, name: r.name, value: +overlay.hrResponse.toFixed(1) };
         });
-        window.runPlusNsmSubtHrChart = new Chart(hrCanvas.getContext('2d'), {
+        runPlusNsmSubtHrChart = new Chart(hrCanvas.getContext('2d'), {
             data: {
                 labels: hrData.map(d => d.date),
                 datasets: [
@@ -4948,9 +4948,9 @@ function renderNsmSubtCharts(model) {
 }
 
 function destroyImpactLoadChart() {
-    if (window.runPlusMechanicalLoadChart) {
-        window.runPlusMechanicalLoadChart.destroy();
-        window.runPlusMechanicalLoadChart = null;
+    if (runPlusMechanicalLoadChart) {
+        runPlusMechanicalLoadChart.destroy();
+        runPlusMechanicalLoadChart = null;
     }
 }
 
@@ -4967,7 +4967,7 @@ function renderImpactLoadChart(model) {
     const borderColor = getCssColor('--color-border', '#e5e7eb');
     const capacityDaily = model.impactLoad.adjustedCapacity > 0 ? model.impactLoad.adjustedCapacity / 7 : null;
 
-    window.runPlusMechanicalLoadChart = new Chart(canvas.getContext('2d'), {
+    runPlusMechanicalLoadChart = new Chart(canvas.getContext('2d'), {
         data: {
             labels: series.map(day => day.date),
             datasets: [
@@ -5477,8 +5477,7 @@ function bindNsmRegistry(root, model, allActivities, dateFilterFrom, dateFilterT
             }
             saveNsmIntervalAnalysis(activityId, row.run, analysis);
             renderRunPlusTab(allActivities, dateFilterFrom, dateFilterTo, gearFilter, options);
-        } catch (_err) {
-            console.warn('NSM repository analysis unavailable');
+        } catch {
             button.disabled = false;
             button.textContent = failedLabel;
             button.title = 'Unable to analyze intervals';
@@ -5561,37 +5560,6 @@ function bindRunPlusControls(root, model, allActivities, dateFilterFrom, dateFil
     }
 
     bindDiagnosisToggles(root);
-    publishRunPlusDiagnostics(root, model.diagnostics);
-}
-
-function publishRunPlusDiagnostics(root, diagnostics) {
-    if (!root) return;
-    root.runPlusDiagnostics = diagnostics;
-    root.dataset.runPlusDiagnostics = JSON.stringify(diagnostics);
-    window.runPlusDiagnostics = diagnostics;
-}
-
-function publishRunPlusNsm(root, nsm) {
-    if (!root || !nsm) return;
-    const summary = {
-        settings: nsm.settings,
-        latestWeek: nsm.latestWeek,
-        recent7: nsm.recent7,
-        recent28: nsm.recent28,
-        block: nsm.block,
-        easyDiscipline: nsm.easyDiscipline,
-        subThreshold: {
-            sessions: nsm.subThreshold.sessions,
-            overcooked: nsm.subThreshold.overcooked,
-            share: nsm.subThreshold.share
-        },
-        tests: nsm.tests,
-        recommendations: nsm.recommendations,
-        dataTrust: nsm.dataTrust
-    };
-    root.runPlusNsm = summary;
-    root.dataset.runPlusNsm = JSON.stringify(summary);
-    window.runPlusNsm = summary;
 }
 
 // ─── Main render ────────────────────────────────────────
@@ -5622,8 +5590,6 @@ export function renderRunPlusTab(allActivities, dateFilterFrom, dateFilterTo, ge
         destroyNsmEasyCharts();
         destroyNsmWeeklyScoreChart();
         destroyNsmSubtCharts();
-        publishRunPlusDiagnostics(root, model.diagnostics);
-        publishRunPlusNsm(root, model.nsm);
         root.innerHTML = `
             <div class="run-plus-shell">
                 ${renderRunPlusFilters(allActivities, effectiveDateFilterFrom, effectiveDateFilterTo, gearFilter, options.gears)}
@@ -5652,8 +5618,6 @@ export function renderRunPlusTab(allActivities, dateFilterFrom, dateFilterTo, ge
                 ${renderNsmPage(model)}
             </div>
         `;
-        publishRunPlusDiagnostics(root, model.diagnostics);
-        publishRunPlusNsm(root, model.nsm);
         bindRunPlusControls(root, model, allActivities, dateFilterFrom, dateFilterTo, gearFilter, options);
         renderNsmEasyCharts(model);
         renderNsmWeeklyScoreChart(model);
@@ -5692,9 +5656,6 @@ export function renderRunPlusTab(allActivities, dateFilterFrom, dateFilterTo, ge
             ${auxiliaryHtml}
         </div>
     `;
-
-    publishRunPlusDiagnostics(root, model.diagnostics);
-    publishRunPlusNsm(root, model.nsm);
 
     renderRunAnalysisTab(
         allActivities,

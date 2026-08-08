@@ -1441,11 +1441,8 @@ function renderMonthDayMatrix(runs, dataType = 'count') {
 
 function renderMonthHourMatrix(runs, dataType = 'count') {
     if (!runs || runs.length === 0) {
-        console.warn('⚠️ No runs data for month-hour matrix');
         return;
     }
-
-    console.log(`📊 Rendering month-hour matrix with ${runs.length} activities (${dataType})...`);
 
     const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
         'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -1506,8 +1503,6 @@ function renderMonthHourMatrix(runs, dataType = 'count') {
             });
         }
     }
-
-    console.log(`  - Data points: ${data.length}, Max value: ${maxVal}`);
 
     function getColor(v) {
         if (v === 0) return 'rgba(255,255,255,0)';
@@ -1584,9 +1579,7 @@ function renderMonthHourMatrix(runs, dataType = 'count') {
                 layout: { padding: 10 }
             }
         });
-        console.log(`✅ Month-hour matrix rendered successfully`);
     } catch {
-        console.error('❌ Error rendering month-hour matrix.');
         const container = document.getElementById('month-hour-matrix')?.parentElement;
         if (container) {
             container.replaceChildren(createChartError());
@@ -2054,7 +2047,6 @@ export function renderTrainingZones(zones) {
 function createUiChart(canvasId, config) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) {
-        console.error(`Canvas with id ${canvasId} not found.`);
         return;
     }
     if (uiCharts[canvasId]) {
@@ -2062,9 +2054,7 @@ function createUiChart(canvasId, config) {
     }
     try {
         uiCharts[canvasId] = new Chart(canvas, config);
-        console.log(`✅ Chart rendered: ${canvasId}`);
     } catch {
-        console.error(`❌ Error rendering chart ${canvasId}.`);
         canvas.parentElement.replaceChildren(createChartError());
     }
 }
