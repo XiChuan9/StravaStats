@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 release hardening / R7 |
-| Status | Approved for findings-first investigation; implementation blocked on material A/B/C decisions |
+| Status | Option A explicitly approved and frozen; authorized for failure-first implementation |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/ai-coach-consent` |
 | Exact base | `integration/v2@9a52e2ecf15dc2f44e9c61a7b8bb691f72cb5704` |
@@ -372,6 +372,38 @@ reads credential/history storage directly. Existing Backup, Diagnostics, Service
 Rescue, Repository, Storage, Import, analysis, tab barrel, index markup, and CSS remain unchanged;
 their existing tests are rerun as focused guards. Any thirteenth path or model/endpoint change
 requires a new minimum collision package and explicit authorization.
+
+## A3 frozen decision
+
+On 2026-08-08 the control tower returned the user's exact material selection: `A`. This freezes
+Option A above, the common hard floor, and the twelve-path cumulative allowlist exactly as written.
+It authorizes failure-first tests and the minimum implementation needed to satisfy that contract;
+it does not authorize selecting any Option B or C behavior by inference.
+
+The implementation contract is therefore:
+
+- every request requires a fresh local preview and the exact affirmative action
+  `Send this request to Google Gemini`; consent is never persisted;
+- the only outbound user-derived content is the current question, bounded to 4,000 code units, and
+  the two relative `recent_28_days` and `previous_28_days` aggregate buckets defined by Option A;
+- dates, heart rate, gear, personal bests, names, IDs, filenames, routes/GPS, Tokens, raw activity,
+  raw heart-rate/power/streams, provider/private values, and prior chat messages remain denied;
+- the API key and visible conversation exist only in current-document memory; conversation is
+  limited to twelve messages and 64 KiB, and a provider response to 16,384 code units;
+- inherited `gemini_api_key` and `ai_chat_history` values are never read during normal rendering or
+  sending, and are never automatically migrated, copied, overwritten, or deleted; only the
+  separate explicit review/copy/delete actions may touch those two exact durable keys;
+- provider/model remains exactly
+  `v1beta/models/gemini-3-flash-preview:generateContent`; any endpoint or model change is outside
+  this decision; authentication uses `x-goog-api-key`, the request sets `store: false`, timeout is
+  four seconds, cancellation/revocation aborts in-flight work, and there is no retry;
+- Demo performs zero consent, API-key, provider, history, or storage I/O; existing public API,
+  schema, dependency, Repository, Storage, Backup, Diagnostics, Worker, Service Worker, analysis,
+  import, default-mode, and route contracts remain unchanged.
+
+Any thirteenth path, field expansion, stronger precision, durable/session consent or retained-data
+behavior, automatic legacy action, or provider/model/endpoint change must stop and return a new
+minimum collision package for explicit approval.
 
 ## Non-negotiable safety contract
 
