@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 release hardening / R9 |
-| Status | Option A and security-first review correction approved; implementation verification in progress |
+| Status | Final Review Closure complete; exact-head CI and Ready handoff pending |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/service-worker-cache-boundary` |
 | Exact base | `integration/v2@fe32274dabd7f41adcb255572b5a4a6460f492a4` |
@@ -316,3 +316,62 @@ cleanup and production rollback are explicitly not authorized here. Mechanical c
 ordinary revert, but restoring broad private-response caching is not an acceptable production
 state; emergency operational rollback requires the separately approved lifecycle/deployment
 runbook.
+
+## Final Review Closure
+
+### Delivered boundary
+
+- Production fetch handling is limited to the approved queryless, same-origin static-subresource
+  request classes. All API, auth, provider, dynamic, telemetry, weather, AI, map, CDN, query,
+  non-GET, Range, sensitive-header, cross-origin, and credentials-mode `include` requests bypass
+  `respondWith` and make zero Cache Storage calls.
+- Every runtime document request is network-only. Real `/` and `/index.html` navigations are
+  modeled as `navigate`/`document`/`include`; the credential-omit `/` install seed remains present
+  but inert for navigation. Runtime offline fallback is claimed only for approved static
+  subresources using credentials mode `same-origin` or `omit`.
+- Eligible network and matched-cache responses are revalidated for exact status, type, redirect,
+  URL, origin, content type, Cache-Control, and `Vary` requirements. Cache open, clone, put, match,
+  fetch, and hostile inspection failures remain closed without raw output.
+- Install uses validated credential-omit fetch and put for exactly `/`, `/manifest.json`, and
+  `/icon-sport.svg`; `addAll` is absent. The cache name is unchanged. Historical non-allowlisted
+  entries are inert and are neither deleted nor evicted.
+- The implementation changed exactly this Task Brief, `sw.js`,
+  `tests/service-worker-fetch-policy.test.js`, and the approved test-only
+  `tests/import/decoder-registry-wiring.test.js` hash-guard repair. The implementation commit is
+  `8ce0c1a`.
+
+### Failure-first and verification evidence
+
+- The initial private/dynamic/query failure-first slice against the old worker produced 25 expected
+  failures and one pass. The review correction then produced three expected failures: the Task
+  Brief had not yet frozen the fourth path, and the synthetic same-origin document request still
+  reached runtime caching. Both failure sets passed after their approved repairs.
+- Final focused policy, lifecycle-freeze, and PR-14 suites: 88/88 passed.
+- Final syntax check: 243 files passed. Privacy check passed. Full suite: 1602/1602 passed.
+  `git diff --check` passed.
+- A fresh disposable headless Chrome profile on a fresh loopback origin was controlled by the
+  worker. Cache Storage contained only `strava-dashboard-v1`. Before and after the synthetic
+  prohibited-request matrix the entry count remained 21, with categories limited to one manifest,
+  one image, one install-only document seed, and 18 scripts; query entries remained zero. After an
+  actual `/index.html` navigation, the count rose to 22 only because an approved static
+  subresource loaded, while the document category remained one and no `/index.html` entry existed.
+  No user profile, login, credential, provider/private payload, application data, or raw cache
+  value was used or recorded.
+
+### Independent review and residual boundaries
+
+- The first independent findings-first review identified the browser navigation credential
+  collision. The owner approved the security-first correction that keeps every `include` request
+  network-only and removes all runtime document caching. A later fresh review found one P2 wording
+  error that called `/index.html` an install seed; that documentation-only finding was repaired.
+  The final fresh independent re-review reported no findings and independently passed 88/88 focused
+  tests plus `git diff --check`.
+- Migration, schema, Repository, Import, Storage, Backup, Diagnostics, Worker, analysis, default
+  mode, provider/auth behavior, Legacy/V2 data, dependency, and deployment impact is none.
+- `skipWaiting`, `clients.claim`, activate-time deletion, lifecycle, mixed-version behavior,
+  production rollout, rollback, old-cache cleanup, and cold offline document navigation remain
+  explicitly outside R9 under P0-08/D3. No merge, cleanup, deploy, release, or subsequent package is
+  authorized by this Closure.
+- Draft PR #37 remains Draft until this Closure commit is pushed, the true remote exact head is
+  verified, exact-head CI succeeds, and the delegated Ready handoff is completed. Squash Merge
+  still requires separate owner authorization.
