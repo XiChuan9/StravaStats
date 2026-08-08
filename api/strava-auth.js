@@ -1,12 +1,27 @@
 import { logServerEvent, SERVER_API_EVENT } from './_shared.js';
 
+function readOwnData(value, key) {
+  if ((typeof value !== 'object' && typeof value !== 'function') || value === null) {
+    return undefined;
+  }
+
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    return descriptor && Object.hasOwn(descriptor, 'value')
+      ? descriptor.value
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
+  if (readOwnData(req, 'method') !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res.status(405).end('Method Not Allowed');
   }
 
-  const { code } = req.body;
+  const code = readOwnData(readOwnData(req, 'body'), 'code');
   const clientId = process.env.STRAVA_CLIENT_ID;
   const clientSecret = process.env.STRAVA_CLIENT_SECRET;
 
@@ -16,7 +31,7 @@ export default async function handler(req, res) {
     });
   }
 
-  if (!code) {
+  if (typeof code !== 'string' || code.length === 0) {
     return res.status(400).json({ error: 'Authorization code is required' });
   }
 

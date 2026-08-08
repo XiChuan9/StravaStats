@@ -328,6 +328,57 @@ test('token exchange failures use fixed events and fixed response bodies', async
     });
 });
 
+test('token exchange rejects absent and accessor-backed request bodies before side effects', async t => {
+    const cases = [
+        Object.freeze({ name: 'absent body', request: { method: 'POST' }, getReads: () => 0 }),
+        (() => {
+            let reads = 0;
+            const request = { method: 'POST' };
+            Object.defineProperty(request, 'body', {
+                enumerable: true,
+                get() {
+                    reads += 1;
+                    throw new Error('synthetic-body-marker');
+                }
+            });
+            return Object.freeze({ name: 'body accessor', request, getReads: () => reads });
+        })(),
+        (() => {
+            let reads = 0;
+            const body = {};
+            Object.defineProperty(body, 'code', {
+                enumerable: true,
+                get() {
+                    reads += 1;
+                    throw new Error('synthetic-code-marker');
+                }
+            });
+            return Object.freeze({ name: 'code accessor', request: { method: 'POST', body }, getReads: () => reads });
+        })()
+    ];
+
+    for (const scenario of cases) {
+        await t.test(scenario.name, async () => {
+            let fetchCalls = 0;
+            await withCapturedRuntime(
+                async () => {
+                    fetchCalls += 1;
+                    return providerSuccess({});
+                },
+                async logs => {
+                    const response = createResponse();
+                    await invokeWithoutRawRejection(authHandler, scenario.request, response);
+                    assert.equal(scenario.getReads(), 0, 'safe request accessor count');
+                    assert.equal(fetchCalls, 0, 'safe preflight fetch count');
+                    assert.equal(response.statusCode, 400, 'safe missing code status');
+                    assertExactBody(response, { error: 'Authorization code is required' });
+                    assertClosedLogs(logs, []);
+                }
+            );
+        });
+    }
+});
+
 test('token refresh failure does not read the provider body and emits only closed events', async () => {
     let textReads = 0;
     await withCapturedRuntime(
