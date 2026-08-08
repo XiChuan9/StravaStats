@@ -188,6 +188,18 @@ async function createSyntheticLegacyDatabase(factory) {
     db.close();
 }
 
+async function createEmptySyntheticLegacyDatabase(factory, version = 1) {
+    const db = await new Promise((resolve, reject) => {
+        const request = factory.open(LEGACY_DB_NAME, version);
+        request.onupgradeneeded = () => {
+            request.result.createObjectStore(LEGACY_STORE_NAME, { keyPath: 'key' });
+        };
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+    });
+    db.close();
+}
+
 async function readSyntheticLegacyEntry(factory) {
     const db = await new Promise((resolve, reject) => {
         const request = factory.open(LEGACY_DB_NAME);
@@ -220,6 +232,10 @@ function factoryWithoutDatabaseList(backing) {
     };
 }
 
+function databaseDescriptor(version = 1) {
+    return { name: LEGACY_DB_NAME, version };
+}
+
 function createLateProbeFactory({
     event,
     abortFails = false,
@@ -233,6 +249,7 @@ function createLateProbeFactory({
         openWithVersion: 0
     };
     const factory = {
+        databases: async () => [databaseDescriptor()],
         open(name, ...rest) {
             counts.openWithVersion += rest.length;
             const request = {};
@@ -678,7 +695,99 @@ test('IndexedDB identity inspection does not create a missing database', async (
     assert.deepEqual(await indexedDB.databases(), []);
 });
 
-test('No databases API allows a true first login without creating a database', async () => {
+test('Confirmed absent and valid empty keep distinct internal classifications', async () => {
+    const absentFactory = new IDBFactory();
+    const emptyFactory = new IDBFactory();
+    await createEmptySyntheticLegacyDatabase(emptyFactory);
+    const emptyBefore = await emptyFactory.databases();
+
+    const absentInspection = await inspectLegacyIndexedDbPresence({
+        indexedDB: absentFactory,
+        openTimeoutMs: 50
+    });
+    const emptyInspection = await inspectLegacyIndexedDbPresence({
+        indexedDB: emptyFactory,
+        openTimeoutMs: 50
+    });
+
+    // The public compatibility envelope intentionally remains unchanged.
+    assert.deepEqual(absentInspection, { confirmed: true, present: false });
+    assert.deepEqual(emptyInspection, { confirmed: true, present: false });
+    assert.deepEqual(await absentFactory.databases(), []);
+    assert.deepEqual(await emptyFactory.databases(), emptyBefore);
+
+    for (const [label, inspection] of [
+        ['absent', absentInspection],
+        ['empty', emptyInspection]
+    ]) {
+        const storage = new MemoryStorage();
+        const result = await lifecycle(storage, {
+            inspectIndexedDb: async () => inspection
+        }).acceptOAuthTokenResponse(oauthResponse(SYNTHETIC_ATHLETE_ID));
+        assert.equal(result.status, AUTH_LIFECYCLE_STATUS.SUCCESS, label);
+        assert.equal(result.firstLogin, true, label);
+        assert.equal(storage.setCalls, 1, label);
+    }
+
+    const source = await readFile(
+        new URL('../../js/app/auth-lifecycle.js', import.meta.url),
+        'utf8'
+    );
+    assert.match(source, /indexedDbInspection\('absent'\)/);
+    assert.match(source, /indexedDbInspection\([\s\S]*\? 'present' : 'empty'/);
+});
+
+test('Old, current, and future Legacy versions remain unchanged after empty inspection', async () => {
+    for (const version of [1, 3, 7]) {
+        const indexedDB = new IDBFactory();
+        await createEmptySyntheticLegacyDatabase(indexedDB, version);
+        const before = await indexedDB.databases();
+
+        const result = await inspectLegacyIndexedDbPresence({
+            indexedDB,
+            openTimeoutMs: 50
+        });
+
+        assert.deepEqual(result, { confirmed: true, present: false }, String(version));
+        assert.deepEqual(await indexedDB.databases(), before, String(version));
+    }
+});
+
+test('Malformed Legacy store fails closed without repair, upgrade, delete, or Token write', async () => {
+    const indexedDB = new IDBFactory();
+    const malformed = await new Promise((resolve, reject) => {
+        const request = indexedDB.open(LEGACY_DB_NAME, 3);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+    });
+    malformed.close();
+    const before = await indexedDB.databases();
+    let deleteCalls = 0;
+    const factory = {
+        databases: () => indexedDB.databases(),
+        open: (...args) => indexedDB.open(...args),
+        deleteDatabase() {
+            deleteCalls += 1;
+            throw new Error('ProhibitedDelete');
+        }
+    };
+    const inspection = await inspectLegacyIndexedDbPresence({
+        indexedDB: factory,
+        openTimeoutMs: 50
+    });
+    const storage = new MemoryStorage();
+    const auth = await lifecycle(storage, {
+        inspectIndexedDb: async () => inspection
+    }).acceptOAuthTokenResponse(oauthResponse(SYNTHETIC_ATHLETE_ID));
+
+    assert.deepEqual(inspection, { confirmed: false, present: false });
+    assert.equal(auth.status, AUTH_LIFECYCLE_STATUS.IDENTITY_UNCONFIRMED);
+    assert.equal(storage.setCalls, 0);
+    assert.equal(deleteCalls, 0);
+    assert.deepEqual(await indexedDB.databases(), before);
+});
+
+test('No databases API fails closed without opening or creating a database', async () => {
     const backing = new IDBFactory();
     const controlled = factoryWithoutDatabaseList(backing);
     const storage = new MemoryStorage({
@@ -705,18 +814,18 @@ test('No databases API allows a true first login without creating a database', a
             })
         }).acceptOAuthTokenResponse(oauthResponse(SYNTHETIC_ATHLETE_ID));
 
-        assert.deepEqual(inspection, { confirmed: true, present: false });
-        assert.equal(oauthResult.status, AUTH_LIFECYCLE_STATUS.SUCCESS);
-        assert.equal(oauthResult.firstLogin, true);
+        assert.deepEqual(inspection, { confirmed: false, present: false });
+        assert.equal(oauthResult.status, AUTH_LIFECYCLE_STATUS.IDENTITY_UNCONFIRMED);
         assert.equal(createObjectStoreCalls, 0);
-        assert(controlled.openArguments.every(args => args.length === 1));
+        assert.deepEqual(controlled.openArguments, []);
+        assert.equal(storage.setCalls, 0);
         assert.deepEqual(await backing.databases(), []);
     } finally {
         IDBDatabase.prototype.createObjectStore = originalCreateObjectStore;
     }
 });
 
-test('No databases API detects an existing entry without reading activities', async () => {
+test('No databases API cannot establish an existing entry and performs zero reads', async () => {
     const backing = new IDBFactory();
     await createSyntheticLegacyDatabase(backing);
     const controlled = factoryWithoutDatabaseList(backing);
@@ -745,7 +854,7 @@ test('No databases API detects an existing entry without reading activities', as
             })
         }).acceptOAuthTokenResponse(oauthResponse(SYNTHETIC_ATHLETE_ID));
 
-        assert.deepEqual(inspection, { confirmed: true, present: true });
+        assert.deepEqual(inspection, { confirmed: false, present: false });
         assert.equal(
             oauthResult.status,
             AUTH_LIFECYCLE_STATUS.IDENTITY_UNCONFIRMED
@@ -753,7 +862,7 @@ test('No databases API detects an existing entry without reading activities', as
         assert.equal(getCalls, 0);
         assert.equal(storage.setCalls, 0);
         assert.deepEqual(storage.snapshot(), before);
-        assert(controlled.openArguments.every(args => args.length === 1));
+        assert.deepEqual(controlled.openArguments, []);
     } finally {
         IDBObjectStore.prototype.get = originalGet;
     }
@@ -781,7 +890,7 @@ test('Database deletion between list and open leaves no probe database', async (
             indexedDB: factory,
             openTimeoutMs: 50
         });
-        assert.deepEqual(result, { confirmed: true, present: false });
+        assert.deepEqual(result, { confirmed: false, present: false });
         assert.equal(createObjectStoreCalls, 0);
         assert.deepEqual(await backing.databases(), []);
     } finally {
@@ -802,7 +911,7 @@ for (const event of ['timeout', 'blocked']) {
         const databasesAtReturn = await controlled.backing.databases();
         await new Promise(resolve => setTimeout(resolve, 25));
 
-        assert.deepEqual(result, { confirmed: true, present: false });
+        assert.deepEqual(result, { confirmed: false, present: false });
         assert.equal(controlled.counts.abort, 1);
         assert.equal(controlled.counts.createObjectStore, 0);
         assert.equal(controlled.counts.deleteDatabase, 0);
@@ -812,7 +921,7 @@ for (const event of ['timeout', 'blocked']) {
     });
 }
 
-test('Probe abort failure deletes the database before returning', async () => {
+test('Accepted preflight race residual is only an empty version 1 database', async () => {
     const controlled = createLateProbeFactory({
         event: 'timeout',
         abortFails: true,
@@ -822,13 +931,112 @@ test('Probe abort failure deletes the database before returning', async () => {
         indexedDB: controlled.factory,
         openTimeoutMs: 5
     });
+    await new Promise(resolve => setTimeout(resolve, 25));
 
-    assert.deepEqual(result, { confirmed: true, present: false });
+    assert.deepEqual(result, { confirmed: false, present: false });
     assert.equal(controlled.counts.abort, 1);
     assert.equal(controlled.counts.createObjectStore, 0);
-    assert.equal(controlled.counts.deleteDatabase, 1);
+    assert.equal(controlled.counts.deleteDatabase, 0);
     assert.equal(controlled.counts.openWithVersion, 0);
-    assert.deepEqual(await controlled.backing.databases(), []);
+    assert.deepEqual(await controlled.backing.databases(), [databaseDescriptor()]);
+
+    const residual = await new Promise((resolve, reject) => {
+        const request = controlled.backing.open(LEGACY_DB_NAME);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+    });
+    assert.equal(residual.version, 1);
+    assert.equal(residual.objectStoreNames.length, 0);
+    residual.close();
+
+    const storage = new MemoryStorage();
+    const oauthResult = await lifecycle(storage, {
+        inspectIndexedDb: async () => result
+    }).acceptOAuthTokenResponse(oauthResponse(SYNTHETIC_ATHLETE_ID));
+    assert.equal(oauthResult.status, AUTH_LIFECYCLE_STATUS.IDENTITY_UNCONFIRMED);
+    assert.equal(storage.setCalls, 0);
+});
+
+test('Unsafe databases enumeration fails closed with zero open, delete, or Token write', async () => {
+    const cases = [
+        ['reject', { databases: async () => { throw new Error('SyntheticListFailure'); } }],
+        ['non-array', { databases: async () => ({}) }],
+        ['non-finite-version', { databases: async () => [databaseDescriptor(Infinity)] }],
+        ['accessor-descriptor', {
+            databases: async () => [Object.defineProperty({}, 'name', {
+                enumerable: true,
+                get() { throw new Error('ProhibitedDescriptorGetter'); }
+            })]
+        }],
+        ['proxy-list', { databases: async () => new Proxy([], {
+            getPrototypeOf() { throw new Error('ProhibitedListTrap'); }
+        }) }]
+    ];
+
+    for (const [label, base] of cases) {
+        let openCalls = 0;
+        let deleteCalls = 0;
+        const indexedDB = {
+            ...base,
+            open() { openCalls += 1; throw new Error('ProhibitedOpen'); },
+            deleteDatabase() { deleteCalls += 1; throw new Error('ProhibitedDelete'); }
+        };
+        const storage = new MemoryStorage({
+            strava_tokens: JSON.stringify({ access_token: SYNTHETIC_SECRET })
+        });
+        const before = storage.snapshot();
+        const inspect = () => inspectLegacyIndexedDbPresence({ indexedDB, openTimeoutMs: 5 });
+
+        assert.deepEqual(await inspect(), { confirmed: false, present: false }, label);
+        const oauthResult = await lifecycle(storage, { inspectIndexedDb: inspect })
+            .acceptOAuthTokenResponse(oauthResponse(SYNTHETIC_ATHLETE_ID));
+        assert.equal(oauthResult.status, AUTH_LIFECYCLE_STATUS.IDENTITY_UNCONFIRMED, label);
+        assert.equal(openCalls, 0, label);
+        assert.equal(deleteCalls, 0, label);
+        assert.equal(storage.setCalls, 0, label);
+        assert.deepEqual(storage.snapshot(), before, label);
+    }
+});
+
+test('Pending database enumeration times out and late resolution never opens', async () => {
+    let resolveDatabases;
+    let openCalls = 0;
+    let deleteCalls = 0;
+    let trapCalls = 0;
+    const indexedDB = {
+        databases: () => new Promise(resolve => { resolveDatabases = resolve; }),
+        open() { openCalls += 1; throw new Error('ProhibitedLateOpen'); },
+        deleteDatabase() { deleteCalls += 1; throw new Error('ProhibitedDelete'); }
+    };
+    const storage = new MemoryStorage();
+    const inspectionPromise = inspectLegacyIndexedDbPresence({
+        indexedDB,
+        openTimeoutMs: 5
+    });
+    const bounded = await Promise.race([
+        inspectionPromise.then(() => 'settled'),
+        new Promise(resolve => setTimeout(() => resolve('still-pending'), 25))
+    ]);
+
+    assert.equal(bounded, 'settled');
+    const inspection = await inspectionPromise;
+    assert.deepEqual(inspection, { confirmed: false, present: false });
+    const auth = await lifecycle(storage, {
+        inspectIndexedDb: async () => inspection
+    }).acceptOAuthTokenResponse(oauthResponse(SYNTHETIC_ATHLETE_ID));
+    assert.equal(auth.status, AUTH_LIFECYCLE_STATUS.IDENTITY_UNCONFIRMED);
+    assert.equal(storage.setCalls, 0);
+
+    resolveDatabases(new Proxy([], {
+        getPrototypeOf() {
+            trapCalls += 1;
+            throw new Error('ProhibitedLateReflection');
+        }
+    }));
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(trapCalls, 0);
+    assert.equal(openCalls, 0);
+    assert.equal(deleteCalls, 0);
 });
 
 test('Authentication errors and stable results do not echo token material', async () => {
@@ -870,4 +1078,5 @@ test('Authentication implementation cannot call clearCachedActivities', async ()
     for (const source of sources) {
         assert.equal(source.includes('clearCachedActivities'), false);
     }
+    assert.equal(sources[1].includes('deleteDatabase'), false);
 });

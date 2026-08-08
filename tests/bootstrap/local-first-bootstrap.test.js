@@ -9,6 +9,7 @@ import {
     inspectLocalFirstBootstrap,
     runLocalFirstBootstrap
 } from '../../js/app/local-first-bootstrap.js';
+import { readLegacyIndexedDb } from '../../js/services/legacy-cache/index.js';
 
 function tokenStorage(rawToken = null, { fail = false, calls = [] } = {}) {
     return {
@@ -177,6 +178,62 @@ test('unproved emptiness with any local read failure blocks instead of false Fir
         assert.deepEqual(result.legacyActivities, []);
         assert.doesNotMatch(JSON.stringify(result), /private/);
     }
+});
+
+test('unsafe Legacy database enumeration blocks First-run with zero open', async () => {
+    const { options } = harness();
+    let openCalls = 0;
+    options.indexedDB = {
+        open() {
+            openCalls += 1;
+            throw new Error('ProhibitedOpen');
+        }
+    };
+    options.legacyIndexedDbReader = readLegacyIndexedDb;
+
+    const result = await inspectLocalFirstBootstrap(options);
+
+    assert.equal(result.route, LOCAL_FIRST_ROUTE.BLOCKED);
+    assert.equal(result.localStatus, LOCAL_FIRST_STATUS.UNAVAILABLE);
+    assert.equal(openCalls, 0);
+});
+
+test('pending Legacy enumeration blocks in bounded time and cannot open late', async () => {
+    const { options } = harness();
+    let resolveDatabases;
+    let openCalls = 0;
+    let trapCalls = 0;
+    options.indexedDB = {
+        databases: () => new Promise(resolve => { resolveDatabases = resolve; }),
+        open() {
+            openCalls += 1;
+            throw new Error('ProhibitedLateOpen');
+        }
+    };
+    options.legacyIndexedDbReader = args => readLegacyIndexedDb({
+        ...args,
+        openTimeoutMs: 5
+    });
+
+    const inspectionPromise = inspectLocalFirstBootstrap(options);
+    const bounded = await Promise.race([
+        inspectionPromise.then(() => 'settled'),
+        new Promise(resolve => setTimeout(() => resolve('still-pending'), 25))
+    ]);
+    assert.equal(bounded, 'settled');
+    const result = await inspectionPromise;
+    assert.equal(result.route, LOCAL_FIRST_ROUTE.BLOCKED);
+    assert.equal(result.localStatus, LOCAL_FIRST_STATUS.UNAVAILABLE);
+
+    resolveDatabases(new Proxy([], {
+        getPrototypeOf() {
+            trapCalls += 1;
+            throw new Error('ProhibitedLateReflection');
+        }
+    }));
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(trapCalls, 0);
+    assert.equal(openCalls, 0);
 });
 
 test('Strava Source Status is local-only, stable, and never echoes Token material', async () => {
