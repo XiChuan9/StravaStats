@@ -209,7 +209,11 @@ test('Weather render success, failure, and hostile inputs keep output inside fix
             return [];
         },
         set innerHTML(value) {
-            bodyWrites.push(value);
+            if (value.includes('weather-tabs')) bodyWrites.push('populated');
+            else if (value.includes('Loading weather analysis')) bodyWrites.push('loading');
+            else if (value.includes('No weather data available')) bodyWrites.push('no-data');
+            else if (value.includes('Weather analysis could not be loaded')) bodyWrites.push('failed');
+            else bodyWrites.push('unexpected');
         }
     };
     const section = {
@@ -271,10 +275,42 @@ test('Weather render success, failure, and hostile inputs keep output inside fix
             moving_time: 60,
             start_date_local: '2030-01-01T00:00:00.000Z'
         });
-        const coords = Object.freeze([
+        const successCoords = Object.freeze([
             Object.freeze([1, 1]),
             Object.freeze([1.1, 1.1])
         ]);
+        const noDataCoords = Object.freeze([
+            Object.freeze([2, 2]),
+            Object.freeze([2.1, 2.1])
+        ]);
+        const hostileCoords = Object.freeze([
+            Object.freeze([3, 3]),
+            Object.freeze([3.1, 3.1])
+        ]);
+
+        Object.defineProperty(globalThis, 'fetch', {
+            configurable: true,
+            value: () => {
+                networkCalls += 1;
+                return Promise.resolve(Object.freeze({
+                    ok: true,
+                    json: async () => Object.freeze({
+                        hourly: Object.freeze({
+                            time: Object.freeze(['2030-01-01T00:00:00.000Z']),
+                            temperature_2m: Object.freeze([10]),
+                            precipitation: Object.freeze([0]),
+                            wind_speed_10m: Object.freeze([5]),
+                            wind_direction_10m: Object.freeze([90]),
+                            weathercode: Object.freeze([0]),
+                            relativehumidity_2m: Object.freeze([50]),
+                            cloudcover: Object.freeze([10]),
+                            surface_pressure: Object.freeze([1000])
+                        })
+                    })
+                }));
+            }
+        });
+        await module.renderWeatherAnalysis(activity, successCoords);
 
         Object.defineProperty(globalThis, 'fetch', {
             configurable: true,
@@ -283,7 +319,7 @@ test('Weather render success, failure, and hostile inputs keep output inside fix
                 return Promise.resolve(Object.freeze({ ok: false }));
             }
         });
-        await module.renderWeatherAnalysis(activity, coords);
+        await module.renderWeatherAnalysis(activity, noDataCoords);
 
         Object.defineProperty(globalThis, 'fetch', {
             configurable: true,
@@ -292,13 +328,13 @@ test('Weather render success, failure, and hostile inputs keep output inside fix
                 throw hostile;
             }
         });
-        await module.renderWeatherAnalysis(activity, coords);
+        await module.renderWeatherAnalysis(activity, hostileCoords);
 
         const revoked = Proxy.revocable(Object.create(null), Object.create(null));
         revoked.revoke();
-        await module.renderWeatherAnalysis(revoked.proxy, coords);
+        await module.renderWeatherAnalysis(revoked.proxy, hostileCoords);
 
-        assert.equal(networkCalls, 3, 'WEATHER_RUNTIME_NETWORK_COUNT_CHANGED');
+        assert.equal(networkCalls, 5, 'WEATHER_RUNTIME_NETWORK_COUNT_CHANGED');
         assert.deepEqual(consoleCalls, [], 'WEATHER_CONSOLE_OUTPUT_PRESENT');
         assert.deepEqual(storageCalls, [], 'WEATHER_STORAGE_OUTPUT_PRESENT');
         assert.deepEqual(windowWrites, [], 'WEATHER_WINDOW_OUTPUT_PRESENT');
@@ -310,11 +346,13 @@ test('Weather render success, failure, and hostile inputs keep output inside fix
             descriptors: 0
         }, 'WEATHER_THROWN_VALUE_INSPECTED');
         assert.deepEqual(bodyWrites, [
-            '<p class="empty-state">Loading weather analysis...</p>',
-            '<p class="empty-state">No weather data available for this route.</p>',
-            '<p class="empty-state">Loading weather analysis...</p>',
-            '<p class="empty-state">Weather analysis could not be loaded.</p>',
-            '<p class="empty-state">Weather analysis could not be loaded.</p>'
+            'loading',
+            'populated',
+            'loading',
+            'no-data',
+            'loading',
+            'failed',
+            'failed'
         ], 'WEATHER_DOM_OUTPUT_CHANGED');
     } finally {
         for (const [name, descriptor] of descriptors) restoreGlobal(name, descriptor);
