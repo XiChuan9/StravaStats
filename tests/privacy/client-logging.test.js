@@ -90,7 +90,9 @@ test('Run Plus does not publish private diagnostics through DOM or window debug 
         ['diagnostics-dataset', /dataset\.runPlusDiagnostics\s*=/],
         ['nsm-dataset', /dataset\.runPlusNsm\s*=/],
         ['diagnostics-serialization', /JSON\.stringify\s*\(\s*diagnostics\s*\)/],
-        ['nsm-serialization', /JSON\.stringify\s*\(\s*summary\s*\)/]
+        ['nsm-serialization', /JSON\.stringify\s*\(\s*summary\s*\)/],
+        ['run-plus-window-publication', /window\.runPlus[A-Za-z0-9_$]*\s*=/],
+        ['computed-window-publication', /window\s*\[\s*key\s*\]/]
     ]);
     const findings = [...patterns]
         .filter(([, pattern]) => pattern.test(text))
@@ -178,6 +180,224 @@ test('Legacy cache hostile failures recover without console output or thrown-val
             ownKeys: 0,
             descriptors: 0
         }, 'HOSTILE_THROWN_VALUE_INSPECTED');
+    } finally {
+        for (const [name, descriptor] of descriptors) restoreGlobal(name, descriptor);
+    }
+});
+
+test('Weather render success, failure, and hostile inputs keep output inside fixed DOM copy', async () => {
+    const names = ['console', 'document', 'fetch', 'localStorage', 'sessionStorage', 'window'];
+    const descriptors = new Map(names.map(name => [
+        name,
+        Object.getOwnPropertyDescriptor(globalThis, name)
+    ]));
+    const consoleCalls = [];
+    const storageCalls = [];
+    const windowWrites = [];
+    const bodyWrites = [];
+    let networkCalls = 0;
+    const hostileCounter = {
+        getters: 0,
+        coercions: 0,
+        proxyGets: 0,
+        ownKeys: 0,
+        descriptors: 0
+    };
+    const hostile = hostileThrownValue(hostileCounter);
+    const body = {
+        querySelectorAll() {
+            return [];
+        },
+        set innerHTML(value) {
+            bodyWrites.push(value);
+        }
+    };
+    const section = {
+        classList: Object.freeze({
+            add() {},
+            remove() {}
+        }),
+        querySelector(selector) {
+            return selector === '.weather-analysis__body' ? body : null;
+        }
+    };
+    const storage = Object.freeze({
+        getItem() {
+            storageCalls.push('get');
+            return null;
+        },
+        setItem() {
+            storageCalls.push('set');
+        },
+        removeItem() {
+            storageCalls.push('remove');
+        }
+    });
+
+    Object.defineProperty(globalThis, 'console', {
+        configurable: true,
+        value: Object.freeze({
+            log: (...args) => consoleCalls.push(args.length),
+            info: (...args) => consoleCalls.push(args.length),
+            warn: (...args) => consoleCalls.push(args.length),
+            error: (...args) => consoleCalls.push(args.length),
+            debug: (...args) => consoleCalls.push(args.length)
+        })
+    });
+    Object.defineProperty(globalThis, 'document', {
+        configurable: true,
+        value: Object.freeze({
+            getElementById(id) {
+                return id === 'weather-analysis-section' ? section : null;
+            }
+        })
+    });
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: storage });
+    Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, value: storage });
+    Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: new Proxy(Object.create(null), {
+            set(target, key, value) {
+                windowWrites.push(typeof key === 'string' ? key : 'symbol');
+                return Reflect.set(target, key, value);
+            }
+        })
+    });
+
+    try {
+        const module = await import('../../js/shared/utils/weather-analysis.js?r5-weather-runtime=1');
+        const activity = Object.freeze({
+            id: 'synthetic-activity',
+            moving_time: 60,
+            start_date_local: '2030-01-01T00:00:00.000Z'
+        });
+        const coords = Object.freeze([
+            Object.freeze([1, 1]),
+            Object.freeze([1.1, 1.1])
+        ]);
+
+        Object.defineProperty(globalThis, 'fetch', {
+            configurable: true,
+            value: () => {
+                networkCalls += 1;
+                return Promise.resolve(Object.freeze({ ok: false }));
+            }
+        });
+        await module.renderWeatherAnalysis(activity, coords);
+
+        Object.defineProperty(globalThis, 'fetch', {
+            configurable: true,
+            value: () => {
+                networkCalls += 1;
+                throw hostile;
+            }
+        });
+        await module.renderWeatherAnalysis(activity, coords);
+
+        const revoked = Proxy.revocable(Object.create(null), Object.create(null));
+        revoked.revoke();
+        await module.renderWeatherAnalysis(revoked.proxy, coords);
+
+        assert.equal(networkCalls, 3, 'WEATHER_RUNTIME_NETWORK_COUNT_CHANGED');
+        assert.deepEqual(consoleCalls, [], 'WEATHER_CONSOLE_OUTPUT_PRESENT');
+        assert.deepEqual(storageCalls, [], 'WEATHER_STORAGE_OUTPUT_PRESENT');
+        assert.deepEqual(windowWrites, [], 'WEATHER_WINDOW_OUTPUT_PRESENT');
+        assert.deepEqual(hostileCounter, {
+            getters: 0,
+            coercions: 0,
+            proxyGets: 0,
+            ownKeys: 0,
+            descriptors: 0
+        }, 'WEATHER_THROWN_VALUE_INSPECTED');
+        assert.deepEqual(bodyWrites, [
+            '<p class="empty-state">Loading weather analysis...</p>',
+            '<p class="empty-state">No weather data available for this route.</p>',
+            '<p class="empty-state">Loading weather analysis...</p>',
+            '<p class="empty-state">Weather analysis could not be loaded.</p>',
+            '<p class="empty-state">Weather analysis could not be loaded.</p>'
+        ], 'WEATHER_DOM_OUTPUT_CHANGED');
+    } finally {
+        for (const [name, descriptor] of descriptors) restoreGlobal(name, descriptor);
+    }
+});
+
+test('Run Plus synthetic render creates no window or DOM debug publication', async () => {
+    const names = ['document', 'localStorage', 'sessionStorage', 'window'];
+    const descriptors = new Map(names.map(name => [
+        name,
+        Object.getOwnPropertyDescriptor(globalThis, name)
+    ]));
+    const windowWrites = [];
+    const storageWrites = [];
+    const root = {
+        dataset: Object.create(null),
+        innerHTML: '',
+        querySelector() {
+            return null;
+        },
+        querySelectorAll() {
+            return [];
+        }
+    };
+    const storage = Object.freeze({
+        getItem() {
+            return null;
+        },
+        setItem(key) {
+            storageWrites.push(key);
+        },
+        removeItem(key) {
+            storageWrites.push(key);
+        }
+    });
+    const windowTarget = {
+        history: Object.freeze({ pushState() {} }),
+        location: Object.freeze({ pathname: '/run-plus' }),
+        print() {}
+    };
+
+    Object.defineProperty(globalThis, 'document', {
+        configurable: true,
+        value: Object.freeze({
+            body: Object.freeze({
+                appendChild() {},
+                removeChild() {}
+            }),
+            createElement() {
+                let text = '';
+                return {
+                    get innerHTML() {
+                        return text;
+                    },
+                    set textContent(value) {
+                        text = String(value ?? '');
+                    }
+                };
+            },
+            getElementById(id) {
+                return id === 'run-plus-tab' ? root : null;
+            }
+        })
+    });
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: storage });
+    Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, value: storage });
+    Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: new Proxy(windowTarget, {
+            set(target, key, value) {
+                windowWrites.push(typeof key === 'string' ? key : 'symbol');
+                return Reflect.set(target, key, value);
+            }
+        })
+    });
+
+    try {
+        const module = await import('../../js/tabs/run-plus.js?r5-run-plus-runtime=1');
+        module.renderRunPlusTab(Object.freeze([]), null, null, 'all');
+        assert.deepEqual(windowWrites, [], 'RUN_PLUS_WINDOW_OUTPUT_PRESENT');
+        assert.deepEqual(Object.keys(root.dataset), [], 'RUN_PLUS_DATASET_OUTPUT_PRESENT');
+        assert.deepEqual(storageWrites, [], 'RUN_PLUS_STORAGE_OUTPUT_PRESENT');
+        assert.equal(root.innerHTML.length > 0, true, 'RUN_PLUS_RENDER_DID_NOT_EXECUTE');
     } finally {
         for (const [name, descriptor] of descriptors) restoreGlobal(name, descriptor);
     }
