@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { webcrypto } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import {
     IDBFactory,
     IDBObjectStore
@@ -16,6 +17,7 @@ import {
     buildLegacyBundle,
     createLegacyRestorePlan,
     discoverLegacyCache,
+    readLegacyIndexedDb,
     restoreLegacyBundle,
     stableStringify,
     verifyLegacyBundle
@@ -212,6 +214,7 @@ function storageWithFallback(entry = makeEntry()) {
 
 function openEventFactory(eventName) {
     return {
+        databases: async () => [{ name: LEGACY_DB_NAME, version: 1 }],
         open() {
             const request = {};
             queueMicrotask(() => {
@@ -248,12 +251,6 @@ function createLateWriteOpenFactory({
     const factory = {
         open(name, version) {
             openCalls += 1;
-            if (openCalls === 1) {
-                return version === undefined
-                    ? backing.open(name)
-                    : backing.open(name, version);
-            }
-
             const request = {};
             let aborted = false;
             request.transaction = {
@@ -518,18 +515,52 @@ test('Reader returns stale and cacheVersion-mismatched entries with warnings', a
     );
 });
 
-test('Reader opens a Legacy database newer than version 1', async () => {
-    const indexedDB = new IDBFactory();
-    await createLegacyDatabase(indexedDB, { version: 3, entry: makeEntry() });
+test('Reader preserves old, current, and future Legacy database versions', async () => {
+    for (const version of [1, 3, 7]) {
+        const indexedDB = new IDBFactory();
+        await createLegacyDatabase(indexedDB, { version, entry: makeEntry() });
+        const before = await indexedDB.databases();
 
-    const result = await discoverLegacyCache({
-        indexedDB,
-        localStorage: new MemoryStorage(),
+        const result = await discoverLegacyCache({
+            indexedDB,
+            localStorage: new MemoryStorage(),
+            now: FIXED_NOW
+        });
+
+        assert.equal(result.selectedSource, 'indexedDb', String(version));
+        assert.equal(result.sourceDatabaseVersion, version, String(version));
+        assert.deepEqual(await indexedDB.databases(), before, String(version));
+    }
+});
+
+test('Reader distinguishes a valid empty store from a malformed database without repair', async () => {
+    const emptyFactory = new IDBFactory();
+    await createLegacyDatabase(emptyFactory, { version: 3 });
+    const emptyBefore = await emptyFactory.databases();
+    const empty = await readLegacyIndexedDb({
+        indexedDB: emptyFactory,
+        openTimeoutMs: 50,
         now: FIXED_NOW
     });
+    assert.equal(empty.status, 'not-found');
+    assert.equal(empty.databaseVersion, 3);
+    assert.deepEqual(await emptyFactory.databases(), emptyBefore);
 
-    assert.equal(result.selectedSource, 'indexedDb');
-    assert.equal(result.sourceDatabaseVersion, 3);
+    const malformedFactory = new IDBFactory();
+    const malformedDb = await openDatabase(malformedFactory, 3);
+    malformedDb.close();
+    const malformedBefore = await malformedFactory.databases();
+    const malformed = await readLegacyIndexedDb({
+        indexedDB: malformedFactory,
+        openTimeoutMs: 50,
+        now: FIXED_NOW
+    });
+    assert.equal(malformed.status, 'error');
+    assert.equal(
+        malformed.errors[0].code,
+        LEGACY_ERROR_CODES.INDEXEDDB_STORE_NOT_FOUND
+    );
+    assert.deepEqual(await malformedFactory.databases(), malformedBefore);
 });
 
 test('Reader does not create a missing database', async () => {
@@ -546,27 +577,115 @@ test('Reader does not create a missing database', async () => {
     assert.deepEqual(await indexedDB.databases(), []);
 });
 
-test('Reader returns a structured error when missing-database abort fails', async () => {
-    let closed = false;
+test('Reader accepted preflight race residual has version 1 and zero stores', async () => {
+    const backing = new IDBFactory();
+    const counts = { abort: 0, delete: 0, open: 0 };
     const indexedDB = {
-        open() {
-            const request = {
-                result: {
-                    close() {
-                        closed = true;
-                    }
-                },
-                transaction: {
-                    abort() {
-                        throw new Error('SyntheticAbortFailure');
-                    }
+        databases: async () => [{ name: LEGACY_DB_NAME, version: 1 }],
+        open(name) {
+            counts.open += 1;
+            const request = {};
+            request.transaction = {
+                abort() {
+                    counts.abort += 1;
+                    throw new Error('SyntheticReaderAbortFailure');
                 }
             };
             queueMicrotask(() => {
-                request.onupgradeneeded();
-                request.onsuccess();
+                request.onupgradeneeded?.();
+                const realRequest = backing.open(name);
+                realRequest.onsuccess = () => {
+                    request.result = realRequest.result;
+                    request.onsuccess?.();
+                };
+                realRequest.onerror = () => {
+                    request.error = realRequest.error;
+                    request.onerror?.();
+                };
             });
             return request;
+        },
+        deleteDatabase(name) {
+            counts.delete += 1;
+            return backing.deleteDatabase(name);
+        }
+    };
+
+    const result = await readLegacyIndexedDb({
+        indexedDB,
+        openTimeoutMs: 50,
+        now: FIXED_NOW
+    });
+
+    assert.equal(result.status, 'error');
+    assert.equal(counts.open, 1);
+    assert.equal(counts.abort, 1);
+    assert.equal(counts.delete, 0);
+    assert.deepEqual(await backing.databases(), [{
+        name: LEGACY_DB_NAME,
+        version: 1
+    }]);
+    const residual = await openDatabase(backing);
+    assert.equal(residual.version, 1);
+    assert.equal(residual.objectStoreNames.length, 0);
+    residual.close();
+});
+
+for (const lateEvent of ['success', 'error']) {
+    test(`Reader timeout ignores late ${lateEvent} without database mutation`, async () => {
+        const backing = new IDBFactory();
+        await createLegacyDatabase(backing, { version: 3, entry: makeEntry() });
+        const before = await backing.databases();
+        let closeCalls = 0;
+        const indexedDB = {
+            databases: () => backing.databases(),
+            open(name) {
+                const request = {};
+                setTimeout(() => {
+                    if (lateEvent === 'error') {
+                        request.error = { name: 'SyntheticLateOpenError' };
+                        request.onerror?.();
+                        return;
+                    }
+                    const realRequest = backing.open(name);
+                    realRequest.onerror = () => {
+                        request.error = realRequest.error;
+                        request.onerror?.();
+                    };
+                    realRequest.onsuccess = () => {
+                        request.result = {
+                            close() {
+                                closeCalls += 1;
+                                realRequest.result.close();
+                            }
+                        };
+                        request.onsuccess?.();
+                    };
+                }, 20);
+                return request;
+            }
+        };
+
+        const result = await readLegacyIndexedDb({
+            indexedDB,
+            openTimeoutMs: 5,
+            now: FIXED_NOW
+        });
+        await new Promise(resolve => setTimeout(resolve, 30));
+
+        assert.equal(result.status, 'error');
+        assert.equal(result.errors[0].code, LEGACY_ERROR_CODES.INDEXEDDB_TIMEOUT);
+        assert.equal(closeCalls, lateEvent === 'success' ? 1 : 0);
+        assert.deepEqual(await backing.databases(), before);
+    });
+}
+
+test('Reader without safe database enumeration returns an error without opening', async () => {
+    let openCalls = 0;
+    const indexedDB = {
+        open() {
+            openCalls += 1;
+            throw new Error('ProhibitedOpen');
         }
     };
 
@@ -579,9 +698,40 @@ test('Reader returns a structured error when missing-database abort fails', asyn
 
     assert.equal(result.status, 'error');
     assert(result.errors.some(error => (
-        error.code === LEGACY_ERROR_CODES.INDEXEDDB_OPEN_ERROR
+        error.code === LEGACY_ERROR_CODES.INDEXEDDB_NOT_AVAILABLE
     )));
-    assert.equal(closed, true);
+    assert.equal(openCalls, 0);
+});
+
+test('Reader rejects unsafe database lists without open, delete, upgrade, or writes', async () => {
+    const cases = [
+        ['reject', async () => { throw new Error('SyntheticListFailure'); }],
+        ['non-array', async () => ({})],
+        ['non-finite', async () => [{ name: LEGACY_DB_NAME, version: NaN }]],
+        ['accessor', async () => [Object.defineProperty({}, 'name', {
+            enumerable: true,
+            get() { throw new Error('ProhibitedGetter'); }
+        })]],
+        ['proxy', async () => new Proxy([], {
+            ownKeys() { throw new Error('ProhibitedListTrap'); }
+        })]
+    ];
+
+    for (const [label, databases] of cases) {
+        const counts = { open: 0, delete: 0 };
+        const result = await readLegacyIndexedDb({
+            indexedDB: {
+                databases,
+                open() { counts.open += 1; throw new Error('ProhibitedOpen'); },
+                deleteDatabase() { counts.delete += 1; throw new Error('ProhibitedDelete'); }
+            },
+            openTimeoutMs: 5,
+            now: FIXED_NOW
+        });
+        assert.equal(result.status, 'error', label);
+        assert.equal(counts.open, 0, label);
+        assert.equal(counts.delete, 0, label);
+    }
 });
 
 test('Reader selects localStorage fallback and reports IndexedDB errors', async () => {
@@ -635,7 +785,10 @@ test('Reader distinguishes blocked, timeout, storage access error, and empty', a
     assert(blocked.errors.some(error => error.code === LEGACY_ERROR_CODES.INDEXEDDB_BLOCKED));
 
     const timeout = await discoverLegacyCache({
-        indexedDB: { open: () => ({}) },
+        indexedDB: {
+            databases: async () => [{ name: LEGACY_DB_NAME, version: 1 }],
+            open: () => ({})
+        },
         localStorage: new MemoryStorage(),
         openTimeoutMs: 5,
         now: FIXED_NOW
@@ -681,6 +834,7 @@ test('Reader handles versionchange as a structured error', async () => {
         }
     };
     const indexedDB = {
+        databases: async () => [{ name: LEGACY_DB_NAME, version: 4 }],
         open() {
             const request = { result: db };
             queueMicrotask(() => request.onsuccess());
@@ -721,6 +875,17 @@ test('Reader leaves IndexedDB and localStorage unchanged and never calls fetch',
     assert.equal(fetchCalls, 0);
     assert.equal(stableStringify(await readRawEntry(indexedDB)), beforeDb);
     assert.deepEqual(localStorage.snapshot(), beforeStorage);
+});
+
+test('Reader production source contains no destructive or write-capable IndexedDB operation', async () => {
+    const source = await readFile(
+        new URL('../../js/services/legacy-cache/reader.js', import.meta.url),
+        'utf8'
+    );
+    assert.doesNotMatch(
+        source,
+        /deleteDatabase|createObjectStore|objectStore[^\n;]*\.(?:clear|delete|put|add)\s*\(|['"]readwrite['"]/
+    );
 });
 
 test('Reader reports Demo data separately without selecting it as Legacy activities', async () => {

@@ -65,8 +65,116 @@ function cacheWarnings(entry, { expectedCacheVersion, maxAgeMs, now }) {
     return warnings;
 }
 
-function openLegacyDatabase(indexedDb, openTimeoutMs) {
-    if (!indexedDb || typeof indexedDb.open !== 'function') {
+function findDataMethod(value, name) {
+    try {
+        if (
+            value === null
+            || (typeof value !== 'object' && typeof value !== 'function')
+        ) return null;
+        let current = value;
+        for (let depth = 0; current !== null && depth < 32; depth += 1) {
+            const descriptor = Object.getOwnPropertyDescriptor(current, name);
+            if (descriptor) {
+                return Object.hasOwn(descriptor, 'value')
+                    && typeof descriptor.value === 'function'
+                    ? descriptor.value
+                    : null;
+            }
+            current = Object.getPrototypeOf(current);
+        }
+        return null;
+    } catch {
+        return null;
+    }
+}
+
+function inspectDatabaseList(value) {
+    try {
+        if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) {
+            return 'unknown';
+        }
+        const keys = Reflect.ownKeys(value);
+        const lengthDescriptor = Object.getOwnPropertyDescriptor(value, 'length');
+        if (
+            !lengthDescriptor
+            || !Object.hasOwn(lengthDescriptor, 'value')
+            || !Number.isSafeInteger(lengthDescriptor.value)
+            || lengthDescriptor.value < 0
+            || keys.length !== lengthDescriptor.value + 1
+        ) return 'unknown';
+        const names = new Set();
+        let found = false;
+        for (let index = 0; index < lengthDescriptor.value; index += 1) {
+            const itemDescriptor = Object.getOwnPropertyDescriptor(value, String(index));
+            if (!itemDescriptor?.enumerable || !Object.hasOwn(itemDescriptor, 'value')) {
+                return 'unknown';
+            }
+            const item = itemDescriptor.value;
+            if (
+                item === null
+                || typeof item !== 'object'
+                || Array.isArray(item)
+                || Object.getPrototypeOf(item) !== Object.prototype
+            ) return 'unknown';
+            const itemKeys = Reflect.ownKeys(item);
+            if (
+                itemKeys.length !== 2
+                || !itemKeys.includes('name')
+                || !itemKeys.includes('version')
+                || itemKeys.some(key => typeof key !== 'string')
+            ) return 'unknown';
+            const name = Object.getOwnPropertyDescriptor(item, 'name');
+            const version = Object.getOwnPropertyDescriptor(item, 'version');
+            if (
+                !name?.enumerable
+                || !Object.hasOwn(name, 'value')
+                || typeof name.value !== 'string'
+                || names.has(name.value)
+                || !version?.enumerable
+                || !Object.hasOwn(version, 'value')
+                || !Number.isSafeInteger(version.value)
+                || version.value < 1
+            ) return 'unknown';
+            names.add(name.value);
+            if (name.value === LEGACY_DB_NAME) found = true;
+        }
+        return found ? 'present' : 'absent';
+    } catch {
+        return 'unknown';
+    }
+}
+
+function inspectDatabaseState(indexedDb, databasesMethod, timeoutMs) {
+    return new Promise(resolve => {
+        let settled = false;
+        const finish = state => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeoutId);
+            resolve(state);
+        };
+        const timeoutId = setTimeout(
+            () => finish('unknown'),
+            Math.max(0, timeoutMs)
+        );
+        try {
+            Promise.resolve(databasesMethod.call(indexedDb)).then(
+                value => {
+                    if (settled) return;
+                    finish(inspectDatabaseList(value));
+                },
+                () => finish('unknown')
+            );
+        } catch {
+            finish('unknown');
+        }
+    });
+}
+
+async function openLegacyDatabase(indexedDb, openTimeoutMs) {
+    const databasesMethod = findDataMethod(indexedDb, 'databases');
+    const openMethod = findDataMethod(indexedDb, 'open');
+    if (!databasesMethod || !openMethod) {
         return Promise.resolve({
             status: 'error',
             error: issue(
@@ -74,6 +182,22 @@ function openLegacyDatabase(indexedDb, openTimeoutMs) {
                 'IndexedDB is not available.'
             )
         });
+    }
+
+    const databaseState = await inspectDatabaseState(
+        indexedDb,
+        databasesMethod,
+        openTimeoutMs
+    );
+    if (databaseState === 'absent') return { status: 'not-found' };
+    if (databaseState !== 'present') {
+        return {
+            status: 'error',
+            error: issue(
+                LEGACY_ERROR_CODES.INDEXEDDB_NOT_AVAILABLE,
+                'Legacy IndexedDB presence could not be safely determined.'
+            )
+        };
     }
 
     return new Promise(resolve => {
@@ -101,7 +225,7 @@ function openLegacyDatabase(indexedDb, openTimeoutMs) {
 
         try {
             // Intentionally omit a version so newer Legacy database versions remain readable.
-            request = indexedDb.open(LEGACY_DB_NAME);
+            request = openMethod.call(indexedDb, LEGACY_DB_NAME);
         } catch (error) {
             finish({
                 status: 'error',
@@ -134,14 +258,6 @@ function openLegacyDatabase(indexedDb, openTimeoutMs) {
         };
 
         request.onerror = () => {
-            if (
-                missingDatabase
-                && !missingAbortFailed
-                && request.error?.name === 'AbortError'
-            ) {
-                finish({ status: 'not-found' });
-                return;
-            }
             finish({
                 status: 'error',
                 error: issue(

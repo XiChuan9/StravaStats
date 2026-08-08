@@ -143,9 +143,25 @@ function readStoredAthleteIdentity(storage) {
     }
 }
 
+const indexedDbInspectionClassifications = new WeakMap();
+
+function indexedDbInspection(classification) {
+    const result = classification === 'present'
+        ? { confirmed: true, present: true }
+        : classification === 'absent' || classification === 'empty'
+            ? { confirmed: true, present: false }
+            : { confirmed: false, present: false };
+    indexedDbInspectionClassifications.set(result, classification);
+    return result;
+}
+
 function normalizeIndexedDbInspection(value) {
     if (typeof value === 'boolean') {
-        return { confirmed: true, present: value };
+        return {
+            confirmed: true,
+            present: value,
+            classification: value ? 'present' : 'empty-or-absent'
+        };
     }
     if (
         value
@@ -155,34 +171,120 @@ function normalizeIndexedDbInspection(value) {
     ) {
         return {
             confirmed: value.confirmed,
-            present: value.present
+            present: value.present,
+            classification: indexedDbInspectionClassifications.get(value)
+                ?? (value.confirmed
+                    ? value.present ? 'present' : 'empty-or-absent'
+                    : 'unknown')
         };
     }
-    return { confirmed: false, present: false };
+    return { confirmed: false, present: false, classification: 'unknown' };
 }
 
-function deleteProbeDatabase(indexedDb) {
-    if (typeof indexedDb.deleteDatabase !== 'function') {
-        return Promise.resolve(false);
+function findDataMethod(value, name) {
+    try {
+        if (
+            value === null
+            || (typeof value !== 'object' && typeof value !== 'function')
+        ) return null;
+        let current = value;
+        for (let depth = 0; current !== null && depth < 32; depth += 1) {
+            const descriptor = Object.getOwnPropertyDescriptor(current, name);
+            if (descriptor) {
+                return Object.hasOwn(descriptor, 'value')
+                    && typeof descriptor.value === 'function'
+                    ? descriptor.value
+                    : null;
+            }
+            current = Object.getPrototypeOf(current);
+        }
+        return null;
+    } catch {
+        return null;
     }
+}
+
+function inspectDatabaseList(value) {
+    try {
+        if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) {
+            return 'unknown';
+        }
+        const keys = Reflect.ownKeys(value);
+        const lengthDescriptor = Object.getOwnPropertyDescriptor(value, 'length');
+        if (
+            !lengthDescriptor
+            || !Object.hasOwn(lengthDescriptor, 'value')
+            || !Number.isSafeInteger(lengthDescriptor.value)
+            || lengthDescriptor.value < 0
+            || keys.length !== lengthDescriptor.value + 1
+        ) return 'unknown';
+
+        let found = false;
+        const names = new Set();
+        for (let index = 0; index < lengthDescriptor.value; index += 1) {
+            const itemDescriptor = Object.getOwnPropertyDescriptor(value, String(index));
+            if (!itemDescriptor?.enumerable || !Object.hasOwn(itemDescriptor, 'value')) {
+                return 'unknown';
+            }
+            const item = itemDescriptor.value;
+            if (
+                item === null
+                || typeof item !== 'object'
+                || Array.isArray(item)
+                || Object.getPrototypeOf(item) !== Object.prototype
+            ) return 'unknown';
+            const itemKeys = Reflect.ownKeys(item);
+            if (
+                itemKeys.length !== 2
+                || !itemKeys.includes('name')
+                || !itemKeys.includes('version')
+                || itemKeys.some(key => typeof key !== 'string')
+            ) return 'unknown';
+            const name = Object.getOwnPropertyDescriptor(item, 'name');
+            const version = Object.getOwnPropertyDescriptor(item, 'version');
+            if (
+                !name?.enumerable
+                || !Object.hasOwn(name, 'value')
+                || typeof name.value !== 'string'
+                || names.has(name.value)
+                || !version?.enumerable
+                || !Object.hasOwn(version, 'value')
+                || !Number.isSafeInteger(version.value)
+                || version.value < 1
+            ) return 'unknown';
+            names.add(name.value);
+            if (name.value === LEGACY_DB_NAME) found = true;
+        }
+        return found ? 'present' : 'absent';
+    } catch {
+        return 'unknown';
+    }
+}
+
+function inspectDatabaseState(indexedDb, databasesMethod, timeoutMs) {
     return new Promise(resolve => {
-        let request;
         let settled = false;
-        const finish = value => {
+        const finish = state => {
             if (settled) return;
             settled = true;
-            resolve(value);
+            clearTimeout(timeoutId);
+            resolve(state);
         };
+        const timeoutId = setTimeout(
+            () => finish('unknown'),
+            Math.max(0, timeoutMs)
+        );
         try {
-            request = indexedDb.deleteDatabase(LEGACY_DB_NAME);
+            Promise.resolve(databasesMethod.call(indexedDb)).then(
+                value => {
+                    if (settled) return;
+                    finish(inspectDatabaseList(value));
+                },
+                () => finish('unknown')
+            );
         } catch {
-            finish(false);
-            return;
+            finish('unknown');
         }
-        // onblocked is not terminal. Wait for success/error so no mutation can
-        // occur after this inspection has returned.
-        request.onsuccess = () => finish(true);
-        request.onerror = () => finish(false);
     });
 }
 
@@ -190,20 +292,19 @@ export async function inspectLegacyIndexedDbPresence({
     indexedDB: indexedDb = globalThis.indexedDB,
     openTimeoutMs = 5000
 } = {}) {
-    if (!indexedDb || typeof indexedDb.open !== 'function') {
-        return { confirmed: false, present: false };
+    const databasesMethod = findDataMethod(indexedDb, 'databases');
+    const openMethod = findDataMethod(indexedDb, 'open');
+    if (!databasesMethod || !openMethod) {
+        return indexedDbInspection('unknown');
     }
 
-    if (typeof indexedDb.databases === 'function') {
-        try {
-            const databases = await indexedDb.databases();
-            if (!databases.some(database => database.name === LEGACY_DB_NAME)) {
-                return { confirmed: true, present: false };
-            }
-        } catch {
-            // databases() is only an optimization. Fall through to safe open.
-        }
-    }
+    const databaseState = await inspectDatabaseState(
+        indexedDb,
+        databasesMethod,
+        openTimeoutMs
+    );
+    if (databaseState === 'absent') return indexedDbInspection('absent');
+    if (databaseState !== 'present') return indexedDbInspection('unknown');
 
     return new Promise(resolve => {
         let request;
@@ -224,13 +325,14 @@ export async function inspectLegacyIndexedDbPresence({
             try {
                 request.transaction.abort();
             } catch {
-                // A terminal success is compensated below.
+                // Any terminal success is closed below without deletion.
             }
         };
         const cancel = () => {
             if (settled || cancelled) return;
             cancelled = true;
             abortMissingUpgrade();
+            finish(indexedDbInspection('unknown'));
         };
         const timeoutId = setTimeout(
             cancel,
@@ -238,9 +340,9 @@ export async function inspectLegacyIndexedDbPresence({
         );
 
         try {
-            request = indexedDb.open(LEGACY_DB_NAME);
+            request = openMethod.call(indexedDb, LEGACY_DB_NAME);
         } catch {
-            finish({ confirmed: false, present: false });
+            finish(indexedDbInspection('unknown'));
             return;
         }
 
@@ -250,13 +352,9 @@ export async function inspectLegacyIndexedDbPresence({
         };
         request.onblocked = cancel;
         request.onerror = () => {
-            if (missingDatabase && request.error?.name === 'AbortError') {
-                finish({ confirmed: true, present: false });
-                return;
-            }
-            finish({ confirmed: false, present: false });
+            finish(indexedDbInspection('unknown'));
         };
-        request.onsuccess = async () => {
+        request.onsuccess = () => {
             const db = request.result;
             if (settled) {
                 db.close();
@@ -264,21 +362,17 @@ export async function inspectLegacyIndexedDbPresence({
             }
             if (missingDatabase) {
                 db.close();
-                const deleted = await deleteProbeDatabase(indexedDb);
-                finish({
-                    confirmed: deleted,
-                    present: !deleted
-                });
+                finish(indexedDbInspection('unknown'));
                 return;
             }
             if (cancelled) {
                 db.close();
-                finish({ confirmed: false, present: false });
+                finish(indexedDbInspection('unknown'));
                 return;
             }
             if (!db.objectStoreNames.contains(LEGACY_STORE_NAME)) {
                 db.close();
-                finish({ confirmed: false, present: false });
+                finish(indexedDbInspection('unknown'));
                 return;
             }
 
@@ -290,23 +384,22 @@ export async function inspectLegacyIndexedDbPresence({
                     .count(LEGACY_ACTIVITY_KEY);
                 countRequest.onerror = () => {
                     db.close();
-                    finish({ confirmed: false, present: false });
+                    finish(indexedDbInspection('unknown'));
                 };
                 countRequest.onsuccess = () => {
                     db.close();
-                    finish({
-                        confirmed: true,
-                        present: countRequest.result > 0
-                    });
+                    finish(indexedDbInspection(
+                        countRequest.result > 0 ? 'present' : 'empty'
+                    ));
                 };
                 transaction.onerror = () => {
                     db.close();
-                    finish({ confirmed: false, present: false });
+                    finish(indexedDbInspection('unknown'));
                 };
                 transaction.onabort = transaction.onerror;
             } catch {
                 db.close();
-                finish({ confirmed: false, present: false });
+                finish(indexedDbInspection('unknown'));
             }
         };
     });
@@ -329,17 +422,28 @@ export function createAuthLifecycle({
     async function inspectLibraryIdentity() {
         const localInspection = inspectLocalStorageLibrary(storage);
         if (!localInspection.confirmed) {
-            return { confirmed: false, present: false, athleteId: null };
+            return {
+                confirmed: false,
+                present: false,
+                classification: 'unknown',
+                athleteId: null
+            };
         }
         if (localInspection.present) {
             return {
                 confirmed: true,
                 present: true,
+                classification: 'local-present',
                 athleteId: readStoredAthleteIdentity(storage)
             };
         }
         if (typeof inspectIndexedDb !== 'function') {
-            return { confirmed: false, present: false, athleteId: null };
+            return {
+                confirmed: false,
+                present: false,
+                classification: 'unknown',
+                athleteId: null
+            };
         }
 
         let indexedDbInspection;
@@ -348,11 +452,16 @@ export function createAuthLifecycle({
                 await inspectIndexedDb()
             );
         } catch {
-            indexedDbInspection = { confirmed: false, present: false };
+            indexedDbInspection = {
+                confirmed: false,
+                present: false,
+                classification: 'unknown'
+            };
         }
         return {
             confirmed: indexedDbInspection.confirmed,
             present: indexedDbInspection.present,
+            classification: indexedDbInspection.classification,
             athleteId: null
         };
     }
@@ -434,9 +543,10 @@ export function createAuthLifecycle({
             return lifecycleResult(AUTH_LIFECYCLE_STATUS.TOKEN_WRITE_FAILED);
         }
 
-        return lifecycleResult(AUTH_LIFECYCLE_STATUS.SUCCESS, {
-            firstLogin: !library.present
-        });
+        const firstLogin = library.classification === 'absent'
+            || library.classification === 'empty'
+            || library.classification === 'empty-or-absent';
+        return lifecycleResult(AUTH_LIFECYCLE_STATUS.SUCCESS, { firstLogin });
     }
 
     return Object.freeze({
