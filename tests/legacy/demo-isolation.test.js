@@ -134,7 +134,7 @@ function demoNamespace({
             sport_type: 'Run'
         }]),
         [DEMO_ATHLETE_KEY]: JSON.stringify({
-            id: 66914681,
+            id: 'demo-athlete-0001',
             firstname: 'Demo'
         }),
         [DEMO_TRAINING_ZONES_KEY]: JSON.stringify({
@@ -1098,7 +1098,7 @@ test('Trends metadata selection uses injected context without identity reads or 
 
     try {
         const demoAthlete = {
-            id: 66914681,
+            id: 'demo-athlete-0001',
             firstname: 'Demo'
         };
         const demoZones = {
@@ -1149,7 +1149,7 @@ test('Demo preprocessing context blocks Legacy athlete fallback when metadata is
     storage.forbiddenReads.add('strava_athlete_data');
     globalThis.localStorage = storage;
 
-    const malformedDemoAthletes = [null, [], {}, { id: 66914681 }];
+    const malformedDemoAthletes = [null, [], {}, { id: 24681357 }];
     for (const [index, malformedDemoAthlete] of malformedDemoAthletes.entries()) {
         const context = selectPreprocessingAthlete(
             'demo',
@@ -1162,7 +1162,7 @@ test('Demo preprocessing context blocks Legacy athlete fallback when metadata is
         assert.equal('username' in context, false);
 
         // A fresh non-empty indoor swim forces the production pipeline through
-        // applyIndoorSwimPool20mCorrection -> isTargetAthleteAlexGascon.
+        // the production preprocessing boundary without any athlete-specific fallback.
         const syntheticActivity = {
             id: `synthetic-demo-preprocessing-swim-${index + 1}`,
             name: `Synthetic Demo Indoor Swim ${index + 1}`,

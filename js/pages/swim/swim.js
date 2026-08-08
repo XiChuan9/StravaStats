@@ -48,10 +48,6 @@ const MAP_LAYERS = {
     },
 };
 
-const INDOOR_SWIM_DISTANCE_CORRECTION = 20 / 25;
-const INDOOR_SWIM_CORRECTION_TAG = 'piscina-20m';
-const INDOOR_SWIM_CORRECTION_CUTOFF = '2025-08-19';
-const TARGET_ATHLETE_ID = 66914681;
 
 // DOM References
 const DOM = {
@@ -383,105 +379,6 @@ function renderActivityMap(activity, streams) {
         renderWeatherAnalysis(activity, coords);
         renderWeatherMapDetails(activity, coords, map, weatherToggle?.checked);
     }
-}
-
-function normalizeText(value) {
-    if (typeof value !== 'string') return '';
-    return value
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .trim()
-        .toLowerCase();
-}
-
-function readAthleteValue(athlete, key) {
-    try {
-        if (!athlete || typeof athlete !== 'object') return undefined;
-        const descriptor = Object.getOwnPropertyDescriptor(athlete, key);
-        return descriptor && Object.hasOwn(descriptor, 'value') ? descriptor.value : undefined;
-    } catch {
-        return undefined;
-    }
-}
-
-function isTargetAthleteAlexGascon(athlete) {
-    const athleteId = readAthleteValue(athlete, 'id');
-    const first = normalizeText(readAthleteValue(athlete, 'firstname'));
-    const last = normalizeText(readAthleteValue(athlete, 'lastname'));
-    const fullName = `${first} ${last}`.trim();
-    const username = normalizeText(readAthleteValue(athlete, 'username'));
-
-    return athleteId === TARGET_ATHLETE_ID || athleteId === String(TARGET_ATHLETE_ID) || fullName === 'alex gascon' || username === 'gascn_alex' || username === 'alexgasconn' || username === 'alexgascon';
-}
-
-function isDateOnOrBeforeCutoff(dateLike) {
-    const datePart = String(dateLike || '').slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return false;
-    return datePart <= INDOOR_SWIM_CORRECTION_CUTOFF;
-}
-
-function isIndoorPoolSwim(activity) {
-    const sportType = String(activity?.sport_type || activity?.type || '');
-    if (!/swim/i.test(sportType) || /openwater/i.test(sportType)) return false;
-
-    if (activity?.trainer === true) return true;
-
-    const hasStartLatLng = Array.isArray(activity?.start_latlng) && activity.start_latlng.length === 2;
-    return !hasStartLatLng;
-}
-
-function addCorrectionTag(activity) {
-    if (!Array.isArray(activity.tags)) activity.tags = [];
-    if (!activity.tags.includes(INDOOR_SWIM_CORRECTION_TAG)) {
-        activity.tags.push(INDOOR_SWIM_CORRECTION_TAG);
-    }
-}
-
-function applyPool20mCorrectionToSplit(split) {
-    if (!split || typeof split !== 'object') return;
-
-    if (Number(split.distance) > 0) {
-        split.distance = Math.max(1, Math.round(Number(split.distance) * INDOOR_SWIM_DISTANCE_CORRECTION));
-    }
-
-    if (Number(split.moving_time) > 0 && Number(split.distance) > 0) {
-        split.average_speed = Number(split.distance) / Number(split.moving_time);
-    } else if (Number(split.average_speed) > 0) {
-        split.average_speed = Number(split.average_speed) * INDOOR_SWIM_DISTANCE_CORRECTION;
-    }
-}
-
-export function maybeCorrectIndoorSwimForAlex(activity, athlete) {
-    if (!isTargetAthleteAlexGascon(athlete)) return activity;
-    if (!isIndoorPoolSwim(activity)) return activity;
-    if (!isDateOnOrBeforeCutoff(activity?.start_date_local || activity?.start_date)) return activity;
-
-    if (Number(activity.distance) > 0) {
-        activity.distance = Math.max(1, Math.round(Number(activity.distance) * INDOOR_SWIM_DISTANCE_CORRECTION));
-    }
-
-    if (Number(activity.moving_time) > 0 && Number(activity.distance) > 0) {
-        activity.average_speed = Number(activity.distance) / Number(activity.moving_time);
-    } else if (Number(activity.average_speed) > 0) {
-        activity.average_speed = Number(activity.average_speed) * INDOOR_SWIM_DISTANCE_CORRECTION;
-    }
-
-    if (Number(activity.max_speed) > 0) {
-        activity.max_speed = Number(activity.max_speed) * INDOOR_SWIM_DISTANCE_CORRECTION;
-    }
-
-    activity.pool_length = 20;
-    addCorrectionTag(activity);
-
-    if (Array.isArray(activity.laps)) {
-        activity.laps.forEach(applyPool20mCorrectionToSplit);
-    }
-
-    if (Array.isArray(activity.splits_swim)) {
-        activity.splits_swim.forEach(applyPool20mCorrectionToSplit);
-    }
-
-    return activity;
 }
 
 /**
@@ -1114,7 +1011,7 @@ function renderStreamCharts(streams, activity) {
  */
 export async function renderSwimPage({ activity, streams, zones, athlete, activityId, activitySource, allowExternalWeather }) {
     allowExternalWeatherForPage = allowExternalWeather === true;
-    const activityData = maybeCorrectIndoorSwimForAlex(structuredClone(activity), athlete);
+    const activityData = structuredClone(activity);
     const streamData = structuredClone(streams);
 
         lastActivityData = activityData;

@@ -2045,68 +2045,12 @@ test('four renderers keep minimal canonical laps free of non-finite presentation
     }
 });
 
-test('Swim correction uses injected athlete and preserves Repository payload', async () => {
-    const priorDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
-    try {
-        Object.defineProperty(globalThis, 'document', {
-            configurable: true,
-            value: { getElementById: () => null }
-        });
-        const { maybeCorrectIndoorSwimForAlex } = await import(
-            `../../js/pages/swim/swim.js?correction=${Date.now()}`
-        );
-        const repositoryActivity = {
-            sport_type: 'Swim',
-            start_date_local: '2025-08-18T08:00:00Z',
-            trainer: true,
-            distance: 1000,
-            moving_time: 1000,
-            average_speed: 1,
-            max_speed: 2,
-            laps: [{ distance: 250, moving_time: 250, average_speed: 1 }],
-            splits_swim: [{ distance: 100, moving_time: 100, average_speed: 1 }]
-        };
-        const before = structuredClone(repositoryActivity);
-        const workingCopy = structuredClone(repositoryActivity);
-        const corrected = maybeCorrectIndoorSwimForAlex(
-            workingCopy,
-            { id: 66914681 }
-        );
-        assert.equal(corrected.distance, 800);
-        assert.equal(corrected.pool_length, 20);
-        assert.deepEqual(corrected.tags, ['piscina-20m']);
-        assert.equal(corrected.laps[0].distance, 200);
-        assert.equal(corrected.splits_swim[0].distance, 80);
-        assert.deepEqual(repositoryActivity, before);
-
-        assert.deepEqual(
-            maybeCorrectIndoorSwimForAlex(structuredClone(repositoryActivity), null),
-            repositoryActivity
-        );
-        assert.deepEqual(
-            maybeCorrectIndoorSwimForAlex(
-                structuredClone(repositoryActivity),
-                { id: 'not-the-target' }
-            ),
-            repositoryActivity
-        );
-
-        let getterCalls = 0;
-        const accessorAthlete = {};
-        Object.defineProperty(accessorAthlete, 'id', {
-            enumerable: true,
-            get() {
-                getterCalls += 1;
-                return 66914681;
-            }
-        });
-        maybeCorrectIndoorSwimForAlex(
-            structuredClone(repositoryActivity),
-            accessorAthlete
-        );
-        assert.equal(getterCalls, 0);
-    } finally {
-        if (priorDocument) Object.defineProperty(globalThis, 'document', priorDocument);
-        else delete globalThis.document;
-    }
+test('Swim detail has no implicit athlete-specific correction', async () => {
+    const source = await readFile(
+        new URL('../../js/pages/swim/swim.js', import.meta.url),
+        'utf8'
+    );
+    assert.match(source, /const activityData = structuredClone\(activity\)/);
+    assert.equal(source.includes(['TARGET', 'ATHLETE', 'ID'].join('_')), false);
+    assert.equal(source.includes(['maybeCorrect', 'IndoorSwim'].join('')), false);
 });

@@ -740,8 +740,8 @@ inline-JavaScript syntax, URL-reserved and scheme-like strings, `__proto__`, `co
 `js/tabs/activities.js` still rejected the required Legacy numeric-ID contract. After repair, the
 focused summary/Run Plus set passes `59/59`.
 
-Executable supported-Legacy rendering covers ID `66914681`, numeric `0`, numeric `-0`, null,
-absent, and opaque string `"0"`: the numeric IDs route as `66914681`, `0`, and `0`; null/absent
+Executable supported-Legacy rendering covers ID `24681357`, numeric `0`, numeric `-0`, null,
+absent, and opaque string `"0"`: the numeric IDs route as `24681357`, `0`, and `0`; null/absent
 produce no anchor; exact text, `<small>` structure, and zero canary execution remain intact.
 Canonical rendering seeds independent Run, Ride, and Swim hostile names/opaque IDs and asserts
 the exact link text, query round-trip, and `rel` within Activities, Calendar, Wrapped, Run, Bike,

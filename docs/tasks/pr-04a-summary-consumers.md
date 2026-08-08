@@ -349,7 +349,7 @@ Repository-derived athlete context that prevents preprocessing from reading the 
   athlete receives a new object preserving Repository fields plus a non-identity sentinel.
 - Repository return objects are never mutated. Sentinels are never rendered, stored, or logged.
 - Tests must send at least one non-empty synthetic activity through
-  `preprocessActivities → applyIndoorSwimPool20mCorrection → isTargetAthleteAlexGascon` and prove
+  `preprocessActivities → applyIndoorSwimPool20mCorrection → isSpecificAthlete` and prove
   for Demo and Real missing-identity cases: zero `strava_athlete_data` reads, normal activity
   return, preserved Repository ID/max_hr, no persistence, and no identity leakage.
 - Open-Meteo and preprocessing weather algorithms remain unchanged. `strava_demo_mode` and
@@ -907,7 +907,7 @@ existing tools.
 | Errors | 401/403, Token read/encode/write, network/rate/provider/response, metadata optionality, preprocessing failure; no Local Library deletion |
 | Metadata | athlete/zones injection; initialize timeout/allSettled parity; refresh parity; gear complete/empty/partial/error |
 | Gear consumers | Run/Gear do not read `strava_gears`; order, duplicate IDs, labels, custom data, edit mode, datasets unchanged |
-| Preprocessing identity | A non-empty synthetic activity reaches `preprocessActivities → applyIndoorSwimPool20mCorrection → isTargetAthleteAlexGascon`; Demo/Real missing identity reads real athlete cache zero times, preserves Repository ID/max_hr, and persists/logs no sentinel or identity |
+| Preprocessing identity | A non-empty synthetic activity reaches `preprocessActivities → applyIndoorSwimPool20mCorrection → isSpecificAthlete`; Demo/Real missing identity reads real athlete cache zero times, preserves Repository ID/max_hr, and persists/logs no sentinel or identity |
 | Demo/Real Factory | exact branch selection at initialization, stable through refresh |
 | Demo isolation | Connector construction 0; Token/network/real activity and metadata cache I/O 0; no real fallback |
 | Static boundary | summary tabs contain no Token, Authorization, `/api/strava-*`, fetch, IndexedDB, provider cache, Repository creation; UI/user key allowlist remains explicit; `tabs/api.js` has only `run-plus.js` as importer |
@@ -1141,7 +1141,7 @@ non-persistent sentinel object while retaining safe Repository fields such as `i
 
 Tests use a fresh non-empty deterministic indoor-swim activity for every Demo/Real `null`,
 `[]`, `{}`, and ID-only case and execute the real
-`preprocessActivities → applyIndoorSwimPool20mCorrection → isTargetAthleteAlexGascon` path.
+`preprocessActivities → applyIndoorSwimPool20mCorrection → isSpecificAthlete` path.
 All cases return one activity with zero `strava_athlete_data` reads, zero context writes,
 unmodified athlete input, preserved Real ID/max_hr, and no real identity in Demo context.
 

@@ -6,6 +6,7 @@
 import { DEMO_POLYLINES } from './polylines.js';
 
 export const DEFAULT_DEMO_SEED = 20260728;
+const DEMO_ATHLETE_ID = 'demo-athlete-0001';
 export const DEFAULT_DEMO_REFERENCE_DATE = '2026-07-28T12:00:00.000Z';
 
 function createSeededRandom(seed) {
@@ -385,11 +386,11 @@ export function generateDemoData({
         const streams = generateStreams(distance, movingTime, elevation);
 
         const activity = {
-            id: 1000000 + i,
+            id: `demo-activity-${i}`,
             resource_state: 2,
             external_id: `demo_${i}`,
-            upload_id: 10000000 + i,
-            athlete: { id: 66914681, resource_state: 1 },
+            upload_id: `demo-upload-${i}`,
+            athlete: { id: DEMO_ATHLETE_ID, resource_state: 1 },
             name: formatActivityName(actType, distance),
             description: `Demo activity ${i + 1}`,
             distance: Math.round(distance * 1000),
@@ -450,7 +451,6 @@ export function generateDemoData({
                 distance: Math.round(distance * 1000),
             } : null,
             from_accepted_tag: false,
-            upload_id: null,
             average_watts: ['Ride', 'MountainBikeRide', 'WeightTraining'].includes(actType)
                 ? Math.round(sampleStat(statModel?.avgWatts, 120, 340))
                 : null,
@@ -488,10 +488,10 @@ export function generateDemoAthlete(referenceDate = DEFAULT_DEMO_REFERENCE_DATE)
     }
 
     return {
-        id: 66914681,
-        username: 'demo_user',
+        id: DEMO_ATHLETE_ID,
+        username: 'demo-athlete',
         firstname: 'Demo',
-        lastname: 'Runner',
+        lastname: 'Synthetic',
         city: 'Madrid',
         state: 'Madrid',
         country: 'Spain',

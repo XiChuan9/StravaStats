@@ -665,7 +665,7 @@
         await gate('legacyActivityIdAndDomParity', async () => {
             requireGate(modules !== null);
             const legacyActivities = [
-                { id: 66914681, name: 'Legacy numeric ID', type: DOM_XSS_CANARY, sport_type: DOM_XSS_CANARY },
+                { id: 24681357, name: 'Legacy numeric ID', type: DOM_XSS_CANARY, sport_type: DOM_XSS_CANARY },
                 { id: 0, name: 'Legacy zero ID', type: 'Run', sport_type: 'Run' },
                 { id: -0, name: 'Legacy negative zero ID', type: 'Run', sport_type: 'Run' },
                 { id: null, name: 'Legacy null ID', type: 'Run', sport_type: 'Run' },
@@ -684,7 +684,7 @@
                 const link = rowFor(name)?.querySelector('a.act-name-link');
                 return link ? new URL(link.href).searchParams.get('id') : null;
             };
-            requireGate(queryIdFor('Legacy numeric ID') === '66914681');
+            requireGate(queryIdFor('Legacy numeric ID') === '24681357');
             requireGate(queryIdFor('Legacy zero ID') === '0');
             requireGate(queryIdFor('Legacy negative zero ID') === '0');
             requireGate(queryIdFor('Opaque string zero ID') === '0');
@@ -695,7 +695,7 @@
             requireGate(sportCell.querySelector('img[src="x"]') === null);
             requireGate(globalThis.__domSafetyExecuted === 0);
             return {
-                numericId: '66914681',
+                numericId: '24681357',
                 zeroIds: ['0', '0'],
                 missingAndNullLinks: 0,
                 sportSmallHookRetained: true,
