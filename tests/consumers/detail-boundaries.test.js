@@ -189,7 +189,7 @@ test('four page composition roots use only public Factory and DetailReadSession 
         assert.equal((value.match(/repositoryFactory\(\{/g) || []).length, 1, relativePath);
         assert.equal((value.match(/sessionFactory\(\{/g) || []).length, 1, relativePath);
         assert.equal((value.match(/session\.load\(\)/g) || []).length, 1, relativePath);
-        assert.match(value, /allowExternalWeather:\s*!demo/, relativePath);
+        assert.match(value, /weatherFeatureEnabled:\s*!demo/, relativePath);
         assert.match(value, /descriptor\.value\s*===\s*'canonical'\s*\?\s*'canonical'\s*:\s*'legacy'/, relativePath);
         assert.match(value, /Reflect\.ownKeys\(value\)/, relativePath);
         assert.match(value, /Object\.getOwnPropertyDescriptor\(value, key\)/, relativePath);
@@ -260,7 +260,7 @@ test('detail renderers are injected-only consumers with no provider fallback', (
         );
         assert.match(value, /structuredClone\(activity\)/, relativePath);
         assert.match(value, /structuredClone\(streams\)/, relativePath);
-        assert.match(value, /allowExternalWeatherForPage\s*=\s*allowExternalWeather\s*===\s*true/, relativePath);
+        assert.match(value, /weatherFeatureEnabledForPage\s*=\s*weatherFeatureEnabled\s*===\s*true/, relativePath);
         for (const prohibited of [
             /new\s+URLSearchParams\(window\.location\.search\)/,
             /getAuthPayload|fetchFromApi|fetchActivityDetails|fetchActivityStreams/,
@@ -276,7 +276,7 @@ test('detail renderers are injected-only consumers with no provider fallback', (
 
 test('weather, zones, and Swim athlete behavior stays behind injected boundaries', () => {
     for (const [relativePath, value] of rendererSources) {
-        assert.match(value, /if\s*\(allowExternalWeatherForPage\)/, relativePath);
+        assert.match(value, /if\s*\(weatherFeatureEnabledForPage\)/, relativePath);
         assert.doesNotMatch(value, /strava_training_zones|strava_zones|strava_athlete_data/, relativePath);
     }
     for (const relativePath of [

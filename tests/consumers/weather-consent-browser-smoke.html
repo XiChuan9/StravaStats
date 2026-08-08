@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>R6 Weather Consent Browser Smoke</title>
+</head>
+<body>
+    <h1>R6 Weather Consent Browser Smoke</h1>
+    <ol id="gates"></ol>
+    <pre id="evidence"></pre>
+
+    <section id="weather-analysis-section" class="hidden">
+        <div class="weather-analysis__body"></div>
+    </section>
+    <section id="weather-tab">
+        <div id="wa-stats-row"></div>
+    </section>
+
+    <script type="module">
+        const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+        const params = new URLSearchParams(location.search);
+        if (!LOOPBACK_HOSTS.has(location.hostname)) {
+            throw new Error('DISPOSABLE_LOOPBACK_ORIGIN_REQUIRED');
+        }
+        if (params.get('synthetic') !== '1') {
+            throw new Error('EXPLICIT_SYNTHETIC_MODE_REQUIRED');
+        }
+
+        const FIXED_ID = 'opaque-browser-id/000123?#';
+        const PRIVATE_CANARIES = Object.freeze([
+            FIXED_ID,
+            'PRIVATE_NAME_CANARY',
+            'PRIVATE_TOKEN_CANARY',
+            'PRIVATE_PROVIDER_CANARY',
+            'PRIVATE_ROUTE_CANARY',
+            'PRIVATE_HR_CANARY',
+            'PRIVATE_POWER_CANARY'
+        ]);
+        const CONSENT_KEY = 'stravastats_weather_egress_consent_v1';
+        const observations = {
+            fetches: [],
+            aborts: 0,
+            console: 0,
+            runtime: 0,
+            authorization: 0,
+            externalResources: [],
+            gates: []
+        };
+        const gateList = document.getElementById('gates');
+        const evidence = document.getElementById('evidence');
+        let responseMode = 'zero';
+
+        function invariant(value, code) {
+            if (!value) throw new Error(code);
+        }
+
+        async function gate(name, operation) {
+            const item = document.createElement('li');
+            item.textContent = `${name}: running`;
+            gateList.append(item);
+            try {
+                const detail = await operation();
+                observations.gates.push({ name, status: 'pass', detail });
+                item.textContent = `${name}: pass`;
+            } catch (error) {
+                observations.gates.push({ name, status: 'fail' });
+                item.textContent = `${name}: fail`;
+                throw error;
+            }
+        }
+
+        function syntheticResponse(values = {}) {
+            return {
+                ok: true,
+                async json() {
+                    return {
+                        hourly: {
+                            time: ['2031-02-03T04:00'],
+                            temperature_2m: [0],
+                            precipitation: [0],
+                            wind_speed_10m: [0],
+                            wind_direction_10m: [0],
+                            weathercode: [0],
+                            cloudcover: [0],
+                            surface_pressure: [0],
+                            relativehumidity_2m: [0],
+                            ...values
+                        }
+                    };
+                }
+            };
+        }
+
+        const originalConsole = Object.freeze({
+            log: console.log,
+            info: console.info,
+            warn: console.warn,
+            error: console.error,
+            debug: console.debug
+        });
+        for (const method of Object.keys(originalConsole)) {
+            console[method] = () => { observations.console += 1; };
+        }
+        addEventListener('error', () => { observations.runtime += 1; });
+        addEventListener('unhandledrejection', () => { observations.runtime += 1; });
+
+        sessionStorage.setItem(CONSENT_KEY, '{"version":1,"granted":false}');
+        window.fetch = async (input, options = {}) => {
+            const url = new URL(String(input?.url ?? input), location.href);
+            const headers = new Headers(options.headers || input?.headers || undefined);
+            if (headers.has('authorization') || headers.has('proxy-authorization')) {
+                observations.authorization += 1;
+            }
+            observations.fetches.push({
+                url: url.href,
+                credentials: options.credentials ?? null,
+                cache: options.cache ?? null,
+                referrerPolicy: options.referrerPolicy ?? null
+            });
+            if (responseMode === 'offline') {
+                throw new Error('SYNTHETIC_OFFLINE');
+            }
+            if (responseMode === 'pending') {
+                return new Promise((resolve, reject) => {
+                    options.signal.addEventListener('abort', () => {
+                        observations.aborts += 1;
+                        reject(new Error('SYNTHETIC_REVOKE_ABORT'));
+                    }, { once: true });
+                });
+            }
+            if (responseMode === 'missing') {
+                return syntheticResponse({
+                    temperature_2m: [null],
+                    precipitation: [null],
+                    wind_speed_10m: ['0'],
+                    wind_direction_10m: [],
+                    weathercode: [null],
+                    cloudcover: [],
+                    surface_pressure: [null],
+                    relativehumidity_2m: [null]
+                });
+            }
+            return syntheticResponse();
+        };
+
+        const consent = await import('/js/app/weather-consent.js?r6-browser=1');
+        const preprocessing = await import('/js/shared/preprocessing/core.js?r6-browser=1');
+        const analysis = await import('/js/shared/utils/weather-analysis.js?r6-browser=1');
+        const weatherTab = await import('/js/tabs/weather.js?r6-browser=1');
+
+        const baseActivity = Object.freeze({
+            id: FIXED_ID,
+            name: 'PRIVATE_NAME_CANARY',
+            type: 'Run',
+            sport_type: 'Run',
+            start_date_local: '2031-02-03T04:05:06',
+            start_latlng: Object.freeze([12.3456, -98.7654]),
+            distance: 5000,
+            moving_time: 1500,
+            elapsed_time: 1510,
+            average_heartrate: 150,
+            token: 'PRIVATE_TOKEN_CANARY',
+            provider: 'PRIVATE_PROVIDER_CANARY',
+            route: 'PRIVATE_ROUTE_CANARY',
+            heartrate: 'PRIVATE_HR_CANARY',
+            power: 'PRIVATE_POWER_CANARY'
+        });
+        const coords = Object.freeze([
+            Object.freeze([12.3456, -98.7654]),
+            Object.freeze([12.9999, -98.1111])
+        ]);
+
+        try {
+            await gate('default-zero-egress', async () => {
+                const mutable = structuredClone(baseActivity);
+                await preprocessing.preprocessActivities([mutable], {}, null, []);
+                await analysis.renderWeatherAnalysis(baseActivity, coords);
+                await weatherTab.renderWeatherTab([baseActivity]);
+                invariant(observations.fetches.length === 0, 'DEFAULT_EXTERNAL_WEATHER_REQUEST');
+                invariant(document.body.textContent.includes('Allow for this tab'), 'CONSENT_COPY_MISSING');
+                return { externalWeatherRequests: 0 };
+            });
+
+            await gate('affirmative-rounded-single-point', async () => {
+                const detailBody = document.querySelector('.weather-analysis__body');
+                const allow = detailBody.querySelector('[data-weather-consent-allow]');
+                invariant(allow, 'AFFIRMATIVE_GESTURE_MISSING');
+                allow.click();
+                for (let index = 0; index < 100 && observations.fetches.length === 0; index += 1) {
+                    await new Promise(resolve => setTimeout(resolve, 10));
+                }
+                invariant(observations.fetches.length === 1, 'AUTHORIZED_REQUEST_COUNT');
+                const request = new URL(observations.fetches[0].url);
+                invariant(request.searchParams.get('latitude') === '12.35', 'LATITUDE_NOT_MINIMIZED');
+                invariant(request.searchParams.get('longitude') === '-98.77', 'LONGITUDE_NOT_MINIMIZED');
+                invariant(request.searchParams.get('start_date') === '2031-02-03', 'START_DATE_INVALID');
+                invariant(request.searchParams.get('end_date') === '2031-02-03', 'END_DATE_INVALID');
+                invariant(request.searchParams.get('timezone') === 'auto', 'TIMEZONE_INVALID');
+                invariant(observations.fetches[0].credentials === 'omit', 'CREDENTIALS_NOT_OMITTED');
+                invariant(observations.fetches[0].cache === 'no-store', 'BROWSER_CACHE_NOT_DISABLED');
+                invariant(observations.fetches[0].referrerPolicy === 'no-referrer', 'REFERRER_NOT_DISABLED');
+                invariant(PRIVATE_CANARIES.every(value => !observations.fetches[0].url.includes(value)),
+                    'PRIVATE_CANARY_IN_REQUEST');
+                invariant(sessionStorage.getItem(CONSENT_KEY) === '{"version":1,"granted":true}',
+                    'SESSION_GRANT_NOT_EXACT');
+                for (let index = 0; index < 100 && !detailBody.textContent.includes('0.0°C'); index += 1) {
+                    await new Promise(resolve => setTimeout(resolve, 10));
+                }
+                invariant(detailBody.textContent.includes('0.0°C'), 'GENUINE_ZERO_NOT_PRESENT');
+                invariant(!detailBody.textContent.includes('Route points'), 'ROUTE_PANEL_NOT_HIDDEN');
+                invariant(!detailBody.textContent.includes('Tailwind samples'), 'WIND_PANEL_NOT_HIDDEN');
+                return { latitude: '12.35', longitude: '-98.77', points: 1, realZero: true };
+            });
+
+            await gate('missing-remains-unavailable', async () => {
+                responseMode = 'missing';
+                const activity = { ...baseActivity, start_latlng: [13.4567, -97.6543] };
+                await weatherTab.renderWeatherTab([activity]);
+                invariant(document.getElementById('wa-stats-row').textContent.includes('N/A'),
+                    'MISSING_WEATHER_BECAME_NUMERIC');
+                return { missingPresentation: 'N/A' };
+            });
+
+            await gate('revoke-aborts-and-denies', async () => {
+                responseMode = 'pending';
+                const pending = consent.requestHistoricalWeather({
+                    coordinate: [14.5678, -96.5432],
+                    startDateLocal: '2031-02-03T04:05:06'
+                });
+                await Promise.resolve();
+                consent.revokeWeatherConsent();
+                invariant(await pending === null, 'REVOKED_RESULT_NOT_UNAVAILABLE');
+                invariant(observations.aborts === 1, 'IN_FLIGHT_REQUEST_NOT_ABORTED');
+                const before = observations.fetches.length;
+                invariant(await consent.requestHistoricalWeather({
+                    coordinate: [15.6789, -95.4321],
+                    startDateLocal: '2031-02-03T04:05:06'
+                }) === null, 'REVOKED_REQUEST_NOT_DENIED');
+                invariant(observations.fetches.length === before, 'POST_REVOKE_REQUEST_PRESENT');
+                return { aborts: observations.aborts, postRevokeRequests: 0 };
+            });
+
+            await gate('offline-safe-degradation', async () => {
+                responseMode = 'offline';
+                consent.grantWeatherConsent();
+                const result = await consent.requestHistoricalWeather({
+                    coordinate: [16.7891, -94.321],
+                    startDateLocal: '2031-02-03T04:05:06'
+                });
+                invariant(result === null, 'OFFLINE_RESULT_NOT_UNAVAILABLE');
+                return { result: 'unavailable' };
+            });
+
+            await gate('privacy-runtime-boundaries', async () => {
+                observations.externalResources = performance.getEntriesByType('resource')
+                    .map(entry => new URL(entry.name, location.href))
+                    .filter(url => /^https?:$/.test(url.protocol) && url.origin !== location.origin)
+                    .map(url => `${url.protocol}//${url.host}${url.pathname}`);
+                invariant(observations.externalResources.length === 0, 'REAL_EXTERNAL_RESOURCE_PRESENT');
+                invariant(observations.authorization === 0, 'AUTHORIZATION_PRESENT');
+                invariant(observations.console === 0, 'CONSOLE_OUTPUT_PRESENT');
+                invariant(observations.runtime === 0, 'RUNTIME_ERROR_PRESENT');
+                return {
+                    realExternalResources: 0,
+                    authorization: 0,
+                    console: 0,
+                    runtime: 0,
+                    tokenProviderPrivateCanaries: 0,
+                    cacheStorageWrites: 0,
+                    serviceWorkerChanges: 0
+                };
+            });
+
+            document.body.dataset.status = 'passed';
+        } catch (error) {
+            document.body.dataset.status = 'failed';
+            evidence.textContent = JSON.stringify(observations, null, 2);
+            throw error;
+        } finally {
+            evidence.textContent = JSON.stringify(observations, null, 2);
+            for (const [method, value] of Object.entries(originalConsole)) console[method] = value;
+        }
+    </script>
+</body>
+</html>

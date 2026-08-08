@@ -7,6 +7,7 @@ const REDACTED_CLIENT_PATHS = Object.freeze([
     'js/models/climb.js',
     'js/services/api.js',
     'js/services/activity-cache.js',
+    'js/app/weather-consent.js',
     'js/shared/preprocessing/core.js',
     'js/shared/utils/weather-analysis.js',
     'js/tabs/athlete.js',
@@ -210,6 +211,7 @@ test('Weather render success, failure, and hostile inputs keep output inside fix
         },
         set innerHTML(value) {
             if (value.includes('weather-tabs')) bodyWrites.push('populated');
+            else if (value.includes('Allow for this tab')) bodyWrites.push('consent');
             else if (value.includes('Loading weather analysis')) bodyWrites.push('loading');
             else if (value.includes('No weather data available')) bodyWrites.push('no-data');
             else if (value.includes('Weather analysis could not be loaded')) bodyWrites.push('failed');
@@ -334,9 +336,10 @@ test('Weather render success, failure, and hostile inputs keep output inside fix
         revoked.revoke();
         await module.renderWeatherAnalysis(revoked.proxy, hostileCoords);
 
-        assert.equal(networkCalls, 5, 'WEATHER_RUNTIME_NETWORK_COUNT_CHANGED');
+        assert.equal(networkCalls, 0, 'WEATHER_DEFAULT_DENY_NETWORK_PRESENT');
         assert.deepEqual(consoleCalls, [], 'WEATHER_CONSOLE_OUTPUT_PRESENT');
-        assert.deepEqual(storageCalls, [], 'WEATHER_STORAGE_OUTPUT_PRESENT');
+        assert.equal(storageCalls.every(value => value === 'get'), true,
+            'WEATHER_DENIED_STORAGE_MUTATION_PRESENT');
         assert.deepEqual(windowWrites, [], 'WEATHER_WINDOW_OUTPUT_PRESENT');
         assert.deepEqual(hostileCounter, {
             getters: 0,
@@ -346,12 +349,9 @@ test('Weather render success, failure, and hostile inputs keep output inside fix
             descriptors: 0
         }, 'WEATHER_THROWN_VALUE_INSPECTED');
         assert.deepEqual(bodyWrites, [
-            'loading',
-            'populated',
-            'loading',
-            'no-data',
-            'loading',
-            'failed',
+            'consent',
+            'consent',
+            'consent',
             'failed'
         ], 'WEATHER_DOM_OUTPUT_CHANGED');
     } finally {
