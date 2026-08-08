@@ -70,7 +70,7 @@ let originalStreamData = null;
 let lastStreamData = null;
 let lastActivityData = null;
 let activityStrokes = null;
-let allowExternalWeatherForPage = true;
+let weatherFeatureEnabledForPage = true;
 
 // Dynamic chart data storage
 let dynamicChartData = {
@@ -292,7 +292,7 @@ function renderActivityMap(activity, streams) {
     );
     if (!hasRouteInput || !window.L) {
         section.classList.add('hidden');
-        if (allowExternalWeatherForPage) renderWeatherAnalysis(activity, []);
+        if (weatherFeatureEnabledForPage) renderWeatherAnalysis(activity, []);
         return;
     }
 
@@ -300,7 +300,7 @@ function renderActivityMap(activity, streams) {
     if (!coords.length) {
         section.classList.remove('hidden');
         DOM.map.innerHTML = '<p>No route data available (empty polyline).</p>';
-        if (allowExternalWeatherForPage) renderWeatherAnalysis(activity, []);
+        if (weatherFeatureEnabledForPage) renderWeatherAnalysis(activity, []);
         return;
     }
 
@@ -329,7 +329,7 @@ function renderActivityMap(activity, streams) {
     const displayRouteValues = presentation.routeValues;
     if (presentation.status === 'too-fragmented') {
         DOM.map.textContent = 'Too fragmented to plot.';
-        if (allowExternalWeatherForPage) {
+        if (weatherFeatureEnabledForPage) {
             renderWeatherAnalysis(activity, coords);
             renderWeatherMapDetails(activity, coords, null, false);
         }
@@ -375,7 +375,7 @@ function renderActivityMap(activity, streams) {
         weatherToggle.addEventListener('change', () => renderActivityMap(activity, streams));
     }
 
-    if (allowExternalWeatherForPage) {
+    if (weatherFeatureEnabledForPage) {
         renderWeatherAnalysis(activity, coords);
         renderWeatherMapDetails(activity, coords, map, weatherToggle?.checked);
     }
@@ -1009,8 +1009,8 @@ function renderStreamCharts(streams, activity) {
 /**
  * Main initialization and rendering logic
  */
-export async function renderSwimPage({ activity, streams, zones, athlete, activityId, activitySource, allowExternalWeather }) {
-    allowExternalWeatherForPage = allowExternalWeather === true;
+export async function renderSwimPage({ activity, streams, zones, athlete, activityId, activitySource, weatherFeatureEnabled }) {
+    weatherFeatureEnabledForPage = weatherFeatureEnabled === true;
     const activityData = structuredClone(activity);
     const streamData = structuredClone(streams);
 

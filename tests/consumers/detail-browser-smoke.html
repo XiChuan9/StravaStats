@@ -413,7 +413,7 @@
                 invariant(ok, `COMPOSITION_${page.name.toUpperCase()}_FAILED`);
                 invariant(Object.values(calls).slice(0, 5).every(value => value === 1) && calls.error === 0,
                     `COMPOSITION_${page.name.toUpperCase()}_COUNT`);
-                invariant(received.activityId === '000123' && received.allowExternalWeather === true,
+                invariant(received.activityId === '000123' && received.weatherFeatureEnabled === true,
                     `COMPOSITION_${page.name.toUpperCase()}_INPUT`);
 
                 const malformed = { mode: 0, load: 0, render: 0, errorArgs: null };
@@ -448,7 +448,7 @@
                 const ok = await page.initialize({ search: `?id=${page.id}`, demoModeReader: () => true,
                     repositoryFactory: repository.createRepository,
                     sessionFactory: detailSession.createDetailReadSession,
-                    renderer: input => { rendered += 1; invariant(input.allowExternalWeather === false); },
+                    renderer: input => { rendered += 1; invariant(input.weatherFeatureEnabled === false); },
                     errorRenderer: () => {} });
                 invariant(ok && rendered === 1);
             }
@@ -474,7 +474,7 @@
                     featureFlagsReader: () => ({ dataRepositoryMode: 'legacy' }),
                     repositoryFactory: options => { calls.factory += 1; invariant(options.sessionMode === 'real' && options.mode === 'legacy'); return realRepo; },
                     sessionFactory: options => { calls.session += 1; const session = detailSession.createDetailReadSession(options); return { load() { calls.load += 1; return session.load(); } }; },
-                    renderer: input => { calls.render += 1; invariant(input.activity === activityPayload && input.streams === streamsPayload); invariant(input.allowExternalWeather === true); },
+                    renderer: input => { calls.render += 1; invariant(input.activity === activityPayload && input.streams === streamsPayload); invariant(input.weatherFeatureEnabled === true); },
                     errorRenderer: () => {} });
                 invariant(ok && calls.factory === 1 && calls.session === 1 && calls.load === 1 && calls.render === 1);
                 invariant(calls.activity === 1 && calls.streams === 1 && calls.zones === 1 && calls.athlete === (page.athlete ? 1 : 0));
@@ -514,7 +514,7 @@
                     const activity = syntheticActivity(page.id, page.sport);
                     const streams = transform(structuredClone(syntheticStreams));
                     await page.render({ activity, streams, zones, athlete: page.athlete ? matchingAthlete : null,
-                        activityId: page.id, allowExternalWeather: false });
+                        activityId: page.id, weatherFeatureEnabled: false });
                     invariant(document.getElementById('activity-stats').textContent.length > 0,
                         `RENDER_${page.name.toUpperCase()}_${name.toUpperCase().replaceAll('-', '_')}`);
                     invariant(document.getElementById('activity-map') && document.getElementById('laps-section'));
@@ -527,7 +527,7 @@
                 ];
                 for (const [, fixture] of special) {
                     clearFixture();
-                    await page.render({ ...fixture, streams: structuredClone(syntheticStreams), activityId: page.id, allowExternalWeather: false });
+                    await page.render({ ...fixture, streams: structuredClone(syntheticStreams), activityId: page.id, weatherFeatureEnabled: false });
                     invariant(document.getElementById('activity-stats').textContent.length > 0,
                         `RENDER_${page.name.toUpperCase()}_SPECIAL`);
                     cases += 1;
@@ -547,7 +547,7 @@
                     zones,
                     athlete: page.athlete ? matchingAthlete : null,
                     activityId: page.id,
-                    allowExternalWeather: false
+                    weatherFeatureEnabled: false
                 });
                 invariant(!document.querySelector('[data-r2-canary]'), `R2_INJECTED_NODE_${page.name.toUpperCase()}`);
                 invariant(globalThis.__R2_EXECUTED__ !== true, `R2_CANARY_EXECUTED_${page.name.toUpperCase()}`);
@@ -591,7 +591,7 @@
                     if (label === 'missing') delete activity.gear_id;
                     else activity.gear_id = gearId;
                     await page.render({ activity, streams: {}, zones: null, athlete: null,
-                        activityId: activity.id, allowExternalWeather: false });
+                        activityId: activity.id, weatherFeatureEnabled: false });
                     const link = document.querySelector('#activity-hero-gear a');
                     invariant(Boolean(link) === shouldLink, `R2_GEAR_SEMANTICS_${page.name.toUpperCase()}_${label.toUpperCase().replaceAll('-', '_')}`);
                     if (link) invariant(new URL(link.href).searchParams.get('id') === gearId,
@@ -622,7 +622,7 @@
                     activity.segment_efforts[0].segment.id = value;
                 }
                 await genericPage.render({ activity, streams: {}, zones, athlete: null,
-                    activityId: activity.id, allowExternalWeather: false });
+                    activityId: activity.id, weatherFeatureEnabled: false });
                 invariant(document.querySelector('#best-efforts-table tbody td').textContent === expected,
                     `R2_EFFORT_SEMANTICS_${label.toUpperCase().replaceAll('-', '_')}`);
                 const segmentLink = document.querySelector('#segments-table tbody a');
@@ -657,7 +657,7 @@
                 zones,
                 athlete: matchingAthlete,
                 activityId: 'fragmented-swim',
-                allowExternalWeather: false
+                weatherFeatureEnabled: false
             });
             const swimCalls = runtime.chartCalls.slice(swimCallsBefore);
             invariant(!swimCalls.includes('chart-heartrate') && !swimCalls.includes('chart-cadence'),
@@ -673,7 +673,7 @@
                 zones,
                 athlete: null,
                 activityId: 'fragmented-bike',
-                allowExternalWeather: false
+                weatherFeatureEnabled: false
             });
             const bikeCalls = runtime.chartCalls.slice(bikeCallsBefore);
             invariant(!bikeCalls.includes('chart-cadence-speed'),

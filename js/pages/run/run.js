@@ -71,7 +71,7 @@ let currentSmoothingLevel = 100;
 let originalStreamData = null; // Store unsmoothed data
 let lastStreamData = null;
 let lastActivityData = null;
-let allowExternalWeatherForPage = true;
+let weatherFeatureEnabledForPage = true;
 
 // Dynamic chart data storage
 let dynamicChartData = {
@@ -1068,7 +1068,7 @@ function renderActivityMap(activity, streams) {
             const displayRouteValues = presentation.routeValues;
             if (presentation.status === 'too-fragmented') {
                 DOM.map.textContent = 'Too fragmented to plot.';
-                if (allowExternalWeatherForPage) {
+                if (weatherFeatureEnabledForPage) {
                     renderWeatherAnalysis(activity, coords);
                     renderWeatherMapDetails(activity, coords, null, false);
                 }
@@ -1114,20 +1114,20 @@ function renderActivityMap(activity, streams) {
                 weatherToggle.addEventListener('change', () => renderActivityMap(activity, streams));
             }
 
-            if (allowExternalWeatherForPage) {
+            if (weatherFeatureEnabledForPage) {
                 renderWeatherAnalysis(activity, coords);
                 renderWeatherMapDetails(activity, coords, map, weatherToggle?.checked);
             }
         } else {
             DOM.map.innerHTML = '<p>No route data available (empty polyline).</p>';
-            if (allowExternalWeatherForPage) {
+            if (weatherFeatureEnabledForPage) {
                 renderWeatherAnalysis(activity, []);
                 renderWeatherMapDetails(activity, [], null, false);
             }
         }
     } else {
         DOM.map.innerHTML = '<p>No route data available or Leaflet not loaded.</p>';
-        if (allowExternalWeatherForPage) {
+        if (weatherFeatureEnabledForPage) {
             renderWeatherAnalysis(activity, []);
             renderWeatherMapDetails(activity, [], null, false);
         }
@@ -1939,9 +1939,9 @@ function renderClassifierResults(classificationData) {
 /**
  * Main entry point - loads activity data and renders all sections
  */
-export async function renderRunPage({ activity, streams, zones, athlete, activityId, activitySource, allowExternalWeather }) {
+export async function renderRunPage({ activity, streams, zones, athlete, activityId, activitySource, weatherFeatureEnabled }) {
     moveAndHideCustomChartSection();
-    allowExternalWeatherForPage = allowExternalWeather === true;
+    weatherFeatureEnabledForPage = weatherFeatureEnabled === true;
 
     if (DOM.streamCharts) DOM.streamCharts.style.display = 'grid';
 

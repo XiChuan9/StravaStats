@@ -803,7 +803,7 @@ for (const page of detailPageCases) {
                     calls.render[0].activitySource,
                     scenario.demo ? 'demo' : scenario.canonical ? 'canonical' : 'network'
                 );
-                assert.equal(calls.render[0].allowExternalWeather, !scenario.demo);
+                assert.equal(calls.render[0].weatherFeatureEnabled, !scenario.demo);
                 assert.equal(calls.error.length, 0);
             });
         }
@@ -1270,7 +1270,7 @@ test('Demo detail pages use the public Factory without Real provider or platform
                     errorRenderer: (...args) => errors.push(args)
                 }), true);
                 assert.equal(rendered.length, 1);
-                assert.equal(rendered[0].allowExternalWeather, false);
+                assert.equal(rendered[0].weatherFeatureEnabled, false);
                 assert.equal(errors.length, 0);
             });
         }
@@ -1766,7 +1766,7 @@ test('four renderers degrade safely on empty streams without mutating bundle pay
                 zones: null,
                 athlete: null,
                 activityId: activity.id,
-                allowExternalWeather: false
+                weatherFeatureEnabled: false
             });
             assert.deepEqual(activity, activityBefore, directory);
             assert.deepEqual(streams, streamsBefore, directory);
@@ -1884,7 +1884,7 @@ test('Swim keeps its existing hidden map behavior when all route inputs are abse
             athlete: null,
             activityId: 'missing-route',
             activitySource: 'canonical',
-            allowExternalWeather: false
+            weatherFeatureEnabled: false
         });
         assert.equal(classes.has('hidden'), true);
         assert.equal(map.innerHTML, 'synthetic-map-sentinel');
@@ -1956,7 +1956,7 @@ test('Run, Bike, and Swim hide provider links for canonical opaque IDs', async (
                 athlete: null,
                 activityId: activity.id,
                 activitySource: 'canonical',
-                allowExternalWeather: false
+                weatherFeatureEnabled: false
             });
             assert.equal(heroLink.href, '', directory);
             assert.equal(heroLink.hidden, true, directory);
