@@ -5,14 +5,14 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 release hardening / R4 |
-| Status | Investigation authorized; implementation pending A2 scope freeze |
+| Status | Closure complete; awaiting exact Closure-head CI and Ready-for-review handoff |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/server-log-redaction` |
 | Exact base | `integration/v2@35cef332b1e9214e32040baeff67dc2c3e35a0ed` |
 | Owner | Codex |
 | Reviewer | Independent findings-first reviewer required |
 | Dependencies | R3 PR #34 Squash Merged; exact-base integration push CI successful |
-| Pull request | Draft required; Ready transition and merge are not authorized |
+| Pull request | Draft PR #35; Ready transition and merge are not authorized |
 | Control tower | `019fa697-6cbf-70f1-a120-bf31ecc9e2ba` |
 
 ## Goal
@@ -329,3 +329,63 @@ The task otherwise advances automatically through investigation, repair, verific
 independent review, Closure, and exact-head CI. It stops finally at a Ready-for-review handoff while
 the PR remains Draft. Ready transition, merge, cleanup, deploy, release, and R5 require explicit
 control-tower or user authorization.
+
+## Completion evidence
+
+### Failure-first and implementation
+
+- The Task-Brief-only first commit was published before A2. A second Task-Brief-only commit froze
+  the exact eleven-path allowlist before production or test implementation changes.
+- The initial focused run passed ordinary success behavior but failed 22 of 31 subtests across the
+  missing closed logger, raw provider and refresh failure bodies, raw thrown-value inspection, and
+  missing actual-served seam. Failure output used safe assertion categories rather than captured
+  values.
+- The implementation added one internal frozen server event vocabulary and one one-argument sink.
+  API handlers now emit only those fixed events, do not read refresh failure bodies, and use fixed
+  failure responses without provider details or caught messages. Existing successful payload and
+  refreshed-token envelopes remain unchanged.
+- The local development adapter now exposes a side-effect-free server factory for tests, contains
+  both handler and outer callback failures with the same fixed event/body, and delays environment
+  loading, TLS development configuration, and listening until direct execution.
+- The first independent findings-first review found one high-severity auth preflight escape for an
+  absent body. Its failure-first tests failed for absent/accessor-backed request bodies, then passed
+  after descriptor-safe own-data preflight preserved the fixed 400 contract with zero fetch work.
+- A fresh re-review found two additional gaps: Proxy descriptor traps could still execute, and the
+  outer local-server catch lacked actual-served evidence. New failure-first Proxy tests failed before
+  the repair. The final implementation uses the Node runtime's trap-free Proxy classification and
+  proves zero request/body Proxy traps. The loopback test now drives both inner body parsing and
+  outer route decoding failures.
+- The final implementation head is `32a428ea2b8a360710d87b98d32d21f3d0e8f32f`.
+
+### Verification
+
+- Final local focused tests passed 40/40, including success, provider failure, token-exchange
+  failure, token-refresh failure and success, hostile thrown values, absent/accessor/Proxy auth
+  preflight, and inner plus outer actual-served loopback boundaries.
+- Final local syntax passed for 241 files, privacy passed, full tests passed 1522/1522, and
+  `git diff --check` passed. `npm ci` completed successfully and the worktree remained clean after
+  the implementation commit.
+- A true remote depth-one checkout resolved exactly to the implementation head, had history count
+  one and clean start/end status, and passed `npm ci`, focused 40/40, syntax 241, privacy, full
+  1522/1522, and diff checks.
+- GitHub Actions pull-request run `31237962740` completed successfully on the exact implementation
+  head.
+- The first sandboxed loopback attempts were blocked by `EPERM`; approved ephemeral-loopback reruns
+  actually executed and passed. No browser profile, provider network, credential, private fixture,
+  user storage, or production environment was used.
+
+### Independent review and remaining boundaries
+
+- The first findings-first review reported the auth absent-body preflight escape and no other
+  actionable production finding. The next fresh review identified Proxy zero-trap and outer-server
+  coverage gaps; both received failure-first repairs.
+- A third independent fresh exact-range review at the final implementation head returned no
+  actionable findings across all eleven paths, logging and response semantics, token/provider
+  failures, hostile values, local development runtime, test sufficiency, privacy, migration,
+  rollback, and prohibited scope.
+- Exact-range scope contains only the frozen eleven paths. There is no schema, database, store,
+  migration, Repository, Import, analysis, Worker, Service Worker, client logging, dependency,
+  default-mode, deployment, release, cache, provider-state, or user-data change.
+- This Closure changes only this Task Brief. The PR remains Draft. Exact Closure-head remote clone
+  and CI are final external handoff gates. Ready transition, merge, cleanup, deploy, release, and R5
+  remain unauthorized.
