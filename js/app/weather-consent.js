@@ -119,31 +119,63 @@ function finiteOrNull(value) {
     return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
-function normalizedWeather(data, request) {
+function isDenseDataArray(value, expectedLength = null) {
+    try {
+        if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) return false;
+        if (expectedLength !== null && value.length !== expectedLength) return false;
+        const keys = Reflect.ownKeys(value);
+        if (keys.length !== value.length + 1 || keys[keys.length - 1] !== 'length') return false;
+        for (let index = 0; index < value.length; index += 1) {
+            if (keys[index] !== String(index)) return false;
+            const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+            if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) return false;
+        }
+        const lengthDescriptor = Object.getOwnPropertyDescriptor(value, 'length');
+        return lengthDescriptor?.enumerable === false
+            && Object.hasOwn(lengthDescriptor, 'value');
+    } catch {
+        return false;
+    }
+}
+
+function normalizedWeatherDay(data, date) {
     try {
         const hourly = data?.hourly;
         if (hourly === null || typeof hourly !== 'object' || Array.isArray(hourly)) return null;
-        if (!Array.isArray(hourly.time) || hourly.time.length === 0) return null;
-        const index = hourly.time.findIndex(value => {
-            const parsed = parseLocalStart(value);
-            return parsed?.date === request.date && parsed.hour === request.hour;
+        if (!isDenseDataArray(hourly.time) || hourly.time.length === 0) return null;
+        for (const field of WEATHER_HOURLY_FIELDS) {
+            if (!isDenseDataArray(hourly[field], hourly.time.length)) return null;
+        }
+        const hours = new Set();
+        const rows = hourly.time.map((weatherTime, index) => {
+            const parsed = parseLocalStart(weatherTime);
+            if (parsed?.date !== date || hours.has(parsed.hour)) return null;
+            hours.add(parsed.hour);
+            return Object.freeze({
+                hour: parsed.hour,
+                temperature: finiteOrNull(hourly.temperature_2m[index]),
+                precipitation: finiteOrNull(hourly.precipitation[index]),
+                wind_speed: finiteOrNull(hourly.wind_speed_10m[index]),
+                wind_direction: finiteOrNull(hourly.wind_direction_10m[index]),
+                weather_code: finiteOrNull(hourly.weathercode[index]),
+                humidity: finiteOrNull(hourly.relativehumidity_2m[index]),
+                cloudcover: finiteOrNull(hourly.cloudcover[index]),
+                pressure: finiteOrNull(hourly.surface_pressure[index]),
+                weather_time: weatherTime
+            });
         });
-        if (index < 0) return null;
-        const weatherTime = hourly.time[index];
-        return Object.freeze({
-            temperature: finiteOrNull(hourly.temperature_2m?.[index]),
-            precipitation: finiteOrNull(hourly.precipitation?.[index]),
-            wind_speed: finiteOrNull(hourly.wind_speed_10m?.[index]),
-            wind_direction: finiteOrNull(hourly.wind_direction_10m?.[index]),
-            weather_code: finiteOrNull(hourly.weathercode?.[index]),
-            humidity: finiteOrNull(hourly.relativehumidity_2m?.[index]),
-            cloudcover: finiteOrNull(hourly.cloudcover?.[index]),
-            pressure: finiteOrNull(hourly.surface_pressure?.[index]),
-            weather_time: weatherTime
-        });
+        if (rows.some(row => row === null)) return null;
+        return Object.freeze(rows);
     } catch {
         return null;
     }
+}
+
+function selectWeatherHour(day, request) {
+    const row = day.find(value => value.hour === request.hour);
+    if (!row) return null;
+    const { hour: _hour, ...weather } = row;
+    return Object.freeze(weather);
 }
 
 function validDependencies(dependencies) {
@@ -281,8 +313,8 @@ export function createWeatherConsentService(dependencies) {
         if (prepared === null) return null;
         const requestEpoch = epoch;
         const key = cacheKey(prepared);
-        const cached = cacheRead(key, requestEpoch);
-        if (cached !== null) return cached;
+        const cachedDay = cacheRead(key, requestEpoch);
+        if (cachedDay !== null) return selectWeatherHour(cachedDay, prepared);
 
         const url = new URL(WEATHER_ENDPOINT);
         url.searchParams.set('latitude', prepared.latitude);
@@ -309,10 +341,10 @@ export function createWeatherConsentService(dependencies) {
             ) return null;
             const data = await response.json();
             if (epoch !== requestEpoch || !isGranted()) return null;
-            const weather = normalizedWeather(data, prepared);
-            if (weather === null) return null;
-            cacheWrite(key, weather, requestEpoch);
-            return weather;
+            const weatherDay = normalizedWeatherDay(data, prepared.date);
+            if (weatherDay === null) return null;
+            cacheWrite(key, weatherDay, requestEpoch);
+            return selectWeatherHour(weatherDay, prepared);
         } catch {
             return null;
         } finally {

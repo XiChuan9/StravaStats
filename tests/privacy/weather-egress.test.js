@@ -244,7 +244,7 @@ test('only literal finite hourly numbers are present and genuine zero survives',
             wind_speed_10m: ['0'],
             wind_direction_10m: [Number.NaN],
             weathercode: [Number.POSITIVE_INFINITY],
-            cloudcover: [],
+            cloudcover: [undefined],
             surface_pressure: [undefined],
             relativehumidity_2m: [-0]
         }))
@@ -261,6 +261,34 @@ test('only literal finite hourly numbers are present and genuine zero survives',
         pressure: null,
         weather_time: '2031-02-03T04:00'
     });
+});
+
+test('daily cache selects the requested hour without cross-hour reuse', async () => {
+    const { createWeatherConsentService } = await consentModule('cache-hour');
+    let fetches = 0;
+    const service = createWeatherConsentService(serviceDependencies({
+        fetch: async () => {
+            fetches += 1;
+            return okResponse({
+                time: ['2031-02-03T04:00', '2031-02-03T15:00'],
+                temperature_2m: [4, 15],
+                precipitation: [0, 0],
+                wind_speed_10m: [0, 0],
+                wind_direction_10m: [0, 0],
+                weathercode: [0, 0],
+                cloudcover: [0, 0],
+                surface_pressure: [1000, 1000],
+                relativehumidity_2m: [50, 50]
+            });
+        }
+    }));
+    service.grant();
+    assert.equal((await service.request(VALID_INPUT)).temperature, 4);
+    assert.equal((await service.request({
+        ...VALID_INPUT,
+        startDateLocal: '2031-02-03T15:05:06'
+    })).temperature, 15);
+    assert.equal(fetches, 1);
 });
 
 test('invalid coordinates and dates fail closed before fetch', async () => {
@@ -302,6 +330,22 @@ test('HTTP, network, malformed, time, and timeout failures remain unavailable', 
         ['time', async () => okResponse(hourly({ time: ['invalid-time'] }))],
         ['malformed matching hour', async () => okResponse(hourly({
             time: ['2031-02-03T04:not-a-time']
+        }))],
+        ['non-array hourly fields', async () => okResponse(hourly({
+            temperature_2m: { 0: 17 },
+            precipitation: { 0: 1 },
+            wind_speed_10m: { 0: 2 },
+            wind_direction_10m: { 0: 3 },
+            weathercode: { 0: 4 },
+            cloudcover: { 0: 5 },
+            surface_pressure: { 0: 1000 },
+            relativehumidity_2m: { 0: 50 }
+        }))],
+        ['sparse hourly field', async () => okResponse(hourly({
+            temperature_2m: new Array(1)
+        }))],
+        ['mismatched hourly field length', async () => okResponse(hourly({
+            temperature_2m: []
         }))]
     ];
     for (const [name, fetch] of cases) {
@@ -324,6 +368,26 @@ test('HTTP, network, malformed, time, and timeout failures remain unavailable', 
         service.grant();
         assert.equal(await service.request(VALID_INPUT), null);
     });
+});
+
+test('hourly accessors fail closed without execution', async () => {
+    const { createWeatherConsentService } = await consentModule('hourly-accessor');
+    let reads = 0;
+    const temperatures = [0];
+    Object.defineProperty(temperatures, 0, {
+        configurable: true,
+        enumerable: true,
+        get() {
+            reads += 1;
+            return 17;
+        }
+    });
+    const service = createWeatherConsentService(serviceDependencies({
+        fetch: async () => okResponse(hourly({ temperature_2m: temperatures }))
+    }));
+    service.grant();
+    assert.equal(await service.request(VALID_INPUT), null);
+    assert.equal(reads, 0);
 });
 
 test('cache is consent-bound, expires at 30 minutes, and is capped at 256', async () => {
@@ -488,6 +552,87 @@ test('Weather tab exposes revoke while authorized requests are in flight', async
     } finally {
         finishFetch?.();
         await rendering;
+        for (const [name, descriptor] of descriptors) {
+            if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+            else delete globalThis[name];
+        }
+    }
+});
+
+test('Weather tab omits missing values from environmental difficulty input', async () => {
+    const names = ['document', 'fetch', 'sessionStorage'];
+    const descriptors = new Map(names.map(name => [
+        name,
+        Object.getOwnPropertyDescriptor(globalThis, name)
+    ]));
+    const storage = new MemoryStorage();
+    const cells = [];
+    const tbody = {
+        innerHTML: '',
+        insertRow() {
+            return {
+                insertCell() {
+                    const cell = { textContent: '', style: {} };
+                    cells.push(cell);
+                    return cell;
+                }
+            };
+        }
+    };
+    const summary = {
+        innerHTML: '',
+        querySelector() {
+            return null;
+        }
+    };
+    Object.defineProperty(globalThis, 'sessionStorage', {
+        configurable: true,
+        value: storage
+    });
+    Object.defineProperty(globalThis, 'document', {
+        configurable: true,
+        value: {
+            getElementById(id) {
+                if (id === 'weather-tab') return {};
+                if (id === 'wa-stats-row') return summary;
+                if (id === 'runs-table') return { querySelector: () => tbody };
+                if (id === 'toggle-runs') return { addEventListener() {}, textContent: '' };
+                if (id === 'runs-table-container') return { classList: { toggle() {}, contains: () => true } };
+                return null;
+            }
+        }
+    });
+    Object.defineProperty(globalThis, 'fetch', {
+        configurable: true,
+        value: async () => okResponse(hourly({
+            temperature_2m: [null],
+            precipitation: [null],
+            wind_speed_10m: [0],
+            wind_direction_10m: [null],
+            weathercode: [null],
+            cloudcover: [null],
+            surface_pressure: [null],
+            relativehumidity_2m: [null]
+        }))
+    });
+
+    try {
+        const consent = await import('../../js/app/weather-consent.js');
+        consent.revokeWeatherConsent();
+        assert.equal(consent.grantWeatherConsent(), true);
+        const { renderWeatherTab } = await import('../../js/tabs/weather.js?missing-difficulty=1');
+        await renderWeatherTab([{
+            name: 'Synthetic Run',
+            type: 'Run',
+            start_latlng: [12.3456, -98.7654],
+            start_date_local: '2031-02-03T04:05:06',
+            distance: 5000,
+            moving_time: 1500
+        }]);
+        assert.equal(cells[11]?.textContent, '0%');
+    } finally {
+        const consent = await import('../../js/app/weather-consent.js');
+        consent.revokeWeatherConsent();
         for (const [name, descriptor] of descriptors) {
             if (descriptor) Object.defineProperty(globalThis, name, descriptor);
             else delete globalThis[name];

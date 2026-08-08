@@ -155,14 +155,14 @@ export async function renderWeatherTab(allActivities) {
         const wind = wr.wind_speed;
 
         // Calculate environmental difficulty using utils helper
-        const difficultyWeather = {
+        const difficultyWeather = Object.fromEntries(Object.entries({
             temperature: temp,
             humidity: hum,
             wind_speed: wind,
             precipitation: wr.precipitation,
             pressure: wr.pressure
-        };
-        const envDifficulty = Object.values(difficultyWeather).some(Number.isFinite)
+        }).filter(([, value]) => Number.isFinite(value)));
+        const envDifficulty = Object.keys(difficultyWeather).length > 0
             ? utils.calculateEnvironmentalDifficulty({ weather: difficultyWeather })
             : null;
 
