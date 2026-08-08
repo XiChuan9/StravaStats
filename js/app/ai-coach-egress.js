@@ -247,6 +247,7 @@ export function createAICoachSession(options = {}) {
 
     const preparedGenerations = new WeakMap();
     const consumed = new WeakSet();
+    const activitySnapshotBrands = new WeakSet();
     const activitySnapshots = new WeakMap();
     const history = [];
     let generation = 0;
@@ -297,6 +298,7 @@ export function createAICoachSession(options = {}) {
             if (!open) fail('AI_COACH_ACTIVITY_INVALID');
             open = false;
             const brand = Object.freeze(Object.create(null));
+            activitySnapshotBrands.add(brand);
             activitySnapshots.set(brand, Object.freeze(activities.slice()));
             return brand;
         }
@@ -306,7 +308,9 @@ export function createAICoachSession(options = {}) {
 
     function prepare(questionValue, activities) {
         const question = safeQuestion(questionValue);
-        const activityValues = (activities !== null && typeof activities === 'object')
+        const branded = activities !== null && typeof activities === 'object'
+            && activitySnapshotBrands.has(activities);
+        const activityValues = branded
             ? activitySnapshots.get(activities)
             : undefined;
         if (activityValues === undefined) fail('AI_COACH_ACTIVITY_INVALID');

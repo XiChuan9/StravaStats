@@ -302,7 +302,10 @@ test('preparation returns exactly two relative buckets with closed categories an
     assert.equal(/2031-\d\d-\d\d/.test(serialized), false);
 });
 
-test('trusted activity snapshots are module-branded from primitive-only builder calls', () => {
+test('trusted activity snapshots are module-branded from primitive-only builder calls', async () => {
+    const egressSource = await source('js/app/ai-coach-egress.js');
+    assert.match(egressSource, /const activitySnapshotBrands = new WeakSet\(\)/);
+    assert.match(egressSource, /activitySnapshotBrands\.has\(activities\)/);
     const session = createAICoachSession(dependencies());
     const builder = session.createActivitySnapshot();
     assert.deepEqual(Object.keys(builder), ['add', 'finish']);
