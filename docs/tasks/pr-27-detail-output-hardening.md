@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 M23 / PR-27 / R2 |
-| Status | Approved for implementation; in progress |
+| Status | Implementation and Closure complete; Draft ready-for-review handoff pending exact-head CI |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/dom-safety-detail-gear` |
 | Exact base | `integration/v2@7787ee707c167cca02ba9fd1c1606c94fc2d1411` |
@@ -13,7 +13,7 @@
 | Owner | Codex |
 | Reviewer | Independent findings-first reviewer required |
 | Dependencies | PR #32 R1 squash merged; integration push CI success |
-| Pull request | Draft PR to be created after Task-Brief-only first commit is pushed |
+| Pull request | [Draft PR #33](https://github.com/XiChuan9/StravaStats/pull/33), `OPEN`, `Draft=true` |
 | Control tower | `019fa697-6cbf-70f1-a120-bf31ecc9e2ba` |
 
 ## Goal
@@ -271,7 +271,121 @@ authorization.
 
 ## Completion evidence
 
-To be appended after implementation, review, browser, remote-depth, Closure, and exact-head CI
-finish. The appended record must distinguish PASS, FAIL, BLOCKED, and NOT RUN and name exact SHAs,
-commands, counts, run IDs, changed paths, limitations, privacy/migration/rollback impact, and Draft
-PR state.
+### A2 source-to-sink re-audit
+
+The exact-base investigation was repeated independently of PR #32. The served paths and owner-local
+flows were:
+
+- Router/DetailReadSession or supported-Legacy page reads -> detached activity/gear projections ->
+  Generic/Run/Bike/Swim renderers. Generic info, Legacy best-effort rows, and segment names entered
+  parser-backed table/info HTML; Run/Bike/Swim gear identifiers entered interpolated anchor HTML.
+- Legacy gear cache/reduced activity summaries -> Gear tab projection -> card name/brand/model/id and
+  an inline `onclick` navigation string.
+- Direct `gear.html?id=...` query or gear/activity reads -> Gear detail projection -> not-found body,
+  hero/input/list HTML, inline `window.open`, and string Leaflet tooltips.
+
+Those persistent/query-controlled sinks were production reachable and P0. Constant empty states,
+fixed filter markup, safely reduced errors, numeric/date/stat summaries, canvas labels, and existing
+analysis-only closed outputs were separately classified as non-findings. No R1 conclusion was used
+as proof for a detail or Gear sink.
+
+### Failure-first evidence
+
+Before production edits, the new deterministic canaries failed in two independent owners:
+
+- `detail-boundaries.test.js` detected Generic persistent info reaching `DOM.info.innerHTML`.
+- `summary-consumers.test.js` detected Gear card persistent fields and navigation still using an
+  HTML/inline-handler seam.
+
+The browser corpus then exercised tag, quote, backtick, backslash, inline-JavaScript, URL-reserved,
+scheme-like, `__proto__`, `constructor`, `prototype`, Unicode/control, missing, `null`, string zero,
+opaque leading-zero, numeric zero, and negative-zero cases. No scope expansion was required.
+
+### Implementation
+
+Implementation commit `8e08d5d91ac7c3378f6077e323d30a1ff4579a63` changed the six approved
+production owners and five approved test owners. `tests/consumers/detail-consumers.test.js` required
+no change, so the final changed-path set is an approved twelve-path subset including this Task
+Brief.
+
+- Generic info and Legacy best-effort/segment tables now use native nodes and explicit string text.
+- Run/Bike/Swim Gear links use the served origin, exact `/html/gear.html` pathname, and one
+  `URLSearchParams` `id` value without parsing or normalizing identity.
+- Segment links use the fixed Strava segment prefix, one encoded path component, and
+  `rel="noopener noreferrer"`.
+- Gear cards, not-found output, detail hero/input/list, and Leaflet tooltips use native text/DOM;
+  dynamic inline handlers were replaced with `addEventListener`.
+- Gear/activity new-window navigation uses the served origin, exact approved pathname, exactly one
+  opaque `id`, `noopener,noreferrer`, and a null opener.
+
+No sanitizer/helper/dependency, CSS, product copy, analysis algorithm, API, schema, Repository,
+Import, persistence, migration, Service Worker, or release behavior changed.
+
+### Findings-first review and repair
+
+The first post-implementation review found one parity defect: assigning `null` directly to
+`textContent` rendered an empty string where the prior table template rendered the literal
+`"null"`. The affected table cells were changed to explicit `String(value)`, and the canary suite
+was expanded for `undefined`, `null`, string `"0"`, string `"000123"`, numeric `0`, and `-0`.
+
+A separate fresh review then re-traced every changed source to DOM/URL/Leaflet context and searched
+all six owners for parser sinks, inline handlers, URL construction, `window.open`, and Leaflet
+tooltip use. Result: **PASS, no findings**. Remaining `innerHTML` sites are the separately
+classified fixed/numeric/analysis outputs above and do not receive the persistent fields owned by
+R2.
+
+### Local automated gates
+
+All commands ran after the parity repair:
+
+| Gate | Result |
+| --- | --- |
+| `npm ci` | **PASS**, 6 packages installed, 0 vulnerabilities |
+| focused four-file command | **PASS**, 345/345 |
+| `npm run check:syntax` | **PASS**, 239 files |
+| `npm run check:privacy` | **PASS** |
+| `npm test` | **PASS**, 1476/1476 |
+| `git diff --check` | **PASS** |
+
+### Actual-served disposable browser gates
+
+The final browser runs used system Chromium through Playwright with explicit fresh directories
+under `/private/tmp`, extensions and background networking disabled, Service Workers blocked, and
+observation installed before navigation. Only deterministic synthetic data was seeded. Every
+profile and loopback server was stopped and removed after evidence capture; the user's Chrome,
+login, profile, and data were never used.
+
+- Detail/Gear gate: **PASS**, 13/13 gates; four detail pages; 36 identity-semantics cases; one Gear
+  card, one Gear detail activity row, one DOM Leaflet tooltip node, and two stub-observed navigation
+  calls. There were zero injected canaries, unexpected popups/navigation, external requests,
+  Authorization headers, console/runtime errors, fetch/XHR/WebSocket calls, real storage access,
+  Service Workers, caches, or residual databases.
+- Canonical Router/detail gate: external actual-served observer **PASS** with 167 assertions over
+  eight Router/detail routes, four seeded bundles, eight rollback modes, and four Demo modes. The
+  historical PR-17 harness intentionally retains its internal
+  `ACTUAL_SERVED_NAVIGATION_BLOCKED` marker and is therefore reported as **BLOCKED by design**, not
+  relabelled as an internal harness pass. The external observer recorded zero canary execution,
+  external/provider requests, Authorization headers, console/runtime errors, or popups.
+
+An earlier ego-browser diagnostic was discarded because its task space exposed inherited loopback
+browser state; it is not completion evidence and its task space was closed.
+
+### True remote implementation-head gate
+
+After pushing the implementation commit, a new real GitHub clone was created with `--depth 1
+--branch codex/v2/dom-safety-detail-gear`. It resolved exactly to
+`8e08d5d91ac7c3378f6077e323d30a1ff4579a63`, had history count one and clean status, and passed
+`npm ci`, syntax (239), privacy, focused tests (345), full tests (1476), and diff-check. The exact
+temporary clone was then removed.
+
+### Closure, privacy, migration, rollback, and handoff
+
+This is the final Task-Brief-only Closure change. A second true-remote depth-1 gate and GitHub
+Actions check must run against the resulting Closure head after it is pushed; their exact SHA and
+run ID necessarily post-date this immutable commit and belong in the PR/final handoff evidence.
+
+Privacy impact is limited to removing executable parser contexts; all fixtures and browser data
+were synthetic. Migration impact is **none**. Rollback remains an ordinary PR revert with no data
+deletion or rewrite, although reverting R2 would reopen the direct detail/Gear exposure and block
+release. PR #33 remains `OPEN` and Draft; PR #32 was not modified or reopened. Ready, merge,
+cleanup, deploy, release, and later packages remain unauthorized.
