@@ -5,14 +5,14 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 release hardening / R6 |
-| Status | A0 complete; A1 Task-Brief-only publication pending; A2 findings-first audit authorized |
+| Status | A0/A1 complete; Draft PR #39 open; A2 findings-first audit complete; material decision pending |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/weather-consent` |
 | Exact base | `integration/v2@8b4521ad9f45af9f6056f04cf0c8fd4cd6e6a97e` |
 | Owner | Codex |
 | Reviewer | Independent findings-first reviewer required after implementation |
 | Dependency | R10 PR #38 Squash Merged; integration push CI run `31249059836`, job `93082375097`, successful |
-| Pull request | Expected Draft PR #39; Ready transition authorized only after Closure gates |
+| Pull request | Draft PR #39; Ready transition authorized only after Closure gates |
 | Control tower | `019fa697-6cbf-70f1-a120-bf31ecc9e2ba` |
 
 ## Goal and authority
@@ -56,6 +56,13 @@ Draft PR targeting `integration/v2` before production or test implementation is 
 App 403 during PR creation or update is delegated immediately to the control tower; it does not
 authorize Chrome, interactive login, or the user's browser profile.
 
+This boundary was satisfied by Task-Brief-only commit
+`21b4ad245f2cd8cfd92422546566f980db4e253e`. The branch was pushed, the GitHub App returned
+`Resource not accessible by integration`, and the control tower created Draft PR #39 without a
+user browser/login. Authoritative readback recorded `OPEN`, `Draft=true`, `mergedAt=null`, exact
+base `8b4521ad9f45af9f6056f04cf0c8fd4cd6e6a97e`, exact head `21b4ad245f2cd8cfd92422546566f980db4e253e`,
+and one changed file: this Task Brief.
+
 Until A2 freezes the exact decisions and literal implementation allowlist, the cumulative write
 allowlist is exactly:
 
@@ -97,6 +104,123 @@ The audit must inventory:
 Evidence uses only deterministic synthetic coordinates, fixed dates, fixed canaries, loopback
 requests, and intercepted external-request observations. A real Open-Meteo request, real route,
 provider/account, private data, or user profile is prohibited.
+
+## A2 findings-first results
+
+### Production request graph and triggers
+
+There are exactly three production Open-Meteo request constructors, all targeting
+`https://archive-api.open-meteo.com/v1/archive`:
+
+1. `js/app/main.js` calls `preprocessActivities(...)` on every ordinary initialization and refresh.
+   `js/shared/preprocessing/core.js` selects every `type === 'Run'` with truthy `start_latlng`, then
+   automatically fetches batches of five. The per-request abort is four seconds and the loop has a
+   twelve-second check between batches, but a batch already in flight is not revoked by a later
+   consent state. This path runs before the user opens Weather UI.
+2. `js/app/main.js` lazy-renders `js/tabs/weather.js` on first Weather-tab activation. That renderer
+   fetches every activity with truthy `start_latlng` and `start_date_local`, not only runs, in
+   batches of five and without a request timeout. The WIP confirmation discloses only incomplete
+   metrics. It does not name Open-Meteo, coordinates, date, purpose, scope, persistence, or
+   revocation and therefore is not consent. Direct initial navigation to `/weather` bypasses the
+   click confirmation entirely.
+3. Each Real composition root under `js/pages/{activity,run,bike,swim}/index.js` injects
+   `allowExternalWeather: !demo`. Each corresponding renderer invokes
+   `renderWeatherAnalysis(...)` during initial map rendering. `js/shared/utils/weather-analysis.js`
+   selects between two and fourteen samples from the full route based on route length and moving
+   time, then fetches each sample serially without a timeout. The `Show weather` checkbox controls
+   only map markers; the summary requests have already happened before the checkbox is used.
+
+Demo preprocessing skips weather when the `strava_demo_mode` storage key is literal `true`, and
+Demo detail composition injects `false`. Every ordinary Real Legacy, Shadow, and Canonical session
+uses the same permissive paths. Canonical summary input is cloned before preprocessing, but the
+weather result still mutates the renderer-local activity copy. No production weather result is
+written to Repository or IndexedDB.
+
+### Data disclosed, validation, and caching
+
+- Summary preprocessing and Weather tab use the raw first `start_latlng` pair and derive a single
+  `start_date=end_date` query value from `start_date_local`. They send the unrounded latitude,
+  longitude, date, `timezone=auto`, and eight hourly field names. There is no finite/range/type
+  coordinate validation.
+- Detail analysis reads exact route points from injected canonical/Legacy streams or decoded
+  provider polylines. It sends two to fourteen unrounded route coordinates and one or more local
+  date keys with the same eight hourly fields. Missing activity date falls back to `Date.now()`;
+  invalid dates can form an invalid query instead of failing closed.
+- Preprocessing and Weather tab have no weather cache. Detail has only a module-lifetime `Map`.
+  Its key rounds coordinates to three decimal places, but the request URL still sends the original
+  coordinate. It caches the raw response, has no TTL, consent binding, revocation/abort hook, or
+  malformed-response guard, and is not durable.
+- The only existing general dashboard setting owner is the `dashboard_settings` JSON record in
+  `localStorage`; filters use `dashboard_filters`. The backup boundary copies an exact fixed list
+  including those records but no weather-consent key. A new durable key would not be backed up
+  unless the prohibited Backup surface expanded; adding a field to `dashboard_settings` would
+  require preserving it across that record's current whole-object saves. No current weather
+  consent or revocation state exists.
+
+### Missing, invalid, failure, and real-zero behavior
+
+- Both summary fetchers use `numericSafe`, which maps `null`, `undefined`, and non-numeric values
+  to numeric zero. Preprocessing also writes `run.difficulty = 0` for missing/HTTP/timeout/network
+  failure. A Real missing value is therefore indistinguishable from observed zero.
+- The Weather tab drops whole failed responses, but all-empty aggregates use zero-valued `mean`,
+  `sum`, and correlation defaults; table difficulty also uses `?? 0`. Partial malformed hourly
+  arrays become zero fields and participate in charts, correlations, predictor output, and
+  environmental difficulty.
+- Detail selection applies `Number(...)` to hourly entries, so `Number(null)` becomes zero while
+  missing values become `NaN`. Summary cards then use `mean(...) ?? 0` and rain reduction uses a
+  zero fallback. Point cards may say `N/A` while the summary simultaneously reports numeric zero.
+- A genuine numeric `0` for temperature, precipitation, wind, direction, weather code, humidity,
+  cloud cover, or pressure currently survives and must continue to survive. Future validation must
+  distinguish a finite number from `null`, missing, a numeric string, `NaN`, and infinity.
+- Preprocessing constructs the date and URL before its `try`; an invalid/missing date can reject
+  `Promise.all` and fail the whole initialization/refresh rather than producing unavailable
+  weather. Weather tab catches the same failure per activity. Detail catches at the outer renderer
+  and shows a fixed failure message, but has no fetch abort/timeout.
+- HTTP failure, rejected fetch, malformed JSON, missing `hourly`/`time`, mismatched arrays,
+  invalid hourly timestamps, out-of-range coordinates, hostile accessors/Proxies, and revocation
+  during scheduled/in-flight work do not have complete failure-first coverage. Existing R5 tests
+  freeze fixed console/DOM behavior but explicitly execute five consent-free weather requests.
+
+### Privacy, cache, Service Worker, and regression boundaries
+
+R5 already removes unsafe browser console sinks from the three weather responsibility files; R6
+must keep console, thrown-value inspection, Token, Authorization, provider/private values, and
+window debug publication at zero. R9 already requires cross-origin weather requests to bypass the
+Service Worker and Cache Storage; R6 must not change that policy or add a durable weather cache.
+Current detail boundary and browser tests explicitly expect `allowExternalWeather === true` for
+every Real composition, so those assertions encode the release blocker and must be replaced by the
+approved deny-by-default contract. Existing Demo tests already prove zero weather/provider I/O and
+must remain green. No focused weather-egress or missing-value correctness test/harness exists.
+
+The implementation candidate surface below is investigative only and is not an authorization or
+frozen allowlist. The exact subset must be selected in the material decision package:
+
+```text
+docs/tasks/pr-33-weather-consent.md
+index.html
+html/activity.html
+html/run.html
+html/bike.html
+html/swim.html
+js/app/main.js
+js/shared/preprocessing/core.js
+js/shared/utils/weather-analysis.js
+js/tabs/weather.js
+js/pages/activity/index.js
+js/pages/run/index.js
+js/pages/bike/index.js
+js/pages/swim/index.js
+js/pages/activity/activity.js
+js/pages/run/run.js
+js/pages/bike/bike.js
+js/pages/swim/swim.js
+tests/privacy/weather-egress.test.js
+tests/privacy/client-logging.test.js
+tests/consumers/detail-consumers.test.js
+tests/consumers/detail-boundaries.test.js
+tests/consumers/detail-browser-smoke.html
+tests/consumers/weather-consent-browser-smoke.html
+```
 
 ## Material decision gate
 
