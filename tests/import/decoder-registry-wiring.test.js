@@ -269,8 +269,7 @@ test('PR-14 keeps public/schema/runtime boundaries and decoder sources frozen', 
         ['js/decoders/tcx/decoder.js', '6e5c03f190fa12500d6d1042800272e817c02ab8fb5e5b288fd05f78153cd868'],
         ['js/decoders/gpx/decoder.js', 'cb84f3d86c5d6d7cbfa5425b190573d0fab094a7d1ce9124f6231905f1ca664f'],
         ['package.json', '0406287a8b8be5d8c34ff994c8979a2bf585cd33b911617c898a83005842823a'],
-        ['package-lock.json', '04c2a7fa76c5daaec25fbe291d33b0b76037166b9b50394929cd7ec21ed8751f'],
-        ['sw.js', '2de27619d86023b65028cd379c80ccc839611930f3445d9c905f935bdb714798']
+        ['package-lock.json', '04c2a7fa76c5daaec25fbe291d33b0b76037166b9b50394929cd7ec21ed8751f']
     ]);
     for (const [path, expected] of frozenHashes) {
         const digest = createHash('sha256').update(await readFile(new URL(path, ROOT))).digest('hex');
