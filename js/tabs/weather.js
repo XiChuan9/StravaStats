@@ -83,7 +83,49 @@ function formatValue(value, digits, suffix = '') {
     return Number.isFinite(value) ? `${value.toFixed(digits)}${suffix}` : 'N/A';
 }
 
-export async function renderWeatherTab(allActivities) {
+function readSessionMode(options) {
+    try {
+        if (
+            options === null
+            || typeof options !== 'object'
+            || Array.isArray(options)
+            || Object.getPrototypeOf(options) !== Object.prototype
+        ) return null;
+        const keys = Reflect.ownKeys(options);
+        if (keys.length !== 1 || keys[0] !== 'sessionMode') return null;
+        const descriptor = Object.getOwnPropertyDescriptor(options, 'sessionMode');
+        if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) return null;
+        return ['demo', 'real'].includes(descriptor.value) ? descriptor.value : null;
+    } catch {
+        return null;
+    }
+}
+
+function demoWeatherResult(run) {
+    try {
+        const weather = run?.weather;
+        if (weather === null || typeof weather !== 'object' || Array.isArray(weather)) return null;
+        const condition = ['Clear', 'Overcast', 'Rain'].includes(weather.condition)
+            ? weather.condition
+            : 'N/A';
+        return {
+            run,
+            temperature: Number.isFinite(weather.temperature) ? weather.temperature : null,
+            precipitation: Number.isFinite(weather.precipitation) ? weather.precipitation : null,
+            wind_speed: Number.isFinite(weather.wind_speed) ? weather.wind_speed : null,
+            wind_direction: null,
+            weather_code: null,
+            weather_text: condition,
+            humidity: Number.isFinite(weather.humidity) ? weather.humidity : null,
+            cloudcover: Number.isFinite(weather.cloud_cover) ? weather.cloud_cover : null,
+            pressure: Number.isFinite(weather.pressure) ? weather.pressure : null
+        };
+    } catch {
+        return null;
+    }
+}
+
+export async function renderWeatherTab(allActivities, options) {
 
 
     const weatherTabContainer = document.getElementById("weather-tab");
@@ -93,13 +135,22 @@ export async function renderWeatherTab(allActivities) {
         return;
     }
 
+    const sessionMode = readSessionMode(options);
+    if (sessionMode === null) {
+        clearWeatherPresentation();
+        if (summaryCardsContainer) {
+            summaryCardsContainer.innerHTML = '<p>Weather is unavailable for this session.</p>';
+        }
+        return;
+    }
+
     const runs = allActivities.filter(
         (a) => a.type?.toLowerCase().includes("run") && a.start_latlng && a.start_date_local
     );
 
-    const outActivities = allActivities.filter(
-        (a) => a.start_latlng && a.start_date_local
-    );
+    const outActivities = sessionMode === 'demo'
+        ? allActivities.filter(a => a.start_date_local && a.weather)
+        : allActivities.filter(a => a.start_latlng && a.start_date_local);
 
     if (!runs.length) {
         if (summaryCardsContainer) {
@@ -110,12 +161,12 @@ export async function renderWeatherTab(allActivities) {
         return;
     }
 
-    const rerender = () => renderWeatherTab(allActivities);
-    if (!isWeatherConsentGranted()) {
+    const rerender = () => renderWeatherTab(allActivities, options);
+    if (sessionMode === 'real' && !isWeatherConsentGranted()) {
         renderConsent(summaryCardsContainer, rerender);
         return;
     }
-    renderActiveConsent(summaryCardsContainer, rerender);
+    if (sessionMode === 'real') renderActiveConsent(summaryCardsContainer, rerender);
 
 
     async function fetchWeatherForRuns(runs) {
@@ -142,8 +193,10 @@ export async function renderWeatherTab(allActivities) {
 
 
     // const weatherResults = await fetchWeatherForRuns(runs);
-    const weatherResults = await fetchWeatherForRuns(outActivities);
-    if (!isWeatherConsentGranted()) {
+    const weatherResults = sessionMode === 'demo'
+        ? outActivities.map(demoWeatherResult).filter(Boolean)
+        : await fetchWeatherForRuns(outActivities);
+    if (sessionMode === 'real' && !isWeatherConsentGranted()) {
         renderConsent(summaryCardsContainer, rerender);
         return;
     }
@@ -173,7 +226,7 @@ export async function renderWeatherTab(allActivities) {
             wind_speed: wind,
             wind_direction: wr.wind_direction,
             weather_code: wr.weather_code,
-            weather_text: weatherCodeToText(wr.weather_code),
+            weather_text: wr.weather_text ?? weatherCodeToText(wr.weather_code),
             humidity: hum,
             cloudcover: wr.cloudcover,
             pressure: wr.pressure,
@@ -205,7 +258,9 @@ export async function renderWeatherTab(allActivities) {
     // 1. Summary cards (rellenar el div #wa-stats-row existente)
     if (summaryCardsContainer) {
         summaryCardsContainer.innerHTML = `
-        <div class="wa-card"><h4>Permission</h4><button type="button" data-weather-consent-revoke>Revoke weather access</button></div>
+        ${sessionMode === 'real'
+            ? '<div class="wa-card"><h4>Permission</h4><button type="button" data-weather-consent-revoke>Revoke weather access</button></div>'
+            : '<div class="wa-card"><h4>Source</h4><div class="wa-val">Demo synthetic weather</div></div>'}
         <div class="wa-card"><h4>🌡️ Avg Temp</h4><div class="wa-val">${formatValue(mean(temps), 1, '°C')}</div></div>
         <div class="wa-card"><h4>💨 Avg Wind</h4><div class="wa-val">${formatValue(mean(winds), 1, ' km/h')}</div></div>
         <div class="wa-card"><h4>💧 Avg Humidity</h4><div class="wa-val">${formatValue(mean(humidities), 1, '%')}</div></div>
@@ -214,7 +269,7 @@ export async function renderWeatherTab(allActivities) {
         <div class="wa-card"><h4>🌬️ Common Wind Dir</h4><div class="wa-val">${formatValue(mode(windDirections), 0, '°')}</div></div>
         <div class="wa-card"><h4>🧭 Pressure Avg</h4><div class="wa-val">${formatValue(mean(pressures), 1, ' hPa')}</div></div>
     `;
-        bindRevoke(summaryCardsContainer, rerender);
+        if (sessionMode === 'real') bindRevoke(summaryCardsContainer, rerender);
     }
 
     // Weather Predictor

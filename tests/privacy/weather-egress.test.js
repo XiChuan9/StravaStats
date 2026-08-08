@@ -477,6 +477,94 @@ test('revoke remains deny when recording denied session state fails', async () =
     assert.equal(fetches, 0);
 });
 
+test('main injects its frozen active session mode only into the Weather tab', async () => {
+    const mainSource = await source('js/app/main.js');
+    assert.match(mainSource,
+        /'weather-tab': \{ render: \(\) => renderWeatherTab\(allActivities, \{ sessionMode: activeSessionMode \}\) \}/);
+    assert.equal((mainSource.match(/renderWeatherTab\(/g) || []).length, 1);
+});
+
+test('Demo Weather uses embedded synthetic values before consent storage or fetch', async () => {
+    const names = ['document', 'fetch', 'sessionStorage'];
+    const descriptors = new Map(names.map(name => [
+        name,
+        Object.getOwnPropertyDescriptor(globalThis, name)
+    ]));
+    const storage = new MemoryStorage();
+    let fetches = 0;
+    const summary = {
+        innerHTML: '',
+        querySelector() {
+            return null;
+        }
+    };
+    Object.defineProperty(globalThis, 'sessionStorage', {
+        configurable: true,
+        value: storage
+    });
+    Object.defineProperty(globalThis, 'document', {
+        configurable: true,
+        value: {
+            getElementById(id) {
+                if (id === 'weather-tab') return {};
+                if (id === 'wa-stats-row') return summary;
+                return null;
+            }
+        }
+    });
+    Object.defineProperty(globalThis, 'fetch', {
+        configurable: true,
+        value: async () => {
+            fetches += 1;
+            return okResponse(hourly({ temperature_2m: [99] }));
+        }
+    });
+
+    try {
+        const consent = await import('../../js/app/weather-consent.js');
+        consent.revokeWeatherConsent();
+        assert.equal(consent.grantWeatherConsent(), true);
+        storage.reads.length = 0;
+        storage.writes.length = 0;
+        const { renderWeatherTab } = await import('../../js/tabs/weather.js?demo-session-mode=1');
+        await renderWeatherTab([{
+            name: 'Synthetic Demo Run',
+            type: 'Run',
+            start_latlng: [12.3456, -98.7654],
+            start_date_local: '2031-02-03T04:05:06',
+            distance: 5000,
+            moving_time: 1500,
+            weather: {
+                temperature: 7,
+                precipitation: 0,
+                wind_speed: 0,
+                humidity: 0,
+                pressure: 0,
+                cloud_cover: 0,
+                condition: 'Clear'
+            }
+        }], { sessionMode: 'demo' });
+        assert.deepEqual(storage.reads, []);
+        assert.deepEqual(storage.writes, []);
+        assert.equal(fetches, 0);
+        assert.match(summary.innerHTML, /7\.0°C/);
+        assert.doesNotMatch(summary.innerHTML, /Allow for this tab|Revoke weather access|99\.0°C/);
+        summary.innerHTML = '';
+        await renderWeatherTab([], { sessionMode: 'unknown' });
+        assert.deepEqual(storage.reads, []);
+        assert.deepEqual(storage.writes, []);
+        assert.equal(fetches, 0);
+        assert.match(summary.innerHTML, /Weather is unavailable for this session/);
+    } finally {
+        const consent = await import('../../js/app/weather-consent.js');
+        consent.revokeWeatherConsent();
+        for (const [name, descriptor] of descriptors) {
+            if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+            else delete globalThis[name];
+        }
+    }
+});
+
 test('Weather tab exposes revoke while authorized requests are in flight', async () => {
     const names = ['document', 'fetch', 'sessionStorage'];
     const descriptors = new Map(names.map(name => [
@@ -537,12 +625,14 @@ test('Weather tab exposes revoke while authorized requests are in flight', async
     });
 
     try {
+        const consent = await import('../../js/app/weather-consent.js');
+        assert.equal(consent.grantWeatherConsent(), true);
         const { renderWeatherTab } = await import('../../js/tabs/weather.js?in-flight-revoke=1');
         rendering = renderWeatherTab([{
             type: 'Run',
             start_latlng: [12.3456, -98.7654],
             start_date_local: '2031-02-03T04:05:06'
-        }]);
+        }], { sessionMode: 'real' });
         await Promise.resolve();
         assert.equal(typeof revokeHandler, 'function', 'IN_FLIGHT_REVOKE_CONTROL_MISSING');
         revokeHandler();
@@ -628,7 +718,7 @@ test('Weather tab omits missing values from environmental difficulty input', asy
             start_date_local: '2031-02-03T04:05:06',
             distance: 5000,
             moving_time: 1500
-        }]);
+        }], { sessionMode: 'real' });
         assert.equal(cells[11]?.textContent, '0%');
     } finally {
         const consent = await import('../../js/app/weather-consent.js');

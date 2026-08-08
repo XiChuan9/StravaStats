@@ -176,7 +176,7 @@
                 const mutable = structuredClone(baseActivity);
                 await preprocessing.preprocessActivities([mutable], {}, null, []);
                 await analysis.renderWeatherAnalysis(baseActivity, coords);
-                await weatherTab.renderWeatherTab([baseActivity]);
+                await weatherTab.renderWeatherTab([baseActivity], { sessionMode: 'real' });
                 invariant(observations.fetches.length === 0, 'DEFAULT_EXTERNAL_WEATHER_REQUEST');
                 invariant(document.body.textContent.includes('Allow for this tab'), 'CONSENT_COPY_MISSING');
                 return { externalWeatherRequests: 0 };
@@ -213,10 +213,34 @@
                 return { latitude: '12.35', longitude: '-98.77', points: 1, realZero: true };
             });
 
+            await gate('demo-existing-grant-zero-egress', async () => {
+                const before = observations.fetches.length;
+                const demoActivity = {
+                    ...baseActivity,
+                    weather: {
+                        temperature: 7,
+                        precipitation: 0,
+                        wind_speed: 0,
+                        humidity: 0,
+                        pressure: 0,
+                        cloud_cover: 0,
+                        condition: 'Clear'
+                    }
+                };
+                await weatherTab.renderWeatherTab([demoActivity], { sessionMode: 'demo' });
+                const summary = document.getElementById('wa-stats-row').textContent;
+                invariant(observations.fetches.length === before, 'DEMO_EXTERNAL_WEATHER_REQUEST');
+                invariant(summary.includes('Demo synthetic weather'), 'DEMO_SOURCE_NOT_DISCLOSED');
+                invariant(summary.includes('7.0°C'), 'DEMO_EMBEDDED_WEATHER_MISSING');
+                invariant(!summary.includes('Allow for this tab'), 'DEMO_CONSENT_COPY_PRESENT');
+                invariant(!summary.includes('Revoke weather access'), 'DEMO_REVOKE_PRESENT');
+                return { existingGrant: true, externalWeatherRequests: 0, embeddedTemperature: '7.0°C' };
+            });
+
             await gate('missing-remains-unavailable', async () => {
                 responseMode = 'missing';
                 const activity = { ...baseActivity, start_latlng: [13.4567, -97.6543] };
-                await weatherTab.renderWeatherTab([activity]);
+                await weatherTab.renderWeatherTab([activity], { sessionMode: 'real' });
                 invariant(document.getElementById('wa-stats-row').textContent.includes('N/A'),
                     'MISSING_WEATHER_BECAME_NUMERIC');
                 return { missingPresentation: 'N/A' };
