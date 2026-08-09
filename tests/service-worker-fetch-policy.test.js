@@ -756,6 +756,21 @@ test('required install seed failures reject and remove only the partial current 
   for (const [label, options] of [
     ['fetch', { fetchError: new Error(FIXED_CANARY) }],
     ['open', { openError: new Error(FIXED_CANARY) }],
+    ['validation', {
+      fetchImpl: async (request, platform) => {
+        const state = platform.requestData(request);
+        return new platform.Response('synthetic-invalid-seed', {
+          status: 200,
+          type: 'basic',
+          url: state.url,
+          headers: {
+            'content-type': 'application/octet-stream',
+            'cache-control': 'public, max-age=3600',
+          },
+        });
+      },
+    }],
+    ['clone', { cloneError: new Error(FIXED_CANARY) }],
     ['put', { putError: new Error(FIXED_CANARY) }],
   ]) {
     await t.test(label, async () => {
