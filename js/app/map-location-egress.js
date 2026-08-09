@@ -1,7 +1,7 @@
 export const MAP_LOCATION_ACTION_LABEL = 'Load approximate OpenStreetMap tiles for this map';
 export const MAP_LOCATION_DISCLOSURE = 'Map tiles are provided by OpenStreetMap. If you choose “Load approximate OpenStreetMap tiles for this map”, StravaStats requests map images for the coarse area shown (zoom 11 or lower) from a.tile.openstreetmap.org, b.tile.openstreetmap.org, or c.tile.openstreetmap.org. Tile paths reveal the approximate displayed area and request timing. StravaStats does not send activity names or IDs, dates, route coordinates or route order, tokens, heart rate, or power; the route overlay stays in this document. Permission applies only to this map in this document. Revoke stops new requests and cancels registered loads, but cannot recall requests already received or erase browser or provider records.';
 export const MAP_LOCATION_AGGREGATE_COPY = 'For this view, the requested area covers all currently visible activities.';
-export const MAP_LOCATION_CDN_LIMITATION = 'Map drawing code is currently loaded from unpkg.com and runs in this page. This tile permission does not resolve that separate CDN trust boundary.';
+export const MAP_LOCATION_CDN_LIMITATION = 'Map drawing code is exact-version-pinned and served from this same origin. OpenStreetMap tile requests remain separate external requests governed by this per-map permission.';
 export const MAP_LOCATION_MAX_ZOOM = 11;
 export const MAP_LOCATION_TIMEOUT_MS = 4000;
 export const MAP_LOCATION_MAX_CONCURRENT = 4;

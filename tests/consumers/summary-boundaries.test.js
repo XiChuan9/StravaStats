@@ -117,7 +117,8 @@ test('M23 R1 root summary renders persistent names and opaque IDs only through n
 
     assert.doesNotMatch(athlete, /<img\s+src=[^\n]*athlete\.profile_medium/);
     assert.doesNotMatch(athlete, /innerHTML\s*=\s*`[^`]*\$\{error\.message\}/);
-    assert.match(athlete, /profileUrl\.protocol\s*===\s*['"]https:['"]/);
+    assert.match(athlete, /athlete\.profile_medium === ['"]\/icon-sport\.svg['"]/);
+    assert.doesNotMatch(athlete, /profileUrl|new URL\(String\(athlete\.profile_medium\)\)/);
     assert.match(athlete, /contentDiv\.replaceChildren/);
     assert.doesNotMatch(athlete, /createChartError\([^)]*error\.message/);
     assert.doesNotMatch(athlete, /console\.error\([^\n]*,\s*error\s*\)/);
@@ -384,7 +385,7 @@ test('PR-04C removes the final Run Plus provider boundary without changing the B
     assert.doesNotMatch(mainSource, /summary-browser-smoke/);
 });
 
-test('Speed Insights stays local-offline and production telemetry is same-origin only', () => {
+test('Speed Insights utility stays local-offline and is unreachable from production entry', () => {
     assert.doesNotMatch(speedInsightsSource, /esm\.sh|vercel-scripts\.com/);
     assert.doesNotMatch(speedInsightsSource, /https?:\/\//);
     assert.doesNotMatch(speedInsightsSource, /(?:from|import\s*\()\s*['"](?:https?:)?\/\//);
@@ -421,7 +422,7 @@ test('Speed Insights stays local-offline and production telemetry is same-origin
     );
     assert.match(speedInsightsSource, /export function setupSpeedInsights\(\)/);
     assert.match(speedInsightsSource, /setupSpeedInsights\(\);\s*$/);
-    assert.match(
+    assert.doesNotMatch(
         mainSource,
         /import\s*['"]\.\.\/shared\/utils\/speed-insights\.js['"]/
     );

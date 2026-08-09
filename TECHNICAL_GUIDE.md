@@ -67,7 +67,7 @@ The frontend is implemented as native browser ES modules without a bundler. The 
 - `js/shared/` — cross-surface helpers:
   - `shared/preprocessing/core.js` exports `preprocessActivities(activities, userProfile, zones, gears)` and the supporting derivation helpers (TSS, CTL, ATL, TSB, efficiency, moving_ratio, weather enrichment hooks).
   - `shared/utils/core.js` exports the formatters and math utilities consumed everywhere (dates, paces, speeds, sport emoji, rolling means, etc.).
-  - `shared/utils/weather-analysis.js` aggregates per-run weather summaries; `shared/utils/speed-insights.js` wires Vercel Speed Insights.
+  - `shared/utils/weather-analysis.js` aggregates per-run weather summaries. The retained `shared/utils/speed-insights.js` utility has no production importer; runtime telemetry is disabled.
 - `js/tabs/` — one renderer module per main SPA tab plus a barrel (`index.js`), tab-local helpers (`utils.js`), and API surface (`api.js`).
 - `js/pages/` — controllers for dedicated detail pages, organised per sport: `activity/`, `run/`, `bike/`, `swim/`, `gear/`. The activity page wires `advanced-analysis.js` against the analysis pipeline.
 - `js/analysis/` — stream-level pipeline. `preprocessing.js` cleans streams (GPS spikes, Hampel altitude filter, speed-spike cleanup, smoothing). `analyzers/` contains sport-specific analyzers (running, trail-run, cycling, gravel-mtb, hiking) extending `base-analyzer.js`. `detection/` holds climb and stop detectors. `segmentation/` produces distance/time/terrain splits. `engines/` contains `fatigue.js`, `aero.js`, `physiology.js`, and `insights-generator.js`. `export/` emits GPX, CSV, and JSON.
@@ -415,9 +415,9 @@ does not retry, and revokes its Blob URLs. Map bounds and `noWrap` prevent inter
 expanding beyond the initially approved coarse envelope. Raw `L.tileLayer` provider templates are
 not permitted in production consumers.
 
-Leaflet and Leaflet.heat remain third-party same-context code loaded from `unpkg.com`. That CDN
-trust and lifecycle surface belongs to R11; the tile consent boundary must not be described as
-closing it.
+Leaflet and Leaflet.heat are exact-version-pinned, integrity checked, and served same-origin from
+the tracked vendor directories with no CDN fallback. OpenStreetMap tile images remain separate
+external requests governed by the unchanged per-map consent boundary.
 
 ## 10. Detailed Feature Breakdown By Tab
 
@@ -1029,7 +1029,7 @@ The map system supports both route-line rendering and density heatmaps, which ad
 - Leaflet
 - Leaflet.heat
 - `node-fetch`
-- `@vercel/speed-insights`
+- `@vercel/speed-insights` (exact-locked install-only; runtime unreachable)
 
 ### Hosting and operations
 

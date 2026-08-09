@@ -1,7 +1,6 @@
 import { isDemoMode } from '../../demo/index.js';
 import { createMapLocationBoundary } from '../../app/map-location-egress.js';
 import { renderGearDetailPage as renderGearDetail } from './gear-analysis.js';
-import '../../shared/utils/speed-insights.js';
 
 export async function renderGearDetailPage(gearId, { demoModeReader = isDemoMode } = {}) {
     const demo = demoModeReader();

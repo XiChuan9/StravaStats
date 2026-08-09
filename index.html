@@ -4,6 +4,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="no-referrer">
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'sha256-V0E36HdCyl2OK6QWJ4U+RZgN5YKsgn0YZF5FEgjCQPU='; script-src-attr 'unsafe-hashes' 'sha256-wkr/FC/hPJLXBEn10vyaIxd0odM6Aoh1F1xlw5kDNYY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://archive-api.open-meteo.com https://generativelanguage.googleapis.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
     <meta name="theme-color" content="#FC5200">
     <meta name="description"
         content="StravaStats — Advanced sports analytics dashboard for runners, cyclists and swimmers. Track performance, predict race times, analyze trends.">
@@ -32,22 +35,21 @@
     <link rel="icon" type="image/svg+xml" href="/icon-sport.svg">
     <link rel="apple-touch-icon" href="/icon-sport.svg">
 
-    <!-- D3 & Cal-Heatmap -->
-    <script src="https://d3js.org/d3.v7.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/cal-heatmap@4.2.2/dist/cal-heatmap.min.js"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cal-heatmap@4.2.2/dist/cal-heatmap.css">
+    <!-- Local, versioned visualization runtime -->
+    <script src="/js/vendor/d3-7.9.0.min.js" integrity="sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i" crossorigin="anonymous"></script>
+    <script src="/js/vendor/cal-heatmap-4.2.2.min.js" integrity="sha384-u6mWlT25qeWOoRQiqXuzYVkUZPu34+SHGP5MJB5FTBu1q4C1HGfjDC6UZZvtN1lt" crossorigin="anonymous"></script>
+    <link rel="stylesheet" href="/styles/vendor/cal-heatmap-4.2.2.css" integrity="sha384-CqhcQLOCMzvuMykgRLOtzD9FJW+nHHcILVVDD6EjiRjc3Ecn71ZKehgvlHUnK5q+" crossorigin="anonymous">
 
     <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script
-        src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix"></script>
+    <script src="/js/vendor/chart-4.5.0.umd.min.js" integrity="sha384-XcdcwHqIPULERb2yDEM4R0XaQKU3YnDsrTmjACBZyfdVVqjh6xQ4/DCMd7XLcA6Y" crossorigin="anonymous"></script>
+    <script src="/js/vendor/chartjs-adapter-date-fns-3.0.0.bundle.min.js" integrity="sha384-cVMg8E3QFwTvGCDuK+ET4PD341jF3W8nO1auiXfuZNQkzbUUiBGLsIQUE+b1mxws" crossorigin="anonymous"></script>
+    <script src="/js/vendor/chartjs-chart-matrix-3.0.0.min.js" integrity="sha384-rJ/i5dnMG9QpsJqCMvR1ItW0deXppx40qBosSeiEI3hb9B8msI7j0D22p2rp010u" crossorigin="anonymous"></script>
 
 
     <!-- Leaflet + Leaflet.heat -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+    <link rel="stylesheet" href="/styles/vendor/leaflet-1.9.4.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous">
+    <script src="/js/vendor/leaflet-1.9.4.min.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
+    <script src="/js/vendor/leaflet-heat-0.2.0.min.js" integrity="sha384-mFKkGiGvT5vo1fEyGCD3hshDdKmW3wzXW/x+fWriYJArD0R3gawT6lMvLboM22c0" crossorigin="anonymous"></script>
 
     <!-- CSS Framework & Components (Load in order) -->
     <link rel="stylesheet" href="/styles/colors.css">
@@ -67,38 +69,10 @@
     <link rel="stylesheet" href="/styles/weather.css">
     <link rel="stylesheet" href="/styles/map.css">
     <link rel="stylesheet" href="/styles/run-plus.css">
-
-
-
-    <!-- Analytics -->
-    <script>(function (w, d, s, l, i) {
-            w[l] = w[l] || []; w[l].push({
-                'gtm.start':
-                    new Date().getTime(), event: 'gtm.js'
-            }); var f = d.getElementsByTagName(s)[0],
-                j = d.createElement(s), dl = l != 'dataLayer' ? '&l=' + l : ''; j.async = true; j.src =
-                    'https://www.googletagmanager.com/gtm.js?id=' + i + dl; f.parentNode.insertBefore(j, f);
-        })(window, document, 'script', 'dataLayer', 'GTM-N7K8NCB5');</script>
-
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-H12FLB7QEC"></script>
-    <script>
-        window.dataLayer = window.dataLayer || [];
-        function gtag() { dataLayer.push(arguments); }
-        gtag('js', new Date());
-
-        gtag('config', 'G-H12FLB7QEC');
-    </script>
-
-    <script defer src="/_vercel/insights/script.js"></script>
 </head>
 
 
 <body>
-    <!-- Google Tag Manager (noscript) -->
-    <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-N7K8NCB5" height="0" width="0"
-            style="display:none;visibility:hidden"></iframe></noscript>
-    <!-- End Google Tag Manager (noscript) -->
-
     <div class="container">
         <!-- LOGIN SECTION -->
         <div id="login-section">
@@ -928,10 +902,8 @@
                     <!-- CALCULADORA VDOT -->
                     <div class="chart-container" id="calculator-container">
                         <h3>VDOT Race Time Calculator</h3>
-                        <p>Powered by <a href="https://vdoto2.com/" target="_blank">VDOT O2</a>.</p>
-                        <div class="iframe-responsive-container">
-                            <iframe src='https://vdoto2.com/calculator/embed' frameborder='0'></iframe>
-                        </div>
+                        <p>The calculator opens only when you choose to visit VDOT O2.</p>
+                        <a href="https://vdoto2.com/" target="_blank" rel="noopener noreferrer">Open VDOT O2 calculator</a>
                     </div>
 
                 </div>
@@ -1191,8 +1163,8 @@
                 <div id="ai-chat-tab" class="tab-content"></div>
 
                 <!-- Llibreria per exportar captura -->
-                <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-                <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+                <script src="/js/vendor/html2canvas-1.4.1.min.js" integrity="sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H" crossorigin="anonymous"></script>
+                <script src="/js/vendor/jspdf-2.5.1.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
 
 
 

@@ -60,4 +60,4 @@ If you switch to a different Strava app, clear the browser `localStorage` key na
 | Strava auth failed | Confirm the frontend client ID and backend client secret belong to the same Strava app. |
 | Token or cache issues | Clear `strava_tokens` and `strava_cache_version` from browser `localStorage`, then sign in again. |
 | Stale derived fields after upgrade | Clear `strava_cache_version`; `js/app/main.js` invalidates cached preprocessed activities when this key does not match the current `CACHE_VERSION`. |
-| CDN charts do not load | Check network access to jsdelivr, unpkg, and d3 resources. |
+| Charts do not load | Visualization libraries are exact-version-pinned under `js/vendor/` and `styles/vendor/`. Check that the local files are served unchanged so their SRI hashes pass; there is no CDN fallback. |

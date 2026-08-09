@@ -1937,16 +1937,11 @@ export function renderAthleteProfile(athlete) {
     if (!contentDiv) return;
 
     const children = [];
-    try {
-        const profileUrl = new URL(String(athlete.profile_medium));
-        if (profileUrl.protocol === 'https:') {
-            const image = document.createElement('img');
-            image.src = profileUrl.href;
-            image.alt = 'Athlete profile picture';
-            children.push(image);
-        }
-    } catch {
-        // Invalid or non-absolute profile URLs are omitted.
+    if (athlete.profile_medium === '/icon-sport.svg') {
+        const image = document.createElement('img');
+        image.src = '/icon-sport.svg';
+        image.alt = 'Athlete profile picture';
+        children.push(image);
     }
     const details = document.createElement('div');
     details.className = 'profile-details';

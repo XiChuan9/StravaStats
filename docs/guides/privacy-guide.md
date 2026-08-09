@@ -67,11 +67,13 @@ anything.
 Source Manager local import does not call a provider or upload selected file bytes. Existing local
 Canonical startup and browsing do not require Token/auth/provider network.
 
-Other established pages are not fully offline:
+Other established pages are not fully offline. Runtime telemetry is completely disabled: root,
+detail, Gear, Source Manager, Backup, and Diagnostics do not load Google Tag Manager, Google
+Analytics, Microsoft Clarity, Vercel Analytics, Vercel Insights, or Vercel Speed Insights. There
+is no telemetry opt-in or fallback. Chart.js, D3, Cal-Heatmap, Leaflet, Leaflet.heat, html2canvas,
+and jsPDF are exact-version-pinned, integrity checked, and served same-origin with no CDN fallback.
 
-- root/detail documents declare third-party CDN assets such as Chart.js, D3, Cal-Heatmap, and
-  Leaflet;
-- root declares Google Tag Manager/Analytics and same-origin Vercel Insights;
+- a cold first-ever offline load may lack uncached local visualization assets;
 - Legacy provider features use same-origin serverless API routes;
 - weather can send an exact activity date and coordinates to its external service after its
   separate consent flow;
@@ -91,12 +93,11 @@ Other established pages are not fully offline:
   The API key and bounded conversation remain only in current-page memory; Demo performs zero AI
   consent, key, provider, history, or storage I/O.
 
-These are inherited external and telemetry boundaries, not evidence that private activity data is
-uploaded by local import. Exact weather location/date external requests remain a production privacy
-release blocker. R8 governs declared tile-location requests only. The Leaflet and Leaflet.heat code
-currently loaded from `unpkg.com` runs in the page; CDN trust and telemetry remain separate
-release-review items. Never include filename, route, user identity, Token, raw payload, or
-health/power data in product analytics events.
+These external feature boundaries are not evidence that private activity data is uploaded by local
+import. Exact weather location/date external requests remain a production privacy release blocker.
+R8 governs declared tile-location requests only; same-origin Leaflet code does not authorize a
+tile request. Never add product analytics events containing a filename, route, user identity,
+Token, raw payload, or health/power data; R11 authorizes no runtime telemetry event at all.
 
 Existing browsers may still contain the inherited `gemini_api_key` or `ai_chat_history` records.
 AI Coach does not read, copy, migrate, overwrite, or delete either record during normal rendering
