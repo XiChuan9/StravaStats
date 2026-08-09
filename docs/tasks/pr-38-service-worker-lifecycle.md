@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 release hardening / D3 / P0-08 |
-| Status | A2 complete; awaiting owner A/B/C decision; implementation prohibited |
+| Status | A3 Option A frozen; bounded implementation authorized |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/service-worker-lifecycle` |
 | Exact base | `integration/v2@d8bcdb221e49f7ed664eeb43733918eabd0ccf30` |
@@ -477,3 +477,37 @@ or deployment policy is inferred by recommending A.
 Owner selection requested: **A (recommended), B, or C**. Until the exact choice is returned through
 the control tower, no production, test, package, workflow, Service Worker, browser, cache, storage,
 deployment, or release change is authorized. Draft PR #44 remains open and Draft.
+
+## A3 owner selection and frozen implementation contract
+
+The owner selected **Option A exactly** on 2026-08-09 through the control tower: drained activation
+with immutable cache generations. No deployment-policy authorization was added. Every value in
+Option A above is now mandatory; no behavior from B or C may be mixed into the implementation.
+
+The exact cumulative hard allowlist for decision freeze, failure-first tests, implementation,
+browser evidence, review repair, and Final Review Closure is:
+
+```text
+docs/tasks/pr-38-service-worker-lifecycle.md
+sw.js
+js/app/service-worker-policy.js
+js/app/main.js
+styles/style.css
+tests/service-worker-fetch-policy.test.js
+tests/service-worker-policy.test.js
+tests/service-worker-lifecycle.test.js
+tests/service-worker-lifecycle-browser-smoke.html
+```
+
+Every unlisted path is prohibited. A required tenth path, deployment/header/workflow/package or
+public-surface change, ownership ambiguity, or collision with R6/R7/R8/R9/R11 stops implementation
+and returns a minimum decision package. The implementation does not authorize a production
+rollout, release, cache cleanup, real registration/cache/profile mutation, or deployment-policy
+claim.
+
+Failure-first tests must precede production repair and prove the selected registration options,
+one explicit update check, drained waiting behavior, absence of unconditional `skipWaiting` and
+`clients.claim`, exact current/legacy cache names, empty first-rollout retired list, literal-only
+eviction, required seed failure rollback limited to the partial current cache, fixed safe
+observability, local root-registration ownership, unknown-cache preservation, no automatic reload,
+and unchanged R9/R11 request/response behavior.
