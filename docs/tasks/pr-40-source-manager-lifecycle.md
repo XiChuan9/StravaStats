@@ -556,11 +556,12 @@ docs/guides/troubleshooting.md
 docs/guides/known-limitations.md
 ```
 
-Every tranche also includes its new `docs/tasks/<task>.md`; this PR-40 brief is not reused as
-implementation authority. No dependency or Service Worker path is allowed. If OAuth security needs
-a dependency, CSP expansion, a new/changed auth endpoint, or a Service Worker change, stop and
-derive a new allowlist. Tranche C2 is a schema/public-storage expansion. Tranches C3/C4 expand the
-application/import contract and Worker registry. Those are explicit owner approval points.
+Every implementation tranche also requires its own new `docs/tasks/<task>.md`; this PR-40 parent
+brief records the selected direction and material A3 packages but is not implementation authority.
+No dependency or Service Worker path is allowed. If OAuth security needs a dependency, CSP
+expansion, a new/changed auth endpoint, or a Service Worker change, stop and derive a new allowlist.
+Tranche C2 is a schema/public-storage expansion. Tranches C3/C4 expand the application/import
+contract and Worker registry. Those are explicit owner approval points.
 
 **Failure-first and browser evidence**
 
@@ -599,3 +600,298 @@ Ready, merge, PR #31 edits, release, deployment, real accounts, provider request
 schema/public/dependency/Worker/Service Worker expansion, or paths outside the selected allowlist.
 
 No implementation starts from this audit alone.
+
+## A3 parent selection — accepted, tranche implementation still gated
+
+On 2026-08-09, the owner selected:
+
+> 批准 D-A A2、D-B C，按 C1–C4 分阶段推进。
+
+The authoritative interpretation is:
+
+- **D-A A2:** staged P0 closure with no Alpha, full-v2.0, release-readiness, deploy, or release
+  claim.
+- **D-B C:** pursue the full PRD P0 lifecycle through four separate bounded tranches: C1
+  auth/controller; C2 additive V5 SourceConnection and backup; C3 provider to
+  ImportedActivityBundle to ImportService; C4 durable ownership/heartbeat/lease recovery.
+- The selection authorizes read-only investigation and Task-Brief/A3 contract freezing. It does
+  not authorize implementation of any tranche. Each tranche requires its own material decision,
+  literal implementation allowlist, new Task Brief, and separate explicit approval.
+- Real OAuth/account/provider calls, credentials/private data, V5 schema/public Storage API,
+  Import/Worker/provider API expansion, deployment, release, Ready, merge, and cleanup remain
+  unauthorized. PR #46 remains open and Draft; PR #31 and every Legacy/V2 record remain untouched.
+
+The following is the first bounded follow-up: the C1 A3 material decision package. It supersedes
+the earlier broad C1 candidate list for C1 planning only. It does not start C1 implementation.
+
+## C1 A3 material decision package — auth/controller
+
+Status: **Awaiting separate owner selection and implementation authorization.**
+
+### C1 findings
+
+#### C1-F1 — the two documents have incompatible auth composition boundaries
+
+- The root application imports `js/app/auth.js`, which reads `window` at module scope, imports root
+  loading/error UI and Demo utilities, and attaches root login/logout behavior. It is not safe to
+  import into Source Manager.
+- Source Manager modules currently import with zero Token, Web Storage, provider, network, or DOM
+  I/O. The page consumer is explicitly prohibited from reading Tokens, calling `/api/strava-*`,
+  selecting a provider, or owning auth. Any connection work must be an injected application-layer
+  façade whose public results contain safe status/action data only.
+- The current Source Manager CSP has `connect-src 'self'`. It permits the existing same-origin
+  config/code-exchange endpoints but blocks the root auth module's direct provider deauthorization
+  request.
+
+#### C1-F2 — current callback handling is not sufficient for a new authorization surface
+
+- Root `redirectToStrava()` performs a full-page redirect but creates no request state. Root
+  `handleAuth()` accepts any non-empty `code` query and exchanges it. It removes the query only
+  after a successful exchange and Token acceptance, so a failed callback can leave the code in the
+  address bar/history.
+- The current server exchange returns the provider response to the browser. The auth lifecycle
+  stores only access token, refresh token, and expiry, but the transient response may include a
+  broader athlete summary. A C1 live boundary must return only the exact Token fields, granted
+  scopes, and normalized athlete identity required by later identity binding.
+- `api/strava-auth.js` accepts any non-empty string code without a fixed length/character contract.
+  It does not accept or validate request state; request state must be created and consumed by the
+  browser before code exchange because it binds the browser session, not the server secret.
+- Existing synthetic callback tests prove only the present root behavior. There is no failure-first
+  evidence for missing/mismatched/replayed/expired state, duplicate query parameters, denied scope,
+  URL scrubbing before failure, Source Manager Demo isolation, or concurrent callback processing.
+
+#### C1-F3 — official provider behavior requires a new revocation decision
+
+- The current official [Strava authentication documentation](https://developers.strava.com/docs/authentication/)
+  documents web authorization-code redirects, optional request `state` echoed in the response,
+  scope reduction by the athlete, short-lived one-use codes, and client-secret server exchange. It
+  does not document PKCE challenge parameters; C1 must not invent or claim provider PKCE support.
+- The same current documentation says that, from 2026-06-01, applications should use
+  `POST https://www.strava.com/oauth/revoke`, authenticated with HTTP Basic client ID/secret, and
+  that it becomes the only supported deauthorization endpoint on 2027-06-01. Revoking a refresh
+  token also revokes associated access tokens.
+- A client secret can never enter browser code, CSP, storage, diagnostics, or fixtures. Correct new
+  revocation therefore needs a same-origin server endpoint that forwards a bounded Token to the
+  provider with server-owned Basic authentication. Reusing the current direct browser
+  `/oauth/deauthorize` call would intentionally build on a sunset path and is rejected for C1.
+- This public documentation read was read-only. No authorization, Token exchange, revoke, API
+  activity request, account, credential, or private data was used.
+
+#### C1-F4 — C1 cannot honestly activate a durable connection before C2/C3
+
+- `createAuthLifecycle()` protects a Legacy library by comparing the exchange athlete ID with the
+  stored Legacy athlete ID. It cannot bind an existing Canonical library because V4 has no
+  SourceConnection or Canonical athlete-owner record.
+- Before C2, a successful Token exchange cannot persist durable connection status or subject
+  identity. Before C3, it cannot import provider activities. Enabling Connect in C1 would therefore
+  produce a shared credential with no durable SourceConnection and no Source Manager Sync value.
+- A Token found after reload proves only `local_credential_present`; it does not prove provider
+  authorization, identity, reachability, or sync. The UI cannot label that state `connected`.
+- Safe sequencing is controller seam first, then C2 identity/state storage, then a separately
+  approved activation correction after C2 and before/with C3. Reordering live activation does not
+  change the owner's C1–C4 direction; it prevents a transient unsafe product state.
+
+#### C1-F5 — collision and frozen-boundary evidence
+
+- PR #31's own merge-base diff still changes only
+  `docs/tasks/pr-25-release-readiness-audit.md`; it has no direct C1 path overlap.
+- `tests/source-manager/source-manager-boundaries.test.js` freezes zero auth/network/Token behavior,
+  the PR-10 nine-path historical maximum, and frozen Import/Repository public surfaces. Any C1
+  implementation must update only the forward-looking Source Manager assertions while preserving
+  the historical PR-10 record.
+- Shared `js/app/auth-lifecycle.js`, `api/strava-auth.js`, and their privacy tests are recent
+  hardening hotspots. Option A avoids them. Option B intentionally collides and therefore requires
+  the larger explicit allowlist and separate security review below.
+- No C1 option needs a dependency, Repository/Import API, V2 schema, Worker, Service Worker, root
+  `index.html`, `js/app/main.js`, destructive storage, or data migration change.
+
+### C1-D1 — choose exactly one activation package
+
+#### C1-A — fail-closed controller seam first (recommended)
+
+Freeze and later implement an application controller and sanitized Source Manager façade without
+enabling live authorization or local credential mutation.
+
+**Exact production behavior**
+
+- The API card status is `authorization_unavailable`; copy says `Connection controller staged;
+  authorization remains unavailable until connection identity and provider import are ready.`
+- Render one disabled `Connect unavailable` button and no Disconnect action. No Token or provider
+  status is read. No OAuth URL, config fetch, callback exchange, revoke, localStorage/sessionStorage,
+  external request, or automatic Sync occurs.
+- The application controller is side-effect free at module import and receives all capabilities by
+  injection. Its exact page façade is:
+
+```text
+getConnectionSnapshot()
+beginConnect()
+disconnect()
+close()
+```
+
+- `getConnectionSnapshot()` returns the exact deeply frozen production object
+  `{ schemaVersion: 1, status: 'authorization_unavailable', code:
+  'AUTHORIZATION_UNAVAILABLE', actions: { connect: false, disconnect: false } }`. It contains no
+  Token, athlete/account ID, provider response, URL, scope string, underlying error, or storage
+  handle.
+- In the production C1 adapter, `beginConnect()` and `disconnect()` fail with fixed
+  `AUTHORIZATION_UNAVAILABLE` before any I/O. `close()` is idempotent and prevents later actions.
+- An unsolicited Source Manager query containing any OAuth-shaped `code`, `state`, `error`, or
+  `scope` field is rejected before any auth/storage/network I/O, never rendered/logged, and scrubbed
+  through an injected same-origin navigation sanitizer before mode dispatch. It preserves a sole
+  valid `mode=real` or `mode=demo` field and otherwise returns to the bare Source Manager path.
+  Duplicate, blank, accessor, malformed, and Proxy navigation inputs fail closed. Demo and invalid
+  modes do not construct the Real controller; the sanitizer performs history replacement only.
+- C2 will supply a durable identity/state port. Live activation remains a separately approved C1.1
+  correction after C2; C3 supplies Sync. C1-A does not create dead provider code or a hidden Token
+  path.
+
+**Literal implementation candidate allowlist — hard maximum of ten paths**
+
+```text
+docs/tasks/pr-41-source-manager-connection-controller.md
+source-manager.html
+js/source-manager.js
+js/app/source-manager.js
+js/app/source-manager-connection.js
+js/pages/source-manager/source-manager.js
+tests/source-manager/source-manager-connection.test.js
+tests/source-manager/source-manager.test.js
+tests/source-manager/source-manager-boundaries.test.js
+tests/source-manager/source-manager-browser-smoke.html
+```
+
+The new PR-41 Task Brief must be the first and sole publication commit on a new isolated branch and
+Draft PR. A third runtime module, shared auth/API file, stylesheet, guide, root page, or eleventh
+path is a material stop requiring a fresh collision record and owner approval.
+
+**Failure-first and browser evidence**
+
+- Module import performs zero fetch, Token/Web Storage, provider, Worker, timer, console, or DOM I/O.
+- Exact façade keys, frozen snapshot, safe statuses/codes, close barrier, repeated action, hostile
+  options, and rejected Promise behavior.
+- `beginConnect`/`disconnect` prove zero fetch, navigation, history, storage, provider, and Import
+  work; existing local file/ZIP behavior is unchanged.
+- Unsolicited callback values are scrubbed before error rendering and never appear in DOM,
+  diagnostics, console, URL-after-scrub, or thrown public errors.
+- Actual-served disposable-profile smoke covers Real, Demo, invalid mode, unsolicited callback,
+  offline, narrow screen, keyboard/focus, zero external requests, existing local import, and
+  unchanged Service Worker bypass behavior. All inputs are deterministic and synthetic.
+
+No migration or data mutation. Rollback is a ten-path code/docs revert; no Token or data needs
+restoration. Public Repository/Import/Storage and all schema/dependency/Worker/Service Worker/server
+API boundaries remain frozen. Architecture/collision risk: **low-to-medium**, limited to Source
+Manager composition and its historical boundary test.
+
+#### C1-B — activate live authorization and revocation in C1 (not recommended before C2)
+
+This option creates a real-capable Source Manager authorization controller before durable
+SourceConnection storage/provider import. It remains selectable only with explicit approval of
+every expansion below; actual account/provider execution is still a later separate gate.
+
+**Exact flow and UI contract**
+
+- Use a same-tab full-page redirect, never popup, iframe, mobile webview, or silent authorization.
+  Connect appears only in Real mode after an explicit click and pre-consent copy naming requested
+  scopes and the absence of automatic Sync.
+- The exact pre-C2 UI state set is `unconfigured`, `authorizing`, `callback_processing`,
+  `local_credential_present`, `reconnect_required`, `disconnecting`, `disconnected`, and `error`.
+  It does not include `connected` or `syncing`. The exact safe error-code set is
+  `AUTH_CONFIG_UNAVAILABLE`, `AUTH_STATE_UNAVAILABLE`, `AUTH_STATE_INVALID`,
+  `AUTH_ACCESS_DENIED`, `AUTH_SCOPE_INSUFFICIENT`, `AUTH_EXCHANGE_FAILED`,
+  `AUTH_IDENTITY_UNCONFIRMED`, `AUTH_IDENTITY_MISMATCH`, `TOKEN_WRITE_FAILED`,
+  `TOKEN_REMOVAL_FAILED`, `REVOCATION_UNCONFIRMED`, `NETWORK_UNAVAILABLE`, and
+  `CONNECTION_CLOSED`; every other failure maps to `AUTH_EXCHANGE_FAILED`.
+- Generate 32 random bytes with injected Crypto, base64url encode them, and store an exact
+  single-use state record in sessionStorage with creation time and same-origin return path. State
+  expires after ten minutes. Storage/Crypto failure blocks before config/network/navigation.
+- Navigate only to `https://www.strava.com/oauth/authorize`. Request only the minimum scopes
+  separately approved for C3; the current root scope string is not inherited automatically. The
+  callback must contain exactly one nonblank code, exactly one exact state, and the approved scope
+  set; denied or reduced scope fails closed without storing a Token. C1-B implementation remains
+  blocked until the C3 scope set is frozen.
+- Consume/delete state and scrub all OAuth query fields before code exchange. Replayed, expired,
+  unsolicited, malformed, duplicate, cross-mode, and concurrent callbacks never call the exchange
+  endpoint. Config uses same-origin GET and exchange uses same-origin POST; both use
+  `credentials: 'same-origin'`, `cache: 'no-store'`, `redirect: 'error'`,
+  `referrerPolicy: 'no-referrer'`, and an abort signal. Exchange alone sends exact
+  `Content-Type: application/json`.
+- The server validates a bounded code, sends the client secret only to the provider, and returns
+  exactly access token, refresh token, expiry, granted scopes, and normalized athlete ID. The
+  browser lifecycle writes only the existing `strava_tokens` record after the Legacy identity guard
+  and injected Canonical identity gate both pass. Nonempty Canonical data without a C2 identity
+  binding returns `identity_unconfirmed` and stores nothing.
+- Until C2, a successful session is labeled `local_credential_present`, not `connected`. There is
+  no SourceConnection, lastSync, activity count, or Sync. Reload derives only local credential/
+  expiry state.
+- Disconnect confirms that the origin-shared Legacy credential is affected. A new same-origin
+  server endpoint revokes the refresh token through the provider's current server-authenticated
+  revoke endpoint, falling back to the access token only when no refresh token exists. The local
+  Token is removed even when revocation is unconfirmed; all local data is retained. No client
+  secret or Basic header reaches browser code.
+- The official provider documentation does not define PKCE parameters. C1-B uses the documented
+  confidential-client authorization-code flow plus mandatory state; it makes no PKCE claim. A
+  security review rejecting that posture blocks C1-B rather than inventing provider support.
+
+**Literal implementation candidate allowlist — hard maximum of twenty-two paths**
+
+```text
+docs/tasks/pr-41-source-manager-connection-controller.md
+source-manager.html
+styles/source-manager.css
+js/source-manager.js
+js/app/source-manager.js
+js/app/source-manager-connection.js
+js/app/auth-lifecycle.js
+js/pages/source-manager/source-manager.js
+api/config.js
+api/strava-auth.js
+api/strava-revoke.js
+tests/source-manager/source-manager-connection.test.js
+tests/source-manager/source-manager.test.js
+tests/source-manager/source-manager-boundaries.test.js
+tests/source-manager/source-manager-browser-smoke.html
+tests/legacy/auth-lifecycle.test.js
+tests/privacy/server-api-logging.test.js
+README.md
+docs/guides/privacy-guide.md
+docs/guides/troubleshooting.md
+docs/guides/known-limitations.md
+tests/docs/release-docs.test.js
+```
+
+`api/strava-revoke.js` is a new public same-origin server route, and
+`js/app/auth-lifecycle.js` changes the shared root/Source Manager Token-revocation contract to
+prefer refresh-token revocation. Those are material API/shared-auth expansions. The Source Manager
+CSP remains `connect-src 'self'` because all browser fetches are same-origin; authorization itself
+is top-level navigation. `scripts/local-dev-server.mjs` dynamically loads API files and must not be
+changed. No dependency, Repository/Import/Storage/schema/Worker/Service Worker path is allowed.
+
+Failure-first coverage additionally requires state entropy/TTL/single use; query scrub on every
+outcome; denied/reduced scopes; malformed/bounded exchange and response; Canonical/Legacy mismatch;
+Token write/remove failures; server Basic-secret isolation; refresh/access revoke selection; revoke
+timeout/401/429/5xx/malformed response; local removal after unconfirmed revoke; two tabs; abort;
+offline; callback replay; fixed diagnostics; and proof that no activity/source/import record changes.
+Browser evidence is synthetic interception only. Real OAuth consent, exchange, refresh/revoke, and
+account identity remain unverified and unauthorized.
+
+No V2 migration, but this option writes/removes the shared local Token and adds a public server API.
+Rollback removes the Source Manager surface and server route while retaining all data; it cannot
+restore a removed/revoked Token. A Token created before C2 may outlive the UI and must be reported as
+local credential only. Architecture/collision risk: **high** across shared auth, server privacy,
+Source Manager CSP/navigation, and later C2 identity semantics.
+
+### C1 recommendation and owner response required
+
+Select exactly one:
+
+- **C1-A (recommended):** authorize a new PR-41 Task Brief/A1 publication, then separately authorize
+  implementation of the ten-path fail-closed controller seam. Live activation waits for C2 and a
+  C1.1 material correction.
+- **C1-B:** authorize the twenty-two-path live controller/API package and explicitly accept the
+  documented confidential-client-plus-state/no-PKCE posture and pre-C2 local-credential-only state.
+  This still does not authorize an actual account/provider request.
+- **Revise:** provide a different sequencing or auth contract; no implementation starts.
+
+Approval of the parent D-A A2 / D-B C decision is not approval of C1-A or C1-B. Until the owner
+selects one and separately authorizes implementation, PR #46 remains docs-only, open, and Draft.
