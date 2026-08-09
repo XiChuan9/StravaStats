@@ -5,9 +5,10 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 M22 / PR-25 |
-| Status | A2 read-only audit complete; production release blocked; material decisions pending |
+| Status | A3 current-tree re-audit complete; Alpha and full-v2.0 release remain blocked |
 | Branch | `codex/v2/release-readiness` |
-| Exact base | `integration/v2@e083fa0d55c8981f0258af546451ebb0d48e4fa4` |
+| Current audit base | `integration/v2@cac3fdb97337a358da08a1f6d92c541519282d5a` |
+| A1 branch point | `integration/v2@e083fa0d55c8981f0258af546451ebb0d48e4fa4` |
 | Allowed path | `docs/tasks/pr-25-release-readiness-audit.md` only |
 | Product authority | Audit only; no production implementation or release action |
 
@@ -586,3 +587,220 @@ does not authorize a version edit, tag, Release, deployment, Ready transition or
 - Audit rollback is an ordinary revert of this docs-only PR. It does not change the underlying P0/P1
   status, which remains release-blocking until separately repaired and verified.
 - PR #31 must remain Draft. A2 authorizes no implementation package and no release action.
+
+## A3 current-tree re-audit after R1-R11 and D3
+
+### Authority, exact state and method
+
+This resumed audit reads the actual current `integration/v2` tree rather than treating the earlier
+A2 inventory or merged-PR descriptions as proof. The unique integration baseline is
+`cac3fdb97337a358da08a1f6d92c541519282d5a`, tree
+`4de9cf52ce5fe50fb223892c94a6d9cb2d3aa8fa`. Its first-parent history contains the squash merges
+for R1/R2, R3, R4/R5, R9, R10 and its residual stabilization, R6, R7, R8, R11, and D3. PR #44 is
+merged at the exact baseline. Integration push CI run `31310574630`, job `93237672950`, concluded
+`success` with every job step successful.
+
+The locked integration worktree was clean at that exact commit. The feature branch intentionally
+remains based on its original A1 branch point and was not rebased or merged with integration; this
+avoids creating an unauthorized contract-resolution commit. PR #31 remains the docs-only audit
+vehicle and must stay OPEN/Draft.
+
+Evidence executed or read authoritatively for A3:
+
+```text
+integration worktree/head/status       cac3fdb97337a358da08a1f6d92c541519282d5a; clean
+integration push CI                    PASS run 31310574630 / job 93237672950
+postmerge npm ci                       PASS (control-tower exact-base evidence)
+postmerge syntax                       PASS, 260 files (control-tower exact-base evidence)
+postmerge privacy                      PASS (control-tower exact-base evidence)
+postmerge full test                    PASS, 1,707/1,707 (control-tower exact-base evidence)
+postmerge diff check                   PASS (control-tower exact-base evidence)
+A3 focused current-tree matrix         PASS, 632/632
+server-log served test rerun           PASS, 40/40 on isolated loopback
+npm audit --omit=dev                   PASS, 0 reported vulnerabilities
+package version                        1.0.0
+remote tags                            baseline-strava-api-2026-07-28 only
+public GitHub Releases API             empty
+real/private/provider/profile evidence NOT RUN
+```
+
+The first focused invocation recorded 631 passes and one environment-only `listen EPERM` at
+`127.0.0.1`; the exact affected 40-test server-log file then passed 40/40 with isolated loopback
+permission. This is a complete focused 632/632 result, not a hidden product failure. No provider,
+real Token, private activity/file/library, user browser profile, production deployment, or user
+storage was accessed.
+
+### Earlier inventory reconciliation against the current tree
+
+`CLOSED` below means the earlier code defect is no longer present in the current production tree
+and its deterministic evidence passes. It does not promote a real-data, browser, deployment, or
+release-owner gate to PASS.
+
+| Earlier item | Current-tree disposition | Authoritative current evidence and remaining boundary |
+| --- | --- | --- |
+| P0-01 / R1-R2 DOM and opaque IDs | CLOSED | Hostile provider text and opaque string IDs use native DOM assignment and encoded navigation; root, detail and gear boundary tests pass. No new reachable persistent-injection P0 was found in the audited production entry graph. |
+| P0-02 / R3 tracked identity | CLOSED in current code; incident BLOCKED | Current production/demo sources and privacy guard contain no specific athlete identity or numeric identity coercion. Whether already-public Git history requires incident action remains a separate owner decision; this audit neither repeats values nor authorizes history rewrite. |
+| P0-03 / R4-R5 raw logs | CLOSED | Server paths emit fixed safe events; browser paths emit fixed messages or non-identifying bounded counts. Canary/error tests pass. The raw quick-start example is not imported by a production entry. |
+| P0-04 and P1-01 / R6 weather | CLOSED | Ordinary startup performs zero weather request. A session-only, specific consent gates the bounded Open-Meteo request; missing remains missing and genuine zero remains zero. Exact approved fields are one rounded point and one date. |
+| P0-05 / R7 AI | CLOSED | Demo performs zero I/O. A user gesture and per-request Google Gemini preview/consent gate only a question plus two rounded relative aggregate buckets; names, IDs, dates, gear, PB, GPS, HR, power and history are excluded. Key and history are memory-only. |
+| P0-06 / R8 maps | CLOSED | Remote OSM tiles require per-map, memory-only coarse-location consent; zoom, hosts, request count, referrer, timeout, revoke and navigation boundaries pass. No activity fields are sent. |
+| P0-07 / R9 SW private cache | CLOSED | Only queryless same-origin static request classes are eligible. API, query, telemetry, weather, AI, map, credential and navigation traffic bypass; response admission is bounded. |
+| P0-08 / D3 SW lifecycle | CLOSED for deterministic code; environmental gate PARTIAL | Immutable owned cache `stravastats-static-v2-000001`, required seed install, drained-client activation and fixed waiting UI replace broad cache deletion, `skipWaiting` and `clients.claim`. Native production-like update, multi-tab, cold-offline, failed-deploy and combined rollback evidence is still not run. |
+| P0-09 / R10 Legacy probe | CLOSED with accepted Option B residual | Auth/reader code contains zero `deleteDatabase`. Presence must be safely proven; otherwise state is unknown. The accepted TOCTOU residual can at worst leave an empty version-1 database with zero stores/user records after an external deletion plus abort failure; it is never classified first-run and no user data is deleted. |
+| P1-02 / R11 telemetry/CDN | CLOSED | Production runtime telemetry is unreachable/disabled. Runtime assets are exact same-origin vendored files with integrity, CSP and no-referrer controls. The tracked Speed Insights helper has no production-entry import. Consent-gated weather/AI/map remain separate disclosed destinations. |
+| P1-03 browser/platform | PARTIAL | Deterministic disposable macOS Chromium/Chrome evidence exists; the PRD Safari/Firefox, Windows, iOS/PWA and broader assistive-technology claims were not executed. |
+| P1-04 performance | PARTIAL | Synthetic 5,000 and 200,000 activity checks pass. The 10,000-activity and 1,000-FIT records still lack approved absolute budgets; some browser evidence uses disclosed Chart/Leaflet/Canonical Store stubs. |
+| P1-05 interactive/accessibility/visual | PARTIAL | Focused keyboard, responsive and accessibility contracts pass, but app-shell interactive/long-task, screen-reader, full responsive/visual/mobile and localization matrices are incomplete. |
+
+The earlier privacy, logging, external-network, cache and lifecycle code fixes therefore close the
+corresponding old findings. Passing 1,707 tests and current integration CI does not close the
+environmental or owner-authorized rows below.
+
+### New current-tree P0/P1 findings
+
+| ID | Severity/status | Current-tree finding | Minimum closure |
+| --- | --- | --- | --- |
+| A3-P0-01 | P0 / BLOCKED | The production root still states: “Your Strava data is processed in your browser only. Nothing is stored or sent to any server.” This absolute statement is false for the optional same-origin Legacy provider connector and the now-consented weather, AI and map destinations. | A dedicated product PR must replace it with exact, stage-appropriate disclosure and freeze the truthfulness contract with a deterministic privacy test. No public Alpha or v2.0 should ship with the current claim. |
+| A3-P0-02 | P0 for full v2.0 / BLOCKED | PRD section 4.1 requires the existing Strava API to remain as an optional connector, and section 8.2 requires source connection states and Disconnect. The Canonical Source Manager still labels provider connection outside PR-10 and exposes disabled `Connect later`/`Disconnect` controls. | Choose mutually exclusively: implement the canonical connector lifecycle; formally amend/narrow the v2.0 P0 contract; or release only a clearly scoped Alpha that defers this full-v2.0 requirement. |
+| A3-P0-03 | P0 for full v2.0 / PARTIAL | Import Core persists failed work and supports explicit `retryJob`, but Source Manager exposes cancellation/reports and no retry/recovery action. PRD sections 4.1, 7.1, 13.4 and 13.5 require recovery/retry and per-report retry. The accepted PR-10 brief explicitly deferred retry UI. | If full v2.0 retains the PRD contract, add a separate bounded Source Manager recovery UI task with deterministic reload/failure/idempotency tests. An Alpha deferral must be explicit and time-bounded. |
+| A3-P1-01 | P1 / BLOCKED | `known-limitations.md`, `privacy-guide.md`, the PR-24 ledger and its docs test still describe several pre-R3-R11/D3 blockers as current, including old logging, automatic weather and broad SW behavior. Release documentation is no longer an accurate current-tree ledger. | After the product/scope decisions, use a separate docs-reconciliation PR to state closed code findings, retained residuals and still-unrun environmental evidence. Do not falsify history in this A3 audit. |
+| A3-P1-02 | P1 / PARTIAL | Performance, supported-browser, PWA/mobile, broad accessibility/visual and production-like lifecycle evidence remains incomplete. | Run the authorized environments or record explicit, owner-named, time-bounded scope waivers with expiry. |
+
+No other code-level privacy, raw-log, unauthorized-egress, private-cache, destructive-Legacy-probe,
+telemetry/CDN or SW-lifecycle P0 was found in the current tree. `A3-P0-01` is an immediate release
+blocker for both Alpha and full v2.0. `A3-P0-02` and `A3-P0-03` are full-v2.0 product-completeness
+blockers; they may be deferred only by explicitly choosing an Alpha scope, not by inference from
+passing tests.
+
+### Alpha versus full-v2.0 remaining roadmap
+
+| Gate | Alpha | Full v2.0 | Closure authority |
+| --- | --- | --- | --- |
+| Truthful root privacy disclosure | BLOCKED | BLOCKED | Deterministic product fix and privacy contract test |
+| R1-R2 and R4-R11 current-tree code safety | PASS | PASS | Current deterministic tests and source inspection |
+| R3 public-history incident disposition | BLOCKED | BLOCKED | Privacy/security owner; no history rewrite is authorized here |
+| Canonical Source Manager Strava Connector | PARTIAL if explicitly deferred and labeled | BLOCKED | Product owner chooses Alpha deferral, implementation, or formal PRD amendment |
+| Import retry/recovery UI | PARTIAL if explicitly deferred and labeled | BLOCKED | Product owner chooses Alpha deferral or retained P0 implementation |
+| R10 Option B residual | PARTIAL, disclosed accepted residual | PARTIAL, disclosed accepted residual | Already accepted; retain limitation and monitoring language |
+| Deterministic performance/accessibility/visual work | PARTIAL | PARTIAL | Engineering runs after budgets/scope are frozen |
+| Real Disconnect/import/private-library parity | BLOCKED | BLOCKED | Authorized account/library owner and redaction reviewer |
+| Cross-browser/platform claim | BLOCKED absent a scoped waiver | BLOCKED absent chosen matrix/waiver | Product/release owner and actual environments |
+| Native production-like SW and combined rollback | BLOCKED | BLOCKED | Deployment-policy authorization and named release/rollback owners |
+| Current release documentation | BLOCKED | BLOCKED | Separate current-tree documentation reconciliation |
+| Version/tag/artifact/release approval | BLOCKED | BLOCKED | Final release owner after all retained stage gates close |
+
+An Alpha may deliberately retain `Connect later`, the accepted R10 residual, synthetic-only parity,
+and a narrower browser/performance claim only when those limitations, owner, expiry and promotion
+criteria are explicit. Privacy/data-loss/unauthorized-egress defects are not waivable; therefore the
+current root disclosure must be repaired before either stage. Full v2.0 remains blocked by all
+retained PRD P0s plus the real/private, platform, deployment/rollback, history, documentation and
+artifact gates.
+
+### Six separated remaining evidence and decision packages
+
+These packages are mutually scoped. They must not be combined into one implementation or release
+PR, and none is authorized by this audit.
+
+#### 1. Deterministic, no-real-data work
+
+Recommended immediate next task: **root privacy disclosure correction**.
+
+Exact candidate allowlist:
+
+```text
+docs/tasks/pr-39-root-privacy-disclosure.md
+index.html
+tests/privacy/root-privacy-disclosure.test.js
+```
+
+Dependency: none. Verification must prove the root copy accurately distinguishes local library
+processing, optional same-origin provider operations, and separately consented third-party
+weather/AI/map requests; it must not imply that consented egress never occurs. Run repository
+minimum gates plus the focused privacy test. Rollback is code/docs-test revert only, but restoring
+the false absolute disclosure is not an acceptable release rollback. Privacy/data impact: no data
+read or mutation and no network change. Material decision: approve exact Alpha/full-v2.0 copy.
+
+Later deterministic tasks, each separately briefed, are:
+
+- Source Manager optional-provider lifecycle, only after the product decision; candidate production
+  paths are `source-manager.html`, its scoped styles/controller/facade, provider connector/auth
+  boundary files identified by the new brief, and new synthetic source-state tests. No real OAuth
+  evidence belongs in that implementation PR.
+- Source Manager retry/recovery UI, separately from provider connection; candidate paths are
+  `source-manager.html`, `js/pages/source-manager/source-manager.js`, its import facade, and focused
+  deterministic reload/failure/retry UI tests. It must reuse Import Core rather than change schema.
+- Performance and interaction gates after exact thresholds/scope are chosen: 10,000 activities,
+  1,000 synthetic FIT files, app-shell interactive/long-task, keyboard/accessibility, responsive and
+  visual evidence. Missing budgets require an owner decision or time-bounded waiver first.
+- Current release-document reconciliation after product scope is frozen. Candidate evidence paths
+  are `docs/guides/known-limitations.md`, `docs/guides/privacy-guide.md`,
+  `docs/tasks/pr-24-release-documentation.md` and `tests/docs/release-docs.test.js`; any README or
+  changelog change requires its later brief to justify and allowlist it explicitly.
+
+#### 2. User/private credential and data evidence
+
+Keep D1 decision-only and public-docs-only until authorized. Required evidence is real OAuth and
+Disconnect with before/after local counts, Legacy rescue/restore, real FIT/TCX/GPX/ZIP imports,
+duplicate behavior, representative private-library Shadow/parity and discrepancy sign-off. Private
+artifacts remain outside Git; the account/library owner, retention policy, redaction reviewer and
+parity tolerances must be named. No run may clear, migrate, overwrite or delete Legacy or V2 data.
+
+#### 3. Cross-browser/platform evidence or waiver
+
+Keep D2 separate. Choose exact Chrome/Safari/Firefox versions, macOS/Windows environments and any
+retained iOS Safari/PWA/mobile/accessibility claim, or approve a narrower time-bounded stage claim
+with owner, reason, expiry and promotion criteria. Execute import, storage, backup, detail, offline,
+keyboard and responsive evidence in every retained environment. Disposable macOS Chromium alone is
+not parity with this matrix.
+
+#### 4. Production-like deployment, SW and combined rollback
+
+D3 deterministic code work is closed, but native deployment evidence remains in D3 and combined
+rollback remains D4. They require explicit deployment-policy authorization. Exercise clean install,
+upgrade, waiting worker, drained clients, multi-tab old/new combinations, cold offline, owned-cache
+eviction, failed deploy and rollback worker. Then rehearse deployment rollback, Feature Flag
+Legacy fallback, V2 backup/fresh restore, Legacy startup, Disconnect and preserved Legacy/V2/settings
+counts as one sequence. `clear-site-data`, cache-wide deletion and database deletion are prohibited.
+
+#### 5. R3 public Git-history incident disposition
+
+Current-tree removal is closed; public-history disposition is not. A privacy/security owner must
+choose and document: retain history with incident assessment and mitigations; coordinate a separate
+repository-history remediation under explicit authorization; or another approved incident path.
+This audit recommends formal assessment and credential/account-impact review before any rewrite.
+PR-25 authorizes no rewrite, force-push, value repetition or branch cleanup.
+
+#### 6. Final version, tag, artifact and release-owner approval
+
+Keep D5 last and separate. Current facts are package `1.0.0`, only the baseline tag and no public
+GitHub Release. After the retained Alpha or v2.0 gates close, named owners must approve exact stage
+and version, commit, changelog/date, tag, artifact, checksums/signatures, deployment target, release
+notes, rollback target and approval record. PR-25 authorizes none of those actions.
+
+### Minimum mutually exclusive decisions and recommended order
+
+1. Approve exact truthful root privacy disclosure; then execute only the three-path immediate task
+   above. This is the recommended next task and is required for both Alpha and full v2.0.
+2. Choose **Alpha now** versus **continue directly to full v2.0**. Alpha must publish explicit
+   deferrals, owners and promotion criteria. Full v2.0 must retain or formally amend every PRD P0.
+3. For the Source Manager connector choose exactly one: implement the canonical optional connector;
+   formally amend/narrow the v2.0 P0; or defer only under the Alpha decision. Independently choose
+   implementation versus Alpha deferral for import retry/recovery UI.
+4. Choose actual browser/platform execution versus a time-bounded narrower support claim. Choose
+   performance budgets versus time-bounded stage waivers.
+5. Authorize and staff D1, D3/D4 and the R3 incident review as separate packages. Only after those
+   outcomes and current docs reconciliation may D5 approve an artifact.
+
+### A3 release decision and stop boundary
+
+**The current integration tree is not release-ready. Alpha and full v2.0 remain `BLOCKED`.** The old
+R1-R11 and deterministic D3 code blockers are substantially closed, but A3 found one code-level P0
+privacy-disclosure defect that blocks both stages, two retained PRD P0 completeness gaps that block
+full v2.0 unless Alpha scope is explicitly chosen, stale release documentation, and multiple
+external evidence/owner gates. No test or CI pass converts those environmental gates to PASS.
+
+This Task Brief is the only changed path. A3 makes no product, test, package/version, workflow,
+schema, Service Worker, deployment or release change. It reads no real/private data and has no
+migration, storage or external-network effect. Audit rollback is an ordinary revert of the one
+docs-only commit. PR #31 must remain OPEN/Draft; no Ready transition, merge, tag, Release, deploy,
+cleanup or implementation begins in this audit thread.
