@@ -5,14 +5,14 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 release hardening / A3-P0-01 |
-| Status | A2 contract frozen; implementation pending |
+| Status | Local Final Review Closure complete; remote exact-head, CI, and Ready gates pending |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/root-privacy-disclosure` |
 | Exact base | `integration/v2@cac3fdb97337a358da08a1f6d92c541519282d5a` |
 | Exact base tree | `4de9cf52ce5fe50fb223892c94a6d9cb2d3aa8fa` |
 | Owner | Codex |
 | Dependency | Integration push CI run `31310574630`, job `93237672950`, successful |
-| Pull request | Draft PR pending, targeting `integration/v2` |
+| Pull request | Draft PR [#45](https://github.com/XiChuan9/StravaStats/pull/45), targeting `integration/v2` |
 | Control tower | `019fa697-6cbf-70f1-a120-bf31ecc9e2ba` |
 
 ## Goal and authority
@@ -150,4 +150,57 @@ remove a branch/worktree, or rewrite history. Squash Merge remains separate user
 
 ## Final Review Closure
 
-Pending implementation, independent review, remote exact-head verification, and CI.
+Local implementation and independent review closed on 2026-08-09 at review-fix commit
+`4cd16ce25fafeac7748d228477999d926001c537`.
+
+- Publication evidence: the first feature-branch commit
+  `b0f8a379530f6fb243c0c5dd35f27bf8b4a3ce83` contains only this Task Brief. It was pushed
+  normally. The GitHub App returned `403 Resource not accessible by integration`, so the exact
+  Draft-PR create was delegated to the control tower. Control-tower readback confirmed PR #45 is
+  open and Draft with the exact title, base `integration/v2@cac3fdb97337a358da08a1f6d92c541519282d5a`,
+  Task-Brief-only head, one commit, one changed file, and the safe body. No Ready, merge, or other
+  PR write occurred.
+- Failure-first evidence: before editing production, the new focused suite passed its unchanged
+  root-digest and Task-Brief tests but failed its static and served copy assertions against the
+  inherited absolute claim, for an expected result of 2/4 pass and 2/4 fail. After the production
+  correction, the suite passed 4/4.
+- Implementation evidence: commit `22c821fc06437fbbebf8de1da8205431a199b642` changes only
+  `index.html` and `tests/privacy/root-privacy-disclosure.test.js`. The exact replacement states
+  that the activity library is local by default and that only explicit actions or consents may
+  contact the four named external-service categories under their existing separate disclosures.
+  The regression freezes the exact text, absence of both old absolute sentences, literal
+  three-path allowlist, served `/` and `/ai-coach` output, and a normalized exact-base root digest.
+- Review-fix evidence: the first independent findings-first review found two P2 issues: production
+  and the initial test added the word `user` beyond the Task Brief's exact frozen text, and the
+  normalized-root test could mask arbitrary executable markup placed inside the disclosure. Commit
+  `4cd16ce25fafeac7748d228477999d926001c537` aligns production and test text exactly and requires
+  the precise `<strong>` plus plain-text structure before normalization. Both focused, syntax, and
+  privacy checks passed after the fixes.
+- Fresh review evidence: a separate independent reviewer re-audited the exact range
+  `cac3fdb97337a358da08a1f6d92c541519282d5a..4cd16ce25fafeac7748d228477999d926001c537`
+  from scratch and reported **no findings**. The reviewer independently reproduced the three-path
+  scope, exact copy, markup rejection, normalized base digest, product truth, and unchanged
+  behavior/CSP/route/script/style/storage/migration/provider/Service Worker surfaces.
+- Focused and repository evidence: the post-fix R6/R7/R8/R9/R10/R11/D3 plus PR-39 boundary run
+  passed 183/183. The final full suite passed 1711/1711. `npm run check:syntax` passed for 261 files,
+  `npm run check:privacy` passed, `git diff --check` passed, and the exact base-to-head path audit
+  contains only the three frozen paths.
+- Actual-served browser evidence: a fresh in-app browser automation tab loaded the local production
+  root from `127.0.0.1:3001` without a user Chrome profile, account, Token, private activity, or real
+  external request. The final head rendered exactly one disclosure with the frozen text and exact
+  strong-plus-text markup; neither old absolute sentence was present. The page asset inventory
+  contained 103 local/same-origin assets and zero external assets, with zero console warnings or
+  errors. The browser tab and loopback server were closed after evidence capture.
+- Behavior and privacy result: no egress behavior, endpoint, request field, consent, provider/auth,
+  storage, schema, public API, dependency, Service Worker, algorithm, route, Demo/Legacy/Shadow/
+  Canonical behavior, disconnect, deletion, or retention contract changed. No real external
+  service, account, credential, athlete data, location, health/power value, private fixture, or user
+  profile was used.
+- Migration and rollback result: there is no migration, data mutation, cache operation, or
+  destructive action. Legacy and V2 data remain untouched. The change rolls back by reverting only
+  the disclosure and its static/served regression; the existing Legacy application rollback path
+  is unchanged.
+- Remaining gates and limitations: local browser evidence is not a production deployment check.
+  Normal push, true remote depth-1 exact-head verification, exact-head GitHub CI success, final safe
+  PR body publication, and control-tower Ready transition remain pending. Ready will not authorize
+  merge, cleanup, deploy, release, Source Manager work, data/cache deletion, or history rewrite.
