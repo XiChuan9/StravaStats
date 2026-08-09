@@ -122,6 +122,14 @@ features use provider, weather, map, or explicitly user-authorized AI services. 
 [Privacy Guide](./docs/guides/privacy-guide.md) and
 [Known Limitations](./docs/guides/known-limitations.md) before production use.
 
+External base-map tiles are denied by default. A Real map with validated local geometry offers the
+explicit action **“Load approximate OpenStreetMap tiles for this map”**; the grant is memory-only,
+applies to that map in that document, and permits only coarse OpenStreetMap tiles at zoom 11 or
+lower. Demo performs no map grant or location request. Revocation cancels registered loads and
+blocks future requests, but cannot recall requests already received or erase browser/provider
+records. Leaflet code is still loaded from `unpkg.com`; that separate CDN trust boundary remains
+part of the release privacy review.
+
 ## Compatibility and verification boundary
 
 The PRD targets recent Chrome, Safari, and Firefox, macOS and Windows desktop, and basic iOS

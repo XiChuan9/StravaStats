@@ -2,6 +2,7 @@
 
 import { formatPace, formatTime, formatDate, formatSpeedBike } from '../../shared/utils/index.js';
 import { getCachedActivities } from '../../services/activity-cache.js';
+import { readValidatedCoordinate, readValidatedRouteGeometry } from '../../app/map-location-egress.js';
 
 // ===================================================================
 // HELPERS
@@ -13,21 +14,6 @@ function getDefaultValues(type) {
 }
 function getCustomData(gearId) { return JSON.parse(localStorage.getItem(`gear-custom-${gearId}`) || '{}'); }
 function saveCustomData(gearId, data) { localStorage.setItem(`gear-custom-${gearId}`, JSON.stringify(data)); }
-
-function decodePolyline(str) {
-    let index = 0, lat = 0, lng = 0;
-    const coords = [];
-    while (index < str.length) {
-        let b, shift = 0, result = 0;
-        do { b = str.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
-        lat += (result & 1) ? ~(result >> 1) : (result >> 1);
-        shift = 0; result = 0;
-        do { b = str.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
-        lng += (result & 1) ? ~(result >> 1) : (result >> 1);
-        coords.push([lat / 1e5, lng / 1e5]);
-    }
-    return coords;
-}
 
 // Simple stat cell (neutral card, no colors)
 function statCell(value, label) {
@@ -65,7 +51,12 @@ function createStatCellNode(value, label) {
 // MAIN ENTRY POINT
 // ===================================================================
 
-export async function renderGearDetailPage(gearId) {
+export async function renderGearDetailPage(gearId, { sessionMode, mapLocationBoundary } = {}) {
+    if (sessionMode === 'demo') {
+        const message = styledElement('div', 'padding:2rem;text-align:center;', 'Demo gear maps stay local. Real gear data was not read.');
+        document.body.replaceChildren(message);
+        return;
+    }
     const activityCache = await getCachedActivities();
     const allActivities = activityCache?.activities || [];
     const allGears = JSON.parse(localStorage.getItem('strava_gears') || '[]');
@@ -93,7 +84,7 @@ export async function renderGearDetailPage(gearId) {
     renderGearHealth(gear, gearActivities);
     renderGearStats(gearActivities, gear.type);
     renderGearAdvanced(gear, gearActivities);
-    renderGearMap(gearActivities);
+    renderGearMap(gearActivities, mapLocationBoundary);
     renderGearUsageChart(gearActivities);
     renderGearPaceEvolutionChart(gearActivities, gear.type);
     renderGearCumulativeElevationChart(gearActivities);
@@ -363,36 +354,52 @@ function renderGearAdvanced(gear, activities) {
 // MAP
 // ===================================================================
 
-function renderGearMap(activities) {
+function renderGearMap(activities, mapLocationBoundary) {
     const mapContainer = document.getElementById('gear-map');
     if (!mapContainer) return;
-    if (!activities.length) { mapContainer.innerHTML = '<p style="padding:1rem;color:#64748b;">No location data.</p>'; return; }
-
-    const map = L.map('gear-map').setView([40.7128, -74.006], 10);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors' }).addTo(map);
-
     const palette = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#8b5cf6', '#ec4899', '#06b6d4'];
-    const bounds = [];
+    const items = activities.map((act, index) => {
+        const route = readValidatedRouteGeometry(act, null);
+        const start = readValidatedCoordinate(act, 'start_latlng');
+        return { act, index, route, start };
+    });
+    const coordinates = [];
+    for (const item of items) {
+        if (item.route.length) {
+            for (const point of item.route) coordinates.push(point);
+        }
+        else if (item.start) coordinates.push(item.start);
+    }
 
-    activities.forEach((act, idx) => {
-        const color = palette[idx % palette.length];
-        let coords = null;
-        if (act.map?.summary_polyline || act.map?.polyline) coords = decodePolyline(act.map.summary_polyline || act.map.polyline);
-        if (coords?.length) {
-            const tooltip = document.createElement('span');
-            tooltip.textContent = `${act.name || 'Activity'} · ${(act.distance / 1000).toFixed(1)} km`;
-            L.polyline(coords, { color, weight: 2.5, opacity: 0.7 }).addTo(map)
-                .bindTooltip(tooltip);
-            coords.forEach(c => bounds.push(c));
-        } else if (act.start_latlng?.length === 2) {
-            bounds.push(act.start_latlng);
-            const tooltip = document.createElement('span');
-            tooltip.textContent = act.name || 'Activity';
-            L.circleMarker(act.start_latlng, { radius: 5, color, fillOpacity: 0.8 }).addTo(map).bindTooltip(tooltip);
+    mapLocationBoundary?.present({
+        container: mapContainer,
+        coordinates,
+        revisionKey: 'gear-aggregate',
+        aggregate: true,
+        leaflet: globalThis.L,
+        unavailableCopy: 'No local route location is available for this gear.',
+        drawOverlay(map) {
+            const group = L.layerGroup().addTo(map);
+            for (const { act, index, route, start } of items) {
+                const color = palette[index % palette.length];
+                if (route.length) {
+                    const tooltip = document.createElement('span');
+                    tooltip.textContent = `${act.name || 'Activity'} · ${(act.distance / 1000).toFixed(1)} km`;
+                    L.polyline(route, { color, weight: 2.5, opacity: 0.7 })
+                        .bindTooltip(tooltip)
+                        .addTo(group);
+                } else if (start) {
+                    const tooltip = document.createElement('span');
+                    tooltip.textContent = act.name || 'Activity';
+                    L.circleMarker(start, { radius: 5, color, fillOpacity: 0.8 })
+                        .bindTooltip(tooltip)
+                        .addTo(group);
+                }
+            }
+            return group;
         }
     });
 
-    if (bounds.length) map.fitBounds(bounds, { padding: [20, 20] });
 }
 
 // ===================================================================

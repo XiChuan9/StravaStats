@@ -274,6 +274,85 @@ test('detail renderers are injected-only consumers with no provider fallback', (
     }
 });
 
+test('detail renderer route consumers reject accessor, extra-element, and revoked geometry before transformation', async () => {
+    for (const [relativePath, value] of rendererSources) {
+        const safeRead = value.indexOf('const mapCoordinates = getActivityRouteCoordinates(activity, streams);');
+        const cloneActivity = value.indexOf('const activityData = structuredClone(activity);');
+        const cloneStreams = value.indexOf('const streamData = structuredClone(streams);');
+        assert.notEqual(safeRead, -1, relativePath);
+        assert.equal(safeRead < cloneActivity, true, relativePath);
+        assert.equal(safeRead < cloneStreams, true, relativePath);
+        assert.match(
+            value,
+            /renderActivityMap\(activityData, streamData, mapCoordinates\)/,
+            relativePath
+        );
+    }
+
+    const priorDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+    const priorWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+    try {
+        Object.defineProperty(globalThis, 'document', {
+            configurable: true,
+            value: { getElementById: () => null }
+        });
+        Object.defineProperty(globalThis, 'window', {
+            configurable: true,
+            value: {}
+        });
+
+        for (const directory of ['activity', 'run', 'bike', 'swim']) {
+            const module = await import(
+                `../../js/pages/${directory}/${directory}.js?r8-hostile-route=${Date.now()}-${directory}`
+            );
+            let accessorReads = 0;
+            const accessorActivity = {};
+            Object.defineProperty(accessorActivity, 'map', {
+                enumerable: true,
+                get() {
+                    accessorReads += 1;
+                    return { summary_polyline: '??' };
+                }
+            });
+            const accessorPoint = [];
+            Object.defineProperty(accessorPoint, '0', {
+                enumerable: true,
+                get() {
+                    accessorReads += 1;
+                    return 37;
+                }
+            });
+            Object.defineProperty(accessorPoint, '1', { enumerable: true, value: -122 });
+            accessorPoint.length = 2;
+            const revoked = Proxy.revocable({}, {});
+            revoked.revoke();
+
+            assert.deepEqual(module.getActivityRouteCoordinates(accessorActivity, {}), [], directory);
+            assert.deepEqual(
+                module.getActivityRouteCoordinates({}, { latlng: { data: [[37, -122, 9]] } }),
+                [],
+                directory
+            );
+            assert.deepEqual(
+                module.getActivityRouteCoordinates({}, { latlng: { data: [accessorPoint] } }),
+                [],
+                directory
+            );
+            assert.deepEqual(
+                module.getActivityRouteCoordinates(revoked.proxy, revoked.proxy),
+                [],
+                directory
+            );
+            assert.equal(accessorReads, 0, directory);
+        }
+    } finally {
+        if (priorDocument) Object.defineProperty(globalThis, 'document', priorDocument);
+        else delete globalThis.document;
+        if (priorWindow) Object.defineProperty(globalThis, 'window', priorWindow);
+        else delete globalThis.window;
+    }
+});
+
 test('weather, zones, and Swim athlete behavior stays behind injected boundaries', () => {
     for (const [relativePath, value] of rendererSources) {
         assert.match(value, /if\s*\(weatherFeatureEnabledForPage\)/, relativePath);

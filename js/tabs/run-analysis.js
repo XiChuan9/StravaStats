@@ -1541,63 +1541,13 @@ export function renderEddingtonSection(runs) {
 export function renderRunsHeatmap(runs) {
     const mapDiv = getElement("runs-heatmap");
     if (!mapDiv) return;
-
-    // Set container size
     mapDiv.style.width = "100%";
     mapDiv.style.height = "400px";
-
-    // Recolectar puntos (inicio y fin)
-    const markerPoints = [];
-    runs.forEach(run => {
-        if (run.start_latlng?.length >= 2) {
-            markerPoints.push({ lat: run.start_latlng[0], lng: run.start_latlng[1], type: "start" });
-        }
-        if (run.end_latlng?.length >= 2) {
-            markerPoints.push({ lat: run.end_latlng[0], lng: run.end_latlng[1], type: "end" });
-        }
-    });
-
-    if (markerPoints.length === 0) {
-        mapDiv.innerHTML = `<p>No valid coordinates found. Runs: ${runs.length}</p>`;
-        return;
-    }
-
-    // Eliminar mapa anterior si existe
     if (window.runsPointsMap) {
         window.runsPointsMap.remove();
         window.runsPointsMap = null;
     }
-    mapDiv.innerHTML = "";
-
-    // Inicializar mapa Leaflet
-    if (typeof L !== "undefined") {
-        const first = markerPoints[0];
-        window.runsPointsMap = L.map(mapDiv).setView([first.lat, first.lng], 3);
-
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-            attribution: "&copy; OpenStreetMap contributors"
-        }).addTo(window.runsPointsMap);
-
-        // Agregar marcadores
-        markerPoints.forEach(p => {
-            const color = p.type === "start" ? "green" : "red";
-            L.circleMarker([p.lat, p.lng], {
-                radius: 4,
-                color,
-                fillColor: color,
-                fillOpacity: 0.8,
-                weight: 1
-            })
-                .bindPopup(`${p.type === "start" ? "Start" : "End"} Point`)
-                .addTo(window.runsPointsMap);
-        });
-
-        // Ajustar vista
-        const bounds = markerPoints.map(p => [p.lat, p.lng]);
-        if (bounds.length > 1) window.runsPointsMap.fitBounds(bounds);
-    } else {
-        mapDiv.innerHTML = `<p>Leaflet.js is required for map visualization.</p>`;
-    }
+    mapDiv.textContent = `Run location maps are unavailable here. Runs: ${Array.isArray(runs) ? runs.length : 0}`;
 }
 
 

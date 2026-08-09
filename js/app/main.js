@@ -740,7 +740,12 @@ document.addEventListener('DOMContentLoaded', () => {
         'activities-tab': { render: () => renderActivitiesTab(allActivities) },
         'calendar-tab': { render: () => renderCalendarTab(allActivities) },
         'weather-tab': { render: () => renderWeatherTab(allActivities, { sessionMode: activeSessionMode }) },
-        'map-tab': { render: () => renderMapTab(allActivities, dateFilterFrom, dateFilterTo), usesFilters: true },
+        'map-tab': {
+            render: () => renderMapTab(allActivities, dateFilterFrom, dateFilterTo, {
+                sessionMode: activeSessionMode
+            }),
+            usesFilters: true
+        },
         'wrapped-tab': { render: () => renderWrappedTab(allActivities) },
         'ai-chat-tab': {
             render: () => renderAIChatTab(aiCoachActivitySnapshot, {

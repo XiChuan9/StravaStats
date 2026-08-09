@@ -401,6 +401,24 @@ Interactivity is implemented through DOM controls rather than a framework state 
 - map mode switching
 - AI chat suggestions and bounded document-memory conversation history
 
+### Map location-egress boundary
+
+`js/app/map-location-egress.js` is the single owner of external tile requests. It accepts only
+dense finite numeric latitude/longitude geometry, computes a coarse tile envelope before any map or
+network side effect, and begins every map denied. A grant exists only in page memory and applies to
+one map. Demo has no grant state and does not pass coordinates into the Leaflet seam.
+
+The request grammar is limited to PNG `GET` paths on the exact OpenStreetMap `a`, `b`, and `c`
+tile hosts with zoom `0..11`. The fetch-backed grid layer omits credentials and referrers, rejects
+redirects, bypasses HTTP reuse with `no-store`, uses a four-second timeout and bounded concurrency,
+does not retry, and revokes its Blob URLs. Map bounds and `noWrap` prevent interaction from
+expanding beyond the initially approved coarse envelope. Raw `L.tileLayer` provider templates are
+not permitted in production consumers.
+
+Leaflet and Leaflet.heat remain third-party same-context code loaded from `unpkg.com`. That CDN
+trust and lifecycle surface belongs to R11; the tile consent boundary must not be described as
+closing it.
+
 ## 10. Detailed Feature Breakdown By Tab
 
 ### Dashboard

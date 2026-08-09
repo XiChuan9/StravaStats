@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>R8 map-location consent browser smoke</title>
+</head>
+<body data-status="running">
+    <output id="result">running</output>
+    <div id="real-map-boundary"></div>
+    <div id="rejected-map-boundary"></div>
+    <div id="late-map-boundary"></div>
+    <div id="demo-map-boundary"></div>
+    <script type="module">
+        const result = document.getElementById('result');
+        let realExternalRequests = 0;
+        const intercepted = [];
+        const originalFetch = globalThis.fetch;
+        const originalCreateObjectURL = URL.createObjectURL;
+        const originalRevokeObjectURL = URL.revokeObjectURL;
+        let objectUrlsCreated = 0;
+        let objectUrlsRevoked = 0;
+        let oversizedReaderCalls = 0;
+
+        URL.createObjectURL = blob => {
+            objectUrlsCreated += 1;
+            return originalCreateObjectURL.call(URL, blob);
+        };
+        URL.revokeObjectURL = value => {
+            objectUrlsRevoked += 1;
+            return originalRevokeObjectURL.call(URL, value);
+        };
+
+        function pngResponse() {
+            const pngBytes = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='), character => character.charCodeAt(0));
+            return {
+                ok: true,
+                status: 200,
+                headers: { get: name => name.toLowerCase() === 'content-type' ? 'image/png' : null },
+                body: {
+                    getReader() {
+                        let sent = false;
+                        return {
+                            async read() {
+                                if (sent) return { done: true };
+                                sent = true;
+                                return { done: false, value: pngBytes };
+                            },
+                            async cancel() {}
+                        };
+                    }
+                }
+            };
+        }
+
+        async function interceptedFetch(url, options) {
+            const parsed = new URL(String(url));
+            if (/^[abc]\.tile\.openstreetmap\.org$/.test(parsed.hostname)) {
+                intercepted.push({
+                    origin: parsed.origin,
+                    pathClass: /^\/\d+\/\d+\/\d+\.png$/.test(parsed.pathname) ? 'canonical-tile' : 'invalid',
+                    method: options?.method,
+                    credentials: options?.credentials,
+                    referrerPolicy: options?.referrerPolicy,
+                    redirect: options?.redirect,
+                    cache: options?.cache
+                });
+                if (intercepted.length === 2) {
+                    return {
+                        ok: true,
+                        status: 200,
+                        headers: {
+                            get(name) {
+                                if (name.toLowerCase() === 'content-type') return 'image/png';
+                                if (name.toLowerCase() === 'content-length') return '1048577';
+                                return null;
+                            }
+                        },
+                        body: {
+                            getReader() {
+                                oversizedReaderCalls += 1;
+                                throw new Error('oversized response body must not be read');
+                            }
+                        }
+                    };
+                }
+                return pngResponse();
+            }
+            realExternalRequests += 1;
+            throw new Error('Unexpected external request blocked by R8 harness');
+        }
+
+        // The interception boundary is installed before importing production code.
+        globalThis.fetch = interceptedFetch;
+
+        try {
+            const boundary = await import('../../js/app/map-location-egress.js?browser-smoke=3');
+            const synthetic = [[0, 0], [12.25, -45.5]];
+            const browserDependencies = {
+                fetch: globalThis.fetch,
+                online: () => true,
+                AbortController,
+                setTimeout: globalThis.setTimeout.bind(globalThis),
+                clearTimeout: globalThis.clearTimeout.bind(globalThis)
+            };
+            function tileOutcome() {
+                let finish;
+                const promise = new Promise(resolve => { finish = resolve; });
+                return { finish, promise };
+            }
+            function createFakeLeaflet(finishTile) {
+                const fakeMap = {
+                    setMaxBounds() {},
+                    fitBounds() {},
+                    remove() {}
+                };
+                return {
+                    map: () => fakeMap,
+                    GridLayer: {
+                        extend(definition) {
+                            return class {
+                                constructor(options) {
+                                    this.options = options;
+                                    this.createTile = definition.createTile;
+                                }
+                                addTo() {
+                                    this.createTile({ z: 0, x: 0, y: 0 }, (error, completedImage) => {
+                                        finishTile({
+                                            error,
+                                            complete: completedImage.complete,
+                                            naturalWidth: completedImage.naturalWidth
+                                        });
+                                    });
+                                    return this;
+                                }
+                            };
+                        }
+                    }
+                };
+            }
+            const decodedOutcome = tileOutcome();
+            const realBoundary = boundary.createMapLocationBoundary({
+                sessionMode: 'real',
+                dependencies: browserDependencies,
+                documentObject: document,
+                pageTarget: window
+            });
+            const denied = realBoundary.present({
+                container: document.getElementById('real-map-boundary'),
+                coordinates: synthetic,
+                revisionKey: 'synthetic-browser-real',
+                leaflet: createFakeLeaflet(decodedOutcome.finish)
+            });
+            const action = document.querySelector('#real-map-boundary button');
+            if (denied.status !== 'denied' || action?.textContent !== boundary.MAP_LOCATION_ACTION_LABEL) {
+                throw new Error('missing exact denied-state action');
+            }
+            if (intercepted.length !== 0) throw new Error('UI pre-consent egress');
+
+            const demoBoundary = boundary.createMapLocationBoundary({
+                sessionMode: 'demo',
+                documentObject: document,
+                pageTarget: window
+            });
+            const demoState = demoBoundary.present({
+                container: document.getElementById('demo-map-boundary'),
+                coordinates: synthetic,
+                revisionKey: 'synthetic-browser-demo',
+                leaflet: null
+            });
+            if (demoState.status !== 'demo' || document.querySelector('#demo-map-boundary button')) {
+                throw new Error('Demo exposed grant control');
+            }
+
+            action.click();
+            const tileResult = await Promise.race([
+                decodedOutcome.promise,
+                new Promise((_, reject) => setTimeout(() => reject(new Error('tile decode timed out')), 1000))
+            ]);
+            if (tileResult.error || !tileResult.complete || tileResult.naturalWidth !== 1) {
+                throw new Error('tile completion preceded successful image decode');
+            }
+            if (intercepted.length !== 1) throw new Error('unexpected request count');
+            if (Object.values(intercepted[0]).includes('invalid')) throw new Error('invalid tile path');
+            if (objectUrlsCreated !== 1 || objectUrlsRevoked !== 1) throw new Error('object URL lifecycle mismatch');
+            realBoundary.dispose();
+
+            const rejectedOutcome = tileOutcome();
+            const rejectedBoundary = boundary.createMapLocationBoundary({
+                sessionMode: 'real',
+                dependencies: browserDependencies,
+                documentObject: document,
+                pageTarget: window
+            });
+            rejectedBoundary.present({
+                container: document.getElementById('rejected-map-boundary'),
+                coordinates: synthetic,
+                revisionKey: 'synthetic-browser-rejected',
+                leaflet: createFakeLeaflet(rejectedOutcome.finish)
+            });
+            document.querySelector('#rejected-map-boundary button').click();
+            const rejectedTile = await rejectedOutcome.promise;
+            if (!rejectedTile.error || oversizedReaderCalls !== 0) throw new Error('oversized response was not rejected before read');
+            if (objectUrlsCreated !== 1) throw new Error('rejected response created an object URL');
+            if (document.querySelector('#rejected-map-boundary [role="status"]')?.textContent !== 'Some map tiles are unavailable.') {
+                throw new Error('rejected tile did not expose local failure status');
+            }
+            rejectedBoundary.dispose();
+
+            const listeners = new Map();
+            const lateImage = {
+                complete: false,
+                naturalWidth: 0,
+                addEventListener(type, callback) { listeners.set(type, callback); },
+                set src(value) { this.objectUrl = value; }
+            };
+            const lateDocument = {
+                createElement(tagName) {
+                    return tagName === 'img' ? lateImage : document.createElement(tagName);
+                },
+                createTextNode: value => document.createTextNode(value),
+                getElementById: value => document.getElementById(value)
+            };
+            const lateOutcome = tileOutcome();
+            const lateBoundary = boundary.createMapLocationBoundary({
+                sessionMode: 'real',
+                dependencies: browserDependencies,
+                documentObject: lateDocument,
+                pageTarget: window
+            });
+            lateBoundary.present({
+                container: document.getElementById('late-map-boundary'),
+                coordinates: synthetic,
+                revisionKey: 'synthetic-browser-late-revoke',
+                leaflet: createFakeLeaflet(lateOutcome.finish)
+            });
+            document.querySelector('#late-map-boundary button').click();
+            await new Promise((resolve, reject) => {
+                const started = performance.now();
+                const check = () => {
+                    if (objectUrlsCreated === 2) resolve();
+                    else if (performance.now() - started > 1000) reject(new Error('late tile object URL timed out'));
+                    else setTimeout(check, 0);
+                };
+                check();
+            });
+            lateBoundary.dispose();
+            const lateTile = await lateOutcome.promise;
+            if (!lateTile.error || objectUrlsRevoked !== 2) throw new Error('revoke did not settle pending decode');
+
+            const demo = boundary.createMapTileSession({
+                sessionMode: 'demo',
+                geometry: synthetic,
+                dependencies: browserDependencies
+            });
+            if (demo.grant() !== false || await demo.requestTile({ z: 0, x: 0, y: 0 }) !== null) {
+                throw new Error('Demo egress');
+            }
+            if (intercepted.length !== 3 || realExternalRequests !== 0) throw new Error('external boundary escaped');
+            document.body.dataset.status = 'pass';
+            result.textContent = 'PASS: pre-consent and Demo zero egress; bounded rejection and revoke settlement verified.';
+        } catch (error) {
+            document.body.dataset.status = 'fail';
+            result.textContent = `FAIL: ${error?.message || 'unknown'}`;
+        } finally {
+            globalThis.fetch = originalFetch;
+            URL.createObjectURL = originalCreateObjectURL;
+            URL.revokeObjectURL = originalRevokeObjectURL;
+        }
+    </script>
+</body>
+</html>
