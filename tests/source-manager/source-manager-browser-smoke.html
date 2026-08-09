@@ -22,6 +22,9 @@
         <h1>PR-20 Source Manager duplicate review browser smoke</h1>
         <p id="state" data-testid="state">running</p>
         <pre id="summary" data-testid="summary">{"status":"running"}</pre>
+        <button type="button" id="offline-continue" data-testid="offline-continue" hidden>
+            Continue synthetic offline evidence
+        </button>
         <div id="frames"></div>
     </main>
     <script type="module" nonce="pr10-source-manager">
@@ -36,6 +39,7 @@
         const SENTINEL_NAME = 'synthetic-pr10-legacy-like-sentinel';
         const state = document.getElementById('state');
         const summary = document.getElementById('summary');
+        const offlineContinue = document.getElementById('offline-continue');
         const frames = document.getElementById('frames');
         const gates = [];
         const metrics = {
@@ -123,6 +127,44 @@
             return { version, stores, indexes, counts };
         }
 
+        async function databaseContainsText(name, text) {
+            const database = await request(indexedDB.open(name));
+            const stores = Array.from(database.objectStoreNames).sort();
+            let found = false;
+            for (const storeName of stores) {
+                const tx = database.transaction(storeName, 'readonly');
+                const cursorRequest = tx.objectStore(storeName).openCursor();
+                await new Promise((resolve, reject) => {
+                    cursorRequest.onerror = () => reject(new Error('IDB_CURSOR_FAILED'));
+                    cursorRequest.onsuccess = () => {
+                        const cursor = cursorRequest.result;
+                        if (!cursor) {
+                            resolve();
+                            return;
+                        }
+                        if (JSON.stringify([cursor.key, cursor.value]).includes(text)) {
+                            found = true;
+                            resolve();
+                            return;
+                        }
+                        cursor.continue();
+                    };
+                });
+                if (found) break;
+            }
+            database.close();
+            return found;
+        }
+
+        function webStorageSnapshot(storage) {
+            const entries = [];
+            for (let index = 0; index < storage.length; index += 1) {
+                const key = storage.key(index);
+                entries.push([key, storage.getItem(key)]);
+            }
+            return JSON.stringify(entries);
+        }
+
         function crc32(bytes) {
             let crc = 0xffffffff;
             for (const byte of bytes) crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
@@ -193,19 +235,114 @@
         }
 
         async function createFrame(mode) {
-            const frame = document.createElement('iframe');
-            frame.title = `${mode} Source Manager`;
-            frame.src = `../../source-manager.html?mode=${mode}`;
-            frames.append(frame);
-            await new Promise((resolve, reject) => {
-                frame.onload = resolve;
-                frame.onerror = reject;
-            });
+            const frame = await createNavigationFrame(`?mode=${mode}`, `${mode} Source Manager`);
             await waitFor(
                 () => !frame.contentDocument.getElementById('first-run').hidden,
                 `${mode.toUpperCase()}_FIRST_RUN_TIMEOUT`
             );
             return frame;
+        }
+
+        async function createNavigationFrame(search, title) {
+            const frame = document.createElement('iframe');
+            frame.title = title;
+            frame.src = `../../source-manager.html${search}`;
+            frames.append(frame);
+            await new Promise((resolve, reject) => {
+                frame.onload = resolve;
+                frame.onerror = reject;
+            });
+            return frame;
+        }
+
+        async function proveNoReferrer(frame) {
+            const probe = frame.contentDocument.createElement('iframe');
+            probe.title = 'synthetic referrer policy probe';
+            probe.src = `/icon-sport.svg?synthetic-referrer-probe=${Date.now()}`;
+            const loaded = Promise.race([
+                new Promise((resolve, reject) => {
+                    probe.onload = resolve;
+                    probe.onerror = reject;
+                }),
+                new Promise((_, reject) => setTimeout(
+                    () => reject(new Error('REFERRER_PROBE_TIMEOUT')),
+                    10_000
+                ))
+            ]);
+            frame.contentDocument.body.append(probe);
+            await loaded;
+            assert(probe.contentDocument.referrer === '', 'SUBSEQUENT_RESOURCE_HAS_NO_REFERRER');
+            probe.remove();
+        }
+
+        async function proveServiceWorkerQueryBypass() {
+            const cacheNamesBefore = new Set(await caches.keys());
+            const registrationsBefore = await navigator.serviceWorker.getRegistrations();
+            assert(registrationsBefore.length === 0, 'SERVICE_WORKER_BASELINE_EMPTY');
+            state.textContent = 'verifying service worker query bypass';
+            const registration = await Promise.race([
+                navigator.serviceWorker.register('/sw.js', { scope: '/' }),
+                new Promise((_, reject) => setTimeout(
+                    () => reject(new Error('SERVICE_WORKER_REGISTER_TIMEOUT')),
+                    20_000
+                ))
+            ]);
+            let controlledFrame = null;
+            try {
+                await waitFor(
+                    () => registration.active?.state === 'activated',
+                    'SERVICE_WORKER_ACTIVATION_TIMEOUT'
+                );
+                controlledFrame = await createNavigationFrame(
+                    '?mode=demo',
+                    'service worker query bypass Source Manager'
+                );
+                await waitFor(
+                    () => controlledFrame.contentWindow.navigator.serviceWorker.controller !== null,
+                    'SERVICE_WORKER_CONTROL_TIMEOUT'
+                );
+                assert(true, 'INSTALLED_SERVICE_WORKER_CONTROL');
+                for (const cacheName of await caches.keys()) {
+                    const cache = await caches.open(cacheName);
+                    const cachedQuery = await cache.match('/source-manager.html?mode=demo');
+                    assert(cachedQuery === undefined, 'QUERY_NAVIGATION_NOT_CACHED');
+                }
+            } finally {
+                controlledFrame?.remove();
+                await registration.unregister();
+                for (const cacheName of await caches.keys()) {
+                    if (!cacheNamesBefore.has(cacheName)) await caches.delete(cacheName);
+                }
+            }
+            assert(
+                (await navigator.serviceWorker.getRegistrations()).length === registrationsBefore.length
+                    && JSON.stringify((await caches.keys()).sort())
+                        === JSON.stringify([...cacheNamesBefore].sort()),
+                'SERVICE_WORKER_STATE_RESTORED'
+            );
+        }
+
+        async function proveOfflinePresentation(realFrame) {
+            state.textContent = 'awaiting synthetic offline origin';
+            offlineContinue.hidden = false;
+            await new Promise(resolve => {
+                offlineContinue.addEventListener('click', resolve, { once: true });
+            });
+            let originUnavailable = false;
+            try {
+                await fetch(`/manifest.json?synthetic-offline-probe=${Date.now()}`, {
+                    cache: 'no-store',
+                    credentials: 'omit'
+                });
+            } catch {
+                originUnavailable = true;
+            }
+            assert(originUnavailable, 'OFFLINE_ORIGIN_UNREACHABLE');
+            const apiCard = realFrame.contentDocument.querySelector('[data-source-card="api"]');
+            const apiButton = realFrame.contentDocument.getElementById('source-api-connect');
+            assert(apiCard.dataset.status === 'authorization_unavailable', 'OFFLINE_CONNECTION_REMAINS_UNAVAILABLE');
+            assert(apiButton.disabled, 'OFFLINE_NO_ACTION_ENABLED');
+            offlineContinue.hidden = true;
         }
 
         async function choose(frame, source, file, useDrop = false) {
@@ -241,6 +378,7 @@
             const paths = [
                 '../../js/source-manager.js',
                 '../../js/app/source-manager.js',
+                '../../js/app/source-manager-connection.js',
                 '../../js/pages/source-manager/source-manager.js'
             ];
             for (const path of paths) {
@@ -248,7 +386,7 @@
                 if (!response.ok) throw new Error('SOURCE_AUDIT_FETCH_FAILED');
                 const source = await response.text();
                 metrics.authorization += (
-                    source.match(/Authorization|Bearer|access_token|refresh_token/gi) || []
+                    source.match(/Bearer|access_token|refresh_token|Authorization\s*:/gi) || []
                 ).length;
                 metrics.webSocket += (source.match(/\bWebSocket\b/g) || []).length;
             }
@@ -285,6 +423,7 @@
 
         let realFrame;
         let demoFrame;
+        const navigationFrames = [];
         try {
             await auditServedProductionSources();
             await ensureSentinel();
@@ -293,6 +432,32 @@
             const realDoc = realFrame.contentDocument;
             assert(realDoc.querySelectorAll('[data-source-card]').length === 4, 'FOUR_SOURCE_CARDS');
             assert(realDoc.getElementById('preview-total').textContent === '0 activities', 'EMPTY_PREVIEW');
+            const apiCard = realDoc.querySelector('[data-source-card="api"]');
+            const apiButton = realDoc.getElementById('source-api-connect');
+            assert(apiCard.dataset.status === 'authorization_unavailable', 'REAL_AUTHORIZATION_UNAVAILABLE');
+            assert(apiCard.querySelector('[data-source-status="api"]').textContent === 'Authorization unavailable', 'REAL_AUTHORIZATION_BADGE');
+            assert(apiCard.querySelectorAll('button').length === 1, 'ONE_CONNECTION_ACTION');
+            assert(apiButton.disabled && apiButton.textContent === 'Connect unavailable', 'CONNECT_UNAVAILABLE_DISABLED');
+            assert(
+                Array.from(apiCard.querySelectorAll('button')).every(
+                    button => !/Disconnect|Sync/.test(button.textContent)
+                ),
+                'NO_DISCONNECT_OR_SYNC_ACTION'
+            );
+            apiButton.focus();
+            assert(realDoc.activeElement !== apiButton, 'DISABLED_ACTION_NOT_FOCUSABLE');
+            realFrame.style.border = '0';
+            realFrame.style.width = '320px';
+            await new Promise(resolve => requestAnimationFrame(resolve));
+            const apiBounds = apiCard.getBoundingClientRect();
+            const actionBounds = apiButton.getBoundingClientRect();
+            assert(
+                apiBounds.left >= 0 && apiBounds.right <= 320
+                    && actionBounds.left >= 0 && actionBounds.right <= 320,
+                'SOURCE_MANAGER_320PX_ACTION_VISIBLE'
+            );
+            realFrame.style.border = '1px solid #94a3b8';
+            realFrame.style.width = '390px';
             assert(
                 realDoc.querySelector('[data-open-import="local"]')?.tagName === 'BUTTON',
                 'KEYBOARD_ENTRY_PRESENT'
@@ -416,9 +581,25 @@
             assert(realDoc.getElementById('preview-total').textContent === '7 activities', 'MALFORMED_FIT_NO_WRITE');
             assert(!realDoc.body.textContent.includes(corruptFit.name), 'MALFORMED_FIT_FILENAME_REDACTED');
 
+            await waitFor(
+                () => !realDoc.getElementById('dialog-close').disabled,
+                'MALFORMED_FIT_SETTLE_TIMEOUT'
+            );
+            realDoc.getElementById('dialog-close').click();
+            await waitFor(
+                () => !realDoc.getElementById('import-dialog').open,
+                'MALFORMED_FIT_DIALOG_CLOSE_TIMEOUT'
+            );
             const invalidDoc = await choose(realFrame, 'archive', new File(['not zip'], 'invalid.zip'));
-            assert(invalidDoc.getElementById('start-import').disabled, 'INVALID_ZIP_DISABLED');
-            assert(invalidDoc.getElementById('selection-list').textContent.includes('FILE_HEADER_INVALID'), 'INVALID_ZIP_COPY');
+            assert(!invalidDoc.getElementById('start-import').disabled, 'INVALID_ZIP_EXTENSION_PREFLIGHT_READY');
+            invalidDoc.getElementById('start-import').click();
+            await waitFor(
+                () => invalidDoc.querySelector('[data-source-card="archive"]').dataset.status === 'error'
+                    && !invalidDoc.getElementById('dialog-close').disabled,
+                'INVALID_ZIP_CONTENT_PREFLIGHT_TIMEOUT'
+            );
+            assert(invalidDoc.getElementById('preview-total').textContent === '7 activities', 'INVALID_ZIP_NO_WRITE');
+            assert(!invalidDoc.body.textContent.includes('invalid.zip'), 'INVALID_ZIP_FILENAME_REDACTED');
             invalidDoc.getElementById('dialog-close').click();
 
             const cancelDoc = await choose(realFrame, 'local', new File([cancelCsv()], 'synthetic-cancel.csv'));
@@ -456,10 +637,60 @@
             assert(demoDoc.querySelector('[data-open-import="local"]').disabled, 'DEMO_IMPORT_DISABLED');
             assert(demoDoc.querySelector('[data-source-card="demo"]').dataset.status === 'available', 'DEMO_AVAILABLE_STATE');
             assert(demoDoc.getElementById('duplicate-review-state').textContent.includes('unavailable in Demo mode'), 'DEMO_REVIEW_DISABLED');
+            assert(demoDoc.querySelector('[data-source-card="api"]').dataset.status === 'authorization_unavailable', 'DEMO_AUTHORIZATION_UNAVAILABLE');
             collectResources(demoFrame);
 
+            const v2BeforeNavigation = await v2Snapshot();
+            state.textContent = 'verifying navigation privacy';
+            const localStorageBeforeNavigation = webStorageSnapshot(localStorage);
+            const sessionStorageBeforeNavigation = webStorageSnapshot(sessionStorage);
+            const canary = 'synthetic-pr41-callback-canary';
+            const callbackFrame = await createNavigationFrame(
+                `?code=${canary}&state=${canary}&mode=demo#scope=${canary}`,
+                'sanitized callback Source Manager'
+            );
+            navigationFrames.push(callbackFrame);
+            await waitFor(
+                () => callbackFrame.contentWindow.location.search === '?mode=demo'
+                    && callbackFrame.contentWindow.location.hash === ''
+                    && !callbackFrame.contentDocument.getElementById('first-run').hidden,
+                'CALLBACK_SANITIZATION_TIMEOUT'
+            );
+            assert(!callbackFrame.contentDocument.body.textContent.includes(canary), 'CALLBACK_CANARY_NOT_IN_DOM');
+            assert(!webStorageSnapshot(callbackFrame.contentWindow.sessionStorage).includes(canary), 'CALLBACK_CANARY_NOT_IN_SESSION_STORAGE');
+            assert(!webStorageSnapshot(callbackFrame.contentWindow.localStorage).includes(canary), 'CALLBACK_CANARY_NOT_IN_LOCAL_STORAGE');
+            assert(callbackFrame.contentDocument.querySelector('meta[name="referrer"]')?.content === 'no-referrer', 'NO_REFERRER_POLICY_ACTIVE');
+            assert(callbackFrame.contentDocument.querySelector('[data-source-card="api"]').dataset.status === 'authorization_unavailable', 'CALLBACK_STAYS_UNAVAILABLE');
+            await proveNoReferrer(callbackFrame);
+            collectResources(callbackFrame);
+
+            for (const search of [`?code=${canary}`, '?mode=invalid']) {
+                const blockedFrame = await createNavigationFrame(search, 'blocked Source Manager');
+                navigationFrames.push(blockedFrame);
+                await waitFor(
+                    () => !blockedFrame.contentDocument.getElementById('blocking-error').hidden,
+                    'BLOCKED_NAVIGATION_TIMEOUT'
+                );
+                assert(blockedFrame.contentWindow.location.pathname === '/source-manager.html', 'BLOCKED_CANONICAL_PATH');
+                assert(blockedFrame.contentWindow.location.search === '', 'BLOCKED_QUERY_REMOVED');
+                assert(blockedFrame.contentWindow.location.hash === '', 'BLOCKED_FRAGMENT_REMOVED');
+                assert(blockedFrame.contentDocument.getElementById('blocking-error-code').textContent === 'NAVIGATION_SANITIZATION_FAILED', 'BLOCKED_FIXED_CODE');
+                assert(blockedFrame.contentDocument.getElementById('blocking-error-copy').textContent === 'The Source Manager navigation could not be accepted safely.', 'BLOCKED_FIXED_COPY');
+                assert(blockedFrame.contentDocument.getElementById('first-run').hidden, 'BLOCKED_NO_APPLICATION_START');
+                assert(!blockedFrame.contentDocument.body.textContent.includes(canary), 'BLOCKED_CANARY_NOT_IN_DOM');
+                collectResources(blockedFrame);
+            }
+
+            await proveServiceWorkerQueryBypass();
+
+            state.textContent = 'verifying navigation data isolation';
             const v2 = await v2Snapshot();
             const sentinelAfter = await sentinelSnapshot();
+            assert(JSON.stringify(v2) === JSON.stringify(v2BeforeNavigation), 'NAVIGATION_NO_V2_MUTATION');
+            assert(!await databaseContainsText(V2_NAME, canary), 'CALLBACK_CANARY_NOT_IN_V2_CONTENT');
+            assert(!sentinelAfter.includes(canary), 'CALLBACK_CANARY_NOT_IN_LEGACY_CONTENT');
+            assert(webStorageSnapshot(localStorage) === localStorageBeforeNavigation, 'NAVIGATION_NO_LOCAL_STORAGE_MUTATION');
+            assert(webStorageSnapshot(sessionStorage) === sessionStorageBeforeNavigation, 'NAVIGATION_NO_SESSION_STORAGE_MUTATION');
             assert(sentinelBefore === sentinelAfter, 'LEGACY_SENTINEL_UNCHANGED');
             assert(v2.version === 4, 'V2_VERSION_4');
             assert(v2.stores.length === 13, 'V2_THIRTEEN_STORES');
@@ -467,6 +698,8 @@
             assert(v2.counts.activities === 7, 'CANONICAL_ACTIVITY_COUNT');
             assert(v2.counts.mergeCandidates >= 2, 'CANDIDATE_AUDIT_RETAINED');
             assert(v2.counts.mergeDecisions >= 2, 'DECISION_AUDIT_RETAINED');
+
+            await proveOfflinePresentation(realFrame);
 
             const registrations = await navigator.serviceWorker.getRegistrations();
             const cacheNames = await caches.keys();
@@ -476,12 +709,15 @@
 
             realFrame.remove();
             demoFrame.remove();
+            navigationFrames.forEach(frame => frame.remove());
             await new Promise(resolve => setTimeout(resolve, 100));
             const result = {
                 status: 'passed',
                 gates,
                 metrics,
                 externalDriverRequired: [
+                    'origin stopped before synthetic offline continuation',
+                    'all console output contains no callback canary',
                     'startup console warnings and errors',
                     'uncaught exceptions and unhandled rejections'
                 ],
@@ -498,6 +734,7 @@
         } catch (error) {
             realFrame?.remove();
             demoFrame?.remove();
+            navigationFrames.forEach(frame => frame.remove());
             document.body.dataset.status = 'failed';
             state.textContent = 'failed';
             summary.textContent = JSON.stringify({

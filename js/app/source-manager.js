@@ -1,23 +1,12 @@
 import { createImportService, createBrowserImportWorker } from '../import/index.js';
 import { createImportStore } from '../storage/index.js';
 import { createSourceManagerPage, SOURCE_MANAGER_SESSION_MODE } from '../pages/source-manager/source-manager.js';
+import { createSourceManagerConnectionController } from './source-manager-connection.js';
 
 const TERMINAL_JOB_STATUSES = new Set([
     'completed', 'completed_with_warnings', 'failed_validation',
     'failed_decode', 'failed_storage', 'cancelled'
 ]);
-
-function sessionMode(search) {
-    const params = new URLSearchParams(search);
-    const mode = params.get('mode');
-    if (mode === null || mode === SOURCE_MANAGER_SESSION_MODE.REAL) {
-        return SOURCE_MANAGER_SESSION_MODE.REAL;
-    }
-    if (mode === SOURCE_MANAGER_SESSION_MODE.DEMO) {
-        return SOURCE_MANAGER_SESSION_MODE.DEMO;
-    }
-    return null;
-}
 
 function demoFacade() {
     const unavailable = () => Promise.reject(Object.freeze({
@@ -131,13 +120,17 @@ function realFacade({ indexedDB, IDBKeyRange, crypto, Worker }) {
 }
 
 export async function startSourceManager(dependencies) {
-    const mode = sessionMode(dependencies?.location?.search ?? '');
-    if (mode === null) {
+    const mode = dependencies?.sessionMode;
+    if (
+        mode !== SOURCE_MANAGER_SESSION_MODE.REAL
+        && mode !== SOURCE_MANAGER_SESSION_MODE.DEMO
+    ) {
         const error = Object.freeze({ code: 'INVALID_SESSION_MODE' });
         const page = createSourceManagerPage({
             document: dependencies.document,
             sessionMode: null,
-            importFacade: demoFacade()
+            importFacade: demoFacade(),
+            connectionFacade: null
         });
         page.showBlockingError(error);
         return Object.freeze({ status: 'blocked', close: page.close });
@@ -145,11 +138,20 @@ export async function startSourceManager(dependencies) {
     const importFacade = mode === SOURCE_MANAGER_SESSION_MODE.DEMO
         ? demoFacade()
         : realFacade(dependencies);
+    const connectionFacade = mode === SOURCE_MANAGER_SESSION_MODE.REAL
+        ? createSourceManagerConnectionController()
+        : null;
     const page = createSourceManagerPage({
         document: dependencies.document,
         sessionMode: mode,
-        importFacade
+        importFacade,
+        connectionFacade
     });
-    await page.initialize();
+    try {
+        await page.initialize();
+    } catch (error) {
+        await page.close().catch(() => {});
+        throw error;
+    }
     return Object.freeze({ status: 'ready', close: page.close });
 }

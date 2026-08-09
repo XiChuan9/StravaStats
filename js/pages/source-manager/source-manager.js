@@ -54,6 +54,7 @@ const PREFLIGHT_COPY = Object.freeze({
     REVIEW_STALE: 'This review item changed. Refresh the review queue.',
     REVIEW_DECISION_FAILED: 'The review decision could not be recorded.',
     INVALID_SESSION_MODE: 'The requested Source Manager session mode is invalid.',
+    AUTHORIZATION_UNAVAILABLE: 'Connection controller staged; authorization remains unavailable until connection identity and provider import are ready.',
     IMPORT_FAILED: 'The import could not be completed.'
 });
 
@@ -573,11 +574,60 @@ function isReport(value) {
         && value.totals && Array.isArray(value.items);
 }
 
-export function createSourceManagerPage({ document, sessionMode, importFacade }) {
+function validConnectionSnapshot(value) {
+    try {
+        if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+        const prototype = Object.getPrototypeOf(value);
+        if (prototype !== Object.prototype && prototype !== null) return false;
+        const keys = Reflect.ownKeys(value);
+        if (
+            keys.length !== 4
+            || !['schemaVersion', 'status', 'code', 'actions'].every(key => keys.includes(key))
+        ) return false;
+        const read = key => {
+            const descriptor = Object.getOwnPropertyDescriptor(value, key);
+            return descriptor?.enumerable && Object.hasOwn(descriptor, 'value')
+                ? descriptor.value
+                : undefined;
+        };
+        const actions = read('actions');
+        if (actions === null || typeof actions !== 'object' || Array.isArray(actions)) return false;
+        const actionsPrototype = Object.getPrototypeOf(actions);
+        if (actionsPrototype !== Object.prototype && actionsPrototype !== null) return false;
+        const actionKeys = Reflect.ownKeys(actions);
+        if (
+            actionKeys.length !== 2
+            || !actionKeys.includes('connect')
+            || !actionKeys.includes('disconnect')
+        ) return false;
+        const action = key => {
+            const descriptor = Object.getOwnPropertyDescriptor(actions, key);
+            return descriptor?.enumerable && Object.hasOwn(descriptor, 'value')
+                ? descriptor.value
+                : undefined;
+        };
+        return read('schemaVersion') === 1
+            && read('status') === 'authorization_unavailable'
+            && read('code') === 'AUTHORIZATION_UNAVAILABLE'
+            && action('connect') === false
+            && action('disconnect') === false;
+    } catch {
+        return false;
+    }
+}
+
+export function createSourceManagerPage({
+    document,
+    sessionMode,
+    importFacade,
+    connectionFacade = null
+}) {
     const elements = Object.freeze({
         blocking: document.getElementById('blocking-error'),
         blockingCode: document.getElementById('blocking-error-code'),
         blockingCopy: document.getElementById('blocking-error-copy'),
+        apiCopy: document.getElementById('source-api-copy'),
+        apiConnect: document.getElementById('source-api-connect'),
         firstRun: document.getElementById('first-run'),
         sessionLabel: document.getElementById('session-label'),
         previewTotal: document.getElementById('preview-total'),
@@ -629,10 +679,23 @@ export function createSourceManagerPage({ document, sessionMode, importFacade })
         if (!card || !badge) return;
         const labels = {
             not_configured: 'Not configured', available: 'Available',
+            authorization_unavailable: 'Authorization unavailable',
             importing: 'Importing', success: 'Success', error: 'Error'
         };
         card.dataset.status = status;
         badge.textContent = labels[status] || 'Error';
+    }
+
+    function renderConnectionSnapshot(snapshot) {
+        if (!validConnectionSnapshot(snapshot)) {
+            showBlockingError(Object.freeze({ code: 'AUTHORIZATION_UNAVAILABLE' }));
+            return false;
+        }
+        setSourceStatus('api', 'authorization_unavailable');
+        elements.apiCopy.textContent = PREFLIGHT_COPY.AUTHORIZATION_UNAVAILABLE;
+        elements.apiConnect.textContent = 'Connect unavailable';
+        elements.apiConnect.disabled = true;
+        return true;
     }
 
     function showError(error) {
@@ -1158,6 +1221,15 @@ export function createSourceManagerPage({ document, sessionMode, importFacade })
             ? 'Demo presentation session' : 'Real local library';
         setSourceStatus('demo', sessionMode === SOURCE_MANAGER_SESSION_MODE.DEMO
             ? 'available' : 'not_configured');
+        if (sessionMode === SOURCE_MANAGER_SESSION_MODE.REAL) {
+            let snapshot = null;
+            try {
+                snapshot = connectionFacade?.getConnectionSnapshot();
+            } catch {
+                // The page exposes only the fixed unavailable state.
+            }
+            renderConnectionSnapshot(snapshot);
+        }
         try {
             await importFacade.initialize();
             await refreshPublicReads();
@@ -1169,6 +1241,9 @@ export function createSourceManagerPage({ document, sessionMode, importFacade })
 
     async function close() {
         closed = true;
+        if (sessionMode === SOURCE_MANAGER_SESSION_MODE.REAL) {
+            await connectionFacade?.close();
+        }
         await importFacade.close();
         return Object.freeze({ status: 'closed' });
     }
