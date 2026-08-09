@@ -409,30 +409,38 @@ This document describes, tab by tab, everything currently shown by the applicati
 
 ### Inputs
 
-- User-provided Gemini API key (stored in `localStorage('gemini_api_key')`).
-- Free-form chat prompt.
+- User-provided Gemini API key, kept only in current-page memory.
+- Free-form current prompt, limited to 4,000 code units.
 - Starter suggestion buttons rendered above the input.
 
 ### Context used by the assistant
 
-- Global training summary (totals, active days, sport mix).
-- Sport breakdown.
-- PB-like stats from the historical run catalog.
-- Gear summary including current health for shoes and bikes.
-- Recent activities and recent monthly volume series.
+- Two relative windows: `recent_28_days` and `previous_28_days`.
+- Closed sport category and activity count.
+- Distance, moving-time, and elevation aggregates rounded to 1 km, 15 minutes, and 100 m, with
+  valid-sample counts and `null` when no valid sample exists.
+- No names, IDs, dates, gear, PBs, route/GPS, Tokens, heart rate, power, raw activity/streams, or
+  previous chat messages.
 
 ### Views
 
-- Persistent chat transcript stored in `localStorage('ai_chat_history')`.
+- Exact Google Gemini destination/field disclosure and a minimized-value preview before each send.
+- Current-page-memory transcript only, bounded to 12 messages/64 KiB; provider response text is
+  bounded to 16,384 code units.
 - Distinct styling for user and assistant messages.
-- API-key entry banner shown until a key is configured.
+- Memory-only API-key entry banner shown until a key is configured.
 
 ### Actions
 
-- Enter or update the Gemini API key.
+- Enter or forget the in-memory Gemini API key.
 - Click a starter suggestion to seed the prompt.
-- Send a prompt; the request is made browser-side directly against the Gemini Flash preview endpoint.
-- Clear chat history.
+- Preview every request and choose `Send this request to Google Gemini` or cancel; no consent is
+  persisted. An authorized request goes directly to the frozen Gemini Flash preview endpoint with
+  the key in `x-goog-api-key`, `store: false`, a four-second abortable timeout, and no retry.
+- Cancel an in-flight request, revoke AI access, or clear the in-memory conversation.
+- Use `Review previously saved AI data` for separate explicit copy-key, delete-key, or
+  delete-history actions. Normal AI Coach rendering/sending never reads or changes the inherited
+  `gemini_api_key` and `ai_chat_history` localStorage records. Demo performs zero AI I/O.
 
 ## Cross-app settings
 

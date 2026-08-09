@@ -77,7 +77,9 @@ field-selection and reversible-merge workflow is future work.
 
 The current V2 candidate does not implement the PRD's later field-level provenance, reversible
 merge/split, data-quality center, complete Analysis v2 invalidation, local directory watcher, or
-general external-AI consent system. Garmin/COROS/Polar cloud connectors, Apple Health/HealthKit,
+reusable cross-provider external-AI consent system. AI Coach has only its narrow per-request Google
+Gemini disclosure/preview boundary; it does not establish a general provider framework.
+Garmin/COROS/Polar cloud connectors, Apple Health/HealthKit,
 Android Health Connect, cloud sync, multi-user/coaching workspaces, native mobile apps, medical
 diagnosis, and automated prescriptions remain P2 or later work.
 

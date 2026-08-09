@@ -545,3 +545,41 @@ test('Speed Insights production injection is same-origin, queued, and idempotent
         else Reflect.deleteProperty(globalThis, 'document');
     }
 });
+
+test('R7 main injects one frozen AI Coach session while the tab owns no provider or storage I/O', async () => {
+    const aiTabSource = await source('js/tabs/ai-chat.js');
+    const aiBoundarySource = await source('js/app/ai-coach-egress.js');
+    assert.match(
+        mainSource,
+        /import\s*\{\s*createAICoachSession\s*\}\s*from\s*['"]\.\/ai-coach-egress\.js['"]/
+    );
+    assert.match(
+        mainSource,
+        /let aiCoachSession = createAICoachSession\(\{[\s\S]*?sessionMode:\s*documentSessionMode[\s\S]*?legacyStorage:[\s\S]*?APP_SESSION_MODE\.REAL/
+    );
+    assert.match(
+        mainSource,
+        /renderAIChatTab\(aiCoachActivitySnapshot,\s*\{\s*sessionMode:\s*activeSessionMode,\s*aiCoach:\s*aiCoachSession\s*\}\)/
+    );
+    assert.doesNotMatch(
+        aiTabSource,
+        /\bfetch\s*\(|localStorage|sessionStorage|indexedDB|caches\s*\.|serviceWorker|Authorization/
+    );
+    assert.match(aiTabSource, /prepared\.confirmLabel/);
+    assert.match(aiTabSource, /Request preview — nothing has been sent/);
+    assert.match(aiBoundarySource, /x-goog-api-key/);
+    assert.match(aiBoundarySource, /store:\s*false/);
+    assert.match(aiBoundarySource, /REQUEST_TIMEOUT_MS = 4_000/);
+    assert.doesNotMatch(aiBoundarySource, /\?key=|Authorization/);
+    assert.match(
+        mainSource,
+        /demoButton\.addEventListener\('click',\s*\(\)\s*=>\s*\{\s*aiCoachSession\.revoke\(\);\s*aiCoachActivitySnapshot = null;\s*aiCoachSession = createAICoachSession\(\{\s*sessionMode:\s*APP_SESSION_MODE\.DEMO\s*\}\);\s*loginWithDemo\(initializeApp\)/
+    );
+    assert.match(mainSource, /function buildAICoachActivitySnapshot\(activities\)[\s\S]*?try\s*\{[\s\S]*?createActivitySnapshot\(\)[\s\S]*?builder\.add\([\s\S]*?builder\.finish\(\)[\s\S]*?catch\s*\{\s*return null/);
+    assert.match(mainSource, /activeTabId === 'ai-chat-tab'[\s\S]*?aiCoachSession\.cancelPending\(\)/);
+    assert.match(mainSource, /refreshButton\.addEventListener\('click',[\s\S]*?aiCoachSession\.cancelPending\(\)/);
+    assert.match(
+        mainSource,
+        /tabId === activeTabId[\s\S]*?tabId === 'ai-chat-tab'[\s\S]*?!renderedTabs\.has\(tabId\)[\s\S]*?tabConfig\[tabId\]\.render\(\)/
+    );
+});

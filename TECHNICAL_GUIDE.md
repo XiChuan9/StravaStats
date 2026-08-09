@@ -149,8 +149,8 @@ Notable persisted keys include:
 - `dashboard_filters`
 - `dashboard_settings`
 - `training_goals` — user-defined km/hours/activities goal configuration
-- `ai_chat_history`
-- `gemini_api_key`
+- `ai_chat_history` (legacy AI record only; not read automatically by AI Coach)
+- `gemini_api_key` (legacy AI record only; not read automatically by AI Coach)
 - gear-specific custom configuration records
 
 IndexedDB details for activity cache:
@@ -399,7 +399,7 @@ Interactivity is implemented through DOM controls rather than a framework state 
 - sort toggles on tables
 - predictor weight sliders
 - map mode switching
-- AI chat suggestions and conversation history persistence
+- AI chat suggestions and bounded document-memory conversation history
 
 ## 10. Detailed Feature Breakdown By Tab
 
@@ -823,22 +823,31 @@ Interactive elements:
 
 What the user sees:
 
-- API-key entry or confirmation banner
-- chat transcript area
-- starter suggestion prompts
-- chat input and send control
+- accurate Google Gemini/destination and field-level disclosure
+- memory-only API-key entry and bounded in-page transcript
+- a local minimized-value preview before every request
+- the exact one-time action `Send this request to Google Gemini`
+- separate controls to review, copy, or delete inherited durable AI records
 
 What data is used:
 
-- loaded activities summarized into a large context block
-- optional gear summaries and recent activity highlights
-- user-provided Gemini API key stored locally
+- current question, limited to 4,000 code units
+- relative `recent_28_days` and `previous_28_days` buckets
+- closed sport category plus activity count and distance/moving-time/elevation aggregates
+- distance rounded to 1 km, moving time to 15 minutes, and elevation to 100 m, with valid-sample
+  counts and `null` for no valid sample
+- a user-provided Gemini API key kept only in current-document memory
 
 What runs behind the scenes:
 
-- context assembly over totals, sport breakdowns, PB-like stats, recent activities, and monthly volume
-- browser-side call to the Gemini Flash preview endpoint
-- local persistence of recent message history
+- descriptor-safe local minimization before the preview
+- one browser-side POST to the frozen `gemini-3-flash-preview` endpoint only after the one-time
+  affirmative action; the key uses `x-goog-api-key`, `store` is false, timeout is four seconds,
+  cancellation aborts, and there is no automatic retry
+- document-memory history only: maximum 12 messages/64 KiB and 16,384 response code units; previous
+  messages are not sent as context
+- no automatic read, migration, overwrite, or deletion of legacy `gemini_api_key` or
+  `ai_chat_history`; Demo has no AI I/O
 
 What insight the user gets:
 
@@ -847,9 +856,10 @@ What insight the user gets:
 
 Interactive elements:
 
-- key management inside the browser
-- suggestion buttons
-- chat history clearing
+- memory-only key use/forget and full revoke
+- suggestion buttons that fill the prompt without sending
+- request preview, confirm, cancel, and in-flight cancel controls
+- memory-history clear plus explicit legacy-data review/copy/delete actions
 
 ## 11. Activity Detail And Advanced Analysis Pipeline
 

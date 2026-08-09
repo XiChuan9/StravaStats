@@ -74,13 +74,23 @@ Other established pages are not fully offline:
 - root declares Google Tag Manager/Analytics and same-origin Vercel Insights;
 - Legacy provider features use same-origin serverless API routes;
 - weather/maps can send exact activity date and coordinates to external services when invoked;
-- the existing AI Chat uses an explicitly user-supplied external AI key and sends prepared context
-  to that service when the user invokes it.
+- AI Coach names Google Gemini and `generativelanguage.googleapis.com`, shows a local preview, and
+  requires `Send this request to Google Gemini` for every request. The request contains only the
+  current question (maximum 4,000 UTF-16 code units) plus two relative 28-day buckets of closed sport,
+  activity-count, and rounded distance/time/elevation aggregates. It excludes names, IDs, calendar
+  dates, gear, PBs, routes/GPS, Tokens, heart rate, power, raw activity/streams, and earlier chat.
+  The API key and bounded conversation remain only in current-page memory; Demo performs zero AI
+  consent, key, provider, history, or storage I/O.
 
 These are inherited external and telemetry boundaries, not evidence that private activity data is
 uploaded by local import. Exact location/date external requests remain a production privacy release
 blocker until the release owner reviews and accepts or removes the behavior. Never include filename,
 route, user identity, Token, raw payload, or health/power data in product analytics events.
+
+Existing browsers may still contain the inherited `gemini_api_key` or `ai_chat_history` records.
+AI Coach does not read, copy, migrate, overwrite, or delete either record during normal rendering
+or sending. `Review previously saved AI data` is the only entry that inspects those exact keys; its
+copy-key, delete-key, and delete-history actions are separate and explicit. Copy never deletes.
 
 ## Console, DOM, and error handling
 
