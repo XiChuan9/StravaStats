@@ -6,7 +6,8 @@ import test from 'node:test';
 import { createLocalDevServer } from '../../scripts/local-dev-server.mjs';
 
 const PROJECT_ROOT = new URL('../../', import.meta.url);
-const EXPECTED_DISCLOSURE = 'Privacy Notice: Your activity library is stored locally in your browser by default. Only explicit user actions or consents may contact external services for Strava provider operations, Weather, AI Coach, or OpenStreetMap tiles, each under its existing separate disclosure.';
+const EXPECTED_DISCLOSURE = 'Privacy Notice: Your activity library is stored locally in your browser by default. Only explicit actions or consents may contact external services for Strava provider operations, Weather, AI Coach, or OpenStreetMap tiles, each under its existing separate disclosure.';
+const EXPECTED_DISCLOSURE_MARKUP = `<strong>Privacy Notice:</strong> ${EXPECTED_DISCLOSURE.replace('Privacy Notice: ', '')}`;
 const NORMALIZED_BASE_ROOT_SHA256 = 'a95480bfefaaea2a026f87537425b4999cac2a62051c182d152f46b105dd620b';
 const ALLOWLIST = Object.freeze([
     'docs/tasks/pr-39-root-privacy-disclosure.md',
@@ -21,7 +22,9 @@ async function source(relativePath) {
 function disclosureText(html) {
     const matches = [...html.matchAll(/<div class="privacy-policy"[^>]*>([\s\S]*?)<\/div>/g)];
     assert.equal(matches.length, 1, 'exactly one root privacy disclosure');
-    return matches[0][1]
+    const markup = matches[0][1].replace(/\s+/g, ' ').trim();
+    assert.equal(markup, EXPECTED_DISCLOSURE_MARKUP, 'exact strong-plus-text structure');
+    return markup
         .replace(/<[^>]+>/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
@@ -43,7 +46,7 @@ test('root static disclosure states the exact bounded local-first truth', async 
 
     for (const phrase of [
         'stored locally in your browser by default',
-        'explicit user actions or consents',
+        'explicit actions or consents',
         'Strava provider operations',
         'Weather',
         'AI Coach',
