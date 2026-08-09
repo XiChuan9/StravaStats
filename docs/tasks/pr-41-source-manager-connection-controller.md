@@ -5,13 +5,13 @@
 | Field | Value |
 | --- | --- |
 | Milestone | M26 / C1 connection-controller seam |
-| Status | A2 findings / A3 contract freeze; docs-only, implementation not authorized |
+| Status | C1-A3 implemented and reviewed; Final Review Closure recorded; Draft Ready handoff pending |
 | Base branch | `integration/v2` |
 | Exact base | `integration/v2@b9e4e1d7eedb5051a582e15d39be8c0ffc1a43df` |
 | Exact base tree | `8692ac73a08a4725b68f40cf135be743d3018666` |
 | Feature branch | `codex/v2/source-manager-connection-controller` |
 | Worktree | `/Users/wangchuanliang/.codex/worktrees/pr41/StravaStats` |
-| Owner decision | C1-A approved for Task-Brief-only Draft publication; implementation withheld |
+| Owner decision | C1-A3 implementation and exact ten-path maximum approved; live authorization boundaries withheld |
 | Parent decision | PR-40 / D-A A2 / D-B C / C1 A3 at `c864930f3890a392283939067f5d4d8da494d96f` |
 | Parent pull request | PR #46 remains open and Draft; this task does not modify it |
 | Pull request | PR #47 is open and Draft; title `feat(v2): add fail-closed Source Manager connection controller` |
@@ -497,9 +497,92 @@ git diff --check
 Before any implementation completion claim, also require the frozen disposable-profile browser
 evidence and an exact diff/allowlist audit. Tests must remain offline and synthetic.
 
-## Stop condition
+## A1 stop condition (satisfied)
 
 After the Task-Brief-only commit is pushed and the open Draft PR exact base/head/path state is
 verified, stop. A2/A3 may perform read-only investigation and update only this Task Brief if
 separately directed. Do not modify any candidate implementation path until the owner explicitly
 authorizes implementation of the exact C1-A phase/allowlist.
+
+## Final Review Closure
+
+### Implementation authority and exact scope
+
+The owner subsequently approved the frozen C1-A3 package and literal maximum:
+
+> 批准 C1-A3 实施及精确 10 路径上限。
+
+That approval authorized the exact fail-closed controller, sanitizer, injection, UI, tests,
+disposable synthetic browser evidence, reviews, Closure, push, and exact-head CI. It did not
+authorize live OAuth/config/exchange/revoke, Token or provider status storage, server API, real
+account/private data, V5/schema/public API, Import Retry, C2/C3/C4, Worker/Service Worker changes,
+deployment, release, Ready, merge, or cleanup.
+
+The reviewed implementation commit is
+`787cd41d6d343ad244828a993fc173c9ac28c954` (`feat(v2): add fail-closed source connection
+controller`). Its implementation/test commit changes exactly eight authorized paths. Together with
+this Task Brief, the cumulative PR diff uses nine of the ten allowed paths; the candidate
+`tests/source-manager/source-manager.test.js` remains unchanged. No eleventh path was needed.
+
+### Delivered contract
+
+- Real composition constructs one application-local controller. Its exact frozen façade, snapshot,
+  rejection codes, idempotent close value, and post-close behavior match the frozen A3 contract.
+- Demo and blocked navigation construct no controller. The page consumes only the injected
+  sanitized snapshot and exposes the exact unavailable badge, copy, and one disabled action.
+- Navigation sanitization is the first bootstrap operation before diagnostics, Web Storage, Worker,
+  IndexedDB, Crypto, application startup, or blocking-panel mutation. It canonicalizes or blocks
+  queries/fragments without retaining or rendering their values.
+- Pagehide is armed before asynchronous initialization. A pagehide during initialization closes the
+  application immediately after resolution; a thrown initialization path closes before rethrow.
+  Errors deliberately handled by the page remain visible and usable until pagehide, which is the
+  frozen contract's only automatic close trigger.
+- Existing local CSV/ZIP/FIT/TCX/GPX import, cancellation, duplicate review, Import Log/report,
+  Backup navigation, diagnostics, V2 V4, and Legacy/Demo isolation behavior is preserved.
+
+### Failure-first and review record
+
+- The first focused test run preceded the controller module and failed with the expected
+  `ERR_MODULE_NOT_FOUND` for `js/app/source-manager-connection.js`.
+- The first independent findings-first review reported a pagehide initialization race, execution
+  coverage gaps, incomplete callback-content evidence, and an uninstalled-Service-Worker evidence
+  gap. The lifecycle was corrected; bootstrap capability traps now execute; the browser harness now
+  checks all Web Storage, V2/Legacy canary content, actual referrer behavior, all console output,
+  and a controlled installed Service Worker.
+- A second fresh review requested stronger Service Worker bypass and offline proof. Boundary tests
+  now bind the controlled-browser evidence to the unchanged `sw.js` query early-return/zero
+  `respondWith` policy, and the browser run stops its serving origin before completing the exact
+  unavailable-state assertions. Its initialization-cleanup concern was dispositioned as non-actionable:
+  page-handled errors intentionally retain the page until pagehide under the frozen contract.
+- A third independent, fresh-context re-review returned **NO FINDINGS**. It was read-only and reran
+  the focused Node set, which passed 37/37.
+
+### Verification evidence
+
+- `npm ci`: passed; 6 lockfile-pinned packages installed, 7 audited, 0 vulnerabilities.
+- Focused Source Manager tests: 37/37 passed.
+- `npm run check:syntax`: passed for 263 files.
+- `npm run check:privacy`: passed.
+- `npm test`: 1721/1721 passed in the required localhost-capable environment.
+- `git diff --check`: passed.
+- Actual-served disposable fresh-origin browser smoke: passed with deterministic synthetic imports,
+  duplicate/cancel/reload/report flows, exact unavailable UI, keyboard/320px checks, callback scrub,
+  fixed blocking, no-referrer resource probe, canary absence from DOM/Web Storage/V2/Legacy/console,
+  installed-and-controlling Service Worker query bypass with no query cache entry, state restoration,
+  stopped-origin offline proof, unchanged Legacy sentinel/V2 V4 structure, and zero provider,
+  authorization, external HTTP, telemetry, XHR, WebSocket, or production fetch metrics. Browser
+  warning/error logs were empty.
+- Implementation-head GitHub Actions run `31341947418`, job `93317070128`: passed at exact head
+  `787cd41d6d343ad244828a993fc173c9ac28c954` while PR #47 remained open and Draft.
+
+### Data, privacy, rollback, and Ready handoff
+
+- **Migration/data:** no schema, migration, Storage, Repository, Backup, Import public API, Worker,
+  or Service Worker change. No Legacy or V2 record is modified by the connection lifecycle.
+- **Privacy/network:** no real credential, Token, provider/account request, private fixture, private
+  activity, or user browser profile was used. The controller remains zero-capability and network-free.
+- **Rollback:** revert the implementation commit and this docs-only Closure. No Token or data repair,
+  migration reversal, provider revoke, or cache cleanup is required.
+- **Ready:** PR #47 must remain open and Draft until the final Closure head, true remote depth-1
+  verification, exact-head CI, and authoritative PR readback all pass. Any Ready transition is an
+  external control-tower write; this task does not mark Ready, merge, deploy, release, or clean up.
