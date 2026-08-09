@@ -26,7 +26,10 @@ import {
 } from '../repository/index.js';
 import { preprocessActivities } from '../shared/preprocessing/index.js';
 import { isDemoMode } from '../demo/index.js';
-import { applyServiceWorkerPolicy } from './service-worker-policy.js';
+import {
+    applyServiceWorkerPolicy,
+    SERVICE_WORKER_LIFECYCLE_CODE
+} from './service-worker-policy.js';
 import { getFeatureFlags } from './feature-flags.js';
 import { getApplicationShadowWriter } from '../shadow/index.js';
 import {
@@ -689,6 +692,24 @@ export function selectPreprocessingAthlete(sessionMode, athlete) {
 
 function logOperationalWarning(context) {
     console.warn(context);
+}
+
+export function showServiceWorkerUpdateBanner(documentObject = globalThis.document) {
+    if (!documentObject?.body || typeof documentObject.createElement !== 'function') {
+        return false;
+    }
+
+    let banner = documentObject.getElementById?.('service-worker-update-banner');
+    if (!banner) {
+        banner = documentObject.createElement('aside');
+        banner.id = 'service-worker-update-banner';
+        banner.className = 'service-worker-update-banner';
+        banner.setAttribute('role', 'status');
+        banner.setAttribute('aria-live', 'polite');
+        documentObject.body.append(banner);
+    }
+    banner.textContent = 'Update ready. Close all StravaStats tabs, then reopen.';
+    return true;
 }
 
 function hasCoreVisualizationRuntime() {
@@ -1659,7 +1680,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- SERVICE WORKER REGISTRATION (PWA) ---
     window.addEventListener('load', () => {
-        applyServiceWorkerPolicy()
+        applyServiceWorkerPolicy({
+            onLifecycleState({ code }) {
+                if (code === SERVICE_WORKER_LIFECYCLE_CODE.UPDATE_WAITING) {
+                    showServiceWorkerUpdateBanner();
+                }
+            }
+        })
             .catch(error => {
                 logOperationalWarning(
                     'Unable to apply Service Worker policy'

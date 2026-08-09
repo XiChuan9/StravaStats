@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   applyServiceWorkerPolicy,
   isLocalDevelopmentHost,
+  SERVICE_WORKER_LIFECYCLE_CODE,
   shouldRegisterServiceWorker,
 } from '../js/app/service-worker-policy.js';
 
@@ -28,8 +29,16 @@ test('disabled local policy unregisters workers and clears only app caches', asy
   const serviceWorker = {
     async getRegistrations() {
       return [
-        { unregister: async () => unregistered.push('one') && true },
-        { unregister: async () => unregistered.push('two') && true },
+        {
+          scope: 'http://localhost:3000/',
+          active: { scriptURL: 'http://localhost:3000/sw.js' },
+          unregister: async () => unregistered.push('owned') && true,
+        },
+        {
+          scope: 'http://localhost:3000/other/',
+          active: { scriptURL: 'http://localhost:3000/other/sw.js' },
+          unregister: async () => unregistered.push('unrelated') && true,
+        },
       ];
     },
     async register() {
@@ -38,7 +47,13 @@ test('disabled local policy unregisters workers and clears only app caches', asy
   };
   const cacheStorage = {
     async keys() {
-      return ['strava-dashboard-v1', 'unrelated-cache'];
+      return [
+        'strava-dashboard-v1',
+        'stravastats-static-v2-000001',
+        'strava-dashboard-unowned',
+        'stravastats-static-v2-999999',
+        'unrelated-cache',
+      ];
     },
     async delete(name) {
       deletedCaches.push(name);
@@ -48,32 +63,55 @@ test('disabled local policy unregisters workers and clears only app caches', asy
 
   const result = await applyServiceWorkerPolicy({
     navigatorObject: { serviceWorker },
-    locationObject: { hostname: 'localhost', search: '' },
+    locationObject: {
+      hostname: 'localhost',
+      search: '',
+      origin: 'http://localhost:3000',
+    },
     cacheStorage,
     logger: {},
   });
 
   assert.deepEqual(result, {
     action: 'disabled',
-    registrationsChanged: 2,
-    cachesChanged: 1,
+    registrationsChanged: 1,
+    cachesChanged: 2,
   });
-  assert.deepEqual(unregistered, ['one', 'two']);
-  assert.deepEqual(deletedCaches, ['strava-dashboard-v1']);
+  assert.deepEqual(unregistered, ['owned']);
+  assert.deepEqual(deletedCaches.sort(), [
+    'strava-dashboard-v1',
+    'stravastats-static-v2-000001',
+  ]);
 });
 
-test('production policy registers the existing Service Worker path', async () => {
+test('production policy registers the exact root worker and checks once for an update', async () => {
   const registered = [];
+  let updates = 0;
 
   const result = await applyServiceWorkerPolicy({
     navigatorObject: {
       serviceWorker: {
-        async register(url) {
-          registered.push(url);
+        controller: { scriptURL: 'https://stravastats.vercel.app/sw.js' },
+        addEventListener() {},
+        async register(url, options) {
+          registered.push([url, options]);
+          return {
+            waiting: null,
+            installing: null,
+            addEventListener() {},
+            async update() {
+              updates += 1;
+              return this;
+            },
+          };
         },
       },
     },
-    locationObject: { hostname: 'stravastats.vercel.app', search: '' },
+    locationObject: {
+      hostname: 'stravastats.vercel.app',
+      search: '',
+      origin: 'https://stravastats.vercel.app',
+    },
     cacheStorage: null,
     logger: {},
   });
@@ -82,6 +120,127 @@ test('production policy registers the existing Service Worker path', async () =>
     action: 'registered',
     registrationsChanged: 1,
     cachesChanged: 0,
+    updateStatus: 'checked',
   });
-  assert.deepEqual(registered, ['./sw.js']);
+  assert.deepEqual(registered, [[
+    '/sw.js',
+    { scope: '/', updateViaCache: 'none' },
+  ]]);
+  assert.equal(updates, 1);
+});
+
+test('an already-waiting update emits only the fixed waiting lifecycle code', async () => {
+  const lifecycle = [];
+  const waiting = { state: 'installed', addEventListener() {} };
+  const registration = {
+    waiting,
+    installing: null,
+    addEventListener() {},
+    async update() { return this; },
+  };
+
+  await applyServiceWorkerPolicy({
+    navigatorObject: {
+      serviceWorker: {
+        controller: { scriptURL: 'https://synthetic.invalid/sw.js' },
+        addEventListener() {},
+        async register() { return registration; },
+      },
+    },
+    locationObject: {
+      hostname: 'synthetic.invalid',
+      search: '',
+      origin: 'https://synthetic.invalid',
+    },
+    logger: {},
+    onLifecycleState(value) { lifecycle.push(value); },
+  });
+
+  assert.deepEqual(lifecycle, [{ code: 'SW_UPDATE_WAITING' }]);
+});
+
+test('update observation timeout is fixed, bounded, and does not cancel the browser update', async () => {
+  const lifecycle = [];
+  let updateStarted = 0;
+  const never = new Promise(() => {});
+
+  const result = await applyServiceWorkerPolicy({
+    navigatorObject: {
+      serviceWorker: {
+        controller: { scriptURL: 'https://synthetic.invalid/sw.js' },
+        addEventListener() {},
+        async register() {
+          return {
+            waiting: null,
+            installing: null,
+            addEventListener() {},
+            update() {
+              updateStarted += 1;
+              return never;
+            },
+          };
+        },
+      },
+    },
+    locationObject: {
+      hostname: 'synthetic.invalid',
+      search: '',
+      origin: 'https://synthetic.invalid',
+    },
+    logger: {},
+    onLifecycleState(value) { lifecycle.push(value); },
+    updateTimeoutMs: 8000,
+    setTimeoutFn(callback, milliseconds) {
+      assert.equal(milliseconds, 8000);
+      callback();
+      return 1;
+    },
+    clearTimeoutFn() {
+      assert.fail('a fired timeout must not be cleared as if update completed');
+    },
+  });
+
+  assert.equal(updateStarted, 1);
+  assert.equal(result.updateStatus, 'timeout');
+  assert.deepEqual(lifecycle, [{
+    code: SERVICE_WORKER_LIFECYCLE_CODE.UPDATE_CHECK_TIMEOUT,
+  }]);
+});
+
+test('update rejection and controller change emit only fixed aggregate lifecycle states', async () => {
+  const lifecycle = [];
+  let controllerChange;
+
+  const result = await applyServiceWorkerPolicy({
+    navigatorObject: {
+      serviceWorker: {
+        controller: { scriptURL: 'https://synthetic.invalid/sw.js' },
+        addEventListener(name, callback) {
+          if (name === 'controllerchange') controllerChange = callback;
+        },
+        async register() {
+          return {
+            waiting: null,
+            installing: null,
+            addEventListener() {},
+            async update() { throw new Error('synthetic-private-canary'); },
+          };
+        },
+      },
+    },
+    locationObject: {
+      hostname: 'synthetic.invalid',
+      search: '',
+      origin: 'https://synthetic.invalid',
+    },
+    logger: {},
+    onLifecycleState(value) { lifecycle.push(value); },
+  });
+
+  controllerChange();
+  assert.equal(result.updateStatus, 'failed');
+  assert.deepEqual(lifecycle, [
+    { code: SERVICE_WORKER_LIFECYCLE_CODE.UPDATE_INSTALL_FAILED },
+    { code: SERVICE_WORKER_LIFECYCLE_CODE.ACTIVATED },
+  ]);
 });

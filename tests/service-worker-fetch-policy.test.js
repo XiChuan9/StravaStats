@@ -202,7 +202,7 @@ function createHarness(options = {}) {
     put: 0,
     skipWaiting: 0,
   };
-  const seen = { fetchRequests: [], matchRequests: [], putRequests: [] };
+  const seen = { deletedCaches: [], fetchRequests: [], matchRequests: [], putRequests: [] };
 
   const cache = {
     async addAll() {
@@ -238,15 +238,20 @@ function createHarness(options = {}) {
   const cacheStorage = {
     async open(name) {
       calls.open += 1;
-      assert.equal(name, 'strava-dashboard-v1');
+      assert.equal(name, 'stravastats-static-v2-000001');
       if (options.openError) throw options.openError;
       return cache;
     },
     async keys() {
-      return ['strava-dashboard-v1'];
+      return [
+        'strava-dashboard-v1',
+        'stravastats-static-v2-000001',
+        'unrelated-cache',
+      ];
     },
-    async delete() {
+    async delete(name) {
       calls.delete += 1;
+      seen.deletedCaches.push(name);
       return true;
     },
   };
@@ -359,6 +364,16 @@ function createHarness(options = {}) {
       await waitPromise;
       await new Promise(resolve => setImmediate(resolve));
     },
+    async dispatchActivate() {
+      let waitPromise;
+      handlers.get('activate')({
+        waitUntil(value) {
+          waitPromise = Promise.resolve(value);
+        },
+      });
+      await waitPromise;
+      await new Promise(resolve => setImmediate(resolve));
+    },
   };
 }
 
@@ -380,25 +395,13 @@ test('Task Brief freezes corrected Option A and the exact four-path implementati
   assert.match(TASK_BRIEF, /P0-08\/D3/);
 });
 
-test('P0-08 activate and immediate lifecycle block remains byte-for-byte frozen', () => {
-  const frozenBlock = `// Activar el service worker
-self.addEventListener('activate', event => {
-    event.waitUntil(
-        caches.keys().then(cacheNames => {
-            return Promise.all(
-                cacheNames.map(cacheName => {
-                    if (cacheName !== CACHE_NAME) {
-                        console.log('Service Worker: Borrando cache antiguo:', cacheName);
-                        return caches.delete(cacheName);
-                    }
-                })
-            );
-        })
-    );
-    self.clients.claim();
-});`;
-  assert.ok(WORKER_SOURCE.includes(frozenBlock));
-  assert.match(WORKER_SOURCE, /self\.skipWaiting\(\);/);
+test('selected D3 lifecycle uses immutable names and drains without immediate takeover', () => {
+  assert.match(WORKER_SOURCE, /CURRENT_CACHE_NAME = 'stravastats-static-v2-000001'/);
+  assert.match(WORKER_SOURCE, /LEGACY_CACHE_NAME = 'strava-dashboard-v1'/);
+  assert.match(WORKER_SOURCE, /RETIRED_OWNED_CACHE_NAMES = Object\.freeze\(\[\]\)/);
+  assert.doesNotMatch(WORKER_SOURCE, /skipWaiting\s*\(/);
+  assert.doesNotMatch(WORKER_SOURCE, /clients\.claim\s*\(/);
+  assert.doesNotMatch(WORKER_SOURCE, /caches\.keys\s*\(/);
 });
 
 test('private, dynamic, query, credential, Range, and cross-origin requests bypass the worker', async t => {
@@ -724,9 +727,10 @@ test('cache open, clone, put, and match failures are contained without raw outpu
 test('install seeds only the three approved credential-omit requests with validated put', async () => {
   const harness = createHarness({ throwOnAddAllAccess: true });
   await harness.dispatchInstall();
-  assert.equal(harness.calls.skipWaiting, 1);
+  assert.equal(harness.calls.skipWaiting, 0);
   assert.equal(harness.calls.fetch, 3);
   assert.equal(harness.calls.put, 3);
+  assert.equal(harness.calls.delete, 0);
   assert.equal(harness.calls.addAll, 0);
   assert.deepEqual(
     harness.seen.fetchRequests.map(request => {
@@ -741,19 +745,42 @@ test('install seeds only the three approved credential-omit requests with valida
   );
 });
 
-test('install contains fetch, response, open, and put failures without addAll or raw logs', async t => {
+test('activate neither claims clients nor enumerates or deletes caches in the first generation', async () => {
+  const harness = createHarness();
+  await harness.dispatchActivate();
+  assert.equal(harness.calls.claim, 0);
+  assert.equal(harness.calls.delete, 0);
+});
+
+test('required install seed failures reject and remove only the partial current cache', async t => {
   for (const [label, options] of [
     ['fetch', { fetchError: new Error(FIXED_CANARY) }],
     ['open', { openError: new Error(FIXED_CANARY) }],
+    ['validation', {
+      fetchImpl: async (request, platform) => {
+        const state = platform.requestData(request);
+        return new platform.Response('synthetic-invalid-seed', {
+          status: 200,
+          type: 'basic',
+          url: state.url,
+          headers: {
+            'content-type': 'application/octet-stream',
+            'cache-control': 'public, max-age=3600',
+          },
+        });
+      },
+    }],
+    ['clone', { cloneError: new Error(FIXED_CANARY) }],
     ['put', { putError: new Error(FIXED_CANARY) }],
   ]) {
     await t.test(label, async () => {
       const harness = createHarness({ ...options, throwOnAddAllAccess: true });
-      await harness.dispatchInstall();
-      assert.equal(harness.calls.skipWaiting, 1);
+      await assert.rejects(harness.dispatchInstall());
+      assert.equal(harness.calls.skipWaiting, 0);
       assert.equal(harness.calls.addAll, 0);
       assert.equal(harness.calls.console, 0);
-      assert.equal(harness.calls.delete, 0);
+      assert.equal(harness.calls.delete, 1);
+      assert.deepEqual(harness.seen.deletedCaches, ['stravastats-static-v2-000001']);
     });
   }
 });
