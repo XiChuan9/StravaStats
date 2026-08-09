@@ -4,7 +4,6 @@ import {
     createRepository,
     REPOSITORY_SOURCE
 } from '../../repository/index.js';
-import '../../shared/utils/speed-insights.js';
 import { createDetailReadSession } from '../detail/detail-read-session.js';
 import {
     installGlobalDiagnosticsListeners,
@@ -155,6 +154,10 @@ async function defaultRenderer(input) {
     return renderSwimPage(input);
 }
 
+function hasCoreVisualizationRuntime() {
+    return typeof globalThis.Chart === 'function';
+}
+
 export async function initializeSwimPage({
     search = globalThis.location?.search || '',
     demoModeReader = isDemoMode,
@@ -218,6 +221,10 @@ export async function initializeSwimPage({
 
 if (typeof document !== 'undefined') {
     document.addEventListener('DOMContentLoaded', () => {
+        if (!hasCoreVisualizationRuntime()) {
+            renderSwimPageError();
+            return;
+        }
         void initializeSwimPage();
     }, { once: true });
 }

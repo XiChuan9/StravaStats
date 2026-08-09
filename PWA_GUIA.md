@@ -369,6 +369,8 @@ This document describes, tab by tab, everything currently shown by the applicati
 - Full-screen Leaflet map with two render modes:
   - Density heatmap using Leaflet.heat over decoded route points.
   - Route polylines decoded client-side from each activity's `map.summary_polyline`.
+- Leaflet and Leaflet.heat are exact-version-pinned, integrity checked, and served same-origin;
+  there is no runtime CDN fallback.
 - When authorized in Real mode, the base layer is restricted to the initially approved coarse
   OpenStreetMap envelope at zoom 11 or lower. Permission lasts only for that map in that document.
 - Demo and maps without valid local GPS show a local state and make no tile-location request.

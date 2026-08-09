@@ -1,5 +1,4 @@
 // js/app/main.js
-import '../shared/utils/speed-insights.js';
 import { redirectToStrava, logout, handleAuth, loginWithDemo } from './auth.js';
 import { setupDashboard, showLoading, hideLoading, handleError, } from './ui.js';
 import { initKofiSystem, showKofiModal } from '../services/kofi.js';
@@ -692,7 +691,26 @@ function logOperationalWarning(context) {
     console.warn(context);
 }
 
+function hasCoreVisualizationRuntime() {
+    return typeof globalThis.Chart === 'function';
+}
+
+function showCoreVisualizationUnavailable(documentObject = document) {
+    const container = documentObject.createElement('main');
+    container.setAttribute('role', 'alert');
+    const title = documentObject.createElement('h1');
+    title.textContent = 'Visualization runtime unavailable';
+    const message = documentObject.createElement('p');
+    message.textContent = 'StravaStats could not start safely. No activity data was read.';
+    container.append(title, message);
+    documentObject.body.replaceChildren(container);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+    if (!hasCoreVisualizationRuntime()) {
+        showCoreVisualizationUnavailable();
+        return;
+    }
     // --- STATE ---
     let allActivities = [];
     let activeSessionMode = null;

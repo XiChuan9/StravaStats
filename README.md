@@ -116,9 +116,11 @@ fixture tree. Reviewed V2 Import, Backup/Restore, and Diagnostics boundaries use
 than raw causes, IDs, filenames, routes, GPS, heart-rate, power, or payloads; this guarantee does not
 cover inherited provider/API paths.
 
-That local-first statement does **not** mean the complete application is fully offline. The current
-root and detail documents still declare third-party CDN assets and telemetry, and some Legacy
-features use provider, weather, map, or explicitly user-authorized AI services. Review the
+That local-first statement does **not** mean the complete application is fully offline. Production
+runtime telemetry is disabled and visualization libraries are exact-version-pinned, integrity
+checked, and served same-origin; the visualization runtime makes no third-party CDN request and
+has no CDN fallback. Some Legacy features still use provider,
+weather, map, or explicitly user-authorized AI services. Review the
 [Privacy Guide](./docs/guides/privacy-guide.md) and
 [Known Limitations](./docs/guides/known-limitations.md) before production use.
 
@@ -127,8 +129,8 @@ explicit action **“Load approximate OpenStreetMap tiles for this map”**; the
 applies to that map in that document, and permits only coarse OpenStreetMap tiles at zoom 11 or
 lower. Demo performs no map grant or location request. Revocation cancels registered loads and
 blocks future requests, but cannot recall requests already received or erase browser/provider
-records. Leaflet code is still loaded from `unpkg.com`; that separate CDN trust boundary remains
-part of the release privacy review.
+records. Leaflet and Leaflet.heat are exact-version-pinned and served same-origin; OpenStreetMap
+tile requests remain a separate external boundary governed only by the per-map permission.
 
 ## Compatibility and verification boundary
 

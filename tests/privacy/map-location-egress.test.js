@@ -91,8 +91,10 @@ test('Option A constants freeze the exact gesture, copy, precision, and request 
         MAP_LOCATION_AGGREGATE_COPY,
         'For this view, the requested area covers all currently visible activities.'
     );
-    assert.equal(MAP_LOCATION_CDN_LIMITATION.includes('unpkg.com'), true);
-    assert.equal(MAP_LOCATION_CDN_LIMITATION.includes('separate CDN trust boundary'), true);
+    assert.equal(MAP_LOCATION_CDN_LIMITATION.includes('exact-version-pinned'), true);
+    assert.equal(MAP_LOCATION_CDN_LIMITATION.includes('served from this same origin'), true);
+    assert.equal(MAP_LOCATION_CDN_LIMITATION.includes('separate external requests'), true);
+    assert.equal(MAP_LOCATION_CDN_LIMITATION.includes('per-map permission'), true);
 });
 
 test('the single tile destination owner is the internal egress boundary', async () => {

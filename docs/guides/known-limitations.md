@@ -10,7 +10,7 @@ The authoritative item-level status is the [PR-24 release-gate ledger](../tasks/
 | --- | --- | --- |
 | No V2 release artifact | Package metadata remains `1.0.0`; there is no `v2.0.0-*` tag, GitHub Release, production deployment, or release-owner approval | Version/release decision, authorized tag/artifact/deployment, exact release evidence, owner approval |
 | Production Service Worker lifecycle | Local policy is tested; existing `sw.js` keeps fixed cache `strava-dashboard-v1`; production update, mixed-version, cold-offline, eviction, and rollback are not run | Rehearsed production-like worker/cache/deployment matrix without deleting user data |
-| External privacy baseline | Root/detail documents declare third-party CDN assets, Google Tag Manager/Analytics, Vercel Insights, and some external feature services; PR-01 also records unresolved same-origin Service Worker API-cache risk | Privacy review and explicit decision proving private activity data cannot reach telemetry/cache boundaries |
+| External privacy baseline | R11 disables runtime telemetry and serves exact-version-pinned visualization libraries same-origin; weather, map tiles, AI Coach, and Legacy provider features retain their separate affirmative controls or inherited boundaries; PR-01 also records unresolved same-origin Service Worker API-cache risk | Close the remaining external-feature and cache boundaries without weakening R6/R7/R8/R9 contracts |
 | Inherited logging and weather location egress | Inherited raw console and server/API logging can expose activity/provider values, while weather can still send exact activity dates and coordinates to an external service; R8 now denies map tiles until a per-map coarse OSM grant | Treat remaining logging/weather behavior as a production privacy release blocker; obtain release-owner privacy sign-off |
 | Real account and private-library evidence | Auth lifecycle and imports pass deterministic synthetic tests; real OAuth, disconnect, private Legacy/V2 libraries, and real FIT/TCX/GPX/ZIP were not run | Private, authorized evidence outside Git with redacted public summary |
 | Cross-browser support | Actual-served evidence is disposable Chromium/Chrome; Safari, Firefox, Windows, iOS/PWA, mobile, and broad assistive-technology matrices are not verified | Release matrix for supported browsers/platforms or an approved, time-bounded waiver |
@@ -70,8 +70,10 @@ field-selection and reversible-merge workflow is future work.
   browser/provider records.
 - Demo issues no map-location request or grant-state access. Canonical root summaries contain no
   GPS and therefore offer no tile action. Swim and Run Plus/NSM have no direct external map.
-- Leaflet/Leaflet.heat remain CDN-loaded from `unpkg.com`; R8 does not close the separate R11 CDN
-  trust boundary. Cold offline documents may also lack that rendering code.
+- Leaflet/Leaflet.heat are exact-version-pinned and served same-origin. R8 per-map consent still
+  governs the separate OpenStreetMap tile requests. Cold first-ever offline documents may lack an
+  uncached local rendering runtime. No third-party CDN is used for that runtime, and there is no
+  CDN fallback.
 
 ### Performance evidence
 
@@ -84,8 +86,9 @@ field-selection and reversible-merge workflow is future work.
 
 ### Network, offline, and visual behavior
 
-- Local import itself is browser-local, but the whole app is not fully offline because actual root
-  and detail pages depend on third-party CDN/telemetry/external feature resources.
+- Local import itself is browser-local, but the whole app is not fully offline because weather,
+  map tiles, AI Coach, and Legacy provider features retain separate external request boundaries.
+  Runtime telemetry is disabled and visualization assets are served same-origin.
 - A cold first-ever offline install and production Service Worker upgrade/rollback are not verified.
 - Deterministic functional browser gates ran, but pixel-perfect visual, broad responsive,
   localization, keyboard-only, screen-reader, and manual DevTools matrices are incomplete.

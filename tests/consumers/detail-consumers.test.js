@@ -354,8 +354,8 @@ test('Router HTML removes direct provider code and loads the module boundary', a
     );
     assert.match(html, /<title>Activity Details<\/title>/);
     assert.match(html, /Loading activity details\.\.\./);
-    assert.match(html, /_vercel\/insights\/script\.js/);
-    assert.match(html, /shared\/utils\/speed-insights\.js/);
+    assert.doesNotMatch(html, /_vercel\/insights\/script\.js/);
+    assert.doesNotMatch(html, /shared\/utils\/speed-insights\.js/);
     assert.match(html, /type="module" src="\.\.\/js\/pages\/activity-router\.js"/);
     for (const prohibited of [
         /parseInt|parseFloat/,
