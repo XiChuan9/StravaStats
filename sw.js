@@ -1,5 +1,7 @@
 // Service Worker para StravaStats PWA
-const CACHE_NAME = 'strava-dashboard-v1';
+const CURRENT_CACHE_NAME = 'stravastats-static-v2-000001';
+const LEGACY_CACHE_NAME = 'strava-dashboard-v1';
+const RETIRED_OWNED_CACHE_NAMES = Object.freeze([]);
 const INSTALL_SEED_PATHS = [
     '/',
     '/manifest.json',
@@ -200,25 +202,22 @@ function offlineResponse() {
 }
 
 async function writeValidatedResponse(cache, request, response, requestInfo) {
-    if (!inspectCacheableResponse(response, requestInfo)) return;
+    if (!inspectCacheableResponse(response, requestInfo)) return false;
     try {
         const clone = responseClone.call(response);
         await cache.put(request, clone);
+        return true;
     } catch {
         // A successful network response remains usable even if Cache Storage is unavailable.
+        return false;
     }
 }
 
 async function seedInstallCache() {
-    let cache;
     try {
-        cache = await caches.open(CACHE_NAME);
-    } catch {
-        return;
-    }
+        const cache = await caches.open(CURRENT_CACHE_NAME);
 
-    await Promise.all(INSTALL_SEED_PATHS.map(async pathname => {
-        try {
+        const seedResults = await Promise.allSettled(INSTALL_SEED_PATHS.map(async pathname => {
             const request = new Request(new URL(pathname, self.location.origin).href, {
                 method: 'GET',
                 mode: 'same-origin',
@@ -226,18 +225,27 @@ async function seedInstallCache() {
                 cache: 'reload'
             });
             const requestInfo = inspectCacheableRequest(request, { installSeed: true });
-            if (!requestInfo) return;
+            if (!requestInfo) throw new TypeError('SW_UPDATE_INSTALL_FAILED');
             const response = await fetch(request);
-            await writeValidatedResponse(cache, request, response, requestInfo);
-        } catch {
-            // Installation must activate the safer fetch boundary even if a seed is unavailable.
+            const written = await writeValidatedResponse(cache, request, response, requestInfo);
+            if (!written) throw new TypeError('SW_UPDATE_INSTALL_FAILED');
+        }));
+        if (seedResults.some(result => result.status === 'rejected')) {
+            throw new TypeError('SW_UPDATE_INSTALL_FAILED');
         }
-    }));
+    } catch {
+        try {
+            await caches.delete(CURRENT_CACHE_NAME);
+        } catch {
+            // The install still fails if partial-cache cleanup is unavailable.
+        }
+        throw new TypeError('SW_UPDATE_INSTALL_FAILED');
+    }
 }
 
 async function readValidatedFallback(request, requestInfo) {
     try {
-        const cache = await caches.open(CACHE_NAME);
+        const cache = await caches.open(CURRENT_CACHE_NAME);
         const response = await cache.match(request);
         if (inspectCacheableResponse(response, requestInfo)) return response;
     } catch {
@@ -257,7 +265,7 @@ async function fetchStaticResource(request, requestInfo) {
     if (!inspectCacheableResponse(response, requestInfo)) return response;
 
     try {
-        const cache = await caches.open(CACHE_NAME);
+        const cache = await caches.open(CURRENT_CACHE_NAME);
         await writeValidatedResponse(cache, request, response, requestInfo);
     } catch {
         // Cache open failure must not replace a successful network response.
@@ -268,24 +276,21 @@ async function fetchStaticResource(request, requestInfo) {
 // Instalar el service worker
 self.addEventListener('install', event => {
     event.waitUntil(seedInstallCache());
-    self.skipWaiting();
 });
 
-// Activar el service worker
+async function evictRetiredOwnedCaches() {
+    await Promise.all(RETIRED_OWNED_CACHE_NAMES.map(async cacheName => {
+        try {
+            await caches.delete(cacheName);
+        } catch {
+            // Exact-name cleanup is best-effort and must not block activation.
+        }
+    }));
+}
+
+// Activate only after old controlled clients have drained naturally.
 self.addEventListener('activate', event => {
-    event.waitUntil(
-        caches.keys().then(cacheNames => {
-            return Promise.all(
-                cacheNames.map(cacheName => {
-                    if (cacheName !== CACHE_NAME) {
-                        console.log('Service Worker: Borrando cache antiguo:', cacheName);
-                        return caches.delete(cacheName);
-                    }
-                })
-            );
-        })
-    );
-    self.clients.claim();
+    event.waitUntil(evictRetiredOwnedCaches());
 });
 
 // Network-first is restricted to the approved same-origin static shell.

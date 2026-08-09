@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Service Worker lifecycle browser smoke</title>
+</head>
+<body>
+    <output id="result">pending</output>
+    <script type="module">
+        import {
+            applyServiceWorkerPolicy,
+            SERVICE_WORKER_LIFECYCLE_CODE
+        } from '../js/app/service-worker-policy.js';
+
+        const states = [];
+        const registered = [];
+        let updateChecks = 0;
+        const waiting = Object.freeze({
+            scriptURL: `${location.origin}/sw.js`,
+            state: 'installed',
+            addEventListener() {}
+        });
+        const registration = {
+            scope: `${location.origin}/`,
+            installing: null,
+            waiting,
+            active: Object.freeze({ scriptURL: `${location.origin}/sw.js` }),
+            addEventListener() {},
+            async update() {
+                updateChecks += 1;
+                return this;
+            }
+        };
+        const serviceWorker = {
+            controller: registration.active,
+            addEventListener() {},
+            async register(url, options) {
+                registered.push({ url, options });
+                return registration;
+            }
+        };
+
+        try {
+            const result = await applyServiceWorkerPolicy({
+                navigatorObject: { serviceWorker },
+                locationObject: {
+                    hostname: 'synthetic.invalid',
+                    origin: location.origin,
+                    search: ''
+                },
+                logger: {},
+                onLifecycleState(value) { states.push(value); }
+            });
+            const passed = result.updateStatus === 'checked'
+                && updateChecks === 1
+                && registered.length === 1
+                && registered[0].url === '/sw.js'
+                && registered[0].options.scope === '/'
+                && registered[0].options.updateViaCache === 'none'
+                && states.length === 1
+                && states[0].code === SERVICE_WORKER_LIFECYCLE_CODE.UPDATE_WAITING;
+            document.body.dataset.status = passed ? 'pass' : 'fail';
+            document.querySelector('#result').textContent = JSON.stringify({
+                passed,
+                result,
+                registered,
+                states,
+                updateChecks
+            });
+        } catch {
+            document.body.dataset.status = 'fail';
+            document.querySelector('#result').textContent = JSON.stringify({ passed: false });
+        }
+    </script>
+</body>
+</html>
