@@ -5,14 +5,14 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 release hardening / R11 |
-| Status | A1 Task-Brief-only publication pending |
+| Status | A3 Option A frozen; implementation in progress |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/telemetry-cdn-governance` |
 | Exact base | `integration/v2@189a743c99af86fba38433ecdad20a09bfc39385` |
 | Owner | Codex |
 | Reviewer | Independent findings-first reviewer required after implementation |
 | Dependency | Exact-base integration CI run `31290651916`, completed successfully |
-| Pull request | Draft PR pending |
+| Pull request | Draft PR #43 |
 | Control tower | `019fa697-6cbf-70f1-a120-bf31ecc9e2ba` |
 
 ## Goal and authority
@@ -370,3 +370,43 @@ No schema, public API, analysis algorithm, package/lock, Worker, Service Worker,
 deployment, release, Legacy/V2 data, migration, deletion, cleanup, or R3 incident-disposition
 change is authorized. Rollback is a code-and-static-asset revert only and never clears Cache
 Storage, Service Worker state, settings, credentials, Legacy data, or V2 data.
+
+### A3 acquisition, provenance, license, and integrity evidence
+
+The owner-authorized acquisition ran once in disposable directory
+`/private/tmp/r11-acquire.vPCgwJ`. Each archive was produced by `npm pack` for the exact frozen
+version. No application or browser loaded a CDN URL, and no package was installed into the
+repository. The npm-tarball SHA-512 integrities are:
+
+| Package | Declared / packaged license | Tarball integrity |
+| --- | --- | --- |
+| `d3@7.9.0` | ISC / packaged `LICENSE` | `sha512-e1U46jVP+w7Iut8Jt8ri1YsPOvFpg46k+K8TpCb0P+zjCkjkPnV7WzfDJzMHy1LnA+wj5pLT1wjO901gLXeEhA==` |
+| `cal-heatmap@4.2.2` | MIT / packaged `LICENCE` | `sha512-jzLyf8qpbGwWjFIPYXjVRfcMHnZv+wdd/l45s2e99rMW/n/qscoCRgrE+A+gSme5sTJWkA90YunkhyNmlDmLRw==` |
+| `chart.js@4.5.0` | MIT / packaged `LICENSE.md` | `sha512-aYeC/jDgSEx8SHWZvANYMioYMZ2KX02W6f6uVfyteuCGcadDLcYVHdfdygsTQkQ4TKn5lghoojAsPj5pu0SnvQ==` |
+| `chartjs-adapter-date-fns@3.0.0` | MIT / packaged `LICENSE.md` | `sha512-Rs3iEB3Q5pJ973J93OBTpnP7qoGwvq3nUnoMdtxO+9aoJof7UFcRbWcIDteXuYd1fgAvct/32T9qaLyLuZVwCg==` |
+| `chartjs-chart-matrix@3.0.0` | MIT / packaged `LICENSE` | `sha512-lUWC1UaWkxGdG02dBJ5r1ppbSYB/uWmwAh11VEs7V3ZQItNCk4am+rmacwkgeb+SQeEj2hP9Qq4oGsUmPl/1lQ==` |
+| `leaflet@1.9.4` | BSD-2-Clause / packaged `LICENSE` | `sha512-nxS1ynzJOmOlHp+iL3FyWqK89GtNL8U8rvlMOsQdTTssxZwCXh8N2NB3GDQOL+YR3XnWyZAxwQixURb+FA74PA==` |
+| `leaflet.heat@0.2.0` | packaged BSD-style `LICENSE`; package metadata omits `license` | `sha512-Cd5PbAA/rX3X3XKxfDoUGi9qp78FyhWYurFg3nsfhntcM/MCNK08pRkf4iEenO1KNqwVPKCmkyktjW3UD+h9bQ==` |
+| `html2canvas@1.4.1` | MIT / packaged `LICENSE` | `sha512-fPU6BHNpsyIhr8yyMpTLLxAbkaK8ArIBcmZIRiBLiDhjeqvXolaEmDGmELFuX9I4xDcaKKcJl+TKZLqruBbmWA==` |
+| `jspdf@2.5.1` | MIT / packaged `LICENSE` | `sha512-hXObxz7ZqoyhxET78+XR34Xu2qFGrJJ2I2bE5w4SM8eFaFEkW2xcGRVUss360fYelwRSid/jT078kbNvmoW0QA==` |
+
+The selected bytes are copied without transformation. The exact source member, byte count,
+SHA-256 audit digest, and HTML SHA-384 SRI are:
+
+| Approved local path | Package member | Bytes | SHA-256 | SRI |
+| --- | --- | ---: | --- | --- |
+| `/js/vendor/d3-7.9.0.min.js` | `d3@7.9.0/dist/d3.min.js` | 279706 | `f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539` | `sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i` |
+| `/js/vendor/cal-heatmap-4.2.2.min.js` | `cal-heatmap@4.2.2/dist/cal-heatmap.min.js` | 155936 | `e6f941bd8de686b2a5f3fbd104517fe00930d1ab09b75f50c4e171a8617d3abb` | `sha384-u6mWlT25qeWOoRQiqXuzYVkUZPu34+SHGP5MJB5FTBu1q4C1HGfjDC6UZZvtN1lt` |
+| `/styles/vendor/cal-heatmap-4.2.2.css` | `cal-heatmap@4.2.2/dist/cal-heatmap.css` | 1607 | `20c8e128cc432909ddac71206d40522820d94e8dac91d706d9f57886c79ce22f` | `sha384-CqhcQLOCMzvuMykgRLOtzD9FJW+nHHcILVVDD6EjiRjc3Ecn71ZKehgvlHUnK5q+` |
+| `/js/vendor/chart-4.5.0.umd.min.js` | `chart.js@4.5.0/dist/chart.umd.min.js` | 208341 | `2f27bcf471b2d69dd78494f6e2172fb28470eb843820e2f96bb85d39f9618d30` | `sha384-XcdcwHqIPULERb2yDEM4R0XaQKU3YnDsrTmjACBZyfdVVqjh6xQ4/DCMd7XLcA6Y` |
+| `/js/vendor/chartjs-adapter-date-fns-3.0.0.bundle.min.js` | `chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js` | 50650 | `ea7ab30d26c38dcf1f2d26bb43e73a94537b58f1906f55e1a546dd09321b5615` | `sha384-cVMg8E3QFwTvGCDuK+ET4PD341jF3W8nO1auiXfuZNQkzbUUiBGLsIQUE+b1mxws` |
+| `/js/vendor/chartjs-chart-matrix-3.0.0.min.js` | `chartjs-chart-matrix@3.0.0/dist/chartjs-chart-matrix.min.js` | 3555 | `079bc5983bc06fd5c00d8581cf61a65f2c5d754c2e3545ee180b1d595db502d8` | `sha384-rJ/i5dnMG9QpsJqCMvR1ItW0deXppx40qBosSeiEI3hb9B8msI7j0D22p2rp010u` |
+| `/styles/vendor/leaflet-1.9.4.css` | `leaflet@1.9.4/dist/leaflet.css` | 14806 | `a7837102824184820dfa198d1ebcd109ff6d0ff9a2672a074b9a1b4d147d04c6` | `sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H` |
+| `/js/vendor/leaflet-1.9.4.min.js` | `leaflet@1.9.4/dist/leaflet.js` | 147552 | `db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a` | `sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH` |
+| `/js/vendor/leaflet-heat-0.2.0.min.js` | `leaflet.heat@0.2.0/dist/leaflet-heat.js` | 5158 | `eb952aae5806a1102729f291bab887dde783ace859819a354827a776e73e486a` | `sha384-mFKkGiGvT5vo1fEyGCD3hshDdKmW3wzXW/x+fWriYJArD0R3gawT6lMvLboM22c0` |
+| `/js/vendor/html2canvas-1.4.1.min.js` | `html2canvas@1.4.1/dist/html2canvas.min.js` | 198689 | `e87e550794322e574a1fda0c1549a3c70dae5a93d9113417a429016838eab8cb` | `sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H` |
+| `/js/vendor/jspdf-2.5.1.umd.min.js` | `jspdf@2.5.1/dist/jspdf.umd.min.js` | 364463 | `98ccf17aa10c20bb1301762618fcc9b6ab3a4e7f26b6071d64d0b41154df3875` | `sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk` |
+
+The packaged license texts are retained verbatim in the approved consolidated notices file. The
+temporary archives and extraction tree are not evidence artifacts and must be removed after the
+local copies and their recorded hashes are independently rechecked.
