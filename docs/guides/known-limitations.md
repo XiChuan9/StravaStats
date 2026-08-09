@@ -11,7 +11,7 @@ The authoritative item-level status is the [PR-24 release-gate ledger](../tasks/
 | No V2 release artifact | Package metadata remains `1.0.0`; there is no `v2.0.0-*` tag, GitHub Release, production deployment, or release-owner approval | Version/release decision, authorized tag/artifact/deployment, exact release evidence, owner approval |
 | Production Service Worker lifecycle | Local policy is tested; existing `sw.js` keeps fixed cache `strava-dashboard-v1`; production update, mixed-version, cold-offline, eviction, and rollback are not run | Rehearsed production-like worker/cache/deployment matrix without deleting user data |
 | External privacy baseline | Root/detail documents declare third-party CDN assets, Google Tag Manager/Analytics, Vercel Insights, and some external feature services; PR-01 also records unresolved same-origin Service Worker API-cache risk | Privacy review and explicit decision proving private activity data cannot reach telemetry/cache boundaries |
-| Inherited logging and exact-location egress | Inherited raw console and server/API logging can expose activity/provider values, while weather requests can send exact activity date and coordinates to an external service | Treat as a production privacy release blocker; audit or remove the paths and obtain release-owner privacy sign-off |
+| Inherited logging and weather location egress | Inherited raw console and server/API logging can expose activity/provider values, while weather can still send exact activity dates and coordinates to an external service; R8 now denies map tiles until a per-map coarse OSM grant | Treat remaining logging/weather behavior as a production privacy release blocker; obtain release-owner privacy sign-off |
 | Real account and private-library evidence | Auth lifecycle and imports pass deterministic synthetic tests; real OAuth, disconnect, private Legacy/V2 libraries, and real FIT/TCX/GPX/ZIP were not run | Private, authorized evidence outside Git with redacted public summary |
 | Cross-browser support | Actual-served evidence is disposable Chromium/Chrome; Safari, Firefox, Windows, iOS/PWA, mobile, and broad assistive-technology matrices are not verified | Release matrix for supported browsers/platforms or an approved, time-bounded waiver |
 | Real parity and Shadow review | Projection and redacted Shadow reports pass synthetic tests; no real-library Legacy/Canonical parity or Shadow difference sign-off exists | Private parity review with owner decision and zero unresolved P0 discrepancy |
@@ -55,6 +55,23 @@ field-selection and reversible-merge workflow is future work.
 - Diagnostics Storage Estimate is coarse, rounded, origin-wide, and not exact app bytes, free disk
   space, or a persistence guarantee.
 - Diagnostics records are bounded to the current tab/session and are not a durable audit log.
+
+### External map tiles
+
+- Every Real map starts without external tiles. Permission is explicit, memory-only, and scoped to
+  one map in one loaded document; reload, direct navigation, a new detail/Gear document, or a
+  region-changing filter/view starts denied again.
+- The only tile provider is OpenStreetMap through exact `a`, `b`, and
+  `c.tile.openstreetmap.org` HTTPS hosts. Requests are limited to zoom 11 or lower and the initially
+  approved coarse envelope. There is no retry, alternate provider, geocoder, durable tile cache, or
+  automatic fallback.
+- Tile paths disclose an approximate displayed region and timing to the provider. Revocation stops
+  new work and cancels registered loads but cannot recall already received requests or erase
+  browser/provider records.
+- Demo issues no map-location request or grant-state access. Canonical root summaries contain no
+  GPS and therefore offer no tile action. Swim and Run Plus/NSM have no direct external map.
+- Leaflet/Leaflet.heat remain CDN-loaded from `unpkg.com`; R8 does not close the separate R11 CDN
+  trust boundary. Cold offline documents may also lack that rendering code.
 
 ### Performance evidence
 

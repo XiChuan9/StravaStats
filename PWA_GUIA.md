@@ -358,7 +358,8 @@ This document describes, tab by tab, everything currently shown by the applicati
 
 - Sport selector.
 - Visualization mode (density heatmap or route polylines).
-- Map tile provider (OpenStreetMap, Carto Light/Dark, satellite, etc.).
+- OpenStreetMap tile status. External tiles begin denied and require the per-map action
+  **“Load approximate OpenStreetMap tiles for this map”**.
 - From/to date range.
 - Heatmap intensity, radius, and blur sliders.
 - Color-by-sport toggle for the routes mode.
@@ -368,12 +369,15 @@ This document describes, tab by tab, everything currently shown by the applicati
 - Full-screen Leaflet map with two render modes:
   - Density heatmap using Leaflet.heat over decoded route points.
   - Route polylines decoded client-side from each activity's `map.summary_polyline`.
+- When authorized in Real mode, the base layer is restricted to the initially approved coarse
+  OpenStreetMap envelope at zoom 11 or lower. Permission lasts only for that map in that document.
+- Demo and maps without valid local GPS show a local state and make no tile-location request.
 - Hover/click popups with activity name and date.
 
 ### Actions
 
 - Switch between heatmap and route modes.
-- Change the tile layer.
+- Load or revoke the coarse OpenStreetMap base layer for the current map.
 - Apply the sport or date filters and re-render the layer.
 - Tune heatmap parameters live.
 - Click a route to open its activity detail page.

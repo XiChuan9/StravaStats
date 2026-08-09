@@ -6,6 +6,7 @@
 
 import { formatDate as sharedFormatDate, formatPace as sharedFormatPace, formatPaceRun } from '../../shared/utils/index.js';
 import { renderWeatherAnalysis, renderWeatherMapDetails } from '../../shared/utils/weather-analysis.js';
+import { createMapLocationBoundary, readValidatedRouteGeometry } from '../../app/map-location-egress.js';
 import {
     prepareStreamChartPresentation,
     prepareStreamMapPresentation,
@@ -25,29 +26,6 @@ const CONFIG = {
         cadence: 60,
     },
     NUM_SEGMENTS: 40,
-};
-
-const MAP_LAYERS = {
-    osm: {
-        url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-        options: { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' },
-    },
-    'carto-light': {
-        url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-        options: { maxZoom: 20, attribution: '&copy; OpenStreetMap contributors &copy; CARTO' },
-    },
-    'carto-dark': {
-        url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-        options: { maxZoom: 20, attribution: '&copy; OpenStreetMap contributors &copy; CARTO' },
-    },
-    'open-topo': {
-        url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-        options: { maxZoom: 17, attribution: 'Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap' },
-    },
-    'esri-sat': {
-        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        options: { maxZoom: 20, attribution: 'Tiles &copy; Esri' },
-    },
 };
 
 // DOM References
@@ -72,6 +50,7 @@ let originalStreamData = null; // Store unsmoothed data
 let lastStreamData = null;
 let lastActivityData = null;
 let weatherFeatureEnabledForPage = true;
+let mapLocationBoundaryForPage = null;
 
 // Dynamic chart data storage
 let dynamicChartData = {
@@ -210,55 +189,8 @@ function formatPace(speedInMps) {
 /**
  * Decodes Strava polyline encoding to lat/lng coordinates
  */
-function decodePolyline(str) {
-    let index = 0, lat = 0, lng = 0, coordinates = [];
-    while (index < str.length) {
-        let b, shift = 0, result = 0;
-        do {
-            b = str.charCodeAt(index++) - 63;
-            result |= (b & 0x1f) << shift;
-            shift += 5;
-        } while (b >= 0x20);
-        const dlat = (result & 1) ? ~(result >> 1) : (result >> 1);
-        lat += dlat;
-
-        shift = 0;
-        result = 0;
-        do {
-            b = str.charCodeAt(index++) - 63;
-            result |= (b & 0x1f) << shift;
-            shift += 5;
-        } while (b >= 0x20);
-        const dlng = (result & 1) ? ~(result >> 1) : (result >> 1);
-        lng += dlng;
-
-        coordinates.push([lat / 1e5, lng / 1e5]);
-    }
-    return coordinates;
-}
-
 export function getActivityRouteCoordinates(activity, streams) {
-    const polyline = activity?.map?.summary_polyline || activity?.map?.polyline;
-    if (typeof polyline === 'string' && polyline.length > 0) {
-        const decoded = decodePolyline(polyline);
-        if (decoded.length > 0) return decoded;
-    }
-
-    const positions = streams?.latlng?.data;
-    if (!Array.isArray(positions) || positions.length < 2) return [];
-    const coordinates = [];
-    for (const point of positions) {
-        if (!Array.isArray(point) || point.length < 2) return [];
-        const [latitude, longitude] = point;
-        if (
-            !Number.isFinite(latitude)
-            || !Number.isFinite(longitude)
-            || Math.abs(latitude) > 90
-            || Math.abs(longitude) > 180
-        ) return [];
-        coordinates.push([latitude, longitude]);
-    }
-    return coordinates;
+    return readValidatedRouteGeometry(activity, streams);
 }
 
 /**
@@ -1039,99 +971,73 @@ function getRouteColorSeries(streams, mode, pointCount) {
 /**
  * Renders interactive map with route polyline
  */
-function renderActivityMap(activity, streams) {
+function renderActivityMap(activity, streams, routeCoordinates) {
     if (!DOM.map) return;
+    const coords = routeCoordinates === undefined
+        ? getActivityRouteCoordinates(activity, streams)
+        : routeCoordinates;
+    const routeSelect = document.getElementById('route-color-mode');
+    const availableModes = getAvailableRouteColorModes(streams);
+    if (routeSelect) {
+        const currentValue = routeSelect.value;
+        routeSelect.replaceChildren(...availableModes.map(mode => {
+            const option = document.createElement('option');
+            option.value = mode.value;
+            option.textContent = mode.label;
+            return option;
+        }));
+        routeSelect.value = availableModes.some(mode => mode.value === currentValue) ? currentValue : 'route';
+    }
+    const routeValues = getRouteColorSeries(streams, routeSelect?.value || 'route', coords.length);
+    const presentation = prepareStreamMapPresentation(coords, routeValues);
+    const displayCoords = presentation.coordinates;
+    const displayRouteValues = presentation.routeValues;
+    const weatherToggle = document.getElementById('show-weather-details');
 
-    if (window.L) {
-        const coords = getActivityRouteCoordinates(activity, streams);
-        if (coords.length > 0) {
-            DOM.map.innerHTML = '';
-            if (window.activityRouteMap) {
-                window.activityRouteMap.remove();
-                window.activityRouteMap = null;
-            }
-            const style = document.getElementById('activity-map-style')?.value || 'osm';
-            const layer = MAP_LAYERS[style] || MAP_LAYERS.osm;
-
-            const routeSelect = document.getElementById('route-color-mode');
-            const availableModes = getAvailableRouteColorModes(streams);
-            if (routeSelect) {
-                const currentValue = routeSelect.value;
-                routeSelect.innerHTML = availableModes.map(mode => `<option value="${mode.value}">${mode.label}</option>`).join('');
-                routeSelect.value = availableModes.some(mode => mode.value === currentValue) ? currentValue : 'route';
-            }
-
-            const colorMode = routeSelect?.value || 'route';
-            const routeValues = getRouteColorSeries(streams, colorMode, coords.length);
-            const presentation = prepareStreamMapPresentation(coords, routeValues);
-            const displayCoords = presentation.coordinates;
-            const displayRouteValues = presentation.routeValues;
-            if (presentation.status === 'too-fragmented') {
-                DOM.map.textContent = 'Too fragmented to plot.';
-                if (weatherFeatureEnabledForPage) {
-                    renderWeatherAnalysis(activity, coords);
-                    renderWeatherMapDetails(activity, coords, null, false);
-                }
-                return;
-            }
-
-            const map = L.map('activity-map').setView(displayCoords[0], 13);
-            window.activityRouteMap = map;
-            L.tileLayer(layer.url, layer.options).addTo(map);
-
+    mapLocationBoundaryForPage?.present({
+        container: DOM.map,
+        coordinates: presentation.status === 'too-fragmented' ? [] : coords,
+        revisionKey: 'run-detail',
+        providerControlId: 'activity-map-style',
+        leaflet: globalThis.L,
+        unavailableCopy: presentation.status === 'too-fragmented'
+            ? 'Too fragmented to plot.'
+            : 'No local route location is available for this map.',
+        drawOverlay(map) {
+            const group = L.featureGroup().addTo(map);
             if (displayRouteValues) {
                 const finiteValues = displayRouteValues.filter(Number.isFinite);
                 const minValue = Math.min(...finiteValues);
                 const maxValue = Math.max(...finiteValues);
-                const group = L.featureGroup().addTo(map);
-
-                for (let i = 1; i < displayCoords.length; i++) {
-                    const value = displayRouteValues[i] ?? displayRouteValues[i - 1];
-                    const color = valueToRouteColor(value, minValue, maxValue);
-                    L.polyline([displayCoords[i - 1], displayCoords[i]], { color, weight: 4, opacity: 0.9 }).addTo(group);
+                for (let index = 1; index < displayCoords.length; index += 1) {
+                    const value = displayRouteValues[index] ?? displayRouteValues[index - 1];
+                    L.polyline([displayCoords[index - 1], displayCoords[index]], {
+                        color: valueToRouteColor(value, minValue, maxValue),
+                        weight: 4,
+                        opacity: 0.9
+                    }).addTo(group);
                 }
-
-                map.fitBounds(group.getBounds());
-            } else {
-                const polyline = L.polyline(displayCoords, { color: '#FC5200', weight: 4 }).addTo(map);
-                map.fitBounds(polyline.getBounds());
+            } else if (displayCoords.length === 1) {
+                L.circleMarker(displayCoords[0], { radius: 5, color: '#FC5200', fillOpacity: 0.8 }).addTo(group);
+            } else if (displayCoords.length) {
+                L.polyline(displayCoords, { color: '#FC5200', weight: 4 }).addTo(group);
             }
-
-            const mapStyleSelect = document.getElementById('activity-map-style');
-            if (mapStyleSelect && !mapStyleSelect.dataset.bound) {
-                mapStyleSelect.dataset.bound = '1';
-                mapStyleSelect.addEventListener('change', () => renderActivityMap(activity, streams));
-            }
-
-            if (routeSelect && !routeSelect.dataset.bound) {
-                routeSelect.dataset.bound = '1';
-                routeSelect.addEventListener('change', () => renderActivityMap(activity, streams));
-            }
-
-            const weatherToggle = document.getElementById('show-weather-details');
-            if (weatherToggle && !weatherToggle.dataset.bound) {
-                weatherToggle.dataset.bound = '1';
-                weatherToggle.addEventListener('change', () => renderActivityMap(activity, streams));
-            }
-
             if (weatherFeatureEnabledForPage) {
-                renderWeatherAnalysis(activity, coords);
                 renderWeatherMapDetails(activity, coords, map, weatherToggle?.checked);
             }
-        } else {
-            DOM.map.innerHTML = '<p>No route data available (empty polyline).</p>';
-            if (weatherFeatureEnabledForPage) {
-                renderWeatherAnalysis(activity, []);
-                renderWeatherMapDetails(activity, [], null, false);
-            }
+            return group;
         }
-    } else {
-        DOM.map.innerHTML = '<p>No route data available or Leaflet not loaded.</p>';
-        if (weatherFeatureEnabledForPage) {
-            renderWeatherAnalysis(activity, []);
-            renderWeatherMapDetails(activity, [], null, false);
-        }
+    });
+
+    if (routeSelect && !routeSelect.dataset.bound) {
+        routeSelect.dataset.bound = '1';
+        routeSelect.addEventListener('change', () => renderActivityMap(activity, streams, coords));
     }
+    if (weatherToggle && !weatherToggle.dataset.bound) {
+        weatherToggle.dataset.bound = '1';
+        weatherToggle.addEventListener('change', () => renderActivityMap(activity, streams, coords));
+    }
+    if (weatherFeatureEnabledForPage) renderWeatherAnalysis(activity, coords);
 }
 
 /**
@@ -1939,9 +1845,12 @@ function renderClassifierResults(classificationData) {
 /**
  * Main entry point - loads activity data and renders all sections
  */
-export async function renderRunPage({ activity, streams, zones, athlete, activityId, activitySource, weatherFeatureEnabled }) {
+export async function renderRunPage({ activity, streams, zones, athlete, activityId, activitySource, mapLocationMode, weatherFeatureEnabled }) {
+    const mapCoordinates = getActivityRouteCoordinates(activity, streams);
     moveAndHideCustomChartSection();
     weatherFeatureEnabledForPage = weatherFeatureEnabled === true;
+    mapLocationBoundaryForPage?.dispose();
+    mapLocationBoundaryForPage = createMapLocationBoundary({ sessionMode: mapLocationMode });
 
     if (DOM.streamCharts) DOM.streamCharts.style.display = 'grid';
 
@@ -2007,7 +1916,7 @@ export async function renderRunPage({ activity, streams, zones, athlete, activit
         renderActivityInfo(activityData, activitySource);
         renderActivityStats(activityData);
         renderAdvancedStats(activityData);
-        renderActivityMap(activityData, streamData);
+        renderActivityMap(activityData, streamData, mapCoordinates);
         renderSplitsCharts(activityData);
         renderStreamCharts(initialSmoothedStreams, activityData, currentSmoothingLevel);
         renderBestEfforts(activityData.best_efforts);

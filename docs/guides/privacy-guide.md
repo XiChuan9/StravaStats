@@ -73,7 +73,16 @@ Other established pages are not fully offline:
   Leaflet;
 - root declares Google Tag Manager/Analytics and same-origin Vercel Insights;
 - Legacy provider features use same-origin serverless API routes;
-- weather/maps can send exact activity date and coordinates to external services when invoked;
+- weather can send an exact activity date and coordinates to its external service after its
+  separate consent flow;
+- external map tiles begin denied. A Real map with valid local geometry can request only
+  OpenStreetMap PNG tiles from the exact `a`, `b`, or `c.tile.openstreetmap.org` hosts after the
+  user chooses **“Load approximate OpenStreetMap tiles for this map”**. The map computes the full
+  local bounds first, limits tiles to zoom 11 or lower, sends no activity ID/name/date, route
+  vertices/order, Token, heart-rate, or power, and stores no permission or tile response durably.
+  Tile paths still reveal the approximate displayed region and request timing. Demo has no grant
+  control or map-location request. Revocation cancels registered work and blocks later tiles but
+  cannot retract provider/browser records already created;
 - AI Coach names Google Gemini and `generativelanguage.googleapis.com`, shows a local preview, and
   requires `Send this request to Google Gemini` for every request. The request contains only the
   current question (maximum 4,000 UTF-16 code units) plus two relative 28-day buckets of closed sport,
@@ -83,9 +92,11 @@ Other established pages are not fully offline:
   consent, key, provider, history, or storage I/O.
 
 These are inherited external and telemetry boundaries, not evidence that private activity data is
-uploaded by local import. Exact location/date external requests remain a production privacy release
-blocker until the release owner reviews and accepts or removes the behavior. Never include filename,
-route, user identity, Token, raw payload, or health/power data in product analytics events.
+uploaded by local import. Exact weather location/date external requests remain a production privacy
+release blocker. R8 governs declared tile-location requests only. The Leaflet and Leaflet.heat code
+currently loaded from `unpkg.com` runs in the page; CDN trust and telemetry remain separate
+release-review items. Never include filename, route, user identity, Token, raw payload, or
+health/power data in product analytics events.
 
 Existing browsers may still contain the inherited `gemini_api_key` or `ai_chat_history` records.
 AI Coach does not read, copy, migrate, overwrite, or delete either record during normal rendering

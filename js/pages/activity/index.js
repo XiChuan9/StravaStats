@@ -222,6 +222,7 @@ export async function initializeActivityPage({
             zones: readEnvelopeData(detail.zones, true),
             athlete: readEnvelopeData(detail.athlete, true),
             activityId,
+            mapLocationMode: demo ? 'demo' : 'real',
             weatherFeatureEnabled: !demo
         });
         return true;

@@ -206,3 +206,128 @@ paths. Required closure evidence is:
 
 Stop at Ready. Squash merge, cleanup, deploy, release, cache deletion, data mutation, branch or
 worktree deletion, and any history rewrite require separate user authorization.
+
+## A3 owner decision and frozen implementation contract
+
+The owner selected Option A exactly on 2026-08-09 through the control tower. A read-only collision
+audit found no required thirtieth path, dependency, Service Worker, HTML, or public-surface change.
+The following contract is authoritative for implementation; missing context always denies.
+
+### Consent, disclosure, and mode contract
+
+- Permission belongs to one map in one loaded document and exists only in memory. Every new map,
+  reload, direct navigation, and newly opened document begins denied. No permission state is read
+  from or written to cookies, `localStorage`, `sessionStorage`, IndexedDB, Cache Storage, the
+  Service Worker, a URL, or another document.
+- The exact affirmative action is **“Load approximate OpenStreetMap tiles for this map”**. No map
+  library receives coordinates and no tile request is scheduled before that action.
+- Demo performs no grant-state read or write, displays no grant control, reads no Real Gear cache,
+  passes no coordinates to Leaflet, and performs zero external tile, map-location, or geocoding
+  request. Its map presentation is deterministic and local only.
+- Legacy and Shadow root/detail maps and Canonical detail maps use separate per-map grants.
+  Canonical root has no GPS summary, offers no grant, issues no tile request, and states that no
+  local route location is available.
+- Gear is Real-only for R8. Its grant copy states that the approved coarse area covers all matching
+  activities. This task does not migrate its Legacy data source. Swim remains local/unavailable and
+  does not add Leaflet. Run Plus and NSM retain no direct map request; linked detail documents begin
+  denied.
+- A date, sport, activity, Gear set, or visualization-view change that changes or reclassifies the
+  displayed region revokes the map and requires another action. Route-color, heat-color, density,
+  radius, blur, and weather-presentation-only changes preserve the current map and do not resend
+  tiles.
+- Revoke removes the tile layer, aborts registered active and queued loads, revokes object URLs, and
+  blocks future requests. `pagehide` performs the same cancellation. Copy states that revocation
+  cannot recall requests already received or erase browser or provider records.
+
+The exact standard disclosure is:
+
+> Map tiles are provided by OpenStreetMap. If you choose “Load approximate OpenStreetMap tiles for
+> this map”, StravaStats requests map images for the coarse area shown (zoom 11 or lower) from
+> a.tile.openstreetmap.org, b.tile.openstreetmap.org, or c.tile.openstreetmap.org. Tile paths reveal
+> the approximate displayed area and request timing. StravaStats does not send activity names or
+> IDs, dates, route coordinates or route order, tokens, heart rate, or power; the route overlay
+> stays in this document. Permission applies only to this map in this document. Revoke stops new
+> requests and cancels registered loads, but cannot recall requests already received or erase
+> browser or provider records.
+
+Aggregate root and Gear views add: **“For this view, the requested area covers all currently visible
+activities.”** The separate limitation text is: **“Map drawing code is currently loaded from
+unpkg.com and runs in this page. This tile permission does not resolve that separate CDN trust
+boundary.”** CDN governance remains R11 and is not changed or claimed closed here.
+
+### Geometry, precision, request, and lifetime contract
+
+- Geometry is validated in local code before any map-library or network side effect. Only a dense,
+  ordinary array of dense, ordinary two-element arrays containing own finite numeric data values is
+  accepted. Latitude is within `[-90, 90]` and longitude within `[-180, 180]`. Missing, `null`,
+  numeric strings, holes, accessors, Proxies that throw, non-finite values, extra elements,
+  out-of-range values, and malformed encoded polylines fail closed. Genuine numeric zero remains
+  valid. Activity IDs remain opaque and never enter coordinate or tile construction.
+- The complete valid local geometry is inspected before authorization is offered. It computes a
+  coarse approved tile envelope locally; no ordered route vertices or sample are serialized. The
+  current first-point zoom-13 request is prohibited. The map fits the complete approved region
+  before adding a tile layer.
+- Tile zoom is restricted to canonical integers `0..11`. `noWrap` is enabled. Pan and zoom are
+  constrained to the initially approved coarse envelope, and tiles outside that envelope fail
+  closed. At zoom 11, one equatorial tile is approximately 19.6 km wide and is latitude-dependent.
+- The only permitted method is `GET`. Requests use `credentials: 'omit'`,
+  `referrerPolicy: 'no-referrer'`, `redirect: 'error'`, `cache: 'no-store'`, no app header or token,
+  a four-second timeout, bounded concurrency, and no retry or provider fallback. Responses must be
+  successful PNG images no larger than 1 MiB. Response bodies and Blob URLs remain memory-only.
+- Offline, denied, revoked, malformed, missing-GPS, timeout, abort, provider error, invalid response,
+  and partial-tile failure produce local explicit states and never broaden origin, precision,
+  destination, or retry behavior. R8 creates no durable tile cache and never clears browser,
+  provider, Legacy, V2, Service Worker, or historical cache data.
+
+### Literal network allowlist
+
+The only hosts are:
+
+```text
+a.tile.openstreetmap.org
+b.tile.openstreetmap.org
+c.tile.openstreetmap.org
+```
+
+The only URL grammar is `https://HOST/Z/X/Y.png`, where `Z`, `X`, and `Y` are canonical unsigned
+base-10 integers, `0 <= Z <= 11`, and `0 <= X,Y < 2^Z`. A leading sign, leading zero other than the
+literal zero, whitespace, port, userinfo, query, fragment, alternate suffix or path, wildcard host,
+redirect, retina variant, and every nonlisted origin are denied. Carto, Stamen, OpenTopoMap, Esri,
+geocoding, and automatic fallback are not permitted.
+
+### Literal cumulative implementation allowlist
+
+The collision-audited maximum is exactly the following 29 paths. No thirtieth path may be changed
+without a new owner decision:
+
+```text
+docs/tasks/pr-36-map-location-boundary.md
+docs/guides/privacy-guide.md
+docs/guides/known-limitations.md
+README.md
+PWA_GUIA.md
+TECHNICAL_GUIDE.md
+js/app/main.js
+js/app/map-location-egress.js
+js/tabs/maps.js
+js/tabs/run-analysis.js
+js/pages/activity/index.js
+js/pages/activity/activity.js
+js/pages/run/index.js
+js/pages/run/run.js
+js/pages/bike/index.js
+js/pages/bike/bike.js
+js/pages/swim/index.js
+js/pages/swim/swim.js
+js/pages/gear/index.js
+js/pages/gear/gear-analysis.js
+tests/privacy/map-location-egress.test.js
+tests/consumers/map-location-consent-browser-smoke.html
+tests/consumers/summary-boundaries.test.js
+tests/consumers/detail-boundaries.test.js
+tests/consumers/summary-browser-smoke.html
+tests/consumers/canonical-summary-browser-smoke.html
+tests/consumers/detail-browser-smoke.html
+tests/consumers/canonical-detail-browser-smoke.html
+tests/default-canonical-browser-smoke.html
+```
