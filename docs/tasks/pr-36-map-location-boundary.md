@@ -5,14 +5,14 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 release hardening / R8 |
-| Status | Task-Brief-only publication in progress; A2 read-only audit and owner decision required before implementation |
+| Status | Local Final Review Closure complete; push, exact-head CI, and Draft-to-Ready pending |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/map-location-boundary` |
 | Exact base | `integration/v2@5707d056ed1c083ab7a61648a050c8806efa4bbd` |
 | Owner | Codex |
 | Reviewer | Independent findings-first reviewer required after implementation |
 | Dependency | Integration push CI run `31286031445`, job `93174915406`, successful |
-| Pull request | Draft PR required; Ready transition authorized only after final Closure gates |
+| Pull request | Draft PR [#42](https://github.com/XiChuan9/StravaStats/pull/42); Ready transition only after remote and CI gates |
 | Control tower | `019fa697-6cbf-70f1-a120-bf31ecc9e2ba` |
 
 ## Goal and authority
@@ -331,3 +331,56 @@ tests/consumers/detail-browser-smoke.html
 tests/consumers/canonical-detail-browser-smoke.html
 tests/default-canonical-browser-smoke.html
 ```
+
+## Final Review Closure
+
+Local implementation and review closed on 2026-08-09 at implementation commit
+`b72d3f63048d875b77d1de186253ebc9c6e23ee7`.
+
+- Failure-first evidence: the first focused R8 run failed because
+  `js/app/map-location-egress.js` did not exist. Production implementation began only after that
+  expected failure and the A3 contract freeze.
+- Scope evidence: the implementation commit changes exactly 23 paths, all contained in the frozen
+  29-path maximum. The temporary attempted use of unapproved
+  `tests/consumers/detail-consumers.test.js` was detected before staging, removed completely, and
+  reported to the control tower; equivalent coverage is in approved
+  `tests/consumers/detail-boundaries.test.js`. No thirtieth path was added.
+- Focused evidence: the final combined R8 privacy, detail-boundary, and existing detail-consumer run
+  passed 296/296. The fresh independent reviewer also ran the current R8 boundary subset at 43/43.
+- Repository gates: `npm test` passed 1682/1682; `npm run check:syntax` passed for 249 files;
+  `npm run check:privacy` passed; and `git diff --check` passed. One preceding full run encountered
+  an unrelated Legacy timeout assertion under parallel load; that file passed 59/59 in isolation
+  and the required full rerun passed 1682/1682.
+- Actual-served evidence: a fresh headless Chromium context used an empty disposable profile. A
+  route interceptor installed before navigation allowed only `127.0.0.1:3001` and aborted every
+  other destination, while the served harness installed its fetch interception before production
+  import. The exact result was `PASS: pre-consent and Demo zero egress; bounded rejection and revoke
+  settlement verified.` There were zero non-loopback requests, console warnings, console errors, or
+  page errors. No real external map request or user browser profile was used.
+- Review evidence: the first independent review found unsafe consumer normalization, pre-bound
+  response buffering, and premature Leaflet completion. Later fresh reviews found renderer clone
+  laundering, incomplete response cancellation, unsettled revoke callbacks, missing decode status,
+  a misleading Swim provider seam/state, and route-sized argument spreading. Every finding was
+  fixed and regression-tested. A brand-new final reviewer then reported **no findings** across the
+  complete latest tree and all prior findings.
+- Contract result: Real maps start denied and use one per-map, per-document memory grant; Demo has
+  no grant or tile request; Canonical root without GPS is unavailable; Swim remains local; Gear is
+  Real-only aggregate disclosure; Run Plus/NSM retain no direct map. Geometry fails closed without
+  missing/null-to-zero conversion, accepts genuine zero, supports the 200,000-point scale, and
+  constructs only the approved coarse envelope before requests.
+- Network result: only exact HTTPS `a`, `b`, or `c.tile.openstreetmap.org/Z/X/Y.png` URLs at zoom
+  `0..11` can be constructed inside the approved envelope. Requests use the frozen credential,
+  referrer, redirect, cache, timeout, concurrency, no-retry, response-size, cancellation, and
+  object-URL contracts. No geocoder, provider fallback, durable permission, tile cache, telemetry,
+  Service Worker, auth, schema, API, or dependency change was added.
+- Migration, data, and rollback result: there is no migration or destructive operation. Legacy and
+  V2 data, provider credentials, historical caches, disconnect semantics, and Legacy rollback remain
+  intact. No real account, Token, activity, GPS route, health/power value, private fixture, or user
+  browser state was read.
+- Known limitation: Leaflet and Leaflet.heat remain loaded from `unpkg.com`; this separate R11 CDN
+  trust boundary remains open. R6 weather, R11 telemetry/CDN, and D3 Service Worker lifecycle remain
+  explicitly outside this change.
+
+Remote publication, a true depth-1 remote-head verification, exact-head CI success, PR body update,
+and Draft-to-Ready remain post-closure gates. Ready does not authorize merge, deploy, release, cache
+deletion, cleanup, or history rewrite.
