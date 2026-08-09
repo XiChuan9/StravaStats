@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 release hardening / D3 / P0-08 |
-| Status | A3 Option A frozen; bounded implementation authorized |
+| Status | A5 local Final Review Closure complete; remote exact-head and CI gates pending |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/service-worker-lifecycle` |
 | Exact base | `integration/v2@d8bcdb221e49f7ed664eeb43733918eabd0ccf30` |
@@ -511,3 +511,67 @@ one explicit update check, drained waiting behavior, absence of unconditional `s
 eviction, required seed failure rollback limited to the partial current cache, fixed safe
 observability, local root-registration ownership, unknown-cache preservation, no automatic reload,
 and unchanged R9/R11 request/response behavior.
+
+## Final Review Closure
+
+Option A is implemented within the exact nine-path cumulative allowlist. The production change:
+
+- removes unconditional `skipWaiting()` and `clients.claim()` and performs no first-generation
+  activate deletion;
+- uses exact current cache `stravastats-static-v2-000001`, preserves exact legacy cache
+  `strava-dashboard-v1`, and keeps the first `RETIRED_OWNED_CACHE_NAMES` list empty;
+- rejects install after any required seed open/fetch/validation/clone/put failure and attempts to
+  delete only the partial exact current generation after all seed attempts settle;
+- preserves the complete R9 request/response classifier and R11 local-vendor/telemetry boundary;
+- registers exact `/sw.js` at scope `/` with `updateViaCache: 'none'`, runs one explicit update
+  check with an eight-second observation cutoff, and exposes only fixed lifecycle codes;
+- shows the fixed non-modal waiting banner with no activation control, persistence, or reload; and
+- narrows local-development cleanup to the exact root `/sw.js` registration and the two literal
+  application-owned cache names, leaving prefix-similar and unrelated registrations/caches alone.
+
+Failure-first evidence ran before production repair: the focused suite produced the expected
+32 failures out of 83 tests against the pre-Option-A implementation. After repair, focused tests
+passed 86/86. The first independent findings-first review of implementation commit `1985bfe`
+found no production correctness or data-preservation defect and identified two evidence gaps:
+missing validation/clone install rollback cases and insufficient deterministic multi-tab state
+modeling. Commit `72b12ed` repaired both within the existing three test/harness paths.
+
+The repaired evidence proves, synthetically and deterministically, that two old clients remain on
+the old page/worker/cache generation while either remains open, the new generation activates only
+after both drain, a failed governed install leaves the old worker active, and legacy/current/
+unknown cache preservation follows the frozen ownership rules. The actual-served disposable
+browser harness passed with `evidenceKind: served-synthetic-in-memory`, exact registration options,
+one update check, `SW_UPDATE_WAITING`, `oneTabStillWaiting: true`,
+`drainedActivation: true`, and `cachePreservation: true`. It used injected in-memory platform
+doubles and did not call a real browser registration or Cache Storage boundary.
+
+A fresh independent re-review of exact repaired head `72b12ed` returned **No findings**. Its
+residual limitations match the owner boundary: native Service Worker registration, native Cache
+Storage mutation, real multi-tab activation, deployment, rollback rehearsal, storage pressure,
+and cross-browser behavior remain intentionally unverified and must not be claimed by this PR.
+
+Final local verification after review repair:
+
+```text
+npm ci                                                        PASS (6 packages)
+node --test tests/service-worker-policy.test.js \
+  tests/service-worker-fetch-policy.test.js \
+  tests/service-worker-lifecycle.test.js                       PASS (90/90)
+npm run check:syntax                                           PASS (260 files)
+npm run check:privacy                                          PASS
+npm test                                                       PASS (1707/1707)
+git diff --check                                               PASS
+cumulative changed paths vs integration/v2                     PASS (exact nine)
+```
+
+No Legacy/V2/settings/backup/user data, IndexedDB, real Cache Storage, registration, browser
+profile, credential, account, private activity, or provider telemetry was read, written, deleted,
+cleared, migrated, or overwritten. Missing-value and opaque-ID contracts are untouched. No
+deployment, header, workflow, package, dependency, public API/schema, Worker/Repository/Import/
+Backup/Diagnostics, default-branch, release, merge, or cleanup change is included.
+
+The implementation is not deployable by inference. Every deployment/release dependency listed
+above remains open. A real rollout or rollback must stop until the release owner separately freezes
+and verifies those policies. This task stops after remote exact-head evidence, exact-head GitHub CI,
+and the authorized Draft-to-Ready handoff; merge, cleanup, deploy, release, and another risk surface
+remain prohibited.
