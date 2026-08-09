@@ -443,3 +443,82 @@ SHA-256 audit digest, and HTML SHA-384 SRI are:
 The packaged license texts are retained verbatim in the approved consolidated notices file. The
 temporary archives and extraction tree are not evidence artifacts and must be removed after the
 local copies and their recorded hashes are independently rechecked.
+
+## Final Review Closure
+
+R11 implementation and review closed on 2026-08-09 against exact base
+`189a743c99af86fba38433ecdad20a09bfc39385`. The implementation commit is `9692cf7`; the
+independent-review repair commit is `540ad999273077c126f6d8f173317f9f7e68cc62`. The cumulative
+base-to-repair diff and this Closure use exactly the 41 literal paths above, with no forty-second
+path. `package.json`, `package-lock.json`, and
+`tests/import/decoder-registry-wiring.test.js` retain their frozen SHA-256 values. All 11 selected
+vendor assets retain the recorded byte counts, SHA-256 values, SHA-384 SRI, versions, and
+provenance. The acquisition directory, temporary attributes proof, disposable Chrome profile,
+and browser runner were removed after verified use.
+
+### Failure-first and implementation evidence
+
+- The initial R11 contract test produced one pass and six failures before production changes, then
+  passed after telemetry removal, local vendoring, SRI/CSP/referrer enforcement, failure guards,
+  VDOT navigation replacement, and athlete-image denial.
+- The first collision test exposed obsolete `unpkg.com` map-runtime disclosure before the approved
+  two-path disclosure-only repair. The unchanged R8 consent endpoint and request behavior remained
+  covered by its focused suite.
+- Standard staged `git diff --cached --check` exposed only the exact upstream CRLF/license-comment
+  whitespace in Leaflet CSS and jsPDF. The owner-approved two-line `.gitattributes` rule made both
+  standard staged and unstaged checks pass without changing either vendor byte.
+- The independent findings-first review found one P1 exact-contract mismatch: Run, Bike, and Swim
+  Strava links used only `noreferrer`. A new regression assertion failed first; all three links were
+  then repaired to exact `rel="noopener noreferrer"` inside the existing allowlist.
+
+### Actual-served disposable-browser evidence
+
+A pure static loopback server served the final repaired working tree without `.env`, credentials,
+private fixtures, or a user browser/profile. Headless Chrome used a disposable empty context with
+Service Workers blocked; the global request interceptor was registered before the first page and
+navigation, and Chrome host resolution separately mapped non-loopback hosts to `0.0.0.0`.
+
+- The ten-page default matrix covered root, activity router, Generic/Run/Bike/Swim detail, Gear,
+  Source Manager, Storage Backup, and Diagnostics. Every page had no `dataLayer`, no `gtag`, no
+  remote runtime element, and no telemetry performance entry.
+- Synthetic Demo initialization, refresh, and dark-mode change retained Demo mode, produced no
+  external athlete image, and exposed no telemetry global.
+- All nine approved runtime globals passed: D3, Cal-Heatmap, Chart.js, the date adapter, matrix
+  controller, Leaflet, Leaflet.heat, html2canvas, and jsPDF.
+- A tampered core Chart response failed SRI, left `Chart` undefined, displayed only fixed local
+  unavailable copy, and wrote no Demo state. A blocked optional Cal-Heatmap response preserved the
+  core controls and Chart runtime with no fallback.
+- Warm offline refresh made the document unavailable without an alternate request; cold offline
+  failed closed as unsupported. The excluded Service Worker lifecycle was not exercised or
+  changed.
+- Final result: 886 same-origin requests, zero local failures, zero external attempts, and zero
+  telemetry attempts. No real provider, telemetry, CDN, tile, Token, account, or private-data
+  request occurred.
+
+### Verification and independent review evidence
+
+- Focused R11/R8/detail/summary/release checks: 311/311 before review repair; repair-focused
+  284/284 after the failure-first link assertion; fresh independent re-review focused checks
+  300/300; final Closure tree 312/312.
+- Final Closure tree full `npm test`: 1696/1696. `npm run check:syntax`: 259 files.
+  `npm run check:privacy`: pass. Standard staged, unstaged, and base-range diff checks: pass.
+- Exact path audit: Task Brief allowlist 41, base-to-repair changed paths 41, unexpected paths 0,
+  missing paths 0. Working tree was clean before this Task-Brief-only Closure.
+- Independent findings-first reviewer `/root/r11_findings_review` inspected the complete
+  base-to-implementation range, reported the single Strava-link P1 above, and made no write.
+- A fresh reviewer `/root/r11_no_findings_rereview` independently inspected the complete
+  base-to-repair range and returned **NO FINDINGS**. It independently reconfirmed the 41/41 path
+  match, exact two-line attributes rule, frozen package/lock/decoder hashes, every vendor hash/SRI,
+  telemetry unreachability, page-minimal CSP/referrer matrix, core and optional failure behavior,
+  VDOT/image egress, R8 preservation, documentation truthfulness, and the repaired link test. It
+  made no write.
+
+Residual exclusions remain production deployment/release, real accounts or private data, D3
+Service Worker lifecycle, npm registry reacquisition, and Safari/Firefox evidence. They are not
+claimed. Rollback remains a code/static-asset revert only and never removes or migrates user data,
+settings, Cache Storage, or Service Worker state.
+
+This is the final Task-Brief-only Review Closure. After its normal push, completion additionally
+requires true remote depth-1 exact-head readback and exact-head GitHub CI success. The safe PR body
+and Draft-to-Ready operation are delegated to the control tower under standing authorization.
+Ready is not merge authorization; merge, cleanup, deploy, release, and D3 remain prohibited.
