@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | M26 / C1 connection-controller seam |
-| Status | A1 Task-Brief-only publication; implementation not authorized |
+| Status | A2 findings / A3 contract freeze; docs-only, implementation not authorized |
 | Base branch | `integration/v2` |
 | Exact base | `integration/v2@b9e4e1d7eedb5051a582e15d39be8c0ffc1a43df` |
 | Exact base tree | `8692ac73a08a4725b68f40cf135be743d3018666` |
@@ -14,6 +14,7 @@
 | Owner decision | C1-A approved for Task-Brief-only Draft publication; implementation withheld |
 | Parent decision | PR-40 / D-A A2 / D-B C / C1 A3 at `c864930f3890a392283939067f5d4d8da494d96f` |
 | Parent pull request | PR #46 remains open and Draft; this task does not modify it |
+| Pull request | PR #47 is open and Draft; title `feat(v2): add fail-closed Source Manager connection controller` |
 | Control tower | `019fa697-6cbf-70f1-a120-bf31ecc9e2ba` |
 
 ## Goal
@@ -128,7 +129,114 @@ Docs only. No implementation, OAuth, Token or Web Storage access, provider/serve
 No PR body update, Ready transition, merge, review request, label, assignment, cleanup, deployment,
 or release is authorized.
 
-## A2 read-only evidence to preserve
+### Authoritative A1 readback
+
+- GitHub assigned PR number **#47** (PR-41 is the task identifier, not a reserved GitHub number).
+- PR #47 is open, Draft, unmerged, and mergeable. Its base is
+  `integration/v2@b9e4e1d7eedb5051a582e15d39be8c0ffc1a43df`; its head is
+  `codex/v2/source-manager-connection-controller@900c70b004ecb0c52e711d252b4954d6fb995c41`.
+- The head is one commit ahead and zero behind the exact base. It contains exactly one changed file:
+  this Task Brief. The installed title and body are exact, and no reviewer, label, assignment,
+  Ready transition, merge, PR #31 edit, or PR #46 edit was made.
+- The earlier unverified expansion `900c70bc6bdf84b5be0b16a3f817a60623e36d0f` is not a commit on
+  this branch and must not be reused.
+
+## A2 findings first
+
+### F1 — the API card is static disclosure, not a connection lifecycle
+
+- `source-manager.html` currently renders the Strava API card as `not_configured`, with two disabled
+  actions (`Connect later` and `Disconnect`). No runtime reads or updates this card.
+- The page introduction says nothing connects to a provider, and CSP allows only same-origin
+  connections. This safely avoids provider I/O but does not implement the PRD P0 states, Connect,
+  Disconnect, reauthorization, or Source Connection visibility.
+- C1-A can truthfully replace the placeholder with one explicit `authorization_unavailable` state
+  and a single disabled action. It cannot claim `not_configured`, `connected`, `disconnected`,
+  last-sync, activity ownership, or account identity because no authoritative record exists.
+
+### F2 — bootstrap already touches session storage before application startup
+
+- `js/source-manager.js` installs global diagnostics listeners, reads `sessionStorage`, and configures
+  the Import performance recorder before it calls `startSourceManager()`.
+- The performance recorder immediately calls `getItem('stravastats_import_performance_v1')` during
+  configuration. Diagnostics can later read/write `stravastats_diagnostics_errors_v1`.
+- Therefore a callback sanitizer inside `js/app/source-manager.js` would be too late for the frozen
+  "sanitize before storage" guarantee. The sanitizer must be the first synchronous bootstrap step,
+  before diagnostics installation, Web Storage access, Worker construction, IndexedDB opening,
+  application mode dispatch, or any error recording.
+- C1 does not remove or broaden the existing bounded diagnostics/performance storage. It prevents
+  callback values from reaching it and keeps the new connection controller itself storage-free.
+
+### F3 — current mode parsing is permissive and constructs Real resources eagerly
+
+- `js/app/source-manager.js` uses `URLSearchParams.get('mode')`: a missing mode selects Real, the
+  first duplicate wins, and unrelated query fields do not block Real startup.
+- After mode selection, Real composition constructs an Import store and module Worker before page
+  initialization. Demo constructs only its storage-free Import façade; an invalid mode constructs
+  that Demo façade solely to render a blocking error.
+- A callback-shaped query must therefore be scrubbed and reduced to a canonical mode before the
+  application function is called. Demo and invalid/sanitizer-failure paths must prove zero Real
+  controller, Import store, IndexedDB, Crypto, or Worker construction.
+
+### F4 — existing root authentication is materially incompatible
+
+- `js/app/auth.js` reads `window` at module scope, fetches `/api/config`, redirects to Strava, posts
+  authorization codes to `/api/strava-auth`, reads/writes `strava_tokens` in `localStorage`, and
+  directly calls Strava deauthorization with a Bearer token.
+- Its callback accepts any nonempty code without a C1-owned request-state contract and scrubs the URL
+  only after exchange and token acceptance. Its disconnect removes the legacy token even when
+  provider revocation is unconfirmed.
+- Importing or adapting that module would cross the C1 authorization, Token, network, server API,
+  provider, Demo, and local-library boundaries. C1-A must not import it, call it, or infer connection
+  status from its token.
+
+### F5 — V2 has no durable connection identity or backup representation
+
+- The current database is V4 (`strava-stats-v2@4`) and has no `sourceConnections` store. Public
+  Storage exposes no connection operation, and the backup payload/manifest has no connection entry.
+- Activity Source provenance exists, but it is not an authenticated connection or durable owner.
+  Repository public exports contain no provider connection surface.
+- Consequently C1 cannot safely make Connect or Disconnect operable. C2 owns additive V5
+  SourceConnection and backup semantics; any need to touch schema, Storage, Repository, Backup, or
+  migration files is an immediate C1 stop.
+
+### F6 — Import retry exists below Source Manager but is deliberately not exposed
+
+- Import Service implements explicit `retryJob(jobId)` only for jobs in `failed_validation`,
+  `failed_decode`, or `failed_storage`, with at least one retryable item and every required raw
+  artifact still present. Cancelled and completed jobs are terminal and not retryable.
+- Source Manager's Real Import façade exposes import, cancel, report, wait, preview, persisted-log,
+  and duplicate-review calls, but not `retryJob`. The page polls active jobs, stops later work on
+  quota failure, preserves completed items on cancellation, and renders persisted terminal reports.
+- C1 must not add retry/recovery UI or expand Import/Worker public surfaces. That remains a distinct
+  lifecycle tranche and collision domain.
+
+### F7 — local-first data, backup, and Service Worker boundaries are already separate
+
+- Real mode opens only the independent V2 Import path; Demo returns zero-data/unavailable methods and
+  does not fall back to Real storage. Existing file/ZIP/FIT/TCX/GPX imports, duplicate review,
+  persisted Import Log, first-run rendering, Storage & Backup navigation, and diagnostics remain
+  independent of provider authorization.
+- Source Manager navigations containing a query already bypass runtime Service Worker caching.
+  The Service Worker and its cache policy need no C1 change.
+- Disconnect/delete separation is present only as copy today. C1 keeps both actions unavailable and
+  performs no record mutation, so Legacy, Shadow, Canonical, Demo, backup, diagnostics, and local
+  activities remain byte-for-byte outside its write set.
+
+### F8 — browser-side scrubbing has a precise privacy limit
+
+- A script can scrub callback material from history before application storage/network work, and a
+  `no-referrer` document policy can prevent it from becoming a referrer on subsequent resource
+  requests.
+- It cannot prevent the original document URL from having reached the browser, hosting edge, or
+  origin access log. C1 therefore must not claim server-log erasure or a real OAuth callback privacy
+  proof. A real callback endpoint, server logging policy, credentials, and provider evidence require
+  separate authority.
+- C1 browser evidence is limited to deterministic synthetic canaries in a disposable profile:
+  post-scrub address bar/history, DOM, console, Web Storage, IndexedDB, diagnostics, fetch/XHR,
+  resource referrers, and Service Worker observations.
+
+## A2 call graph and protected boundaries
 
 ### Current Source Manager boundary
 
@@ -144,7 +252,8 @@ The current production graph remains:
 
 - `source-manager.html` has a same-origin-only CSP and a static disabled API card.
 - `js/source-manager.js` injects document, location, IndexedDB, Crypto, and the module Worker for the
-  existing local Import composition. It injects no fetch, Token, auth, or provider connector.
+  existing local Import composition. It also owns the existing Import-performance `sessionStorage`
+  configuration. It injects no fetch, Token, auth, or provider connector.
 - `js/app/source-manager.js` constructs Canonical Import storage/Worker only for Real mode and a
   storage-free façade for Demo. It imports no root auth or provider module.
 - `js/pages/source-manager/source-manager.js` is an injected UI consumer. Page rules prohibit it
@@ -176,13 +285,14 @@ The current production graph remains:
   and package files are outside the selected candidate maximum. Discovering a need for any of them
   is a material stop, not an implicit expansion.
 
-## A3 frozen C1-A candidate contract
+## A3 frozen C1-A implementation contract
 
 A3 records this selected candidate for later implementation approval; it does not implement it.
 
 ### Exact production semantics
 
 - API card status: `authorization_unavailable`.
+- Exact badge copy: `Authorization unavailable`.
 - Exact visible copy: `Connection controller staged; authorization remains unavailable until
   connection identity and provider import are ready.`
 - Render exactly one disabled button labeled `Connect unavailable`; render no Disconnect or Sync
@@ -191,7 +301,11 @@ A3 records this selected candidate for later implementation approval; it does no
   revoke, localStorage/sessionStorage, external request, or automatic work.
 - A nonempty local library and every Import/Backup/Diagnostics/duplicate record remain untouched.
 
-### Exact application/page façade
+### Exact controller and application/page façade
+
+The application-local factory is `createSourceManagerConnectionController()`. It accepts no
+options or capabilities in C1. Passing arguments has no observable effect because the factory does
+not enumerate, access, retain, or call them. It performs no work at module import or construction.
 
 The injected page façade contains exactly:
 
@@ -218,23 +332,54 @@ close()
 
 - The snapshot contains no Token, athlete/account ID, URL, scope, provider response, underlying
   error, storage handle, SourceConnection, last-sync value, or activity count.
-- `beginConnect()` and `disconnect()` reject with the fixed safe code
-  `AUTHORIZATION_UNAVAILABLE` before any I/O.
-- `close()` is idempotent. After close, every action rejects with fixed `CONNECTION_CLOSED` and
-  performs no work.
-- The new application controller is side-effect free at module import and receives every
-  capability through validated injection. The page never imports it directly.
+- Before close, `beginConnect()` and `disconnect()` return rejected Promises whose only enumerable
+  field is the fixed safe code `AUTHORIZATION_UNAVAILABLE`. Rejection occurs before any I/O.
+- `getConnectionSnapshot()` is synchronous and returns the same exact deeply frozen snapshot before
+  and after close. It never throws and performs no I/O.
+- `close()` is asynchronous and idempotent; every call resolves to the same deeply frozen
+  `{ status: 'closed' }` value. After the first close call, `beginConnect()` and `disconnect()` reject
+  with an object whose only enumerable field is `code: 'CONNECTION_CLOSED'`.
+- The page never imports the controller module. Real composition constructs exactly one controller
+  and injects it. Demo and invalid/sanitizer-failure composition construct none and never call a
+  connection façade; the static fail-closed API card remains the Demo/blocked presentation.
+- Page initialization reads the Real snapshot once and renders only allowlisted status/copy/action
+  fields. It never renders an object, error message, stack, cause, URL, identity, or provider value.
+- Application/page close closes the controller without changing the existing Import close/data
+  semantics. Pagehide remains the only automatic close trigger.
 
 ### Navigation sanitizer
 
-- Before session-mode dispatch, an injected same-origin sanitizer detects any OAuth-shaped
-  `code`, `state`, `error`, or `scope` query field.
-- It rejects the navigation before auth/storage/network I/O; never renders, logs, throws, or records
-  any query value; and performs one history replacement.
-- It preserves only a sole exact `mode=real` or `mode=demo` field. Otherwise it returns to the bare
-  `/source-manager.html` path. Duplicate, blank, malformed, accessor, and Proxy inputs fail closed.
-- Demo and invalid modes never construct the Real controller. Sanitization is history-only and does
-  not establish an auth flow.
+- `source-manager.html` places `<meta name="referrer" content="no-referrer">` before the stylesheet
+  and module script. CSP remains same-origin-only and is not expanded.
+- The first synchronous statement in `js/source-manager.js` invokes the application-local
+  sanitizer with the current pathname, raw search, raw hash, and History façade. No diagnostics,
+  Web Storage, Worker, IndexedDB, Crypto, timer, console, DOM mutation, or application startup may
+  occur first.
+- Canonical clean inputs are exactly the pathname `/source-manager.html`, an empty hash, and one of:
+  empty search (Real), `?mode=real`, or `?mode=demo`. They perform zero history writes.
+- Any nonempty hash, any OAuth-shaped exact query key (`code`, `state`, `error`, or `scope`), any
+  unknown field, duplicate field, blank/invalid mode, malformed encoding, or noncanonical ordering
+  is rejected as untrusted navigation material. Values are never retained, interpolated, rendered,
+  logged, thrown, or persisted.
+- Rejection performs exactly one `history.replaceState(null, '', canonicalPath)`. It preserves
+  `?mode=real` or `?mode=demo` only when the parsed query has exactly one own `mode` value with that
+  exact value and all remaining fields are OAuth-shaped; otherwise `canonicalPath` is the bare
+  `/source-manager.html`. Hash is always removed. A bare replacement does not authorize Real startup
+  in the current document; rejected input without one valid mode remains blocked until a later clean
+  navigation/reload.
+- A clean input returns exactly a deeply frozen `{ status: 'clean', sessionMode: 'real' | 'demo' }`.
+  A successfully scrubbed input with one valid mode returns the same shape with status `sanitized`.
+  Application dispatch consumes this returned mode rather than rereading `location.search`.
+- Rejected input without one valid mode, or a sanitizer dependency failure, returns exactly a deeply
+  frozen `{ status: 'blocked', sessionMode: null, code: 'NAVIGATION_SANITIZATION_FAILED' }`. It never
+  returns query/hash/path values, and bootstrap does not call application startup.
+- If pathname/dependencies are invalid, accessor/Proxy inspection fails, or history replacement
+  throws, bootstrap performs no diagnostics/storage/network/Worker/IndexedDB/application work and
+  reveals no input. It may set the existing static blocking panel only to code
+  `NAVIGATION_SANITIZATION_FAILED` and copy `The Source Manager navigation could not be accepted
+  safely.` after sanitization has returned.
+- Sanitization is history-only rejection. It does not validate OAuth state, exchange a code,
+  establish authorization, alter a Token, or prove that upstream logs lack the original URL.
 
 ### Literal candidate implementation allowlist
 
@@ -270,14 +415,20 @@ new material collision record and owner decision.
 
 - Controller/page module import performs zero fetch, Token/Web Storage, provider, Worker, timer,
   console, navigation, history, or DOM I/O.
-- Exact façade keys; deeply frozen exact snapshot; fixed status/codes; repeat calls; close barrier;
-  hostile options/accessors/Proxies; and deterministic rejected Promises.
+- Exact façade keys; no factory-option inspection; deeply frozen exact snapshot/close result; fixed
+  status/codes and exact enumerable fields; repeat calls; pre/post-close matrix; and deterministic
+  rejected Promises.
 - `beginConnect()` and `disconnect()` prove zero fetch, config/exchange/revoke, navigation/history,
   storage, provider, Repository, Import, and Worker work.
-- Sanitizer covers every OAuth-shaped key, duplicates, blanks, malformed encodings, valid Real/Demo
-  preservation, invalid mode, same-origin path, hostile inputs, and exactly one history replacement.
+- Bootstrap-order tests make storage/diagnostics/Worker/IndexedDB/DOM dependencies throw if touched
+  before sanitization. Sanitizer tests cover every OAuth-shaped key, unknown keys, fragments,
+  duplicates, blanks, malformed encodings, canonical Real/Demo, valid mode preservation, invalid
+  path, hostile inputs, zero writes for clean input, and exactly one write for rejected input.
+- Real constructs and closes exactly one controller. Demo, invalid dependency, sanitizer failure,
+  history failure, and blocked mode construct zero controllers and zero Real Import resources.
 - Canary callback values never appear in DOM, diagnostics, console, post-scrub URL, public errors,
-  snapshots, or persisted storage.
+  snapshots, Web Storage, IndexedDB, subsequent resource referrers, or persisted storage. Tests do
+  not claim control over the original document request or hosting/server access logs.
 - Existing file/ZIP import, cancellation, report/log, duplicate review, preview, backup navigation,
   Real/Demo/invalid mode, local-first, Repository/Import public, and Service Worker boundaries remain
   unchanged.
@@ -305,8 +456,31 @@ until it runs at the exact implementation head.
   production remains network-free and must redact callback canaries from every output surface.
 - **Rollback:** A0–A3 are docs-only and revert without browser-data impact. A future implementation
   rollback reverts only the authorized ten-path diff; no data or Token restoration is needed.
-- **Architecture/collision risk:** low-to-medium, limited to Source Manager composition, navigation
-  sanitization, and forward-looking PR-10 boundary assertions.
+- **Architecture/collision risk:** medium. The controller is isolated and low risk, but bootstrap
+  ordering intersects existing diagnostics/sessionStorage setup, and mode sanitization changes
+  permissive query handling. Collision remains bounded to the ten candidate paths and forward-looking
+  PR-10 boundary assertions.
+
+## Material A3 implementation-authorization package
+
+The evidence supports one bounded implementation package, **C1-A3**, and no live-auth substitute:
+
+1. Implement the exact fail-closed zero-capability controller and Real-only injection described
+   above.
+2. Replace only the API-card placeholder with the exact unavailable badge/copy/single disabled
+   action; do not add Connect, Disconnect, Sync, retry, or delete behavior.
+3. Make navigation sanitization the first bootstrap operation, add the `no-referrer` policy, and
+   retain only the sanitized mode result. Do not import root auth or touch Token/provider/server
+   boundaries.
+4. Add failure-first Node tests and deterministic disposable-profile browser smoke evidence within
+   the ten-path maximum. Preserve every existing Import, cancellation, report, duplicate, backup,
+   diagnostics, local-first, Demo/Real, Repository, Storage, Worker, and Service Worker behavior.
+
+Implementation remains **not authorized** until the owner explicitly approves this exact C1-A3
+package and ten-path maximum. Approval still would not authorize live OAuth/account/provider calls,
+credentials/private data, Token or Web Storage connection-state access, server API, C2/V5/schema/
+Backup changes, C3 Import/provider expansion, C4 ownership/lease recovery, deployment, release,
+Ready, merge, or cleanup. A need for any such boundary is a material stop and new owner decision.
 
 ## Required verification
 
