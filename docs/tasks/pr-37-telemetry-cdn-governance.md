@@ -212,7 +212,7 @@ tarball integrity, and hashes are verified and the approved local assets are cre
 `package.json`, `package-lock.json`, and `tests/import/decoder-registry-wiring.test.js` remain
 byte-for-byte unchanged. The exact-locked `@vercel/speed-insights@2.0.0` package remains an
 install-only, runtime-unreachable dependency because PR-14 freezes the package files by whole-file
-digest. Any need to change one of those three paths or a forty-first path is a new collision and
+digest. Any need to change one of those three paths or a forty-second path is a new collision and
 stops implementation.
 
 ### Telemetry and page-mode contract
@@ -322,10 +322,11 @@ Strava, Ko-fi, Reddit, or VDOT pages is not a runtime fetch authorization and mu
 
 ### A3 literal cumulative hard maximum
 
-Implementation, tests, review repairs, documentation, and Closure may modify exactly these 40
+Implementation, tests, review repairs, documentation, and Closure may modify exactly these 41
 paths. Every unlisted path is prohibited:
 
 ```text
+.gitattributes
 docs/tasks/pr-37-telemetry-cdn-governance.md
 index.html
 html/activity-router.html
@@ -383,6 +384,25 @@ same-origin, while OpenStreetMap tile requests remain a separate external reques
 unchanged R8 per-map consent boundary. No R8 consent state, action label, endpoint, URL grammar,
 zoom, geometry validation, fetch, credential, referrer, cache, timeout, cancellation, algorithm,
 provider, public API, schema, Service Worker, or data behavior may change.
+
+On 2026-08-09 the owner approved the exact second R11 A3 collision Option A after the staged
+failure-first gate proved that the two byte-for-byte upstream distribution files contain their
+own whitespace forms: `styles/vendor/leaflet-1.9.4.css` uses CRLF and
+`js/vendor/jspdf-2.5.1.umd.min.js` has trailing spaces in bundled license comments. Standard
+`git diff --cached --check` failed only on those acquired bytes. A disposable
+`core.attributesFile=/private/tmp/r11-attributes` proof made that same staged check pass without
+changing either file. The cumulative hard maximum therefore expands from 40 to exactly 41 paths
+by adding only `.gitattributes`; its entire R11 content is exactly:
+
+```gitattributes
+/js/vendor/jspdf-2.5.1.umd.min.js -diff
+/styles/vendor/leaflet-1.9.4.css -diff
+```
+
+No other attributes rule is authorized. Both vendor files, their frozen SHA-256/SHA-384 SRI, and
+their provenance remain byte-for-byte unchanged. The disposable proof file must be removed after
+the repository rule is verified. Any forty-second path or material contract change is a new
+collision and stops implementation.
 
 ### A3 acquisition, provenance, license, and integrity evidence
 
