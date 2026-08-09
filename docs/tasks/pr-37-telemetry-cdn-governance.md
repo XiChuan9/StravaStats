@@ -212,7 +212,7 @@ tarball integrity, and hashes are verified and the approved local assets are cre
 `package.json`, `package-lock.json`, and `tests/import/decoder-registry-wiring.test.js` remain
 byte-for-byte unchanged. The exact-locked `@vercel/speed-insights@2.0.0` package remains an
 install-only, runtime-unreachable dependency because PR-14 freezes the package files by whole-file
-digest. Any need to change one of those three paths or a thirty-ninth path is a new collision and
+digest. Any need to change one of those three paths or a forty-first path is a new collision and
 stops implementation.
 
 ### Telemetry and page-mode contract
@@ -322,7 +322,7 @@ Strava, Ko-fi, Reddit, or VDOT pages is not a runtime fetch authorization and mu
 
 ### A3 literal cumulative hard maximum
 
-Implementation, tests, review repairs, documentation, and Closure may modify exactly these 38
+Implementation, tests, review repairs, documentation, and Closure may modify exactly these 40
 paths. Every unlisted path is prohibited:
 
 ```text
@@ -335,6 +335,7 @@ html/bike.html
 html/swim.html
 html/gear.html
 js/app/main.js
+js/app/map-location-egress.js
 js/pages/activity/index.js
 js/pages/run/index.js
 js/pages/bike/index.js
@@ -355,6 +356,7 @@ js/vendor/THIRD_PARTY_NOTICES.md
 styles/vendor/cal-heatmap-4.2.2.css
 styles/vendor/leaflet-1.9.4.css
 tests/privacy/external-runtime.test.js
+tests/privacy/map-location-egress.test.js
 tests/consumers/external-runtime-browser-smoke.html
 tests/consumers/summary-boundaries.test.js
 tests/consumers/detail-consumers.test.js
@@ -370,6 +372,17 @@ No schema, public API, analysis algorithm, package/lock, Worker, Service Worker,
 deployment, release, Legacy/V2 data, migration, deletion, cleanup, or R3 incident-disposition
 change is authorized. Rollback is a code-and-static-asset revert only and never clears Cache
 Storage, Service Worker state, settings, credentials, Legacy data, or V2 data.
+
+On 2026-08-09 the owner approved the exact R11 A3 collision Option A after the implementation
+audit proved that the production R8 consent UI still displayed an obsolete statement that Leaflet
+was loaded from `unpkg.com`. The cumulative hard maximum therefore expands from 38 to exactly 40
+paths by adding only `js/app/map-location-egress.js` and
+`tests/privacy/map-location-egress.test.js`. Those paths may change only the fixed disclosure and
+its matching frozen assertion: the map drawing runtime is exact-version-pinned and served
+same-origin, while OpenStreetMap tile requests remain a separate external request governed by the
+unchanged R8 per-map consent boundary. No R8 consent state, action label, endpoint, URL grammar,
+zoom, geometry validation, fetch, credential, referrer, cache, timeout, cancellation, algorithm,
+provider, public API, schema, Service Worker, or data behavior may change.
 
 ### A3 acquisition, provenance, license, and integrity evidence
 
