@@ -200,3 +200,173 @@ changes. Implement failure-first and remain inside the approved paths. Required 
 
 Stop at Ready. Squash merge, auto-merge, cleanup, deploy, release, cache deletion, data mutation,
 branch/worktree deletion, and any history rewrite require separate user authorization.
+
+## A3 owner decision and frozen implementation contract
+
+The owner selected Option A exactly on 2026-08-09 through the control tower. The selection also
+authorizes one build-source-only acquisition in a disposable temporary directory for the exact npm
+package versions below. It does not authorize an application or browser CDN request. Acquisition
+material must be removed after the selected distribution bytes, package provenance, license,
+tarball integrity, and hashes are verified and the approved local assets are created.
+
+`package.json`, `package-lock.json`, and `tests/import/decoder-registry-wiring.test.js` remain
+byte-for-byte unchanged. The exact-locked `@vercel/speed-insights@2.0.0` package remains an
+install-only, runtime-unreachable dependency because PR-14 freezes the package files by whole-file
+digest. Any need to change one of those three paths or a thirty-ninth path is a new collision and
+stops implementation.
+
+### Telemetry and page-mode contract
+
+- Runtime telemetry is completely disabled. There is no telemetry opt-in, consent record, event,
+  queue, identifier, cookie, storage key, retry, unload/background delivery, or fallback.
+- The runtime telemetry allowlist is empty: Google Tag Manager, direct Google Analytics, Microsoft
+  Clarity, Vercel Analytics, Vercel Insights, and Vercel Speed Insights are all denied.
+- Root, every rewritten root tab route, activity router, Generic/Run/Bike/Swim detail, Gear, Source
+  Manager, Storage Backup, and Diagnostics make zero telemetry request in Demo, Legacy, Shadow, and
+  Canonical modes, including direct navigation, reload, refresh, and mode changes.
+- Root GTM/`gtag`/noscript markup, every `/_vercel/insights/script.js` declaration, and every
+  production import of `js/shared/utils/speed-insights.js` are removed. The utility may remain
+  tracked but must be unreachable from every production entry.
+- An opaque activity or Gear ID, URL/query/hash, document title/referrer, activity/athlete/gear
+  field, coordinate/route, health/power value, Token, error, timing, IP-derived value, or browser
+  metadata never enters telemetry because no telemetry code or collector is reachable.
+
+### Local runtime asset contract
+
+The only approved third-party visualization runtime is the following exact same-origin set:
+
+```text
+/js/vendor/d3-7.9.0.min.js
+/js/vendor/cal-heatmap-4.2.2.min.js
+/styles/vendor/cal-heatmap-4.2.2.css
+/js/vendor/chart-4.5.0.umd.min.js
+/js/vendor/chartjs-adapter-date-fns-3.0.0.bundle.min.js
+/js/vendor/chartjs-chart-matrix-3.0.0.min.js
+/styles/vendor/leaflet-1.9.4.css
+/js/vendor/leaflet-1.9.4.min.js
+/js/vendor/leaflet-heat-0.2.0.min.js
+/js/vendor/html2canvas-1.4.1.min.js
+/js/vendor/jspdf-2.5.1.umd.min.js
+```
+
+The package provenance is exactly D3 `7.9.0`, Cal-Heatmap `4.2.2`, Chart.js `4.5.0`,
+chartjs-adapter-date-fns `3.0.0`, chartjs-chart-matrix `3.0.0`, Leaflet `1.9.4`, Leaflet.heat
+`0.2.0`, html2canvas `1.4.1`, and jsPDF `2.5.1`. The selected distribution bytes and licenses are
+tracked; no package is added to the manifest or lockfile. A later A3 evidence subsection must
+freeze each acquired tarball integrity, selected-file SHA-256, and HTML SHA-384 SRI before a
+production HTML change is committed.
+
+Every local third-party `script` and `link` uses the exact versioned path, `crossorigin="anonymous"`,
+and its exact `integrity="sha384-..."`. There is no alternate origin, unversioned path, redirect,
+query, retry, fallback CDN, dynamic loader, `eval`, or remote module. A missing, malformed, or
+integrity-failing core Chart runtime stops root/detail/Gear before Repository or private-data reads
+and shows only fixed unavailable copy. Missing optional Cal-Heatmap, Leaflet/Leaflet.heat,
+html2canvas, or jsPDF degrades only its visualization/export with fixed unavailable copy and never
+broadens the request boundary.
+
+The VDOT calculator iframe is removed. Its feature becomes an explicit user-initiated navigation
+with `target="_blank"` and `rel="noopener noreferrer"`. External athlete profile images are denied:
+the summary renderer accepts only the exact same-origin local placeholder `/icon-sport.svg`, and
+Demo uses that path. Provider-controlled or other external HTTPS image values remain data only and
+never become a request.
+
+### Referrer, CSP, CORS, cache, and offline contract
+
+Root, router, detail, and Gear documents declare `Referrer-Policy: no-referrer`. Their meta CSP has
+no broad `https:`, `data:` script, `unsafe-eval`, external frame, object, or base permission:
+
+```text
+default-src 'self'
+script-src 'self' plus only the exact SHA-256 hashes of retained static inline blocks
+script-src-attr 'unsafe-hashes' plus only exact hashes of retained fixed handlers
+style-src 'self' 'unsafe-inline'
+img-src 'self' data: blob:
+worker-src 'self'
+manifest-src 'self'
+object-src 'none'
+base-uri 'none'
+form-action 'none'
+frame-src 'none'
+```
+
+`connect-src` is page-minimal: activity router is `'self'`; Gear is `'self'` plus the exact three
+R8 OpenStreetMap tile origins; Generic/Run/Bike are `'self'` plus the R6 Open-Meteo origin and the
+three R8 tile origins; Swim is `'self'` plus R6 Open-Meteo; root is `'self'` plus the exact R6, R7,
+and R8 origins. CSP is defense in depth; the accepted R6/R7/R8 modules continue to enforce their
+exact paths, fields, methods, credentials, referrer, consent, cancellation, and limits.
+
+Local vendor JavaScript under `/js/vendor/` and CSS under `/styles/vendor/` uses R9's existing
+queryless same-origin static classifier. A successful online response may receive the existing
+network-first validated Cache Storage behavior and later fallback. No Service Worker file,
+classifier, install seed, cache name, lifecycle, deletion, eviction, or D3 contract changes. There
+is no alternate resource request when offline. Cold first-ever offline remains unsupported; a
+missing warm fallback fails with fixed local unavailable copy. Browser HTTP cache behavior is not
+promoted to a product guarantee.
+
+### Exact external request allowlist retained from R6/R7/R8
+
+R11 adds no external origin. The only authorized automatic application request candidates remain
+behind their previously accepted affirmative controls:
+
+```text
+R6 GET  https://archive-api.open-meteo.com/v1/archive
+R7 POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent
+R8 GET  https://a.tile.openstreetmap.org/{z}/{x}/{y}.png
+R8 GET  https://b.tile.openstreetmap.org/{z}/{x}/{y}.png
+R8 GET  https://c.tile.openstreetmap.org/{z}/{x}/{y}.png
+```
+
+All other automatic external origins and paths are denied. Explicit user navigation to existing
+Strava, Ko-fi, Reddit, or VDOT pages is not a runtime fetch authorization and must use
+`noopener noreferrer`. R8 tiles remain separate location requests, not CDN or telemetry approval.
+
+### A3 literal cumulative hard maximum
+
+Implementation, tests, review repairs, documentation, and Closure may modify exactly these 38
+paths. Every unlisted path is prohibited:
+
+```text
+docs/tasks/pr-37-telemetry-cdn-governance.md
+index.html
+html/activity-router.html
+html/activity.html
+html/run.html
+html/bike.html
+html/swim.html
+html/gear.html
+js/app/main.js
+js/pages/activity/index.js
+js/pages/run/index.js
+js/pages/bike/index.js
+js/pages/swim/index.js
+js/pages/gear/index.js
+js/demo/generator.js
+js/tabs/athlete.js
+js/vendor/d3-7.9.0.min.js
+js/vendor/cal-heatmap-4.2.2.min.js
+js/vendor/chart-4.5.0.umd.min.js
+js/vendor/chartjs-adapter-date-fns-3.0.0.bundle.min.js
+js/vendor/chartjs-chart-matrix-3.0.0.min.js
+js/vendor/leaflet-1.9.4.min.js
+js/vendor/leaflet-heat-0.2.0.min.js
+js/vendor/html2canvas-1.4.1.min.js
+js/vendor/jspdf-2.5.1.umd.min.js
+js/vendor/THIRD_PARTY_NOTICES.md
+styles/vendor/cal-heatmap-4.2.2.css
+styles/vendor/leaflet-1.9.4.css
+tests/privacy/external-runtime.test.js
+tests/consumers/external-runtime-browser-smoke.html
+tests/consumers/summary-boundaries.test.js
+tests/consumers/detail-consumers.test.js
+README.md
+LOCAL_SETUP.md
+PWA_GUIA.md
+TECHNICAL_GUIDE.md
+docs/guides/privacy-guide.md
+docs/guides/known-limitations.md
+```
+
+No schema, public API, analysis algorithm, package/lock, Worker, Service Worker, provider/auth,
+deployment, release, Legacy/V2 data, migration, deletion, cleanup, or R3 incident-disposition
+change is authorized. Rollback is a code-and-static-asset revert only and never clears Cache
+Storage, Service Worker state, settings, credentials, Legacy data, or V2 data.
