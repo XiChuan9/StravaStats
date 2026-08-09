@@ -38,6 +38,7 @@ test('production Source Manager modules import with zero I/O', async () => {
     try {
         await import(`../../js/pages/source-manager/source-manager.js?zero-io=${Date.now()}`);
         await import(`../../js/app/source-manager.js?zero-io=${Date.now()}`);
+        await import(`../../js/app/source-manager-connection.js?zero-io=${Date.now()}`);
     } finally {
         globalThis.fetch = originals.fetch;
         if (originals.Worker === undefined) delete globalThis.Worker;
@@ -82,6 +83,19 @@ test('same-origin page has four source cards and complete accessible import cont
     assert.doesNotMatch(html, /FIT, TCX, and GPX are not supported yet/);
     assert.match(html, /Disconnecting and deleting local data are separate actions/);
     assert.doesNotMatch(html, /https?:\/\//);
+    assert.match(html, /<meta name="referrer" content="no-referrer">/);
+    assert.ok(
+        html.indexOf('<meta name="referrer" content="no-referrer">')
+            < html.indexOf('<link rel="stylesheet"'),
+        'no-referrer policy precedes subresource loading'
+    );
+    const apiCard = html.match(/<article[^>]+data-source-card="api"[\s\S]*?<\/article>/)?.[0] || '';
+    assert.match(apiCard, /data-status="authorization_unavailable"/);
+    assert.match(apiCard, />Authorization unavailable</);
+    assert.match(apiCard, /Connection controller staged; authorization remains unavailable until connection identity and provider import are ready\./);
+    assert.match(apiCard, /<button[^>]+id="source-api-connect"[^>]+disabled>Connect unavailable<\/button>/);
+    assert.equal((apiCard.match(/<button/g) || []).length, 1);
+    assert.doesNotMatch(apiCard, /Connect later|>Disconnect<|>Sync</);
     assert.match(html, /href="\/storage-backup\.html">Storage &amp; Backup<\/a>/);
     assert.doesNotMatch(html, /storage-backup\.html\?mode=real/);
     const backupApp = await source('js/app/storage-backup.js');
@@ -120,7 +134,7 @@ test('page consumer does not select storage/provider/auth or disclose raw inputs
     const page = await source('js/pages/source-manager/source-manager.js');
     assert.doesNotMatch(page, /indexedDB|IDBObjectStore|objectStore\s*\(|getRawArtifact|rawArtifacts/);
     assert.doesNotMatch(page, /fetch\s*\(|XMLHttpRequest|WebSocket|\/api\/|strava\.com/);
-    assert.doesNotMatch(page, /localStorage|sessionStorage|Authorization|Bearer|access_token|refresh_token/);
+    assert.doesNotMatch(page, /localStorage|sessionStorage|Bearer|access_token|refresh_token/);
     assert.doesNotMatch(page, /console\.|innerHTML|insertAdjacentHTML|outerHTML/);
     assert.doesNotMatch(page, /error\.(message|stack|cause)|file\.name[^,;\n]*textContent/);
     assert.match(page, /SAFE_UI_CODES\.has\(descriptor\.value\)/);
@@ -143,6 +157,137 @@ test('composition root uses only existing public Import/V2 boundaries and keeps 
     assert.doesNotMatch(app, /getRawArtifact|storeRawArtifact|persistImportItem|transaction|objectStore/);
     assert.doesNotMatch(app, /fetch\s*\(|\/api\/|Authorization|Token|localStorage|sessionStorage/);
     assert.match(app, /mode === SOURCE_MANAGER_SESSION_MODE\.DEMO\s*\? demoFacade\(\)/);
+    assert.match(app, /createSourceManagerConnectionController\(\)/);
+    assert.equal((app.match(/createSourceManagerConnectionController\(\)/g) || []).length, 1);
+    assert.match(app, /mode === SOURCE_MANAGER_SESSION_MODE\.REAL/);
+    assert.match(app, /connectionFacade/);
+    assert.doesNotMatch(app, /location\?\.search|URLSearchParams/);
+    assert.match(app, /await page\.initialize\(\);[\s\S]*await page\.close\(\)\.catch\(\(\) => \{\}\);/);
+});
+
+test('C1-A3 sanitizer is the first bootstrap operation and the controller remains app-local', async () => {
+    const root = await source('js/source-manager.js');
+    const app = await source('js/app/source-manager.js');
+    const page = await source('js/pages/source-manager/source-manager.js');
+    const connection = await source('js/app/source-manager-connection.js');
+    const serviceWorker = await source('sw.js');
+    const sanitizer = root.indexOf('const navigation =');
+    for (const later of [
+        'installGlobalDiagnosticsListeners({',
+        'performanceStorage = sessionStorage',
+        'configureImportPerformance({',
+        'startSourceManager({'
+    ]) {
+        assert.ok(sanitizer >= 0 && sanitizer < root.indexOf(later), `${later} follows sanitizer`);
+    }
+    assert.match(app, /from '\.\/source-manager-connection\.js'/);
+    assert.doesNotMatch(page, /source-manager-connection\.js/);
+    assert.doesNotMatch(connection, /fetch\s*\(|XMLHttpRequest|WebSocket|localStorage|sessionStorage|indexedDB|\/api\/|strava\.com|Bearer|access_token|refresh_token/);
+    assert.match(root, /let pageHidden = false;/);
+    assert.ok(
+        root.indexOf("addEventListener('pagehide'") < root.indexOf('startSourceManager({'),
+        'pagehide lifecycle is armed before asynchronous initialization'
+    );
+    assert.match(root, /if \(pageHidden\) await application\.close\(\);/);
+    assert.match(serviceWorker, /url\.search !== '' \|\| url\.hash !== ''\) \{\s*return null;/);
+    assert.match(serviceWorker, /const requestInfo = inspectCacheableRequest\(request\);\s*if \(!requestInfo\) return;\s*event\.respondWith/);
+});
+
+test('blocked bootstrap executes sanitization before every application capability', async () => {
+    const protectedNames = [
+        'fetch', 'Worker', 'indexedDB', 'IDBKeyRange', 'crypto',
+        'localStorage', 'sessionStorage', 'performance', 'addEventListener'
+    ];
+    const globalNames = [...protectedNames, 'document', 'location', 'history'];
+    let importIndex = 0;
+
+    for (const historyThrows of [false, true]) {
+        const originals = new Map(globalNames.map(name => [
+            name,
+            Object.getOwnPropertyDescriptor(globalThis, name)
+        ]));
+        const order = [];
+        const touched = [];
+        const nodes = new Map();
+        try {
+            for (const name of protectedNames) {
+                Object.defineProperty(globalThis, name, {
+                    configurable: true,
+                    get() {
+                        touched.push(name);
+                        throw new Error('CAPABILITY_TOUCHED_BEFORE_SANITIZATION');
+                    }
+                });
+            }
+            Object.defineProperty(globalThis, 'location', {
+                configurable: true,
+                value: Object.freeze({
+                    pathname: '/source-manager.html',
+                    search: '?code=synthetic-bootstrap-canary',
+                    hash: '#synthetic-bootstrap-canary'
+                })
+            });
+            Object.defineProperty(globalThis, 'history', {
+                configurable: true,
+                value: Object.freeze({
+                    replaceState(...args) {
+                        order.push(['history', ...args]);
+                        if (historyThrows) throw new Error('HISTORY_UNAVAILABLE');
+                    }
+                })
+            });
+            Object.defineProperty(globalThis, 'document', {
+                configurable: true,
+                value: Object.freeze({
+                    getElementById(id) {
+                        order.push(['dom', id]);
+                        if (!nodes.has(id)) nodes.set(id, { hidden: true, textContent: '' });
+                        return nodes.get(id);
+                    }
+                })
+            });
+
+            importIndex += 1;
+            await import(`../../js/source-manager.js?blocked-bootstrap=${importIndex}-${Date.now()}`);
+            assert.deepEqual(touched, []);
+            assert.equal(order[0][0], 'history');
+            assert.deepEqual(order[0].slice(1), [null, '', '/source-manager.html']);
+            assert.equal(order.filter(entry => entry[0] === 'history').length, 1);
+            assert.equal(nodes.get('blocking-error-code').textContent, 'NAVIGATION_SANITIZATION_FAILED');
+            assert.equal(
+                nodes.get('blocking-error-copy').textContent,
+                'The Source Manager navigation could not be accepted safely.'
+            );
+            assert.equal(nodes.get('blocking-error').hidden, false);
+        } finally {
+            for (const [name, descriptor] of originals) {
+                if (descriptor === undefined) delete globalThis[name];
+                else Object.defineProperty(globalThis, name, descriptor);
+            }
+        }
+    }
+});
+
+test('PR-41 freezes the exact ten-path hard maximum and prohibited expansion', async () => {
+    const brief = await source('docs/tasks/pr-41-source-manager-connection-controller.md');
+    const allowed = [
+        'docs/tasks/pr-41-source-manager-connection-controller.md',
+        'source-manager.html',
+        'js/source-manager.js',
+        'js/app/source-manager.js',
+        'js/app/source-manager-connection.js',
+        'js/pages/source-manager/source-manager.js',
+        'tests/source-manager/source-manager-connection.test.js',
+        'tests/source-manager/source-manager.test.js',
+        'tests/source-manager/source-manager-boundaries.test.js',
+        'tests/source-manager/source-manager-browser-smoke.html'
+    ];
+    assert.equal(new Set(allowed).size, 10);
+    for (const path of allowed) assert.equal(brief.includes(path), true, path);
+    assert.match(brief, /hard cumulative maximum is exactly ten paths/i);
+    assert.match(brief, /eleventh path pauses (?:work|implementation)/i);
+    assert.match(brief, /No database\/store\/index\/record migration/);
+    assert.match(brief, /No Connect activation/);
 });
 
 test('progress, duplicate, cancel, reload, and report UI are driven by real boundary values', async () => {
