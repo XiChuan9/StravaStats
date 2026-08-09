@@ -158,6 +158,17 @@ test('R11 root uses only versioned same-origin visualization assets with SRI', a
     assert.match(html, /href="https:\/\/vdoto2\.com\/"[^>]+target="_blank"[^>]+rel="noopener noreferrer"/);
 });
 
+test('R11 dedicated detail provider links isolate the opener and suppress referrers', async () => {
+    for (const path of ['html/run.html', 'html/bike.html', 'html/swim.html']) {
+        const html = await source(path);
+        assert.match(
+            html,
+            /id="activity-hero-strava-link"[^>]+target="_blank"[^>]+rel="noopener noreferrer"/,
+            path
+        );
+    }
+});
+
 test('R11 external athlete images remain data and Demo uses the exact local placeholder', async () => {
     const demo = await source('js/demo/generator.js');
     const athlete = await source('js/tabs/athlete.js');
