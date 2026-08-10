@@ -259,7 +259,13 @@ function deepFreeze(value) {
 function findDataValue(value, key) {
     let cursor = value;
     try {
-        while (cursor !== null && (typeof cursor === 'object' || typeof cursor === 'function')) {
+        for (
+            let depth = 0;
+            cursor !== null
+                && (typeof cursor === 'object' || typeof cursor === 'function')
+                && depth < 32;
+            depth += 1
+        ) {
             const descriptor = Object.getOwnPropertyDescriptor(cursor, key);
             if (descriptor) {
                 return Object.hasOwn(descriptor, 'value') ? descriptor.value : undefined;
@@ -325,6 +331,12 @@ function signalAborted(signal, operation) {
 function checkCancelled(signal, operation) {
     if (signalAborted(signal, operation)) {
         throw backupError(BACKUP_ERROR_CODE.BACKUP_CANCELLED, operation);
+    }
+}
+
+function checkPostCommitCancelled(signal, operation) {
+    if (signalAborted(signal, operation)) {
+        throw backupError(BACKUP_ERROR_CODE.SETTINGS_PENDING, operation, true);
     }
 }
 
@@ -967,7 +979,10 @@ async function validateBytes(dependencies, file, signal, operation) {
     try { manifest = decodeCanonicalJson(entries[0].bytes); } catch (error) {
         throw mapCodecError(error, operation);
     }
-    const profile = BACKUP_PROFILES[manifest?.backupFormatVersion];
+    const format = manifest?.backupFormatVersion;
+    const profile = Object.hasOwn(BACKUP_PROFILES, format)
+        ? BACKUP_PROFILES[format]
+        : null;
     if (
         !profile
         || entries.length !== profile.entryPaths.length
@@ -1269,15 +1284,20 @@ async function restoreSnapshot(dependencies, file, signal) {
     }
     checkCancelled(signal, operation);
     const databaseStatus = await openAndRestore(dependencies, records);
+    checkPostCommitCancelled(signal, operation);
     for (const record of plan) {
+        checkPostCommitCancelled(signal, operation);
         try { await dependencies.settingsWriter(record.key, record.value); } catch {
             throw backupError(BACKUP_ERROR_CODE.SETTINGS_PENDING, operation, true);
         }
+        checkPostCommitCancelled(signal, operation);
     }
     let finalSettings;
+    checkPostCommitCancelled(signal, operation);
     try { finalSettings = await readSettings(dependencies, operation); } catch {
         throw backupError(BACKUP_ERROR_CODE.SETTINGS_PENDING, operation, true);
     }
+    checkPostCommitCancelled(signal, operation);
     if (targetSettingsPlan(finalSettings, snapshot.settings)?.length !== 0) {
         throw backupError(BACKUP_ERROR_CODE.SETTINGS_PENDING, operation, true);
     }

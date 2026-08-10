@@ -56,9 +56,11 @@ rehashed-invalid archive fails before target mutation.
 5. Wait for the result, then open the library and inspect expected summaries and details.
 6. Keep the backup and the prior library until verification is complete.
 
-All fourteen stores are committed in one IndexedDB transaction. Quota, cancellation, interruption,
-constraint, or validation failure aborts without a partial library. Settings are additive and are
-handled after the database transaction.
+All fourteen stores are committed in one IndexedDB transaction. Validation, quota, constraint,
+interruption, or cancellation observed before that commit aborts without a partial library.
+Settings are additive and are handled after the database transaction. Cancellation observed after
+the database commit, including during a settings write, returns resumable `SETTINGS_PENDING`; retry
+the same backup to verify and add only missing approved settings.
 
 An exact format 1/V4 archive restores all validated V4 records unchanged, adds an empty
 `sourceConnections` store, updates only the V2 system metadata to V5, and appends the fifth

@@ -196,6 +196,45 @@ function ensurePhysicalSchema(database, transaction, schema) {
     }
 }
 
+function assertExactPhysicalSchema(database, transaction, schema) {
+    const expectedStoreNames = schema.stores.map(store => store.name).sort();
+    if (!sameArray(listNames(database.objectStoreNames), expectedStoreNames)) {
+        throw storageError(
+            STORAGE_ERROR_CODE.MIGRATION_FAILED,
+            STORAGE_OPERATION.INITIALIZE
+        );
+    }
+    for (const descriptor of schema.stores) {
+        const store = transaction.objectStore(descriptor.name);
+        if (
+            !sameKeyPath(store.keyPath, descriptor.keyPath)
+            || store.autoIncrement !== descriptor.autoIncrement
+            || !sameArray(
+                listNames(store.indexNames),
+                descriptor.indexes.map(index => index.name).sort()
+            )
+        ) {
+            throw storageError(
+                STORAGE_ERROR_CODE.MIGRATION_FAILED,
+                STORAGE_OPERATION.INITIALIZE
+            );
+        }
+        for (const descriptorIndex of descriptor.indexes) {
+            const index = store.index(descriptorIndex.name);
+            if (
+                !sameKeyPath(index.keyPath, descriptorIndex.keyPath)
+                || index.unique !== descriptorIndex.unique
+                || index.multiEntry !== descriptorIndex.multiEntry
+            ) {
+                throw storageError(
+                    STORAGE_ERROR_CODE.MIGRATION_FAILED,
+                    STORAGE_OPERATION.INITIALIZE
+                );
+            }
+        }
+    }
+}
+
 export function resolveMigrationTimestamp(now) {
     let value;
     try {
@@ -464,7 +503,18 @@ function applySourceConnectionMigration(database, transaction, {
 }) {
     const priorSchema = V2_PHYSICAL_SCHEMA_BY_VERSION[4];
     const schema = V2_PHYSICAL_SCHEMA_BY_VERSION[5];
-    ensurePhysicalSchema(database, transaction, schema);
+    assertExactPhysicalSchema(database, transaction, priorSchema);
+    const addedStores = schema.stores.filter(descriptor => (
+        !database.objectStoreNames.contains(descriptor.name)
+    ));
+    if (addedStores.length !== 1 || addedStores[0].name !== V2_STORE_NAME.SOURCE_CONNECTIONS) {
+        throw storageError(
+            STORAGE_ERROR_CODE.MIGRATION_FAILED,
+            STORAGE_OPERATION.INITIALIZE
+        );
+    }
+    createStore(database, addedStores[0]);
+    assertExactPhysicalSchema(database, transaction, schema);
 
     const metadataStore = transaction.objectStore(V2_STORE_NAME.METADATA);
     const metadataRequest = metadataStore.get(V2_METADATA_KEY);

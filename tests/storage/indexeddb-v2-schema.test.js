@@ -559,6 +559,58 @@ async function createAcceptedV4(indexedDB) {
     });
 }
 
+async function createMalformedV4(indexedDB, {
+    omittedStore = null,
+    omittedIndex = null
+} = {}) {
+    return openDatabase(indexedDB, V2_DATABASE_NAME, 4, (database, transaction) => {
+        for (const descriptor of V2_PHYSICAL_SCHEMA_BY_VERSION[4].stores) {
+            if (descriptor.name === omittedStore) continue;
+            const store = database.createObjectStore(descriptor.name, {
+                keyPath: descriptor.keyPath,
+                autoIncrement: descriptor.autoIncrement
+            });
+            for (const index of descriptor.indexes) {
+                if (`${descriptor.name}.${index.name}` === omittedIndex) continue;
+                store.createIndex(index.name, index.keyPath, {
+                    unique: index.unique,
+                    multiEntry: index.multiEntry
+                });
+            }
+        }
+        transaction.objectStore('metadata').put({
+            key: 'database',
+            databaseName: 'strava-stats-v2',
+            schemaId: 'strava-stats-v2@4',
+            indexedDbVersion: 4,
+            canonicalSchemaVersion: 1,
+            createdAt: '2026-08-04T01:02:03.004Z',
+            createdByApplicationVersion: 'malformed-v4@1'
+        });
+        const migrations = [
+            ['schema-0001-bootstrap', 0, 1, 0, 8],
+            ['schema-0002-import-core', 1, 2, 8, 11],
+            ['schema-0003-exact-identity-index', 2, 3, 11, 11],
+            ['schema-0004-duplicate-review', 3, 4, 11, 13]
+        ];
+        for (const [id, fromVersion, toVersion, inputCount, outputCount] of migrations) {
+            transaction.objectStore('migrations').put({
+                id,
+                fromVersion,
+                toVersion,
+                status: 'completed',
+                startedAt: '2026-08-04T01:02:03.004Z',
+                completedAt: '2026-08-04T01:02:03.004Z',
+                applicationVersion: 'malformed-v4@1',
+                inputSummary: { storeCount: inputCount },
+                outputSummary: { storeCount: outputCount },
+                errorCode: null,
+                retryCount: 0
+            });
+        }
+    });
+}
+
 test('accepted physical v1 upgrades through v5 and preserves all prior records', async () => {
     const indexedDB = new IDBFactory();
     const versionOne = await createAcceptedV1(indexedDB);
@@ -683,6 +735,41 @@ test('accepted physical v4 upgrades additively to v5 without inferring a connect
     });
     database.close();
 });
+
+for (const malformed of [
+    { omittedStore: 'devices', label: 'missing legacy store' },
+    {
+        omittedIndex: 'activitySources.byProviderAndExternalId',
+        label: 'missing legacy index'
+    }
+]) {
+    test(`malformed physical v4 with ${malformed.label} fails closed without repair`, async () => {
+        const indexedDB = new IDBFactory();
+        const versionFour = await createMalformedV4(indexedDB, malformed);
+        versionFour.close();
+
+        const storage = createCanonicalStore(options(indexedDB));
+        await assert.rejects(
+            storage.initialize(),
+            error => error.code === STORAGE_ERROR_CODE.MIGRATION_FAILED
+        );
+
+        const after = await openDatabase(indexedDB, V2_DATABASE_NAME, 4);
+        assert.equal(after.version, 4);
+        assert.equal(after.objectStoreNames.contains('sourceConnections'), false);
+        if (malformed.omittedStore) {
+            assert.equal(after.objectStoreNames.contains(malformed.omittedStore), false);
+        } else {
+            const transaction = after.transaction('activitySources', 'readonly');
+            assert.equal(
+                transaction.objectStore('activitySources').indexNames
+                    .contains('byProviderAndExternalId'),
+                false
+            );
+        }
+        after.close();
+    });
+}
 
 test('failed v4-to-v5 creation rolls back and retry preserves exact v4 data', async () => {
     const indexedDB = new IDBFactory();

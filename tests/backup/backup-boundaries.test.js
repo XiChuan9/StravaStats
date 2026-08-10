@@ -168,6 +168,24 @@ test('pre-aborted operations cancel without opening or mutating IndexedDB', asyn
     assert.equal(opens, 0);
 });
 
+test('cyclic dependency prototypes fail closed within a bounded traversal', () => {
+    let prototypeReads = 0;
+    let cyclic;
+    cyclic = new Proxy({}, {
+        getOwnPropertyDescriptor() { return undefined; },
+        getPrototypeOf() {
+            prototypeReads += 1;
+            if (prototypeReads > 64) throw new Error('synthetic traversal guard');
+            return cyclic;
+        }
+    });
+    assert.throws(
+        () => backupApi.createBackupService(adapters(cyclic)),
+        error => error.code === 'INVALID_REQUEST'
+    );
+    assert.ok(prototypeReads <= 32, 'prototype traversal must be bounded');
+});
+
 test('cancellation raised during whole-buffer validation is observed before target mutation', async () => {
     const { archive } = await emptyArchive();
     const signal = { aborted: false };
@@ -192,6 +210,28 @@ test('cancellation raised during whole-buffer validation is observed before targ
         backupApi.createBackupService(adapters(targetFactory)).exportLibrary(),
         error => error.code === 'BACKUP_UNAVAILABLE'
     );
+});
+
+test('cancellation raised during database commit reports resumable settings pending', async () => {
+    const { archive } = await emptyArchive();
+    const signal = { aborted: false };
+    const targetFactory = new IDBFactory();
+    const originalAdd = IDBObjectStore.prototype.add;
+    IDBObjectStore.prototype.add = function (...args) {
+        const request = originalAdd.apply(this, args);
+        if (this.name === 'migrations') signal.aborted = true;
+        return request;
+    };
+    try {
+        const target = backupApi.createBackupService(adapters(targetFactory));
+        await assert.rejects(
+            target.restoreBackup(archive.blob, { signal }),
+            error => error.code === 'SETTINGS_PENDING' && error.retryable === true
+        );
+        assert.equal((await target.restoreBackup(archive.blob)).status, 'already_restored');
+    } finally {
+        IDBObjectStore.prototype.add = originalAdd;
+    }
 });
 
 test('validateBackup observes cancellation raised during ZIP digest validation', async () => {
@@ -231,6 +271,24 @@ test('exact-current compatibility rejects a fully rehashed future-version archiv
     await assert.rejects(
         service.validateBackup(incompatible),
         error => error.code === 'BACKUP_SCHEMA_INCOMPATIBLE'
+    );
+});
+
+test('prototype-shaped backup format values fail through the fixed compatibility boundary', async () => {
+    const { archive, service } = await emptyArchive();
+    const entries = await parseDeterministicZip(
+        new Uint8Array(await archive.blob.arrayBuffer()),
+        webcrypto
+    );
+    const manifest = decodeCanonicalJson(entries[0].bytes);
+    manifest.backupFormatVersion = '__proto__';
+    const incompatible = await rebuildArchive(entries, new Map([
+        ['manifest.json', encodeCanonicalJson(manifest)]
+    ]));
+    await assert.rejects(
+        service.validateBackup(incompatible),
+        error => error instanceof backupApi.BackupError
+            && error.code === 'BACKUP_SCHEMA_INCOMPATIBLE'
     );
 });
 

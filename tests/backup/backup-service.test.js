@@ -447,6 +447,35 @@ test('a settings verification read failure after database commit reports resumab
     assert.equal((await target.restoreBackup(archive)).status, 'already_restored');
 });
 
+test('cancellation during a settings write reports resumable SETTINGS_PENDING', async () => {
+    const sourceFactory = new IDBFactory();
+    const desired = settingsAdapter({ training_goals: '{"weekly":0}' });
+    await initializedLibrary(sourceFactory);
+    const archive = (await service(sourceFactory, desired).exportLibrary()).blob;
+
+    const signal = { aborted: false };
+    const targetFactory = new IDBFactory();
+    const targetValues = settingsAdapter();
+    const target = createBackupService({
+        indexedDB: targetFactory,
+        IDBKeyRange,
+        crypto: webcrypto,
+        now: () => FIXED_TIME,
+        applicationVersion: 'backup-test@1',
+        settingsReader: () => targetValues.read(),
+        settingsWriter(key, value) {
+            targetValues.write(key, value);
+            signal.aborted = true;
+        }
+    });
+    await assert.rejects(
+        target.restoreBackup(archive, { signal }),
+        error => error.code === BACKUP_ERROR_CODE.SETTINGS_PENDING
+            && error.retryable === true
+    );
+    assert.equal((await target.restoreBackup(archive)).status, 'already_restored');
+});
+
 test('public errors are fixed, frozen, and never disclose raw causes or private data', async () => {
     const instance = service(new IDBFactory());
     await assert.rejects(instance.validateBackup(new Blob(['not a backup'])), error => {
