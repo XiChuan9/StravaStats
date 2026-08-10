@@ -222,8 +222,8 @@ test('exact-current compatibility rejects a fully rehashed future-version archiv
         webcrypto
     );
     const manifest = decodeCanonicalJson(entries[0].bytes);
-    manifest.indexedDbVersion = 5;
-    manifest.schemaId = 'strava-stats-v2@5';
+    manifest.indexedDbVersion = 6;
+    manifest.schemaId = 'strava-stats-v2@6';
     const incompatible = await createDeterministicZip(entries.map((entry, index) => ({
         path: entry.path,
         bytes: index === 0 ? encodeCanonicalJson(manifest) : entry.bytes
@@ -248,6 +248,45 @@ test('a fully container-rehashed manifest payload hash mismatch has its exact sa
     await assert.rejects(
         service.validateBackup(invalid),
         error => error.code === 'BACKUP_HASH_MISMATCH'
+    );
+});
+
+test('format 2 rejects a credential-dependent connection state before target creation', async () => {
+    const { archive } = await emptyArchive();
+    const entries = await parseDeterministicZip(
+        new Uint8Array(await archive.blob.arrayBuffer()),
+        webcrypto
+    );
+    const connections = encodeJsonLines([{
+        id: 'source-connection:strava',
+        provider: 'strava',
+        subjectId: '424242',
+        status: 'connected',
+        lastSyncAt: null,
+        errorCode: null,
+        revision: 1
+    }]);
+    const manifest = decodeCanonicalJson(entries[0].bytes);
+    const file = manifest.files.find(item => item.path === 'connections.jsonl');
+    file.recordCount = 1;
+    file.byteLength = connections.byteLength;
+    manifest.hashes.find(item => item.path === 'connections.jsonl').sha256 = hex(
+        await sha256(connections, webcrypto)
+    );
+    manifest.stores.find(item => item.name === 'sourceConnections').recordCount = 1;
+    const invalid = await rebuildArchive(entries, new Map([
+        ['manifest.json', encodeCanonicalJson(manifest)],
+        ['connections.jsonl', connections]
+    ]));
+    const targetFactory = new IDBFactory();
+    const target = backupApi.createBackupService(adapters(targetFactory));
+    await assert.rejects(
+        target.restoreBackup(invalid),
+        error => error.code === 'BACKUP_DATA_INVALID'
+    );
+    await assert.rejects(
+        target.exportLibrary(),
+        error => error.code === 'BACKUP_UNAVAILABLE'
     );
 });
 
@@ -373,6 +412,9 @@ test('production backup imports are side-effect free and page boundaries exclude
         'js/pages/storage-backup/storage-backup.js', ROOT
     ), 'utf8');
     const app = await readFile(new URL('js/app/storage-backup.js', ROOT), 'utf8');
+    const smoke = await readFile(new URL(
+        'tests/backup/backup-browser-smoke.html', ROOT
+    ), 'utf8');
     assert.doesNotMatch(html, /https?:\/\//);
     assert.match(html, /whole-buffer processing/);
     assert.match(html, /Empty target only/);
@@ -381,4 +423,8 @@ test('production backup imports are side-effect free and page boundaries exclude
     assert.doesNotMatch(app, /createCanonicalStore|storage\.initialize\s*\(/);
     assert.match(app, /indexedDB\.open\(V2_DATABASE_NAME\)/);
     assert.match(app, /mode === STORAGE_BACKUP_SESSION_MODE\.DEMO\s*\? demoFacade\(\)/);
+    assert.match(smoke, /mode: 'export'/);
+    assert.match(smoke, /mode: 'restore'/);
+    assert.match(smoke, /restoredConnectionStatus/);
+    assert.doesNotMatch(smoke, /https?:\/\/|fetch\s*\(|deleteDatabase|access_token|refresh_token/);
 });

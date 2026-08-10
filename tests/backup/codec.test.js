@@ -4,6 +4,7 @@ import test from 'node:test';
 
 import {
     BACKUP_ENTRY_PATHS,
+    BACKUP_ENTRY_PATHS_BY_FORMAT,
     BackupCodecError,
     createDeterministicZip,
     decodeJsonLines,
@@ -15,6 +16,13 @@ import {
 
 function entries(seed = 'synthetic') {
     return BACKUP_ENTRY_PATHS.map((path, index) => ({
+        path,
+        bytes: new TextEncoder().encode(`${seed}:${index}`)
+    }));
+}
+
+function formatEntries(format, seed = 'synthetic') {
+    return BACKUP_ENTRY_PATHS_BY_FORMAT[format].map((path, index) => ({
         path,
         bytes: new TextEncoder().encode(`${seed}:${index}`)
     }));
@@ -75,6 +83,62 @@ test('deterministic stored ZIP bytes and central hashes are byte-identical', asy
     assert.deepEqual(parsed.map(entry => entry.path), BACKUP_ENTRY_PATHS);
     assert.deepEqual(parsed.map(entry => new TextDecoder().decode(entry.bytes)),
         entries().map(entry => new TextDecoder().decode(entry.bytes)));
+});
+
+test('codec dispatches exact format-1 and format-2 entry profiles', async () => {
+    assert.deepEqual(BACKUP_ENTRY_PATHS_BY_FORMAT[1], [
+        'manifest.json',
+        'activities.jsonl',
+        'sources.jsonl',
+        'streams/series.jsonl',
+        'laps.jsonl',
+        'events.jsonl',
+        'devices.jsonl',
+        'overrides.jsonl',
+        'analysis/snapshots.jsonl',
+        'settings.json',
+        'raw/artifacts.jsonl',
+        'system/metadata.jsonl',
+        'system/migrations.jsonl',
+        'imports/jobs.jsonl',
+        'imports/items.jsonl',
+        'review/candidates.jsonl',
+        'review/decisions.jsonl'
+    ]);
+    assert.deepEqual(BACKUP_ENTRY_PATHS_BY_FORMAT[2], [
+        'manifest.json',
+        'activities.jsonl',
+        'sources.jsonl',
+        'connections.jsonl',
+        'streams/series.jsonl',
+        'laps.jsonl',
+        'events.jsonl',
+        'devices.jsonl',
+        'overrides.jsonl',
+        'analysis/snapshots.jsonl',
+        'settings.json',
+        'raw/artifacts.jsonl',
+        'system/metadata.jsonl',
+        'system/migrations.jsonl',
+        'imports/jobs.jsonl',
+        'imports/items.jsonl',
+        'review/candidates.jsonl',
+        'review/decisions.jsonl'
+    ]);
+    assert.equal(BACKUP_ENTRY_PATHS, BACKUP_ENTRY_PATHS_BY_FORMAT[2]);
+    for (const format of [1, 2]) {
+        const archive = await createDeterministicZip(formatEntries(format), webcrypto);
+        const parsed = await parseDeterministicZip(archive, webcrypto);
+        assert.deepEqual(parsed.map(entry => entry.path), BACKUP_ENTRY_PATHS_BY_FORMAT[format]);
+    }
+    await assert.rejects(
+        createDeterministicZip([
+            ...formatEntries(2).slice(0, 3),
+            formatEntries(1)[3],
+            ...formatEntries(2).slice(4)
+        ], webcrypto),
+        error => error.code === 'BACKUP_CONTAINER_INVALID'
+    );
 });
 
 test('container rejects reordered, traversal, duplicate, truncated, appended, CRC, and central hash mutations', async () => {

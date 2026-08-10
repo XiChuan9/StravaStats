@@ -3,7 +3,7 @@ const TEXT_DECODER = new TextDecoder('utf-8', { fatal: true });
 
 export const BACKUP_BYTE_LIMIT = 268_435_456;
 
-export const BACKUP_ENTRY_PATHS = Object.freeze([
+const FORMAT_1_ENTRY_PATHS = Object.freeze([
     'manifest.json',
     'activities.jsonl',
     'sources.jsonl',
@@ -22,6 +22,21 @@ export const BACKUP_ENTRY_PATHS = Object.freeze([
     'review/candidates.jsonl',
     'review/decisions.jsonl'
 ]);
+
+const FORMAT_2_ENTRY_PATHS = Object.freeze([
+    'manifest.json',
+    'activities.jsonl',
+    'sources.jsonl',
+    'connections.jsonl',
+    ...FORMAT_1_ENTRY_PATHS.slice(3)
+]);
+
+export const BACKUP_ENTRY_PATHS_BY_FORMAT = Object.freeze({
+    1: FORMAT_1_ENTRY_PATHS,
+    2: FORMAT_2_ENTRY_PATHS
+});
+
+export const BACKUP_ENTRY_PATHS = FORMAT_2_ENTRY_PATHS;
 
 const ZIP_LOCAL_SIGNATURE = 0x04034b50;
 const ZIP_CENTRAL_SIGNATURE = 0x02014b50;
@@ -374,8 +389,18 @@ function exactBytes(left, right) {
     return difference === 0;
 }
 
+function entryProfileFor(entries) {
+    if (!Array.isArray(entries)) throw invalidContainer();
+    const profiles = Object.values(BACKUP_ENTRY_PATHS_BY_FORMAT);
+    return profiles.find(profile => (
+        profile.length === entries.length
+        && profile.every((path, index) => entries[index]?.path === path)
+    ));
+}
+
 function normalizedEntries(entries) {
-    if (!Array.isArray(entries) || entries.length !== BACKUP_ENTRY_PATHS.length) {
+    const paths = entryProfileFor(entries);
+    if (!paths) {
         throw invalidContainer();
     }
     return entries.map((entry, index) => {
@@ -385,7 +410,7 @@ function normalizedEntries(entries) {
             || keys.length !== 2
             || !keys.includes('path')
             || !keys.includes('bytes')
-            || entry.path !== BACKUP_ENTRY_PATHS[index]
+            || entry.path !== paths[index]
             || !(entry.bytes instanceof Uint8Array)
             || entry.bytes.byteLength > BACKUP_BYTE_LIMIT
         ) {
@@ -479,12 +504,16 @@ export async function parseDeterministicZip(bytes, crypto) {
     if (bytes.byteLength < 22) throw invalidContainer();
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const endOffset = bytes.byteLength - 22;
+    const entryCount = readU16(view, endOffset + 8);
+    const paths = Object.values(BACKUP_ENTRY_PATHS_BY_FORMAT).find(profile => (
+        profile.length === entryCount
+    ));
     if (
         readU32(view, endOffset) !== ZIP_END_SIGNATURE
         || readU16(view, endOffset + 4) !== 0
         || readU16(view, endOffset + 6) !== 0
-        || readU16(view, endOffset + 8) !== BACKUP_ENTRY_PATHS.length
-        || readU16(view, endOffset + 10) !== BACKUP_ENTRY_PATHS.length
+        || !paths
+        || readU16(view, endOffset + 10) !== entryCount
         || readU16(view, endOffset + 20) !== 0
     ) throw invalidContainer();
     const centralSize = readU32(view, endOffset + 12);
@@ -492,7 +521,7 @@ export async function parseDeterministicZip(bytes, crypto) {
     if (centralOffset + centralSize !== endOffset) throw invalidContainer();
     const entries = [];
     let offset = centralOffset;
-    for (let index = 0; index < BACKUP_ENTRY_PATHS.length; index += 1) {
+    for (let index = 0; index < paths.length; index += 1) {
         if (
             readU32(view, offset) !== ZIP_CENTRAL_SIGNATURE
             || readU16(view, offset + 4) !== ZIP_VERSION_MADE_BY
@@ -523,7 +552,7 @@ export async function parseDeterministicZip(bytes, crypto) {
         } catch {
             throw invalidContainer();
         }
-        if (path !== BACKUP_ENTRY_PATHS[index]) throw invalidContainer();
+        if (path !== paths[index]) throw invalidContainer();
         const extraOffset = offset + 46 + nameLength;
         if (
             readU16(view, extraOffset) !== SHA256_EXTRA_ID

@@ -1,6 +1,6 @@
 export const V2_DATABASE_NAME = 'strava-stats-v2';
-export const V2_DATABASE_VERSION = 4;
-export const V2_SCHEMA_ID = 'strava-stats-v2@4';
+export const V2_DATABASE_VERSION = 5;
+export const V2_SCHEMA_ID = 'strava-stats-v2@5';
 export const V2_CANONICAL_SCHEMA_VERSION = 1;
 
 export const V2_METADATA_KEY = 'database';
@@ -10,6 +10,8 @@ export const V2_EXACT_IDENTITY_MIGRATION_ID =
     'schema-0003-exact-identity-index';
 export const V2_DUPLICATE_REVIEW_MIGRATION_ID =
     'schema-0004-duplicate-review';
+export const V2_SOURCE_CONNECTION_MIGRATION_ID =
+    'schema-0005-source-connection';
 
 export const V2_STORE_NAME = Object.freeze({
     METADATA: 'metadata',
@@ -24,7 +26,8 @@ export const V2_STORE_NAME = Object.freeze({
     IMPORT_JOBS: 'importJobs',
     IMPORT_ITEMS: 'importItems',
     MERGE_CANDIDATES: 'mergeCandidates',
-    MERGE_DECISIONS: 'mergeDecisions'
+    MERGE_DECISIONS: 'mergeDecisions',
+    SOURCE_CONNECTIONS: 'sourceConnections'
 });
 
 export const STORAGE_ERROR_CODE = Object.freeze({
@@ -54,6 +57,10 @@ export const STORAGE_OPERATION = Object.freeze({
     LIST_ACTIVITIES: 'listActivities',
     CREATE_BACKUP_MANIFEST: 'createBackupManifest',
     CREATE_IMPORT_STORE: 'createImportStore',
+    CREATE_SOURCE_CONNECTION_STORE: 'createSourceConnectionStore',
+    GET_CONNECTION: 'getConnection',
+    CREATE_CONNECTION: 'createConnection',
+    TRANSITION_CONNECTION: 'transitionConnection',
     CREATE_IMPORT_JOB: 'createImportJob',
     TRANSITION_IMPORT_JOB: 'transitionImportJob',
     TRANSITION_IMPORT_ITEM: 'transitionImportItem',

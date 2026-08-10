@@ -1,8 +1,10 @@
 # Backup Guide
 
-StravaStats V2 backup is a deterministic, integrity-checked, exact-current archive of the complete
-local V4 library and an approved durable-settings allowlist. It is designed for private local
-recovery, not for Git, support tickets, analytics, or cross-version migration.
+StravaStats V2 backup is a deterministic, integrity-checked archive of the complete local V5
+library and an approved durable-settings allowlist. Newly created archives use the exact-current
+format 2/V5 profile; restore also accepts the frozen format 1/V4 profile through a narrow additive
+V4-to-V5 transformation. Backups are for private local recovery, not for Git, support tickets,
+analytics, or general cross-version migration.
 
 ## Before you create a backup
 
@@ -16,13 +18,20 @@ recovery, not for Git, support tickets, analytics, or cross-version migration.
 ## Create a backup
 
 1. Select **Create backup**.
-2. Wait for the page to read and validate all physical V4 records and approved settings.
+2. Wait for the page to read and validate all physical V5 records and approved settings.
 3. Save the downloaded `*.stravastats-backup.zip` file in a private location.
 4. Keep the original library until a restore has been verified in a separate empty environment.
 
-The archive is format version 1 and includes a canonical manifest, hashes, all thirteen V4 stores,
-and the approved settings snapshot. Equal records, settings, application version, and timestamp
-produce deterministic stored ZIP bytes. The timestamp changes a normal newly created backup.
+The archive is format version 2 and includes a canonical manifest, hashes, all fourteen V5 stores,
+and the approved settings snapshot in eighteen fixed ordered entries. `connections.jsonl` follows
+`sources.jsonl`. Equal portable records, settings, application version, and timestamp produce
+deterministic stored ZIP bytes. The timestamp changes a normal newly created backup.
+
+SourceConnection is private identity metadata, not a credential. Export preserves its immutable
+identity, `lastSyncAt`, and revision, but maps `connected` and `error` to
+`reconnect_required`/`AUTHORIZATION_REQUIRED`; `reconnect_required` and `disconnected` remain in
+their safe portable states. The archive contains no Token, scope, Authorization header, provider
+response, or provider error text, so restore never claims usable authorization.
 
 ## Exact-current and 256 MiB boundary
 
@@ -30,14 +39,16 @@ Backup, validation, and restore use whole-buffer processing with an exact 268,43
 (256 MiB) preflight. A larger Blob is rejected before it is read. Individual payloads and the final
 archive are also bounded.
 
-`exact-current` means the manifest must match the current database name, physical IndexedDB V4,
-schema `strava-stats-v2@4`, Canonical schema version, archive layout, hashes, record ordering, and
-data/reference contracts. A future-version, older incompatible, reordered, corrupted, truncated,
-appended, path-traversal, duplicate-entry, or rehashed-invalid archive fails before target mutation.
+For format 2, `exact-current` means the manifest must match the current database name, physical
+IndexedDB V5, schema `strava-stats-v2@5`, Canonical schema version, archive layout, hashes, record
+ordering, and data/reference contracts. Format 1 is validated separately against the exact V4
+profile and transformed only after complete validation. A future-version, mixed-profile, older
+unknown, reordered, corrupted, truncated, appended, path-traversal, duplicate-entry, or
+rehashed-invalid archive fails before target mutation.
 
 ## Restore safely
 
-1. Use an absent V2 database or an exact empty V4 target. Do not clear a valuable library to make a
+1. Use an absent V2 database or an exact empty V5 target. Do not clear a valuable library to make a
    restore fit.
 2. Open Storage & Backup at `/storage-backup.html`.
 3. Choose the private `*.stravastats-backup.zip` file.
@@ -45,9 +56,15 @@ appended, path-traversal, duplicate-entry, or rehashed-invalid archive fails bef
 5. Wait for the result, then open the library and inspect expected summaries and details.
 6. Keep the backup and the prior library until verification is complete.
 
-All thirteen stores are committed in one IndexedDB transaction. Quota, cancellation, interruption,
+All fourteen stores are committed in one IndexedDB transaction. Quota, cancellation, interruption,
 constraint, or validation failure aborts without a partial library. Settings are additive and are
 handled after the database transaction.
+
+An exact format 1/V4 archive restores all validated V4 records unchanged, adds an empty
+`sourceConnections` store, updates only the V2 system metadata to V5, and appends the fifth
+structural migration record. It never infers an identity from ActivitySource provenance. Repeating
+the same transformed or format 2 restore is idempotent; a different non-empty connection tombstone
+is a safe conflict.
 
 ## Result and conflict states
 
@@ -63,7 +80,7 @@ handled after the database transaction.
 | `BACKUP_HASH_MISMATCH` / `BACKUP_DATA_INVALID` | Integrity or data validation failed | Treat the file as damaged; use another verified backup |
 
 `SETTINGS_PENDING` is intentionally resumable: selecting the same backup again detects the already
-restored database and continues additive settings work. Never delete V4 or overwrite an existing
+restored database and continues additive settings work. Never delete V5 or overwrite an existing
 setting as a shortcut.
 
 ## Shared settings and data backup does not touch
@@ -79,7 +96,8 @@ V2 backup does not include Legacy activity or provider cache payloads such as
 `strava-dashboard-cache`, `strava_activities`, athlete/zones/gears/demo/provider/token records. It
 also does not include or modify:
 
-- provider connections, Strava Token, or Authorization material;
+- Strava Token, Authorization material, scopes, or live provider responses (format 2 includes only
+  the portable non-credential SourceConnection projection described above);
 - Cache Storage or Service Worker state;
 - session-only Diagnostics errors or performance records;
 - browser history, downloads, or other origins.

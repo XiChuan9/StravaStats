@@ -84,8 +84,9 @@ activity or source. Field-level merge, unmerge, split, and source preference rem
 
 ### Backup, restore, and diagnostics
 
-- Storage & Backup at `/storage-backup.html` creates a deterministic, integrity-checked full V4
-  backup and restores only into an absent or exact empty V4 target.
+- Storage & Backup at `/storage-backup.html` creates a deterministic, integrity-checked full V5
+  format-2 backup and restores format 2/V5 or the frozen format 1/V4 profile only into an absent or
+  exact empty V5 target. Portable SourceConnection metadata never includes credentials.
 - Diagnostics at `/diagnostics.html` shows a rounded origin-wide storage estimate, recent safe
   session errors, and safe import-performance aggregates. Its explicit export is privacy-redacted
   and is not a library backup.
@@ -95,8 +96,8 @@ data even though a Diagnostics export is designed to exclude raw athlete data.
 
 ## Architecture and data boundaries
 
-The current Canonical database is `strava-stats-v2`, physical IndexedDB V4, schema ID
-`strava-stats-v2@4`, with thirteen stores. It is physically separate from the Legacy
+The current Canonical database is `strava-stats-v2`, physical IndexedDB V5, schema ID
+`strava-stats-v2@5`, with fourteen stores. It is physically separate from the Legacy
 `strava-dashboard-cache`. V2 upgrades are additive and transactional; the application never
 upgrades the Legacy database in place.
 

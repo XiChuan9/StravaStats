@@ -7,3 +7,4 @@ export { StorageError } from './errors.js';
 export { V2_SCHEMA } from './schema.js';
 export { createCanonicalStore } from './database.js';
 export { createImportStore } from './import-store.js';
+export { createSourceConnectionStore } from './source-connection-store.js';

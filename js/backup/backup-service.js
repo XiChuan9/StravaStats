@@ -14,13 +14,14 @@ import {
     V2_SCHEMA
 } from '../storage/schema.js';
 import { V2_MIGRATION_REGISTRY } from '../storage/migrations.js';
+import { normalizeSourceConnectionRecord } from '../storage/source-connection-store.js';
 import {
     validDuplicateReviewCandidate,
     validDuplicateReviewDecision
 } from '../storage/duplicate-review.js';
 import {
     BACKUP_BYTE_LIMIT,
-    BACKUP_ENTRY_PATHS,
+    BACKUP_ENTRY_PATHS_BY_FORMAT,
     BackupCodecError,
     createDeterministicZip,
     decodeCanonicalJson,
@@ -71,6 +72,9 @@ const OPTION_FIELDS = Object.freeze([
 ]);
 
 const STORE_NAMES = Object.freeze(V2_SCHEMA.stores.map(store => store.name));
+const LEGACY_STORE_NAMES = Object.freeze(
+    V2_PHYSICAL_SCHEMA_BY_VERSION[4].stores.map(store => store.name)
+);
 const USER_STORE_NAMES = Object.freeze(STORE_NAMES.filter(name => (
     name !== V2_STORE_NAME.METADATA && name !== V2_STORE_NAME.MIGRATIONS
 )));
@@ -89,7 +93,7 @@ const SETTINGS_KEYS = Object.freeze([
 ]);
 const SETTINGS_GEAR_PREFIX = 'gear-custom-';
 
-const PAYLOADS = Object.freeze([
+const FORMAT_1_PAYLOADS = Object.freeze([
     Object.freeze({ path: 'activities.jsonl', store: V2_STORE_NAME.ACTIVITIES }),
     Object.freeze({ path: 'sources.jsonl', store: V2_STORE_NAME.ACTIVITY_SOURCES }),
     Object.freeze({ path: 'streams/series.jsonl', store: V2_STORE_NAME.STREAM_SERIES }),
@@ -107,6 +111,35 @@ const PAYLOADS = Object.freeze([
     Object.freeze({ path: 'review/candidates.jsonl', store: V2_STORE_NAME.MERGE_CANDIDATES }),
     Object.freeze({ path: 'review/decisions.jsonl', store: V2_STORE_NAME.MERGE_DECISIONS })
 ]);
+
+const FORMAT_2_PAYLOADS = Object.freeze([
+    ...FORMAT_1_PAYLOADS.slice(0, 2),
+    Object.freeze({ path: 'connections.jsonl', store: V2_STORE_NAME.SOURCE_CONNECTIONS }),
+    ...FORMAT_1_PAYLOADS.slice(2)
+]);
+
+const BACKUP_PROFILES = Object.freeze({
+    1: Object.freeze({
+        backupFormatVersion: 1,
+        indexedDbVersion: 4,
+        schemaId: 'strava-stats-v2@4',
+        schema: V2_PHYSICAL_SCHEMA_BY_VERSION[4],
+        storeNames: LEGACY_STORE_NAMES,
+        payloads: FORMAT_1_PAYLOADS,
+        entryPaths: BACKUP_ENTRY_PATHS_BY_FORMAT[1],
+        migrationRegistry: Object.freeze(V2_MIGRATION_REGISTRY.slice(0, 4))
+    }),
+    2: Object.freeze({
+        backupFormatVersion: 2,
+        indexedDbVersion: V2_DATABASE_VERSION,
+        schemaId: V2_SCHEMA_ID,
+        schema: V2_SCHEMA,
+        storeNames: STORE_NAMES,
+        payloads: FORMAT_2_PAYLOADS,
+        entryPaths: BACKUP_ENTRY_PATHS_BY_FORMAT[2],
+        migrationRegistry: V2_MIGRATION_REGISTRY
+    })
+});
 
 const MANIFEST_FIELDS = Object.freeze([
     'applicationVersion',
@@ -402,7 +435,7 @@ function openExisting(dependencies, operation) {
     });
 }
 
-function validMetadata(record) {
+function validMetadata(record, profile = BACKUP_PROFILES[2]) {
     const fields = [
         'key', 'databaseName', 'schemaId', 'indexedDbVersion',
         'canonicalSchemaVersion', 'createdAt', 'createdByApplicationVersion'
@@ -411,8 +444,8 @@ function validMetadata(record) {
     return value !== null
         && value.key === V2_METADATA_KEY
         && value.databaseName === V2_DATABASE_NAME
-        && value.schemaId === V2_SCHEMA_ID
-        && value.indexedDbVersion === V2_DATABASE_VERSION
+        && value.schemaId === profile.schemaId
+        && value.indexedDbVersion === profile.indexedDbVersion
         && value.canonicalSchemaVersion === V2_CANONICAL_SCHEMA_VERSION
         && strictUtc(value.createdAt)
         && opaque(value.createdByApplicationVersion);
@@ -445,11 +478,11 @@ function validMigration(record, expected) {
         && value.retryCount === 0;
 }
 
-function validSystem(records) {
+function validSystem(records, profile = BACKUP_PROFILES[2]) {
     return records[V2_STORE_NAME.METADATA].length === 1
-        && validMetadata(records[V2_STORE_NAME.METADATA][0])
-        && records[V2_STORE_NAME.MIGRATIONS].length === V2_MIGRATION_REGISTRY.length
-        && V2_MIGRATION_REGISTRY.every((expected, index) => (
+        && validMetadata(records[V2_STORE_NAME.METADATA][0], profile)
+        && records[V2_STORE_NAME.MIGRATIONS].length === profile.migrationRegistry.length
+        && profile.migrationRegistry.every((expected, index) => (
             validMigration(records[V2_STORE_NAME.MIGRATIONS][index], expected)
         ));
 }
@@ -612,13 +645,25 @@ function canonicalStoreKeys(records, descriptor) {
     return true;
 }
 
-function validateRecords(records, operation = 'validate') {
-    if (!validSystem(records) || !validCanonicalGraph(records)) {
+function validateRecords(records, operation = 'validate', profile = BACKUP_PROFILES[2], {
+    portableConnections = false
+} = {}) {
+    if (!validSystem(records, profile) || !validCanonicalGraph(records)) {
         throw backupError(BACKUP_ERROR_CODE.BACKUP_DATA_INVALID, operation);
     }
-    if (!V2_SCHEMA.stores.every(descriptor => (
+    if (!profile.schema.stores.every(descriptor => (
         canonicalStoreKeys(records[descriptor.name], descriptor)
     ))) throw backupError(BACKUP_ERROR_CODE.BACKUP_DATA_INVALID, operation);
+    if (profile.backupFormatVersion === 2) {
+        const connections = records[V2_STORE_NAME.SOURCE_CONNECTIONS];
+        if (!Array.isArray(connections) || !connections.every(record => {
+            const normalized = normalizeSourceConnectionRecord(record);
+            return normalized !== null
+                && (!portableConnections
+                    || normalized.status === 'reconnect_required'
+                    || normalized.status === 'disconnected');
+        })) throw backupError(BACKUP_ERROR_CODE.BACKUP_DATA_INVALID, operation);
+    }
     if (!records[V2_STORE_NAME.RAW_ARTIFACTS].every(validRawArtifact)) {
         throw backupError(BACKUP_ERROR_CODE.BACKUP_DATA_INVALID, operation);
     }
@@ -722,6 +767,30 @@ async function readSettings(dependencies, operation) {
     return normalizeSettings(value, operation);
 }
 
+function portableConnection(record) {
+    const normalized = normalizeSourceConnectionRecord(record);
+    if (!normalized) return null;
+    if (normalized.status !== 'connected' && normalized.status !== 'error') {
+        return normalized;
+    }
+    return Object.freeze({
+        ...normalized,
+        status: 'reconnect_required',
+        errorCode: 'AUTHORIZATION_REQUIRED'
+    });
+}
+
+function portableRecords(records, operation) {
+    const output = Object.create(null);
+    for (const name of STORE_NAMES) output[name] = records[name];
+    output[V2_STORE_NAME.SOURCE_CONNECTIONS] = records[V2_STORE_NAME.SOURCE_CONNECTIONS]
+        .map(portableConnection);
+    if (output[V2_STORE_NAME.SOURCE_CONNECTIONS].some(record => record === null)) {
+        throw backupError(BACKUP_ERROR_CODE.BACKUP_DATA_INVALID, operation);
+    }
+    return output;
+}
+
 function timestamp(dependencies, operation) {
     let value;
     try { value = dependencies.now(); } catch {
@@ -747,7 +816,11 @@ async function exportSnapshot(dependencies, signal) {
         if (!validSystem(records)) {
             throw backupError(BACKUP_ERROR_CODE.BACKUP_SCHEMA_INCOMPATIBLE, operation);
         }
-        validateRecords(records, operation);
+        validateRecords(records, operation, BACKUP_PROFILES[2]);
+        const projectedRecords = portableRecords(records, operation);
+        validateRecords(projectedRecords, operation, BACKUP_PROFILES[2], {
+            portableConnections: true
+        });
         const settingsAfter = await readSettings(dependencies, operation);
         if (!exactTagged(settingsBefore, settingsAfter)) {
             throw backupError(BACKUP_ERROR_CODE.BACKUP_UNAVAILABLE, operation, true);
@@ -755,13 +828,13 @@ async function exportSnapshot(dependencies, signal) {
         const payloadEntries = [];
         const files = [];
         const hashes = [];
-        for (const payload of PAYLOADS) {
+        for (const payload of FORMAT_2_PAYLOADS) {
             checkCancelled(signal, operation);
             const values = payload.synthetic
                 ? []
                 : payload.settings
                     ? settingsBefore
-                    : records[payload.store];
+                    : projectedRecords[payload.store];
             const bytes = encodeJsonLines(values);
             const digest = await sha256(bytes, dependencies.crypto);
             const digestHex = Array.from(digest, byte => (
@@ -778,7 +851,7 @@ async function exportSnapshot(dependencies, signal) {
         }
         const createdAt = timestamp(dependencies, operation);
         const manifest = {
-            backupFormatVersion: 1,
+            backupFormatVersion: 2,
             databaseName: V2_DATABASE_NAME,
             indexedDbVersion: V2_DATABASE_VERSION,
             schemaId: V2_SCHEMA_ID,
@@ -787,14 +860,14 @@ async function exportSnapshot(dependencies, signal) {
             applicationVersion: dependencies.applicationVersion,
             stores: STORE_NAMES.map(name => ({
                 name,
-                recordCount: records[name].length
+                recordCount: projectedRecords[name].length
             })),
             files,
             hashes
         };
         const manifestBytes = encodeCanonicalJson(manifest);
         const entries = [
-            { path: BACKUP_ENTRY_PATHS[0], bytes: manifestBytes },
+            { path: BACKUP_ENTRY_PATHS_BY_FORMAT[2][0], bytes: manifestBytes },
             ...payloadEntries
         ];
         const archive = await createDeterministicZip(entries, dependencies.crypto);
@@ -832,28 +905,28 @@ async function fileBytes(file, operation) {
     throw backupError(BACKUP_ERROR_CODE.INVALID_REQUEST, operation);
 }
 
-function validManifest(manifest, entries) {
+function validManifest(manifest, entries, profile) {
     const value = ownValues(manifest, MANIFEST_FIELDS);
     if (
         !value
-        || value.backupFormatVersion !== 1
+        || value.backupFormatVersion !== profile.backupFormatVersion
         || value.databaseName !== V2_DATABASE_NAME
-        || value.indexedDbVersion !== V2_DATABASE_VERSION
-        || value.schemaId !== V2_SCHEMA_ID
+        || value.indexedDbVersion !== profile.indexedDbVersion
+        || value.schemaId !== profile.schemaId
         || value.canonicalSchemaVersion !== V2_CANONICAL_SCHEMA_VERSION
         || !strictUtc(value.createdAt)
         || !opaque(value.applicationVersion)
         || !Array.isArray(value.stores)
         || !Array.isArray(value.files)
         || !Array.isArray(value.hashes)
-        || value.stores.length !== STORE_NAMES.length
-        || value.files.length !== PAYLOADS.length
-        || value.hashes.length !== PAYLOADS.length
+        || value.stores.length !== profile.storeNames.length
+        || value.files.length !== profile.payloads.length
+        || value.hashes.length !== profile.payloads.length
     ) return null;
     const stores = value.stores.every((store, index) => {
         const fields = ownValues(store, ['name', 'recordCount']);
         return fields
-            && fields.name === STORE_NAMES[index]
+            && fields.name === profile.storeNames[index]
             && Number.isSafeInteger(fields.recordCount)
             && fields.recordCount >= 0;
     });
@@ -862,7 +935,7 @@ function validManifest(manifest, entries) {
             'path', 'mediaType', 'recordCount', 'byteLength'
         ]);
         return fields
-            && fields.path === PAYLOADS[index].path
+            && fields.path === profile.payloads[index].path
             && fields.mediaType === 'application/vnd.stravastats.tagged-jsonl;version=1'
             && Number.isSafeInteger(fields.recordCount)
             && fields.recordCount >= 0
@@ -872,7 +945,7 @@ function validManifest(manifest, entries) {
     const hashes = value.hashes.every((hash, index) => {
         const fields = ownValues(hash, ['path', 'sha256']);
         return fields
-            && fields.path === PAYLOADS[index].path
+            && fields.path === profile.payloads[index].path
             && /^[0-9a-f]{64}$/.test(fields.sha256);
     });
     return stores && files && hashes ? value : null;
@@ -894,23 +967,25 @@ async function validateBytes(dependencies, file, signal, operation) {
     try { manifest = decodeCanonicalJson(entries[0].bytes); } catch (error) {
         throw mapCodecError(error, operation);
     }
+    const profile = BACKUP_PROFILES[manifest?.backupFormatVersion];
     if (
-        manifest?.backupFormatVersion !== 1
+        !profile
+        || entries.length !== profile.entryPaths.length
         || manifest?.databaseName !== V2_DATABASE_NAME
-        || manifest?.indexedDbVersion !== V2_DATABASE_VERSION
-        || manifest?.schemaId !== V2_SCHEMA_ID
+        || manifest?.indexedDbVersion !== profile.indexedDbVersion
+        || manifest?.schemaId !== profile.schemaId
         || manifest?.canonicalSchemaVersion !== V2_CANONICAL_SCHEMA_VERSION
     ) throw backupError(BACKUP_ERROR_CODE.BACKUP_SCHEMA_INCOMPATIBLE, operation);
-    const valid = validManifest(manifest, entries);
+    const valid = validManifest(manifest, entries, profile);
     if (!valid) throw backupError(BACKUP_ERROR_CODE.BACKUP_DATA_INVALID, operation);
     if (manifest.hashes.some((hash, index) => (
         hash.sha256 !== entries[index + 1].sha256
     ))) throw backupError(BACKUP_ERROR_CODE.BACKUP_HASH_MISMATCH, operation);
     const records = Object.create(null);
     let settings = null;
-    for (let index = 0; index < PAYLOADS.length; index += 1) {
+    for (let index = 0; index < profile.payloads.length; index += 1) {
         checkCancelled(signal, operation);
-        const payload = PAYLOADS[index];
+        const payload = profile.payloads[index];
         let decoded;
         try { decoded = decodeJsonLines(entries[index + 1].bytes); } catch (error) {
             throw mapCodecError(error, operation);
@@ -928,15 +1003,17 @@ async function validateBytes(dependencies, file, signal, operation) {
             records[payload.store] = decoded;
         }
     }
-    if (!STORE_NAMES.every(name => Array.isArray(records[name]))) {
+    if (!profile.storeNames.every(name => Array.isArray(records[name]))) {
         throw backupError(BACKUP_ERROR_CODE.BACKUP_DATA_INVALID, operation);
     }
-    STORE_NAMES.forEach((name, index) => {
+    profile.storeNames.forEach((name, index) => {
         if (records[name].length !== manifest.stores[index].recordCount) {
             throw backupError(BACKUP_ERROR_CODE.BACKUP_DATA_INVALID, operation);
         }
     });
-    validateRecords(records, operation);
+    validateRecords(records, operation, profile, {
+        portableConnections: profile.backupFormatVersion === 2
+    });
     for (const artifact of records[V2_STORE_NAME.RAW_ARTIFACTS]) {
         const digest = await sha256(
             new TextEncoder().encode(artifact.content),
@@ -965,7 +1042,7 @@ async function validateBytes(dependencies, file, signal, operation) {
         || new Set(settings.map(r => r.key)).size !== settings.length) {
         throw backupError(BACKUP_ERROR_CODE.BACKUP_DATA_INVALID, operation);
     }
-    return { bytes, manifest, records, settings };
+    return { bytes, manifest, records, settings, profile };
 }
 
 async function validateOnly(dependencies, file, signal) {
@@ -976,6 +1053,40 @@ async function validateOnly(dependencies, file, signal) {
         createdAt: snapshot.manifest.createdAt,
         activityCount: snapshot.records[V2_STORE_NAME.ACTIVITIES].length
     });
+}
+
+function recordsForCurrentRestore(snapshot) {
+    if (snapshot.profile.backupFormatVersion === 2) return snapshot.records;
+    const records = Object.create(null);
+    for (const name of LEGACY_STORE_NAMES) records[name] = snapshot.records[name];
+    records[V2_STORE_NAME.SOURCE_CONNECTIONS] = [];
+    const priorMetadata = snapshot.records[V2_STORE_NAME.METADATA][0];
+    records[V2_STORE_NAME.METADATA] = [{
+        ...priorMetadata,
+        schemaId: V2_SCHEMA_ID,
+        indexedDbVersion: V2_DATABASE_VERSION
+    }];
+    const migration = V2_MIGRATION_REGISTRY[4];
+    records[V2_STORE_NAME.MIGRATIONS] = [
+        ...snapshot.records[V2_STORE_NAME.MIGRATIONS],
+        {
+            id: migration.id,
+            fromVersion: migration.fromVersion,
+            toVersion: migration.toVersion,
+            status: 'completed',
+            startedAt: snapshot.manifest.createdAt,
+            completedAt: snapshot.manifest.createdAt,
+            applicationVersion: snapshot.manifest.applicationVersion,
+            inputSummary: { storeCount: LEGACY_STORE_NAMES.length },
+            outputSummary: { storeCount: STORE_NAMES.length },
+            errorCode: null,
+            retryCount: 0
+        }
+    ];
+    validateRecords(records, 'restore', BACKUP_PROFILES[2], {
+        portableConnections: true
+    });
+    return records;
 }
 
 function targetSettingsPlan(current, desired) {
@@ -1149,6 +1260,7 @@ function openAndRestore(dependencies, records) {
 async function restoreSnapshot(dependencies, file, signal) {
     const operation = 'restore';
     const snapshot = await validateBytes(dependencies, file, signal, operation);
+    const records = recordsForCurrentRestore(snapshot);
     checkCancelled(signal, operation);
     const currentSettings = await readSettings(dependencies, operation);
     const plan = targetSettingsPlan(currentSettings, snapshot.settings);
@@ -1156,7 +1268,7 @@ async function restoreSnapshot(dependencies, file, signal) {
         throw backupError(BACKUP_ERROR_CODE.TARGET_SETTINGS_CONFLICT, operation);
     }
     checkCancelled(signal, operation);
-    const databaseStatus = await openAndRestore(dependencies, snapshot.records);
+    const databaseStatus = await openAndRestore(dependencies, records);
     for (const record of plan) {
         try { await dependencies.settingsWriter(record.key, record.value); } catch {
             throw backupError(BACKUP_ERROR_CODE.SETTINGS_PENDING, operation, true);

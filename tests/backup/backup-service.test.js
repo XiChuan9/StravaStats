@@ -10,11 +10,24 @@ import {
     createBackupService
 } from '../../js/backup/index.js';
 import {
+    createDeterministicZip,
+    decodeCanonicalJson,
+    decodeJsonLines,
+    encodeCanonicalJson,
+    encodeJsonLines,
+    parseDeterministicZip,
+    sha256
+} from '../../js/backup/codec.js';
+import {
     SYNTHETIC_JSON_MEDIA_TYPE,
     createImportService,
     createInlineImportWorker
 } from '../../js/import/index.js';
-import { createCanonicalStore, createImportStore } from '../../js/storage/index.js';
+import {
+    createCanonicalStore,
+    createImportStore,
+    createSourceConnectionStore
+} from '../../js/storage/index.js';
 
 const FIXED_TIME = Date.parse('2026-08-07T01:02:03.004Z');
 
@@ -102,7 +115,88 @@ async function initializedLibrary(indexedDB, withActivity = true, id = 'opaque:0
     await storage.close();
 }
 
-async function fullV4Library(indexedDB) {
+async function createConnection(indexedDB, status = 'connected') {
+    const connections = createSourceConnectionStore({
+        indexedDB,
+        IDBKeyRange,
+        now: () => FIXED_TIME,
+        applicationVersion: 'backup-test@1'
+    });
+    await connections.initialize();
+    let record = await connections.createConnection({
+        id: 'source-connection:strava',
+        provider: 'strava',
+        subjectId: '123456789',
+        status: 'connected',
+        lastSyncAt: null,
+        errorCode: null,
+        revision: 1
+    });
+    if (status !== 'connected') {
+        record = await connections.transitionConnection({
+            id: record.id,
+            expectedRevision: record.revision,
+            status,
+            lastSyncAt: null,
+            errorCode: status === 'error'
+                ? 'CONNECTION_ERROR'
+                : status === 'reconnect_required'
+                    ? 'AUTHORIZATION_REQUIRED'
+                    : null
+        });
+    }
+    await connections.close();
+    return record;
+}
+
+function hex(bytes) {
+    return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function legacyFormat1Archive(format2Blob) {
+    const parsed = await parseDeterministicZip(
+        new Uint8Array(await format2Blob.arrayBuffer()),
+        webcrypto
+    );
+    const byPath = new Map(parsed.map(entry => [entry.path, entry.bytes]));
+    const manifest = decodeCanonicalJson(byPath.get('manifest.json'));
+    const metadata = decodeJsonLines(byPath.get('system/metadata.jsonl'));
+    metadata[0] = {
+        ...metadata[0],
+        schemaId: 'strava-stats-v2@4',
+        indexedDbVersion: 4
+    };
+    const payloads = parsed.slice(1)
+        .filter(entry => entry.path !== 'connections.jsonl')
+        .map(entry => ({ path: entry.path, bytes: entry.bytes }));
+    const metadataPayload = payloads.find(entry => entry.path === 'system/metadata.jsonl');
+    metadataPayload.bytes = encodeJsonLines(metadata);
+    const migrationsPayload = payloads.find(entry => entry.path === 'system/migrations.jsonl');
+    migrationsPayload.bytes = encodeJsonLines(
+        decodeJsonLines(migrationsPayload.bytes).slice(0, 4)
+    );
+    manifest.backupFormatVersion = 1;
+    manifest.indexedDbVersion = 4;
+    manifest.schemaId = 'strava-stats-v2@4';
+    manifest.stores = manifest.stores.filter(store => store.name !== 'sourceConnections');
+    manifest.stores.find(store => store.name === 'metadata').recordCount = 1;
+    manifest.stores.find(store => store.name === 'migrations').recordCount = 4;
+    manifest.files = manifest.files.filter(file => file.path !== 'connections.jsonl');
+    manifest.hashes = manifest.hashes.filter(hash => hash.path !== 'connections.jsonl');
+    for (const payload of payloads) {
+        const file = manifest.files.find(candidate => candidate.path === payload.path);
+        file.byteLength = payload.bytes.byteLength;
+        file.recordCount = decodeJsonLines(payload.bytes).length;
+        const hash = manifest.hashes.find(candidate => candidate.path === payload.path);
+        hash.sha256 = hex(await sha256(payload.bytes, webcrypto));
+    }
+    return new Blob([await createDeterministicZip([
+        { path: 'manifest.json', bytes: encodeCanonicalJson(manifest) },
+        ...payloads
+    ], webcrypto)], { type: 'application/zip' });
+}
+
+async function fullV5Library(indexedDB) {
     let sequence = 0;
     let clock = 0;
     const importStore = createImportStore({
@@ -170,6 +264,86 @@ test('exports deterministic full archive, validates it, and restores into a fres
     assert.equal(restored.activityCount, 1);
 });
 
+test('format 2 exports portable reconnect state and restores it without credentials', async () => {
+    for (const sourceStatus of [
+        'connected', 'error', 'reconnect_required', 'disconnected'
+    ]) {
+        const sourceFactory = new IDBFactory();
+        await initializedLibrary(sourceFactory, false);
+        const original = await createConnection(sourceFactory, sourceStatus);
+        const archive = await service(sourceFactory).exportLibrary();
+        const entries = await parseDeterministicZip(
+            new Uint8Array(await archive.blob.arrayBuffer()),
+            webcrypto
+        );
+        assert.deepEqual(entries.map(entry => entry.path).slice(0, 4), [
+            'manifest.json',
+            'activities.jsonl',
+            'sources.jsonl',
+            'connections.jsonl'
+        ]);
+        const [portable] = decodeJsonLines(
+            entries.find(entry => entry.path === 'connections.jsonl').bytes
+        );
+        const expected = sourceStatus === 'connected' || sourceStatus === 'error'
+            ? {
+                ...original,
+                status: 'reconnect_required',
+                errorCode: 'AUTHORIZATION_REQUIRED'
+            }
+            : original;
+        assert.deepEqual(portable, expected);
+
+        const targetFactory = new IDBFactory();
+        const target = service(targetFactory);
+        assert.equal((await target.restoreBackup(archive.blob)).status, 'restored');
+        const connections = createSourceConnectionStore({
+            indexedDB: targetFactory,
+            IDBKeyRange,
+            now: () => FIXED_TIME,
+            applicationVersion: 'backup-test@1'
+        });
+        await connections.initialize();
+        assert.deepEqual(await connections.getConnection('strava'), portable);
+        await connections.close();
+        assert.equal((await target.restoreBackup(archive.blob)).status, 'already_restored');
+    }
+});
+
+test('format 1 V4 archive restores one-way into V5 with no inferred connection', async () => {
+    const sourceFactory = new IDBFactory();
+    await initializedLibrary(sourceFactory);
+    const current = await service(sourceFactory).exportLibrary();
+    const legacyArchive = await legacyFormat1Archive(current.blob);
+    assert.equal((await service(sourceFactory).validateBackup(legacyArchive)).status, 'validated');
+
+    const targetFactory = new IDBFactory();
+    const target = service(targetFactory);
+    assert.equal((await target.restoreBackup(legacyArchive)).status, 'restored');
+    const connections = createSourceConnectionStore({
+        indexedDB: targetFactory,
+        IDBKeyRange,
+        now: () => FIXED_TIME,
+        applicationVersion: 'backup-test@1'
+    });
+    await connections.initialize();
+    assert.equal(await connections.getConnection('strava'), null);
+    await connections.close();
+    assert.equal((await target.restoreBackup(legacyArchive)).status, 'already_restored');
+
+    const upgraded = await target.exportLibrary();
+    const entries = await parseDeterministicZip(
+        new Uint8Array(await upgraded.blob.arrayBuffer()),
+        webcrypto
+    );
+    const manifest = decodeCanonicalJson(entries[0].bytes);
+    assert.equal(manifest.backupFormatVersion, 2);
+    assert.equal(manifest.indexedDbVersion, 5);
+    assert.equal(manifest.schemaId, 'strava-stats-v2@5');
+    assert.equal(manifest.stores.find(store => store.name === 'migrations').recordCount, 5);
+    assert.equal(manifest.stores.find(store => store.name === 'sourceConnections').recordCount, 0);
+});
+
 test('repeat restore is idempotent and reports already_restored with zero database writes', async () => {
     const sourceFactory = new IDBFactory();
     await initializedLibrary(sourceFactory);
@@ -180,7 +354,7 @@ test('repeat restore is idempotent and reports already_restored with zero databa
     assert.equal((await target.restoreBackup(archive)).status, 'already_restored');
 });
 
-test('exact empty V4 baseline accepts restore while a non-empty current library is protected', async () => {
+test('exact empty V5 baseline accepts restore while a non-empty current library is protected', async () => {
     const sourceFactory = new IDBFactory();
     await initializedLibrary(sourceFactory);
     const archive = (await service(sourceFactory).exportLibrary()).blob;
@@ -285,9 +459,9 @@ test('public errors are fixed, frozen, and never disclose raw causes or private 
     });
 });
 
-test('all thirteen V4 stores, raw bytes, import audit, and duplicate-review records round-trip', async () => {
+test('all fourteen V5 stores, raw bytes, import audit, and duplicate-review records round-trip', async () => {
     const sourceFactory = new IDBFactory();
-    await fullV4Library(sourceFactory);
+    await fullV5Library(sourceFactory);
     const source = service(sourceFactory);
     const archive = await source.exportLibrary();
     assert.equal(archive.activityCount, 2);

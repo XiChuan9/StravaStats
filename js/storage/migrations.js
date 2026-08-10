@@ -10,6 +10,7 @@ import {
     V2_IMPORT_MIGRATION_ID,
     V2_METADATA_KEY,
     V2_SCHEMA_ID,
+    V2_SOURCE_CONNECTION_MIGRATION_ID,
     V2_STORE_NAME
 } from './constants.js';
 import { storageError } from './errors.js';
@@ -38,12 +39,18 @@ export const V2_MIGRATION_REGISTRY = Object.freeze([
         id: V2_DUPLICATE_REVIEW_MIGRATION_ID,
         fromVersion: 3,
         toVersion: 4
+    }),
+    Object.freeze({
+        id: V2_SOURCE_CONNECTION_MIGRATION_ID,
+        fromVersion: 4,
+        toVersion: 5
     })
 ]);
 
 const V1_SCHEMA_ID = 'strava-stats-v2@1';
 const V2_SCHEMA_ID_AT_VERSION_2 = 'strava-stats-v2@2';
 const V2_SCHEMA_ID_AT_VERSION_3 = 'strava-stats-v2@3';
+const V2_SCHEMA_ID_AT_VERSION_4 = 'strava-stats-v2@4';
 
 const DATA_MIGRATION_DEFINITION_FIELDS = Object.freeze([
     'id',
@@ -423,8 +430,8 @@ function applyDuplicateReviewMigration(database, transaction, {
             }
             metadataStore.put({
                 ...metadata,
-                schemaId: V2_SCHEMA_ID,
-                indexedDbVersion: V2_DATABASE_VERSION
+                schemaId: V2_SCHEMA_ID_AT_VERSION_4,
+                indexedDbVersion: 4
             });
         } catch {
             try {
@@ -439,6 +446,78 @@ function applyDuplicateReviewMigration(database, transaction, {
         id: V2_DUPLICATE_REVIEW_MIGRATION_ID,
         fromVersion: 3,
         toVersion: 4,
+        status: 'completed',
+        startedAt: timestamp,
+        completedAt: timestamp,
+        applicationVersion,
+        inputSummary: { storeCount: priorSchema.stores.length },
+        outputSummary: { storeCount: schema.stores.length },
+        errorCode: null,
+        retryCount: 0
+    });
+}
+
+function applySourceConnectionMigration(database, transaction, {
+    applicationVersion,
+    timestamp,
+    startingVersion
+}) {
+    const priorSchema = V2_PHYSICAL_SCHEMA_BY_VERSION[4];
+    const schema = V2_PHYSICAL_SCHEMA_BY_VERSION[5];
+    ensurePhysicalSchema(database, transaction, schema);
+
+    const metadataStore = transaction.objectStore(V2_STORE_NAME.METADATA);
+    const metadataRequest = metadataStore.get(V2_METADATA_KEY);
+    metadataRequest.onsuccess = () => {
+        try {
+            const metadata = ownDataValues(metadataRequest.result, [
+                'key',
+                'databaseName',
+                'schemaId',
+                'indexedDbVersion',
+                'canonicalSchemaVersion',
+                'createdAt',
+                'createdByApplicationVersion'
+            ]);
+            if (
+                !metadata
+                || metadata.key !== V2_METADATA_KEY
+                || metadata.databaseName !== V2_DATABASE_NAME
+                || !(
+                    (
+                        metadata.schemaId === V2_SCHEMA_ID_AT_VERSION_4
+                        && metadata.indexedDbVersion === 4
+                    )
+                    || (
+                        startingVersion < 4
+                        && shouldAcceptPriorMetadata(metadata, startingVersion)
+                    )
+                )
+                || metadata.canonicalSchemaVersion !== V2_CANONICAL_SCHEMA_VERSION
+                || !isStrictUtcInstant(metadata.createdAt)
+                || typeof metadata.createdByApplicationVersion !== 'string'
+                || metadata.createdByApplicationVersion.length === 0
+            ) {
+                throw new TypeError('invalid prior metadata');
+            }
+            metadataStore.put({
+                ...metadata,
+                schemaId: V2_SCHEMA_ID,
+                indexedDbVersion: V2_DATABASE_VERSION
+            });
+        } catch {
+            try {
+                transaction.abort();
+            } catch {
+                // The versionchange terminal event remains authoritative.
+            }
+        }
+    };
+
+    transaction.objectStore(V2_STORE_NAME.MIGRATIONS).put({
+        id: V2_SOURCE_CONNECTION_MIGRATION_ID,
+        fromVersion: 4,
+        toVersion: 5,
         status: 'completed',
         startedAt: timestamp,
         completedAt: timestamp,
@@ -517,6 +596,12 @@ export function applyStructuralMigrations(database, transaction, {
             });
         } else if (migration.id === V2_DUPLICATE_REVIEW_MIGRATION_ID) {
             applyDuplicateReviewMigration(database, transaction, {
+                applicationVersion,
+                timestamp,
+                startingVersion: oldVersion
+            });
+        } else if (migration.id === V2_SOURCE_CONNECTION_MIGRATION_ID) {
+            applySourceConnectionMigration(database, transaction, {
                 applicationVersion,
                 timestamp,
                 startingVersion: oldVersion
