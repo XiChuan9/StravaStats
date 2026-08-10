@@ -444,6 +444,7 @@ test('stream missing, null, empty, timeline, value, and warning semantics are ex
     assert.deepEqual(warningCodes(noTime), ['TIME_STREAM_UNAVAILABLE']);
 
     for (const streams of [
+        { time: { data: [] }, distance: { data: [1] } },
         { time: { data: [0, 2, 1] }, distance: { data: [0, 1, 2] } },
         { time: { data: [0, 1] }, distance: { data: [0] } },
         { time: { data: [0] }, heartrate: { data: [0] } },
@@ -453,6 +454,41 @@ test('stream missing, null, empty, timeline, value, and warning semantics are ex
     ]) {
         expectCode(() => mapActivities([{ ...base, streams }]),
             'PROVIDER_RECORD_INVALID', 'mapping', 0);
+    }
+});
+
+test('oversized arrays fail before unknown provider fields can be dropped', () => {
+    const oversized = Array.from(
+        { length: STRAVA_IMPORT_LIMITS.maxStreamPointsPerSeries + 1 },
+        () => 0
+    );
+    for (const activity of [
+        {
+            summary: {
+                id: '9650001',
+                sport_type: 'Run',
+                start_date: '2026-08-10T10:00:00Z',
+                future_field: oversized
+            },
+            detail: null,
+            streams: null
+        },
+        {
+            summary: {
+                id: '9650002',
+                sport_type: 'Run',
+                start_date: '2026-08-10T10:00:00Z'
+            },
+            detail: null,
+            streams: { future_stream: { data: oversized } }
+        }
+    ]) {
+        expectCode(
+            () => mapActivities([activity]),
+            'LIMIT_EXCEEDED',
+            'mapping',
+            0
+        );
     }
 });
 

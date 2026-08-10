@@ -76,6 +76,7 @@ const WARNING_DEFINITIONS = Object.freeze({
 });
 
 const INVALID = Symbol('invalid');
+const LIMIT = Symbol('limit');
 const ERROR_CODES = new Set(Object.values(STRAVA_IMPORT_MAPPER_ERROR_CODE));
 const ERROR_STAGES = new Set([
     'authorization',
@@ -281,13 +282,14 @@ function ordinaryRecord(value, exactFields = null) {
     }
 }
 
-function denseArray(value) {
+function denseArray(value, maximumLength = null) {
     try {
         if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) {
             return null;
         }
         const length = Object.getOwnPropertyDescriptor(value, 'length')?.value;
         if (!Number.isSafeInteger(length) || length < 0) return null;
+        if (maximumLength !== null && length > maximumLength) return LIMIT;
         const keys = Reflect.ownKeys(value);
         if (keys.length !== length + 1 || keys.some(key => typeof key !== 'string')) {
             return null;
@@ -317,11 +319,16 @@ function cloneJson(value, active = new Set(), depth = 0) {
     if (typeof value !== 'object' || active.has(value)) return INVALID;
     active.add(value);
     try {
-        const array = denseArray(value);
+        const array = denseArray(
+            value,
+            STRAVA_IMPORT_LIMITS.maxStreamPointsPerSeries
+        );
+        if (array === LIMIT) return LIMIT;
         if (array !== null) {
             const result = [];
             for (const item of array) {
                 const cloned = cloneJson(item, active, depth + 1);
+                if (cloned === LIMIT) return LIMIT;
                 if (cloned === INVALID) return INVALID;
                 result.push(cloned);
             }
@@ -332,6 +339,7 @@ function cloneJson(value, active = new Set(), depth = 0) {
         const result = Object.create(null);
         for (const key of Reflect.ownKeys(record)) {
             const cloned = cloneJson(record[key], active, depth + 1);
+            if (cloned === LIMIT) return LIMIT;
             if (cloned === INVALID) return INVALID;
             result[key] = cloned;
         }
@@ -629,12 +637,12 @@ function buildStreams(streams, activityId, warnings, activityIndex) {
         if (values.length > STRAVA_IMPORT_LIMITS.maxStreamPointsPerSeries) {
             fail('LIMIT_EXCEEDED', 'mapping', activityIndex);
         }
-        if (offsets === null || offsets.length === 0) {
+        if (offsets !== null && values.length !== offsets.length) {
+            fail('PROVIDER_RECORD_INVALID', 'mapping', activityIndex);
+        }
+        if (offsets === null) {
             warnings.add('TIME_STREAM_UNAVAILABLE', '/provider/streams');
             continue;
-        }
-        if (values.length !== offsets.length) {
-            fail('PROVIDER_RECORD_INVALID', 'mapping', activityIndex);
         }
         if (values.some(value => !validStreamValue(value, kind))) {
             fail('PROVIDER_RECORD_INVALID', 'mapping', activityIndex);
@@ -740,6 +748,7 @@ function capability(series, type) {
 
 function mapActivity(value, acquiredAt, activityIndex, seenIds) {
     const cloned = cloneJson(value);
+    if (cloned === LIMIT) fail('LIMIT_EXCEEDED', 'mapping', activityIndex);
     if (cloned === INVALID) fail('PROVIDER_RECORD_INVALID', 'mapping', activityIndex);
     const item = ordinaryRecord(cloned, ITEM_FIELDS);
     if (!item) fail('PROVIDER_RECORD_INVALID', 'mapping', activityIndex);
