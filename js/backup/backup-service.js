@@ -477,7 +477,7 @@ function validMigration(record, expected) {
         && value.status === 'completed'
         && strictUtc(value.startedAt)
         && strictUtc(value.completedAt)
-        && value.completedAt >= value.startedAt
+        && value.completedAt === value.startedAt
         && opaque(value.applicationVersion)
         && ownValues(value.inputSummary, ['storeCount']) !== null
         && ownValues(value.outputSummary, ['storeCount']) !== null

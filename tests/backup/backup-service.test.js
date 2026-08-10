@@ -196,6 +196,38 @@ async function legacyFormat1Archive(format2Blob) {
     ], webcrypto)], { type: 'application/zip' });
 }
 
+async function archiveWithNonExactMigrationTiming(blob) {
+    const parsed = await parseDeterministicZip(
+        new Uint8Array(await blob.arrayBuffer()),
+        webcrypto
+    );
+    const manifest = decodeCanonicalJson(parsed[0].bytes);
+    const payloads = parsed.slice(1).map(entry => ({
+        path: entry.path,
+        bytes: entry.bytes
+    }));
+    const migrationPayload = payloads.find(
+        entry => entry.path === 'system/migrations.jsonl'
+    );
+    const migrations = decodeJsonLines(migrationPayload.bytes);
+    migrations[0] = {
+        ...migrations[0],
+        completedAt: '2026-08-07T01:02:03.005Z'
+    };
+    migrationPayload.bytes = encodeJsonLines(migrations);
+    const file = manifest.files.find(
+        entry => entry.path === migrationPayload.path
+    );
+    file.byteLength = migrationPayload.bytes.byteLength;
+    file.recordCount = migrations.length;
+    manifest.hashes.find(entry => entry.path === migrationPayload.path).sha256 =
+        hex(await sha256(migrationPayload.bytes, webcrypto));
+    return new Blob([await createDeterministicZip([
+        { path: 'manifest.json', bytes: encodeCanonicalJson(manifest) },
+        ...payloads
+    ], webcrypto)], { type: 'application/zip' });
+}
+
 async function fullV5Library(indexedDB) {
     let sequence = 0;
     let clock = 0;
@@ -342,6 +374,23 @@ test('format 1 V4 archive restores one-way into V5 with no inferred connection',
     assert.equal(manifest.schemaId, 'strava-stats-v2@5');
     assert.equal(manifest.stores.find(store => store.name === 'migrations').recordCount, 5);
     assert.equal(manifest.stores.find(store => store.name === 'sourceConnections').recordCount, 0);
+});
+
+test('format 1 and format 2 reject non-exact structural migration timing', async () => {
+    const sourceFactory = new IDBFactory();
+    await initializedLibrary(sourceFactory);
+    const current = await service(sourceFactory).exportLibrary();
+    const archives = [
+        current.blob,
+        await legacyFormat1Archive(current.blob)
+    ];
+    for (const archive of archives) {
+        const invalid = await archiveWithNonExactMigrationTiming(archive);
+        await assert.rejects(
+            service(new IDBFactory()).validateBackup(invalid),
+            error => error.code === BACKUP_ERROR_CODE.BACKUP_DATA_INVALID
+        );
+    }
 });
 
 test('repeat restore is idempotent and reports already_restored with zero database writes', async () => {
