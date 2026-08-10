@@ -51,6 +51,25 @@ test('production Import Core has no provider, network, DOM, logging, or destruct
     assert.doesNotMatch(source, /parseFit|decodeFit|parseTcx|decodeTcx|parseGpx|decodeGpx/i);
 });
 
+test('C3a mapper stays outside Import Core, Worker, and provider I/O boundaries', async () => {
+    const mapper = await readFile(new URL(
+        '../../js/connectors/strava/strava-import-mapper.js',
+        import.meta.url
+    ), 'utf8');
+    assert.match(mapper, /\.\.\/\.\.\/data\/contracts\/index\.js/);
+    assert.doesNotMatch(
+        mapper,
+        /from\s+['"][^'"]*(?:\/import\/|worker|storage|repository|backup|strava-api-connector)/i
+    );
+    assert.doesNotMatch(
+        mapper,
+        /fetch\s*\(|XMLHttpRequest|WebSocket|Bearer|strava\.com|\/api\/|localStorage|sessionStorage|indexedDB|Worker/
+    );
+    const publicImport = await import(`${importIndex.href}?c3a=${Date.now()}`);
+    assert.equal(Object.hasOwn(publicImport, 'createStravaImportMapper'), false);
+    assert.equal(Object.hasOwn(publicImport, 'mapActivities'), false);
+});
+
 test('PR-09 keeps the literal 18-path allowlist and fixed archive boundaries', async () => {
     const brief = await readFile(new URL(
         '../../docs/tasks/pr-09-strava-zip.md',
