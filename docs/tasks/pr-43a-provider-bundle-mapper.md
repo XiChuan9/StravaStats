@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | M26 / C3a pure provider mapper |
-| Status | A2/A3 contract frozen; implementation prohibited pending explicit owner A3 approval |
+| Status | C3a implemented and independently closed; awaiting exact-head CI and Ready handoff |
 | Base branch | `integration/v2` |
 | Exact base | `integration/v2@92a735fb4d4809173c5fddf868416bf44642faed` |
 | Exact base tree | `568cf2457f418130ec0a6641478eb45a60e676c1` |
@@ -23,15 +23,19 @@ synthetic provider records, proves exact SourceConnection subject/scope authoriz
 mapping, and returns accepted `ImportedActivityBundle` values without network, Token, storage,
 Worker, DOM, or provider side effects.
 
-This Task Brief is the only authorized A0/A1/A2 write. No mapper, fixture, test, ImportService,
-Source Manager, auth, provider, storage, backup, or server implementation is authorized until the
-owner separately approves the completed C3a A3 package.
+The owner subsequently approved the exact frozen C3a A3 implementation and literal eight-path hard
+maximum. C3b, C3c, live provider/auth work, persistence, and every other excluded surface remain
+separately gated.
 
 ## Authority
 
 The owner selected verbatim:
 
 > 批准 D-C3.1 A + D-C3.2 B + D-C3.3 A + D-C3.4 A
+
+The owner then approved C3a implementation verbatim:
+
+> 批准 C3a A3 实施及精确 8 路径上限。
 
 For C3a this freezes only:
 
@@ -42,9 +46,10 @@ For C3a this freezes only:
 - deterministic reduced provider input and `ImportedActivityBundle` output; and
 - separate C3a, C3b, and C3c approvals.
 
-It does not authorize C3a implementation, C3b provider-artifact/ImportService integration, C3c live
+The C3a approval does not authorize C3b provider-artifact/ImportService integration, C3c live
 read/auth/UI, OAuth, Token, account/provider/private evidence, schema/public/dependency/Worker/
-Service Worker/server changes, Ready, merge, cleanup, deployment, release, or any data mutation.
+Service Worker/server changes, merge, cleanup, deployment, release, or any data mutation. Ready is
+limited to the standing safe handoff only after all frozen gates pass.
 
 ## Frozen cumulative candidate maximum
 
@@ -602,6 +607,56 @@ Alpha/full-v2.0/readiness claim. Architecture/collision risk is **low-medium**: 
 and non-durable, while exact provider-shape reduction and duplicated validation of an injected C2
 snapshot require the failure-first hostile/boundary suite. Product-completion risk remains **high if
 misrepresented as a live connector**.
+
+## Final Review Closure
+
+The authorized C3a implementation is complete at immutable code head
+`f72d2a4fe91fd9af00c5f8ddfa391491b278d744`. The cumulative base-to-code diff changes exactly seven
+of the eight frozen paths. `tests/contracts/imported-activity-bundle.test.js` remained unnecessary
+and untouched; no path was substituted and no ninth path was used.
+
+- Failure-first evidence preceded production: the initial focused mapper test failed 0/1 with
+  `ERR_MODULE_NOT_FOUND` because the direct mapper did not exist. The focused implementation suite
+  then covered the exact direct exports, injected session/SourceConnection authority, identity,
+  scopes, summary/detail precedence, every supported stream and sport mapping, laps, limits,
+  opaque IDs, missing/null/zero distinctions, warnings/errors, cancellation, hostile inputs,
+  privacy, detachment, deep freeze, determinism, and accepted JSON round trips.
+- Implementation commit `c4a71d47a3ffabeff6da49f1e374d92c59986ee6` added only the pure mapper,
+  deterministic fixture, focused tests, and frozen boundary/privacy assertions. It adds no aggregate
+  export, connector call, Token, Storage, Import, Worker, Service Worker, server, schema, dependency,
+  or durable data surface.
+- The independent findings-first review of `c4a71d4` found two P1 contract violations: recursively
+  oversized arrays could be cloned before an unknown field was dropped, and an explicitly empty
+  time array could silently discard a nonempty supported stream. Failure-first reproductions failed
+  16/18 before repair. Repair commit `f72d2a4` propagates a fixed `LIMIT_EXCEEDED` boundary before
+  cloning any array over 200,000 and makes the explicit zero-versus-nonzero timeline mismatch fatal.
+- A genuinely fresh independent re-review of exact `f72d2a4` returned **NO FINDINGS**. It rechecked
+  the two repairs, every frozen authority/mapping/privacy boundary, exact seven-of-eight path scope,
+  focused 95/95, full 1764/1764, syntax 269 files, privacy, and diff gates without modifying the
+  repository or PR.
+- Actual-served final browser evidence used installed Chromium headlessly with a newly created
+  temporary profile, loopback-only static modules, and no user browser/profile or login. Exact
+  `f72d2a4` accepted rich/degraded bundles and the 100-activity, 200,000-point, and 10,000-lap
+  boundaries; 101 activities, 200,001 points, 10,001 laps, and recursively oversized unknown data
+  returned `LIMIT_EXCEEDED`; empty timing with nonempty data returned
+  `PROVIDER_RECORD_INVALID`. Repeated output was deterministic, deeply frozen, input-preserving,
+  and valid directly and after JSON round trip. Cancellation inspected zero activity entries and a
+  hostile getter executed zero times. Instrumentation recorded zero fetch/XHR/WebSocket, Worker,
+  timer, console, Web Storage read/write, IndexedDB open, navigation, or mapper DOM mutation; URL and
+  pre-report DOM were unchanged; only same-origin static module resources loaded and external
+  resources were empty. The temporary profile path did not exist before launch; local/session
+  storage were empty before and after, and the post-run IndexedDB inventory was empty.
+- Final code-head gates passed: `npm ci` (6 packages, 0 vulnerabilities), syntax 269 files, privacy,
+  focused 203/203 before review and 27/27 after the repairs, full 1764/1764, `git diff --check`, and
+  the literal path audit. The worktree was clean at the immutable review heads.
+
+Migration/data impact remains none: C3a neither opens nor changes Legacy/V5 data, connections,
+artifacts, Import jobs, Canonical records, settings, backup formats, or schema. Privacy evidence is
+synthetic-only; it proves the pure seam, not live provider scope, account binding, response drift,
+OAuth/refresh/revoke, rate limits, request cancellation, C3b persistence, or C3c UI/network behavior.
+Rollback remains code-only: stop importing or revert the isolated mapper while preserving every
+existing Legacy/V5 record. PR #50 may advance only through the authorized safe Ready handoff after
+exact closure-head push/CI; Squash Merge remains separately unauthorized.
 
 ## A2 evidence readback
 
