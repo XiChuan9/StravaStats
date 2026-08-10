@@ -27,6 +27,8 @@
         const SENTINEL_NAME = 'synthetic-legacy-like-b3-sentinel';
         const FIXED_TIME = Date.parse('2026-08-05T01:02:03.004Z');
         const APPLICATION_VERSION = 'browser-smoke@1';
+        const V4_APPLICATION_VERSION = 'synthetic-v4@1';
+        const V4_PRESERVED_DEVICE = 'synthetic-v4-preserved-device';
         const RELOAD_KEY = 'indexeddb-v2-browser-smoke-reload';
         const EXPECTED_STORES = [
             'metadata',
@@ -41,7 +43,8 @@
             'importJobs',
             'importItems',
             'mergeCandidates',
-            'mergeDecisions'
+            'mergeDecisions',
+            'sourceConnections'
         ];
         const EXPECTED_INDEXES = {
             metadata: [],
@@ -59,22 +62,24 @@
             importJobs: ['byCreatedAt'],
             importItems: ['byJobId'],
             mergeCandidates: ['byActivityPair', 'byStatusAndCreatedAt'],
-            mergeDecisions: ['byCandidateId']
+            mergeDecisions: ['byCandidateId'],
+            sourceConnections: ['byProvider']
         };
         const EXPECTED_FINAL_COUNTS = {
             metadata: 1,
-            migrations: 4,
+            migrations: 5,
             activities: 5,
             activitySources: 5,
             streamSeries: 10,
             laps: 0,
             events: 0,
-            devices: 3,
+            devices: 4,
             rawArtifacts: 0,
             importJobs: 0,
             importItems: 0,
             mergeCandidates: 0,
-            mergeDecisions: 0
+            mergeDecisions: 0,
+            sourceConnections: 1
         };
 
         const stateElement = document.querySelector('#state');
@@ -173,6 +178,55 @@
             });
         }
 
+        async function createAcceptedV4(schemaModule) {
+            return openDatabase(V2_NAME, 4, (database, transaction) => {
+                for (const descriptor of schemaModule
+                    .V2_PHYSICAL_SCHEMA_BY_VERSION[4].stores) {
+                    const store = database.createObjectStore(descriptor.name, {
+                        keyPath: descriptor.keyPath,
+                        autoIncrement: descriptor.autoIncrement
+                    });
+                    for (const index of descriptor.indexes) {
+                        store.createIndex(index.name, index.keyPath, {
+                            unique: index.unique,
+                            multiEntry: index.multiEntry
+                        });
+                    }
+                }
+                transaction.objectStore('metadata').put({
+                    key: 'database',
+                    databaseName: V2_NAME,
+                    schemaId: 'strava-stats-v2@4',
+                    indexedDbVersion: 4,
+                    canonicalSchemaVersion: 1,
+                    createdAt: '2026-08-05T01:02:03.004Z',
+                    createdByApplicationVersion: V4_APPLICATION_VERSION
+                });
+                const migrations = transaction.objectStore('migrations');
+                for (const migration of [
+                    ['schema-0001-bootstrap', 0, 1, 0, 8],
+                    ['schema-0002-import-core', 1, 2, 8, 11],
+                    ['schema-0003-exact-identity-index', 2, 3, 11, 11],
+                    ['schema-0004-duplicate-review', 3, 4, 11, 13]
+                ]) {
+                    migrations.put({
+                        id: migration[0],
+                        fromVersion: migration[1],
+                        toVersion: migration[2],
+                        status: 'completed',
+                        startedAt: '2026-08-05T01:02:03.004Z',
+                        completedAt: '2026-08-05T01:02:03.004Z',
+                        applicationVersion: V4_APPLICATION_VERSION,
+                        inputSummary: { storeCount: migration[3] },
+                        outputSummary: { storeCount: migration[4] },
+                        errorCode: null,
+                        retryCount: 0
+                    });
+                }
+                transaction.objectStore('devices').put({ id: V4_PRESERVED_DEVICE });
+            });
+        }
+
         async function databaseInventory() {
             assert(typeof indexedDB.databases === 'function', 'databases-api');
             const inventory = await indexedDB.databases();
@@ -262,6 +316,10 @@
                     transaction.objectStore('migrations')
                         .get('schema-0004-duplicate-review')
                 );
+                const sourceConnectionMigration = await requestResult(
+                    transaction.objectStore('migrations')
+                        .get('schema-0005-source-connection')
+                );
                 await done;
                 return {
                     version: database.version,
@@ -302,6 +360,13 @@
                         retryCount: duplicateReviewMigration?.retryCount,
                         outputStoreCount:
                             duplicateReviewMigration?.outputSummary?.storeCount
+                    },
+                    sourceConnectionMigration: {
+                        id: sourceConnectionMigration?.id,
+                        status: sourceConnectionMigration?.status,
+                        retryCount: sourceConnectionMigration?.retryCount,
+                        outputStoreCount:
+                            sourceConnectionMigration?.outputSummary?.storeCount
                     }
                 };
             } finally {
@@ -487,6 +552,7 @@
         async function runFirstLoad() {
             let sentinelBefore;
             let storageModule;
+            let schemaModule;
             await gate('fresh-origin', async () => {
                 const inventory = await databaseInventory();
                 assert(!inventory.some(item => item.name === V2_NAME), 'v2-preexisting');
@@ -506,6 +572,9 @@
                 storageModule = await import(
                     '../../js/storage/index.js?indexeddb-v2-browser-smoke=1'
                 );
+                schemaModule = await import(
+                    '../../js/storage/schema.js?indexeddb-v2-browser-smoke=1'
+                );
                 const afterImport = await databaseInventory();
                 assert(!afterImport.some(item => item.name === V2_NAME), 'import-io');
                 const storage = trackStore(storageModule.createCanonicalStore(
@@ -519,12 +588,25 @@
                 );
             });
 
+            await gate('synthetic-v4-before-upgrade', async () => {
+                const versionFour = await createAcceptedV4(schemaModule);
+                const transaction = versionFour.transaction('devices', 'readonly');
+                const record = await requestResult(
+                    transaction.objectStore('devices').get(V4_PRESERVED_DEVICE)
+                );
+                await transactionDone(transaction);
+                assert(record?.id === V4_PRESERVED_DEVICE, 'v4-record-before');
+                assert(versionFour.version === 4, 'v4-version-before');
+                assert(versionFour.objectStoreNames.length === 13, 'v4-stores-before');
+                versionFour.close();
+            });
+
             const storage = globalThis.__browserSmokeStorage;
-            await gate('fresh-schema-bootstrap', async () => {
+            await gate('v4-to-v5-upgrade', async () => {
                 const ready = await storage.initialize();
                 assert(ready.status === 'ready', 'initialize-ready');
                 const inspected = await inspectV2();
-                assert(inspected.version === 4, 'database-version');
+                assert(inspected.version === 5, 'database-version');
                 assert(
                     JSON.stringify(inspected.stores) ===
                         JSON.stringify(EXPECTED_STORES.slice().sort()),
@@ -539,18 +621,29 @@
                 }
                 assert(inspected.metadata.databaseName === V2_NAME, 'metadata-name');
                 assert(
-                    inspected.metadata.schemaId === 'strava-stats-v2@4',
+                    inspected.metadata.schemaId === 'strava-stats-v2@5',
                     'metadata-schema'
                 );
-                assert(inspected.metadata.indexedDbVersion === 4, 'metadata-version');
+                assert(inspected.metadata.indexedDbVersion === 5, 'metadata-version');
                 assert(
                     inspected.metadata.canonicalSchemaVersion === 1,
                     'metadata-canonical'
                 );
                 assert(
                     inspected.metadata.createdByApplicationVersion ===
-                        APPLICATION_VERSION,
+                        V4_APPLICATION_VERSION,
                     'metadata-app'
+                );
+                const database = await openDatabase(V2_NAME, 5);
+                const transaction = database.transaction('devices', 'readonly');
+                const preserved = await requestResult(
+                    transaction.objectStore('devices').get(V4_PRESERVED_DEVICE)
+                );
+                await transactionDone(transaction);
+                database.close();
+                assert(
+                    preserved?.id === V4_PRESERVED_DEVICE,
+                    'v4-record-after'
                 );
                 assert(
                     inspected.migration.id === 'schema-0001-bootstrap'
@@ -582,12 +675,74 @@
                     && inspected.duplicateReviewMigration.outputStoreCount === 13,
                     'duplicate-review-migration'
                 );
+                assert(
+                    inspected.sourceConnectionMigration.id ===
+                        'schema-0005-source-connection'
+                    && inspected.sourceConnectionMigration.status === 'completed'
+                    && inspected.sourceConnectionMigration.retryCount === 0
+                    && inspected.sourceConnectionMigration.outputStoreCount === 14,
+                    'source-connection-migration'
+                );
             });
 
             await gate('repeat-close-explicit-reopen', async () => {
                 assert((await storage.initialize()).status === 'ready', 'repeat-init');
                 assert((await storage.close()).status === 'closed', 'first-close');
                 assert((await storage.initialize()).status === 'ready', 'explicit-reopen');
+            });
+
+            await gate('source-connection-create-transition-read', async () => {
+                const connectionStore = trackStore(
+                    storageModule.createSourceConnectionStore(
+                        storeOptions(storageModule)
+                    )
+                );
+                assert(
+                    (await connectionStore.initialize()).status === 'ready',
+                    'source-connection-ready'
+                );
+                const created = await connectionStore.createConnection({
+                    id: 'source-connection:strava',
+                    provider: 'strava',
+                    subjectId: '424242',
+                    status: 'connected',
+                    lastSyncAt: null,
+                    errorCode: null,
+                    revision: 1
+                });
+                assert(Object.isFrozen(created), 'source-connection-frozen-create');
+                const reconnect = await connectionStore.transitionConnection({
+                    id: 'source-connection:strava',
+                    expectedRevision: 1,
+                    status: 'reconnect_required',
+                    lastSyncAt: null,
+                    errorCode: 'AUTHORIZATION_REQUIRED'
+                });
+                assert(reconnect.revision === 2, 'source-connection-reconnect');
+                const connected = await connectionStore.transitionConnection({
+                    id: 'source-connection:strava',
+                    expectedRevision: 2,
+                    status: 'connected',
+                    lastSyncAt: null,
+                    errorCode: null
+                });
+                assert(connected.revision === 3, 'source-connection-connected');
+                const synced = await connectionStore.transitionConnection({
+                    id: 'source-connection:strava',
+                    expectedRevision: 3,
+                    status: 'connected',
+                    lastSyncAt: '2026-08-05T02:03:04.005Z',
+                    errorCode: null
+                });
+                const read = await connectionStore.getConnection('strava');
+                assert(Object.isFrozen(read), 'source-connection-frozen-read');
+                assert(read !== synced, 'source-connection-detached-read');
+                assert(read.revision === 4, 'source-connection-revision');
+                assert(
+                    read.lastSyncAt === '2026-08-05T02:03:04.005Z',
+                    'source-connection-last-sync'
+                );
+                await connectionStore.close();
             });
 
             const sharedDevice = 'synthetic-shared-device';
@@ -861,9 +1016,9 @@
                     const projectedCounts = Object.fromEntries(
                         manifest.stores.map(item => [item.name, item.recordCount])
                     );
-                    assert(manifest.backupFormatVersion === 1, 'manifest-format');
+                    assert(manifest.backupFormatVersion === 2, 'manifest-format');
                     assert(manifest.databaseName === V2_NAME, 'manifest-name');
-                    assert(manifest.indexedDbVersion === 4, 'manifest-version');
+                    assert(manifest.indexedDbVersion === 5, 'manifest-version');
                     assert(manifest.canonicalSchemaVersion === 1, 'manifest-canonical');
                     assert(manifest.applicationVersion === APPLICATION_VERSION, 'manifest-app');
                     assert(manifest.files.length === 0, 'manifest-files');
@@ -875,7 +1030,7 @@
                     );
                     assert(payloadReads === 0, 'manifest-payload-read');
                     assert(metadataGets === 1, 'manifest-metadata-get');
-                    assert(counts === 13, 'manifest-count-calls');
+                    assert(counts === 14, 'manifest-count-calls');
                     manifestSummary = {
                         backupFormatVersion: manifest.backupFormatVersion,
                         databaseName: manifest.databaseName,
@@ -904,7 +1059,7 @@
                 ));
                 await first.initialize();
                 await second.initialize();
-                const request = indexedDB.open(V2_NAME, 5);
+                const request = indexedDB.open(V2_NAME, 6);
                 const aborted = new Promise((resolve, reject) => {
                     request.onupgradeneeded = () => request.transaction.abort();
                     request.onsuccess = () => {
@@ -920,7 +1075,7 @@
                 await expectCode(first.listActivities(), 'CONNECTION_STALE');
                 await expectCode(second.listActivities(), 'CONNECTION_STALE');
                 const inspected = await inspectV2();
-                assert(inspected.version === 4, 'aborted-version');
+                assert(inspected.version === 5, 'aborted-version');
                 assert(
                     JSON.stringify(inspected.counts) ===
                         JSON.stringify(EXPECTED_FINAL_COUNTS),
@@ -1023,9 +1178,9 @@
                 origin: location.origin,
                 database: {
                     name: V2_NAME,
-                    version: 4,
-                    stores: 13,
-                    indexes: 13
+                    version: 5,
+                    stores: 14,
+                    indexes: 14
                 },
                 inventory,
                 manifest: persisted.manifest,

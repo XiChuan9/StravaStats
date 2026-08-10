@@ -203,6 +203,20 @@ const V4_DUPLICATE_REVIEW_STORES = [
 
 const V4_STORES = [...V3_STORES, ...V4_DUPLICATE_REVIEW_STORES];
 
+const V5_SOURCE_CONNECTION_STORES = [{
+    name: V2_STORE_NAME.SOURCE_CONNECTIONS,
+    keyPath: 'id',
+    autoIncrement: false,
+    indexes: [{
+        name: 'byProvider',
+        keyPath: 'provider',
+        unique: true,
+        multiEntry: false
+    }]
+}];
+
+const V5_STORES = [...V4_STORES, ...V5_SOURCE_CONNECTION_STORES];
+
 export const V2_PHYSICAL_SCHEMA_BY_VERSION = deepFreeze({
     1: {
         databaseName: V2_DATABASE_NAME,
@@ -227,14 +241,21 @@ export const V2_PHYSICAL_SCHEMA_BY_VERSION = deepFreeze({
     },
     4: {
         databaseName: V2_DATABASE_NAME,
+        indexedDbVersion: 4,
+        schemaId: 'strava-stats-v2@4',
+        canonicalSchemaVersion: V2_CANONICAL_SCHEMA_VERSION,
+        stores: V4_STORES
+    },
+    5: {
+        databaseName: V2_DATABASE_NAME,
         indexedDbVersion: V2_DATABASE_VERSION,
         schemaId: V2_SCHEMA_ID,
         canonicalSchemaVersion: V2_CANONICAL_SCHEMA_VERSION,
-        stores: V4_STORES
+        stores: V5_STORES
     }
 });
 
-export const V2_SCHEMA = V2_PHYSICAL_SCHEMA_BY_VERSION[4];
+export const V2_SCHEMA = V2_PHYSICAL_SCHEMA_BY_VERSION[5];
 
 function names(list) {
     return Array.from(list).sort();

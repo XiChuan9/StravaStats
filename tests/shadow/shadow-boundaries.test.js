@@ -38,7 +38,8 @@ test('PR-07 preserves Repository API and approved public storage exports', async
         'V2_DATABASE_VERSION',
         'V2_SCHEMA',
         'createCanonicalStore',
-        'createImportStore'
+        'createImportStore',
+        'createSourceConnectionStore'
     ]);
     assert.deepEqual(Object.keys(repository).sort(), [
         'REPOSITORY_ERROR_CODE',

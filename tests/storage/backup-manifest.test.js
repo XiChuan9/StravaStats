@@ -12,7 +12,8 @@ import {
     STORAGE_ERROR_CODE,
     V2_DATABASE_NAME,
     V2_DATABASE_VERSION,
-    createCanonicalStore
+    createCanonicalStore,
+    createSourceConnectionStore
 } from '../../js/storage/index.js';
 
 const FIXED_TIME = Date.parse('2026-08-04T10:11:12.013Z');
@@ -111,15 +112,15 @@ test('backup manifest has the exact frozen metadata-only shape and counts', asyn
     await storage.initialize();
 
     assert.deepEqual(await storage.createBackupManifest(), {
-        backupFormatVersion: 1,
+        backupFormatVersion: 2,
         databaseName: 'strava-stats-v2',
-        indexedDbVersion: 4,
+        indexedDbVersion: 5,
         canonicalSchemaVersion: 1,
         createdAt: '2026-08-04T10:11:12.013Z',
         applicationVersion: 'backup-manifest-test@1',
         stores: [
             { name: 'metadata', recordCount: 1 },
-            { name: 'migrations', recordCount: 4 },
+            { name: 'migrations', recordCount: 5 },
             { name: 'activities', recordCount: 0 },
             { name: 'activitySources', recordCount: 0 },
             { name: 'streamSeries', recordCount: 0 },
@@ -130,18 +131,31 @@ test('backup manifest has the exact frozen metadata-only shape and counts', asyn
             { name: 'importJobs', recordCount: 0 },
             { name: 'importItems', recordCount: 0 },
             { name: 'mergeCandidates', recordCount: 0 },
-            { name: 'mergeDecisions', recordCount: 0 }
+            { name: 'mergeDecisions', recordCount: 0 },
+            { name: 'sourceConnections', recordCount: 0 }
         ],
         files: [],
         hashes: []
     });
 
     await storage.putBundle(minimalBundle());
+    const connections = createSourceConnectionStore(options(indexedDB));
+    await connections.initialize();
+    await connections.createConnection({
+        id: 'source-connection:strava',
+        provider: 'strava',
+        subjectId: '424242',
+        status: 'connected',
+        lastSyncAt: null,
+        errorCode: null,
+        revision: 1
+    });
+    await connections.close();
     const manifest = await storage.createBackupManifest();
     assertDeepFrozen(manifest);
     assert.deepEqual(manifest.stores, [
         { name: 'metadata', recordCount: 1 },
-        { name: 'migrations', recordCount: 4 },
+        { name: 'migrations', recordCount: 5 },
         { name: 'activities', recordCount: 1 },
         { name: 'activitySources', recordCount: 1 },
         { name: 'streamSeries', recordCount: 0 },
@@ -152,7 +166,8 @@ test('backup manifest has the exact frozen metadata-only shape and counts', asyn
         { name: 'importJobs', recordCount: 0 },
         { name: 'importItems', recordCount: 0 },
         { name: 'mergeCandidates', recordCount: 0 },
-        { name: 'mergeDecisions', recordCount: 0 }
+        { name: 'mergeDecisions', recordCount: 0 },
+        { name: 'sourceConnections', recordCount: 1 }
     ]);
     assert.deepEqual(manifest.files, []);
     assert.deepEqual(manifest.hashes, []);
@@ -211,7 +226,8 @@ test('backup manifest reads metadata and counts without reading payloads', async
         'importJobs',
         'importItems',
         'mergeCandidates',
-        'mergeDecisions'
+        'mergeDecisions',
+        'sourceConnections'
     ]);
     await storage.close();
 });

@@ -232,3 +232,20 @@ abort 保留原目标；不同的 non-empty library 返回安全冲突，不提�
 Legacy `strava-dashboard-cache`、Legacy localStorage/cache、provider connection、Token、Cache
 Storage 和 Service Worker 不在备份/恢复边界内。切回 Legacy feature flag 仍是应用回滚路径，
 且不会删除已恢复的 V4 数据。
+
+## 10. PR-42 V5 SourceConnection and backup rollback note
+
+PR-42 的 V4 -> V5 迁移只新增空 `sourceConnections` store、唯一 `byProvider` index 和第五条
+migration，保留 V4、Legacy 和所有逻辑记录。代码回滚使用普通 revert/feature disable；不得
+downgrade、delete、clear 或重建已经成功写入的 V5。若旧 build 返回 `VersionError`，应切换
+到支持 V5 且 fail-closed 的 build，或显式使用保持隔离的 Legacy read path，同时保留 V5。
+
+SourceConnection 的 disconnected tombstone 不等同于删除本地数据，也不授权 Token revoke。
+回滚不会删除 identity、历史 `lastSyncAt`、活动、ActivitySource、RawArtifact、Import/review、
+setting、backup 或 Legacy 数据。C2 没有 OAuth、Token、provider、Worker、Service Worker 或
+deployment side effect。
+
+Format 2/V5 备份和用户保存的旧 format 1/V4 备份都继续保留。restore 只接受 absent 或 exact
+empty V5 target；所有验证先于写入，14-store transaction abort 处理取消、quota、constraint
+和中断。旧 format 1 经严格 profile 验证后只 additive 转换为 V5，不创建连接身份。不得通过
+删除现有 V5、覆盖不同 tombstone 或修改私人备份来规避安全冲突。

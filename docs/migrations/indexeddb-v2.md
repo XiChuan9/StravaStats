@@ -336,3 +336,39 @@ delete、clear、rename、swap 或 non-empty overwrite。transaction abort、quo
 成功后 additive 写入；冲突在数据库写入前返回 `TARGET_SETTINGS_CONFLICT`，中途失败返回
 `SETTINGS_PENDING`，重复同一备份仅补齐缺失 setting。Legacy database/cache 始终不被打开、
 升级、写入或删除。
+
+## 19. PR-42 accepted physical V5 and SourceConnection profile
+
+PR-42 将物理版本从 4 增加到 5，schema ID 为 `strava-stats-v2@5`，migration ID 为
+`schema-0005-source-connection`。V4 的 13 个 store、index 和全部记录保持原样，只新增：
+
+```text
+sourceConnections
+  keyPath: id
+  byProvider: provider, unique
+```
+
+V4 -> V5 在一个 versionchange transaction 中创建空 store、更新 metadata，并写入第五条
+migration。升级不从 ActivitySource、externalId、Import 或 Legacy 推断身份。结构或 metadata
+校验失败会回滚完整升级，原 V4 可重试。成功后的 V5 不允许 downgrade、delete、clear 或
+repair-by-rebuild；旧代码无法读取时保留 V5，使用支持 V5 的代码或显式 Legacy 路径。
+
+单一 Strava slot 的 ID 固定为 `source-connection:strava`。`provider` 与正十进制
+`subjectId` 不可变；状态仅允许 `connected`、`reconnect_required`、`error`、`disconnected`，
+每次合法转换使用 revision compare-and-swap 并加一。disconnected 是保留 identity 和
+`lastSyncAt` 的 tombstone，不删除任何活动、来源、artifact、Import/review、setting、backup
+或 Legacy 记录。C2 不执行 OAuth、Token 或 provider/network I/O。
+
+## 20. PR-42 accepted backup format 2 and V4 compatibility
+
+新备份使用 format 2/V5，共 18 个固定顺序 entry；`connections.jsonl` 紧跟
+`sources.jsonl`。SourceConnection 的 identity、`lastSyncAt` 和 revision 会进入私人备份，
+但 `connected`/`error` 投影为 `reconnect_required` + `AUTHORIZATION_REQUIRED`；Token、scope、
+Authorization header、provider response/message 不进入 archive。
+
+restore 对 format 1/V4 与 format 2/V5 使用互相独立的 exact profile 验证。完全验证后的
+format 1 只进行单向 additive 转换：保留全部 V4 记录，增加空 `sourceConnections`，更新
+metadata，并追加第五条 migration。format 2 恢复已验证的 portable V5 图。两者都只允许
+absent 或 exact empty V5 target，在单一 transaction 中提交 14 个 store；重复相同恢复为
+零写入幂等，其他 non-empty/different connection tombstone 返回安全冲突。未知、混合、重复、
+乱序、损坏或引用无效的 profile 在任何 target mutation 前失败。
