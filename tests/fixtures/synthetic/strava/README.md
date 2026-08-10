@@ -13,3 +13,12 @@ The fixture must never be replaced with a user export or copied from
 PR-09. Its CSV rows and opaque child payloads are invented test data and are
 not valid FIT, TCX, or GPX recordings. No binary archive or athlete export is
 committed.
+
+`api-import-fixture.js` hand-authors the deterministic C3a reduced provider
+envelopes and code-generates only boundary arrays during tests. Its positive
+string identities, dates, coordinates, summaries, streams, laps, warnings, and
+canaries are inventions and were not copied from a provider response, account,
+export, screenshot, or private fixture. It contains no credential, Token,
+authorization header, athlete profile, route URL/polyline, gear/device
+identifier, serial, or provider error body. It must never be replaced with or
+augmented from a real account response or user export.
