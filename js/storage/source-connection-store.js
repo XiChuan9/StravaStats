@@ -212,6 +212,24 @@ function cloneRecord(value, operation) {
     return normalized;
 }
 
+function queuePersistedConnections(context) {
+    return context.scanPage(
+        V2_STORE_NAME.SOURCE_CONNECTIONS,
+        null,
+        undefined,
+        'next',
+        2,
+        () => 'include'
+    );
+}
+
+function readPersistedConnection(token, operation) {
+    const records = token.read();
+    if (records.length === 0) return null;
+    if (records.length !== 1) throw schemaMismatch(operation);
+    return cloneRecord(records[0], operation);
+}
+
 function openCurrent(dependencies) {
     return new Promise((resolve, reject) => {
         let request;
@@ -350,14 +368,10 @@ export function createSourceConnectionStore(options) {
             mode: 'readonly',
             operation
         }, context => {
-            const token = context.get(
-                V2_STORE_NAME.SOURCE_CONNECTIONS,
-                CONNECTION_ID
-            );
+            const token = queuePersistedConnections(context);
             return () => {
-                const record = token.read();
-                if (record === undefined) return null;
-                const normalized = cloneRecord(record, operation);
+                const normalized = readPersistedConnection(token, operation);
+                if (normalized === null) return null;
                 if (normalized.provider !== provider) throw schemaMismatch(operation);
                 return normalized;
             };
@@ -379,18 +393,10 @@ export function createSourceConnectionStore(options) {
             mode: 'readwrite',
             operation
         }, context => {
-            const token = context.get(
-                V2_STORE_NAME.SOURCE_CONNECTIONS,
-                CONNECTION_ID
-            );
+            const token = queuePersistedConnections(context);
             context.afterReads(() => {
-                const existing = token.read();
-                if (existing !== undefined) {
-                    if (!normalizeSourceConnectionRecord(existing)) {
-                        throw schemaMismatch(operation);
-                    }
-                    throw conflict(operation);
-                }
+                const existing = readPersistedConnection(token, operation);
+                if (existing !== null) throw conflict(operation);
                 context.add(V2_STORE_NAME.SOURCE_CONNECTIONS, { ...record });
             });
             return () => record;
@@ -406,18 +412,13 @@ export function createSourceConnectionStore(options) {
             mode: 'readwrite',
             operation
         }, context => {
-            const token = context.get(
-                V2_STORE_NAME.SOURCE_CONNECTIONS,
-                input.id
-            );
+            const token = queuePersistedConnections(context);
             let result;
             context.afterReads(() => {
-                const stored = token.read();
-                if (stored === undefined) {
+                const current = readPersistedConnection(token, operation);
+                if (current === null) {
                     throw storageError(STORAGE_ERROR_CODE.NOT_FOUND, operation);
                 }
-                const current = normalizeSourceConnectionRecord(stored);
-                if (!current) throw schemaMismatch(operation);
                 if (
                     current.revision !== input.expectedRevision
                     || !legalTransition(current, input)

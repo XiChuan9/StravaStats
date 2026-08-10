@@ -299,6 +299,48 @@ test('missing and malformed persisted records fail without leaking record detail
     await reopened.close();
 });
 
+test('an unexpected persisted key poisons the strict single-slot boundary', async () => {
+    const indexedDB = new IDBFactory();
+    const initialized = createSourceConnectionStore(options(indexedDB));
+    await initialized.initialize();
+    await initialized.close();
+
+    const request = indexedDB.open('strava-stats-v2', 5);
+    const database = await new Promise((resolve, reject) => {
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+    });
+    const transaction = database.transaction('sourceConnections', 'readwrite');
+    transaction.objectStore('sourceConnections').add({
+        id: 'synthetic-unexpected-key',
+        provider: 'synthetic-unexpected-provider',
+        subjectId: SUBJECT_ID,
+        status: 'connected',
+        lastSyncAt: null,
+        errorCode: null,
+        revision: 1
+    });
+    await new Promise((resolve, reject) => {
+        transaction.oncomplete = resolve;
+        transaction.onabort = () => reject(transaction.error);
+    });
+    database.close();
+
+    const reopened = createSourceConnectionStore(options(indexedDB));
+    await reopened.initialize();
+    for (const [operation, action] of [
+        ['getConnection', () => reopened.getConnection('strava')],
+        ['createConnection', () => reopened.createConnection(connectedRecord())],
+        ['transitionConnection', () => reopened.transitionConnection(transition())]
+    ]) {
+        await assert.rejects(
+            action(),
+            assertStorageError(STORAGE_ERROR_CODE.SCHEMA_MISMATCH, operation)
+        );
+    }
+    await reopened.close();
+});
+
 test('quota failures abort create and transition without partial state', async () => {
     const indexedDB = new IDBFactory();
     const store = createSourceConnectionStore(options(indexedDB));
