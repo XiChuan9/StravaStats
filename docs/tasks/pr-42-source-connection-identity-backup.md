@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | M26 / C2 additive SourceConnection and backup decision |
-| Status | A2 findings and material owner decisions frozen; implementation prohibited |
+| Status | Final Review Closure complete; Ready handoff pending control-tower readback |
 | Base branch | `integration/v2` |
 | Exact base | `integration/v2@7dcb90ff171599a38eae31fadd09adc2f2ba7edb` |
 | Exact base tree | `941e5a6934f4e781629f42ddbec764736f815393` |
@@ -28,17 +28,17 @@ This first commit creates only this Task Brief. A2 is read-only except for later
 file. No C2 implementation begins until the owner selects an exact A3 option and separately approves
 its literal path allowlist.
 
-## Authority and current limit
+## Authority history and approved A3 boundary
 
-The owner selected staged P0 closure through C1-C4 and, after C1 merged, authorized only the next C2
-planning stage:
+The owner selected staged P0 closure through C1-C4 and, after C1 merged, initially authorized only
+the C2 planning stage:
 
 > Proceed only to the next authorized C2 stage: create/freeze a Task-Brief-first read-only
 > identity/state + backup material decision package from exact integration head 7dcb90ff..., with a
 > separate Draft PR if required. Do not implement C2 schema/public/backup changes until a new explicit
 > owner A3 decision.
 
-Authorized now:
+Authorized during A2:
 
 - create this isolated branch/worktree from the exact integration head;
 - publish a Task-Brief-only first commit and an open Draft PR targeting `integration/v2`;
@@ -47,7 +47,7 @@ Authorized now:
 - update only this Task Brief with findings, mutually exclusive owner decisions, literal candidate
   allowlists, failure-first tests, browser evidence, migration/privacy/rollback impact, and risks.
 
-Not authorized:
+Not authorized during A2:
 
 - any production or test implementation outside this Task Brief;
 - V5/schema/store/index/record changes, data migration, public Storage/Repository/Backup/Import API
@@ -55,6 +55,19 @@ Not authorized:
 - OAuth/config/exchange/revoke, credentials, Token/status reads or writes, real provider/account calls,
   private data, private fixtures, user browser profiles, deployment, release, Ready, merge, or cleanup;
 - C3 provider-to-`ImportedActivityBundle` work or C4 durable ownership/heartbeat/lease recovery.
+
+The owner then selected and authorized implementation verbatim:
+
+> 批准 C2-I1 + C2-B1 + C2-T1
+
+The later collision decision expanded only the cumulative test boundary:
+
+> 批准 C2 test-only 29 路径上限
+
+That A3 authority permits the selected C2 identity/store, additive V5 migration, portable backup,
+tests, browser evidence, documentation, review fixes, Closure, push, CI, and standing Ready handoff.
+It does not authorize a thirtieth path, OAuth/Token/provider/private data, user browser/profile,
+C1.1, C3, C4, Worker/Service Worker/dependency expansion, deployment, release, merge, or cleanup.
 
 ## Global invariants
 
@@ -447,7 +460,7 @@ Choose exactly one after identity and backup.
 Implement the selected identity store, migration, public factory, backup compatibility, tests,
 browser evidence, and docs on one exact head. Backup never observes a merged V5 it cannot handle.
 
-**Literal cumulative candidate allowlist — hard maximum of 27 paths**
+**Literal cumulative approved allowlist — hard maximum of 29 paths**
 
 ```text
 docs/tasks/pr-42-source-connection-identity-backup.md
@@ -477,10 +490,13 @@ docs/guides/migration-guide.md
 docs/guides/privacy-guide.md
 README.md
 tests/docs/release-docs.test.js
+tests/shadow/shadow-boundaries.test.js
+tests/storage/exact-identity-boundaries.test.js
 ```
 
 README/docs-test are optional within the maximum if implementation inspection shows indexed public
-text needs no change. No twenty-eighth path is allowed.
+text needs no change. The final two test-only paths may only add the approved
+`createSourceConnectionStore` public-export expectation. No thirtieth path is allowed.
 
 ### C2-T2 — two approved PRs with a fail-closed compatibility gap
 
@@ -574,16 +590,80 @@ Chrome/profile, real account, Token, provider call, or private backup is permitt
   reachability/import, private-backup migration, and Production/full-v2.0 evidence require separate
   authority.
 
-## Owner response required
+## Owner decision readback
 
-Record one identity choice (`C2-I1`, `C2-I2`, or `C2-I3`), one backup choice (`C2-B1`, `C2-B2`, or
-`C2-B3`), and one delivery choice (`C2-T1` or `C2-T2`). Recommended bounded package:
+The selected and implemented package is exactly `C2-I1 + C2-B1 + C2-T1`. The cumulative hard
+maximum is 29 paths: the original 27 plus the two test-only Storage export assertions above. The
+implementation changed 28 paths; `tests/storage/indexeddb-v2-transactions.test.js` remained unused.
+PR #48 remains open/Draft until the standing Ready handoff is performed. Merge, cleanup, C1.1,
+C3/C4, provider/private activity, deployment, and release remain separately unauthorized.
 
-```text
-C2-I1 + C2-B1 + C2-T1
-```
+## Final Review Closure
 
-This recommendation authorizes nothing. Implementation requires a new explicit A3 approval of the
-selected semantics and literal maximum. C2-I3 first requires a new architecture/C3 collision
-package. PR #48 remains open/Draft; no Ready, merge, C1.1, C3/C4, provider/private activity,
-deployment, release, or cleanup is part of this handoff.
+### Delivered contract
+
+- V5 is additive: it preserves the exact V4 physical layout and adds only the empty
+  `sourceConnections` store with unique `byProvider`; the fifth structural migration is exact and
+  idempotent. A malformed V4 store or index fails and rolls the versionchange transaction back
+  without repair-by-rebuild.
+- The public Storage surface adds only `createSourceConnectionStore`. Its single fixed Strava slot
+  enforces positive-string subject identity, exact states, immutable identity, revision CAS, legal
+  transitions, monotonic sync time, and durable disconnected tombstones. Unexpected or multiple
+  persisted rows poison get/create/transition instead of being ignored or repaired.
+- Backup format 1 remains the exact 17-entry V4 profile. Format 2 is the exact 18-entry V5 profile
+  with `connections.jsonl` after `sources.jsonl`. Connected/error state projects to
+  `reconnect_required`/`AUTHORIZATION_REQUIRED`; credentials are never included. Format 1 restores
+  one-way to V5 without inferring an identity. Exact absent/empty targets, conflict protection,
+  atomic database writes, additive settings, idempotent repeat, and resumable `SETTINGS_PENDING`
+  after a database commit are enforced.
+- Source Manager remains fail closed with `Authorization unavailable`; no Connect, Disconnect,
+  provider import, Token, OAuth, provider request, real account, or private data was activated.
+
+### Failure-first and review record
+
+- Storage began with a failing missing-public-factory test; Backup began with a failing missing
+  dual-profile codec export test. The owner-approved 27-to-29 test-only collision repaired the two
+  historical exact Storage export expectations without production expansion.
+- Adversarial failure-first coverage then reproduced and fixed prototype-shaped format dispatch,
+  cyclic dependency prototypes, cancellation during database/settings work, malformed V4
+  store/index repair, rogue single-slot records, and fully rehashed format-1/2 archives whose
+  structural migration timestamps were not exact.
+- Independent findings-first review of `a84a18b` found malformed-V4 repair, unbounded prototype
+  traversal, and late cancellation; commit `0156b70` fixed them. Fresh review found the rogue-row
+  single-slot gap; `f2897a1` fixed it. Final review found non-exact structural migration timing;
+  `7430404` fixed it. The remaining review finding was this stale Task Brief and is closed only by
+  this Task-Brief-only commit.
+
+### Verification evidence
+
+- `npm ci`: passed with zero vulnerabilities.
+- Focused final Storage/Backup suite: 71/71 passed.
+- Full final suite before this docs-only Closure: 1742/1742 passed.
+- `npm run check:syntax`: passed for 265 files.
+- `npm run check:privacy`: passed.
+- `git diff --check`: passed.
+- Disposable actual-served Chromium 151 Storage evidence passed 21 gates on a fresh loopback origin:
+  accepted synthetic V4 before upgrade, additive V5, preserved synthetic legacy-like sentinel,
+  public connection create/transition/read, 14 stores/14 indexes, reload equivalence, and zero
+  external HTTP/fetch/XHR/WebSocket/Authorization, console error/warning, uncaught/unhandled,
+  Service Worker, or Cache Storage activity.
+- Separate disposable export/restore origins produced a deterministic 11,659-byte synthetic format-2
+  archive, restored one activity as `reconnect_required`/`AUTHORIZATION_REQUIRED`, repeated as
+  `already_restored`, observed cancellation, and recorded zero external HTTP/fetch attempts,
+  workers, or caches. The actual Source Manager Real page remained local-first with five synthetic
+  activities and disabled `Connect unavailable`.
+
+### Impact, rollback, and remaining authority
+
+- Migration/data impact is one additive V5 store and one migration row; no existing Legacy/V2 row is
+  deleted, cleared, overwritten, downgraded, or inferred into a connection.
+- Privacy impact is a local subject identifier and portable non-secret reconnect metadata. No Token,
+  credential, authorization header, provider payload/error, private fixture, or identifiable athlete
+  data entered source, tests, browser evidence, Git, or CI.
+- Rollback is a normal code revert or Legacy/default-path return while retaining V5 and backups.
+  Never downgrade/delete/clear V5; a V4-only build must fail closed on the newer database.
+- C1.1 live activation, C3 ingestion, C4 ownership/lease recovery, real OAuth/account/provider calls,
+  credentials/private evidence, deployment, release, merge, and cleanup remain unauthorized.
+
+This Closure authorizes no merge. PR #48 may move from Draft to Ready only after the final docs-only
+gates, exact-head push/remote verification, successful exact-head CI, and control-tower readback.
