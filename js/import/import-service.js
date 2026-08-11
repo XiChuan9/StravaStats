@@ -82,6 +82,20 @@ async function snapshotArtifacts(value, isCancelled) {
         throw importError(IMPORT_ERROR_CODE.INVALID_REQUEST);
     }
     try {
+        let providerCount = 0;
+        for (const item of values) {
+            const artifact = ownDataValues(item, ARTIFACT_FIELDS);
+            if (!artifact) throw new TypeError();
+            if (artifact.mediaType === STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE) {
+                providerCount += 1;
+                if (
+                    providerCount > STRAVA_PROVIDER_ARTIFACT_LIMITS.maxArtifactsPerJob
+                ) throw importError(IMPORT_ERROR_CODE.INVALID_REQUEST);
+            }
+        }
+        if (providerCount > 0 && providerCount !== values.length) {
+            throw importError(IMPORT_ERROR_CODE.INVALID_REQUEST);
+        }
         const artifacts = [];
         for (const item of values) {
             const artifact = ownDataValues(item, ARTIFACT_FIELDS);
@@ -114,14 +128,7 @@ async function snapshotArtifacts(value, isCancelled) {
                 }));
             }
         }
-        const providerCount = artifacts.filter(artifact => (
-            artifact.mediaType === STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE
-        )).length;
         if (providerCount > 0) {
-            if (
-                providerCount !== artifacts.length
-                || providerCount > STRAVA_PROVIDER_ARTIFACT_LIMITS.maxArtifactsPerJob
-            ) throw importError(IMPORT_ERROR_CODE.INVALID_REQUEST);
             let totalBytes = 0;
             for (const artifact of artifacts) {
                 if (typeof artifact.content !== 'string') {

@@ -497,12 +497,18 @@ test('format 1 and malformed format-2 provider provenance fail before target mut
         'sources.jsonl',
         records => { records[0].rawArtifactId = 'raw:missing-provider-artifact'; }
     );
+    const severedProviderChain = await mutateArchivePayload(
+        archive,
+        'sources.jsonl',
+        records => { records[0].rawArtifactId = null; }
+    );
     for (const invalid of [
         legacy,
         wrongPair,
         malformed,
         missingConnection,
-        brokenRawReference
+        brokenRawReference,
+        severedProviderChain
     ]) {
         const targetFactory = new IDBFactory();
         const target = service(targetFactory);

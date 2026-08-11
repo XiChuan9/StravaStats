@@ -822,6 +822,16 @@ function validateRecords(records, operation = 'validate', profile = BACKUP_PROFI
                 : decisions.length === 1
                     && decisions[0].decision === candidate.status;
         });
+    const providerLinksValid = records[V2_STORE_NAME.RAW_ARTIFACTS].every(artifact => (
+        artifact.mediaType !== STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE
+        || artifact.state === 'pending'
+        || records[V2_STORE_NAME.ACTIVITY_SOURCES].some(source => (
+            source.rawArtifactId === artifact.id
+            && source.activityId === artifact.activityId
+            && source.provider === 'strava'
+            && source.acquisitionMethod === 'strava-api'
+        ))
+    ));
     const referencesValid = records[V2_STORE_NAME.ACTIVITY_SOURCES].every(record => (
         (record.rawArtifactId === undefined || record.rawArtifactId === null
             || artifactIds.has(record.rawArtifactId))
@@ -840,7 +850,7 @@ function validateRecords(records, operation = 'validate', profile = BACKUP_PROFI
     )) && records[V2_STORE_NAME.MERGE_DECISIONS].every(record => (
         candidateIds.has(record.candidateId)
     ));
-    if (!referencesValid || !importLogsValid || !reviewAuditValid) {
+    if (!referencesValid || !providerLinksValid || !importLogsValid || !reviewAuditValid) {
         throw backupError(BACKUP_ERROR_CODE.BACKUP_REFERENCE_INVALID, operation);
     }
 }

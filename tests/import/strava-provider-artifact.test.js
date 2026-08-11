@@ -371,6 +371,29 @@ test('provider preflight is atomic for mixed, malformed, count, and total-byte f
     await core.close();
 });
 
+test('provider count preflight rejects before cloning any over-limit content', async () => {
+    const { importStore, core } = importCore(new IDBFactory());
+    await core.initialize();
+    let contentInspected = false;
+    const hostileContent = new Proxy({}, {
+        getPrototypeOf() {
+            contentInspected = true;
+            throw new Error('provider-content-canary');
+        }
+    });
+    const descriptors = Array.from({ length: 101 }, () => ({
+        mediaType: STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE,
+        content: hostileContent
+    }));
+    await assert.rejects(
+        core.importArtifacts(descriptors),
+        error => error.code === IMPORT_ERROR_CODE.INVALID_REQUEST
+    );
+    assert.equal(contentInspected, false);
+    assert.deepEqual(await importStore.listImportJobs(), []);
+    await core.close();
+});
+
 test('100 provider bundles preserve artifact, item, and public report ordinal order', async () => {
     const { importStore, core } = importCore(new IDBFactory());
     await core.initialize();
