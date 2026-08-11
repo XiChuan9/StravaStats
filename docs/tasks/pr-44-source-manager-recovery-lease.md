@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | M31 / C4 durable owner, heartbeat, lease, and explicit recovery |
-| Status | A2 material decision package complete; awaiting owner selection |
+| Status | A3 implementation and final review closure complete; Ready pending exact-head remote CI |
 | Base branch | `integration/v2` |
 | Exact base | `integration/v2@c2df4ea16920d4b5c80ea06eae1059c1940e1994` |
 | Exact base tree | `11434bb7cbce1cef2e72904182df089b17a7e2e9` |
@@ -13,7 +13,7 @@
 | Parent decision | `D-A A2 / D-B C`, staged C1–C4 closure |
 | Completed prerequisites | C1, C2, C3a, C3b, C1.1, and C3c merged |
 | Control tower | `019fa697-6cbf-70f1-a120-bf31ecc9e2ba` |
-| Current authority | A0, A1 Draft publication, and read-only A2 decision package only |
+| Current authority | Approved Option A A3 implementation, disposable synthetic Chromium evidence, and Draft-to-Ready after all gates; merge is not authorized |
 
 ## Owner approval and A3 authority
 
@@ -895,3 +895,45 @@ No implementation is authorized until the owner decides all of the following exp
     Chrome/profile, release, deployment, Ready, or merge is implied.
 
 Until those decisions are returned, the only valid state is this open Draft documentation PR.
+
+## Final Review Closure
+
+The owner selected Option A and supplied every authority recorded verbatim above. Implementation
+commit `8944ca70ffb354866df360d817c06e6ee6f17f9a` completes the frozen common contract, physical V6
+`sourceOperations` schema and `schema-0006-source-operation-lease` migration, Backup format 3,
+explicit Recover/Abandon behavior, and the terminal crash-gap selection. It changes 41 unique paths,
+all contained in the exact approved 54-path cumulative maximum; there is no path 55. The only public
+Storage export addition is `createSourceOperationStore`. The approved path-54 fixture changes only
+the two stale hard-coded V5 opens to V6.
+
+Failure-first repair closed every independent-review finding:
+
+- the real Source Manager facade forwards ImportService's SourceOperation link atomically;
+- a pre-job provider lease/CAS loss cancels active acquisition and cannot later audit completion;
+- every finite out-of-range clock normalizes to `SOURCE_OPERATION_CLOCK_INVALID`;
+- terminal completed and completed-with-warnings jobs expose Recover or Abandon, while failed and
+  cancelled jobs expose Abandon only, with operation-only mutation and exact history rules;
+- consecutive local-import batches roll the same owned operation atomically only after the prior
+  exact linked job and all its items are terminal; provider operations cannot use that rollover;
+- unavailable coordination dependencies fail closed, and quota failures remain atomic at every
+  SourceOperation mutation boundary.
+
+Fresh independent no-findings re-review verified the complete delta and independently passed 150/150
+focused tests. The final local implementation head passed 72/72 focused tests, 283-file syntax
+validation, privacy validation, the complete 1897/1897 test suite, `git diff --check`, and the literal
+path gate (41 unique changed paths, all within 54). This Task-Brief-only closure does not change the
+implementation under review.
+
+Actual-served evidence used only a disposable synthetic in-app Chromium context and two loopback
+origins, with request interception installed before navigation. It covered two-tab exclusion,
+reload/crash with no automatic resume or lease mutation, explicit nonterminal Recover and Abandon,
+completed terminal Recover, failed-terminal Abandon-only, consecutive local batches under one
+operation, provider use of the same lease, active-export refusal, and format-3 restore into a fresh
+V6 origin. All observed requests remained on the two loopback origins; no API/provider request,
+Service Worker, external request, token, real account, private fixture/data, or user browser/profile
+was used. The evidence server was stopped after capture.
+
+The exact base remains `integration/v2@c2df4ea16920d4b5c80ea06eae1059c1940e1994`.
+Draft-to-Ready remains contingent on a clean Task-Brief closure commit, exact remote head,
+true remote depth verification, and successful exact-head CI. Ready is not merge authorization;
+merge, auto-merge, cleanup, deployment, release, and final release audit remain prohibited.
