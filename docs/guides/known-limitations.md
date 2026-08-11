@@ -27,7 +27,15 @@ gate, deleting data, editing a test result, or describing unrun work as passed.
 
 - Sources currently imports local FIT, TCX, GPX, English Strava `activities.csv`, and bounded
   Strava ZIP.
-- The Sources Strava API card remains `Connect later`; its connect/disconnect controls are disabled.
+- Real-mode Sources supports explicit connect, disconnect, and `Sync latest 25`. Sync reads exactly
+  one provider page, uses at most two activity workers, and never starts automatically.
+- Provider Sync has no second page, fetch-all, retry, background polling, webhook, durable resume,
+  or cross-tab owner/lease recovery. Reload or closing the page cancels only the active foreground
+  controller; C4 owns durable coordination and recovery.
+- Non-auth detail or stream failures degrade that optional enrichment to unavailable warnings.
+  Authentication failures require reconnect, rate limiting requires a later explicit press, and a
+  stale SourceConnection history CAS can leave imported items committed without advancing
+  `lastSyncAt`.
 - Demo seed import is unavailable. Demo remains isolated from Real storage and provider state.
 - No background continuous import, directory watcher, or cloud multi-device sync is provided.
 

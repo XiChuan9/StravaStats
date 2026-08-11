@@ -10,6 +10,7 @@ import activitiesHandler from '../../api/strava-activities.js';
 import activityHandler from '../../api/strava-activity.js';
 import athleteHandler from '../../api/strava-athlete.js';
 import gearHandler from '../../api/strava-gear.js';
+import syncHandler from '../../api/strava-sync.js';
 import streamsHandler from '../../api/strava-streams.js';
 import zonesHandler from '../../api/strava-zones.js';
 
@@ -255,6 +256,7 @@ test('server/API production sources use only the shared closed logger and fixed 
         'api/strava-activity.js',
         'api/strava-athlete.js',
         'api/strava-gear.js',
+        'api/strava-sync.js',
         'api/strava-streams.js',
         'api/strava-zones.js'
     ];
@@ -800,6 +802,49 @@ test('hostile thrown values are never inspected, coerced, logged, or returned', 
             );
         });
     }
+});
+
+test('bounded provider sync route never logs or reflects Token, provider, or private values', async () => {
+    const token = {
+        access_token: 'synthetic-private-access-canary',
+        refresh_token: 'synthetic-private-refresh-canary',
+        expires_at: 4_102_444_800,
+        subject_id: '424242',
+        granted_scopes: ['read', 'activity:read_all']
+    };
+    const listRequest = sourceManagerAuthRequest({ operation: 'list', token });
+
+    await withCapturedRuntime(
+        async () => { throw new Error('synthetic-private-provider-error-canary'); },
+        async logs => {
+            const response = createResponse();
+            await invokeWithoutRawRejection(syncHandler, listRequest, response);
+            assert.equal(response.statusCode, 502, 'safe sync network status');
+            assertExactBody(response, { error: 'SYNC_LIST_FAILED' });
+            assert.equal(JSON.stringify(response.body).includes('canary'), false, 'safe fixed body');
+            assertClosedLogs(logs, []);
+        }
+    );
+
+    await withCapturedRuntime(
+        async () => jsonProviderResponse({ private_provider_canary: true }, 503),
+        async logs => {
+            const response = createResponse();
+            await invokeWithoutRawRejection(
+                syncHandler,
+                sourceManagerAuthRequest({
+                    operation: 'detail',
+                    activity_id: '515151',
+                    token
+                }),
+                response
+            );
+            assert.equal(response.statusCode, 200, 'safe optional failure status');
+            assertExactBody(response, { operation: 'detail', activity: null });
+            assert.equal(JSON.stringify(response.body).includes('canary'), false, 'safe reduced body');
+            assertClosedLogs(logs, []);
+        }
+    );
 });
 
 test('ordinary successes emit no server error event', async t => {

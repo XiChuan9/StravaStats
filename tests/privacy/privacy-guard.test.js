@@ -26,6 +26,12 @@ const C1_BROWSER_FILES = Object.freeze([
     '../../js/app/source-manager-authorization.js',
     '../../js/pages/source-manager/source-manager.js'
 ]);
+const C3C_BROWSER_FILES = Object.freeze([
+    '../../js/app/source-manager.js',
+    '../../js/app/source-manager-provider-sync.js',
+    '../../js/connectors/strava/strava-sync-connector.js',
+    '../../js/pages/source-manager/source-manager.js'
+]);
 
 test('C3a production mapper contains no credential, storage, provider route, or logging seam', async () => {
     const source = await readFile(MAPPER, 'utf8');
@@ -103,4 +109,28 @@ test('C1.1 browser authorization stays same-origin, redacted, and outside page/p
 
     const page = sources.find(item => item.relative.endsWith('pages/source-manager/source-manager.js')).source;
     assert.doesNotMatch(page, /access_token|refresh_token|subject_id|granted_scopes|localStorage|sessionStorage/);
+});
+
+test('C3c provider Sync keeps credentials and provider selection outside page/DOM/log surfaces', async () => {
+    const sources = await Promise.all(C3C_BROWSER_FILES.map(async relative => ({
+        relative,
+        source: await readFile(new URL(relative, import.meta.url), 'utf8')
+    })));
+    for (const { relative, source } of sources) {
+        assert.doesNotMatch(source, /console\.|tests\/fixtures\/private/i, relative);
+        assert.equal(findContentViolation(relative, source), null, relative);
+    }
+
+    const app = sources.find(item => item.relative.endsWith('app/source-manager.js')).source;
+    const controller = sources.find(item => item.relative.endsWith('source-manager-provider-sync.js')).source;
+    const connector = sources.find(item => item.relative.endsWith('strava-sync-connector.js')).source;
+    const page = sources.find(item => item.relative.endsWith('pages/source-manager/source-manager.js')).source;
+    assert.doesNotMatch(app, /access_token|refresh_token|Authorization\s*:|https?:\/\//i);
+    assert.doesNotMatch(controller, /access_token|refresh_token|Authorization\s*:|https?:\/\/|localStorage|sessionStorage/i);
+    assert.doesNotMatch(page, /access_token|refresh_token|subject_id|granted_scopes|localStorage|sessionStorage|\/api\//i);
+    assert.match(connector, /fetchImpl\('\/api\/strava-sync'/);
+    assert.match(connector, /credentials: 'same-origin'/);
+    assert.match(connector, /cache: 'no-store'/);
+    assert.match(connector, /referrerPolicy: 'no-referrer'/);
+    assert.doesNotMatch(connector, /fetchImpl\([^\n]*activityId|strava\.com|https?:\/\//i);
 });

@@ -2,8 +2,15 @@ import { createImportService, createBrowserImportWorker } from '../import/index.
 import { createImportStore, createSourceConnectionStore } from '../storage/index.js';
 import { createSourceManagerPage, SOURCE_MANAGER_SESSION_MODE } from '../pages/source-manager/source-manager.js';
 import { createSourceManagerConnectionController } from './source-manager-connection.js';
+import { createSourceManagerProviderSyncController } from './source-manager-provider-sync.js';
 import { createSourceManagerAuthorization } from './source-manager-authorization.js';
 import { createAuthLifecycle, inspectLegacyIndexedDbPresence } from './auth-lifecycle.js';
+import {
+    createStravaSyncConnector,
+    readStravaSyncAuthority
+} from '../connectors/strava/strava-sync-connector.js';
+import { createStravaImportMapper } from '../connectors/strava/strava-import-mapper.js';
+import { createStravaProviderArtifacts } from '../import/strava-provider-artifact.js';
 
 const TERMINAL_JOB_STATUSES = new Set([
     'completed', 'completed_with_warnings', 'failed_validation',
@@ -121,7 +128,7 @@ function realFacade({ indexedDB, IDBKeyRange, crypto, Worker }) {
     });
 }
 
-function realConnectionFacade(dependencies) {
+function realConnectionFacades(dependencies, importFacade) {
     const connectionStore = createSourceConnectionStore({
         indexedDB: dependencies.indexedDB,
         IDBKeyRange: dependencies.IDBKeyRange,
@@ -147,12 +154,33 @@ function realConnectionFacade(dependencies) {
         revokeTokenKind: 'refresh',
         revokeAccessToken: refreshToken => authorization.revoke(refreshToken)
     });
-    return createSourceManagerConnectionController({
+    const syncFacade = createSourceManagerProviderSyncController({
+        readAuthority: () => readStravaSyncAuthority(dependencies.localStorage),
+        createReader: authority => createStravaSyncConnector({
+            authority,
+            fetchImpl: dependencies.fetchImpl,
+            setTimeoutImpl: dependencies.setTimeoutImpl,
+            clearTimeoutImpl: dependencies.clearTimeoutImpl,
+            AbortControllerImpl: dependencies.AbortControllerImpl
+        }),
+        connectionStore,
+        createMapper: createStravaImportMapper,
+        createArtifacts: createStravaProviderArtifacts,
+        importFacade,
+        now: () => {
+            const timestamp = dependencies.now();
+            return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
+        },
+        AbortControllerImpl: dependencies.AbortControllerImpl
+    });
+    const connectionFacade = createSourceManagerConnectionController({
         authorization,
         authLifecycle,
         connectionStore,
-        callback: dependencies.callback
+        callback: dependencies.callback,
+        awaitInactiveSyncBoundary: () => syncFacade.awaitInactive()
     });
+    return Object.freeze({ connectionFacade, syncFacade });
 }
 
 export async function startSourceManager(dependencies) {
@@ -174,14 +202,15 @@ export async function startSourceManager(dependencies) {
     const importFacade = mode === SOURCE_MANAGER_SESSION_MODE.DEMO
         ? demoFacade()
         : realFacade(dependencies);
-    const connectionFacade = mode === SOURCE_MANAGER_SESSION_MODE.REAL
-        ? realConnectionFacade(dependencies)
-        : null;
+    const liveFacades = mode === SOURCE_MANAGER_SESSION_MODE.REAL
+        ? realConnectionFacades(dependencies, importFacade)
+        : Object.freeze({ connectionFacade: null, syncFacade: null });
     const page = createSourceManagerPage({
         document: dependencies.document,
         sessionMode: mode,
         importFacade,
-        connectionFacade
+        connectionFacade: liveFacades.connectionFacade,
+        syncFacade: liveFacades.syncFacade
     });
     const startupCloseRequested = dependencies.startupCloseRequested instanceof Promise
         ? dependencies.startupCloseRequested

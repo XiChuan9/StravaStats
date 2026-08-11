@@ -94,7 +94,7 @@ test('same-origin page has four source cards and complete accessible import cont
     assert.match(apiCard, />Authorization in progress</);
     assert.match(apiCard, /Completing authorization locally/);
     assert.match(apiCard, /<button[^>]+id="source-api-connect"[^>]+disabled hidden>Connect<\/button>/);
-    assert.match(apiCard, /id="source-api-sync" disabled hidden>Sync<\/button>/);
+    assert.match(apiCard, /id="source-api-sync" disabled hidden>Sync latest 25<\/button>/);
     assert.match(apiCard, /id="source-api-disconnect" disabled hidden>Disconnect<\/button>/);
     assert.equal((apiCard.match(/<button/g) || []).length, 3);
     assert.match(html, /origin-shared Legacy credential/);
@@ -422,6 +422,76 @@ test('selection progress counts each accepted file exactly once across preflight
     assert.match(page, /processedAcceptedFiles \+= results\.length - artifacts\.length/);
     assert.match(page, /processedAcceptedFiles \+= artifacts\.length/);
     assert.doesNotMatch(page, /processedSelectionFiles \+= batch\.files\.length/);
+});
+
+test('C3c freezes the exact nineteen-path maximum and no substituted boundary', async () => {
+    const brief = await source('docs/tasks/pr-43c-provider-live-sync.md');
+    const allowed = [
+        'docs/tasks/pr-43c-provider-live-sync.md',
+        'source-manager.html',
+        'styles/source-manager.css',
+        'js/app/source-manager.js',
+        'js/app/source-manager-connection.js',
+        'js/app/source-manager-provider-sync.js',
+        'js/pages/source-manager/source-manager.js',
+        'js/connectors/strava/strava-sync-connector.js',
+        'api/strava-sync.js',
+        'tests/source-manager/source-manager-provider-sync.test.js',
+        'tests/source-manager/source-manager-connection.test.js',
+        'tests/source-manager/source-manager.test.js',
+        'tests/source-manager/source-manager-boundaries.test.js',
+        'tests/source-manager/source-manager-browser-smoke.html',
+        'tests/connectors/strava-sync-connector.test.js',
+        'tests/privacy/server-api-logging.test.js',
+        'tests/privacy/privacy-guard.test.js',
+        'docs/guides/privacy-guide.md',
+        'docs/guides/known-limitations.md'
+    ];
+    const frozenBlock = brief.match(
+        /## Exact cumulative hard maximum[\s\S]*?```text\n([\s\S]*?)```/
+    );
+    assert.ok(frozenBlock);
+    assert.deepEqual(frozenBlock[1].trim().split('\n'), allowed);
+    assert.equal(new Set(allowed).size, 19);
+    assert.match(brief, /There is no twentieth path and no substitution/);
+    assert.match(brief, /server routing\/configuration change/);
+    assert.match(brief, /C4 ownership requirement/);
+});
+
+test('C3c composition is Real-only and retains the exact C3a C3b Import pipeline', async () => {
+    const app = await source('js/app/source-manager.js');
+    const page = await source('js/pages/source-manager/source-manager.js');
+    const connector = await source('js/connectors/strava/strava-sync-connector.js');
+    const route = await source('api/strava-sync.js');
+
+    assert.match(app, /createSourceManagerProviderSyncController/);
+    assert.match(app, /readStravaSyncAuthority/);
+    assert.match(app, /createStravaSyncConnector/);
+    assert.match(app, /createMapper: createStravaImportMapper/);
+    assert.match(app, /createArtifacts: createStravaProviderArtifacts/);
+    assert.match(app, /importFacade,/);
+    assert.match(app, /mode === SOURCE_MANAGER_SESSION_MODE\.REAL\s*\? realConnectionFacades/);
+    assert.match(app, /mode === SOURCE_MANAGER_SESSION_MODE\.DEMO\s*\? demoFacade\(\)/);
+    assert.ok(
+        page.indexOf('await syncFacade?.close();')
+            < page.indexOf('await connectionFacade?.close();')
+    );
+    assert.ok(
+        page.indexOf('await connectionFacade?.close();')
+            < page.indexOf('await importFacade.close();')
+    );
+    assert.match(page, /Sync latest 25/);
+    assert.match(page, /Cancel sync/);
+    assert.match(page, /let initializedConnectionSnapshot = null;/);
+    assert.doesNotMatch(page, /renderConnectionSnapshot\(snapshot\)/);
+    assert.doesNotMatch(page, /fetch\s*\(|\/api\/|localStorage|sessionStorage/);
+
+    assert.match(connector, /fetchImpl\('\/api\/strava-sync'/);
+    assert.doesNotMatch(connector, /\/api\/strava-sync\?/);
+    assert.match(route, /athlete\/activities\?page=1&per_page=25/);
+    assert.match(route, /activities\/\$\{request\.activityId\}\?include_all_efforts=false/);
+    assert.match(route, /activities\/\$\{request\.activityId\}\/streams\?keys=/);
+    assert.doesNotMatch(route, /[?&]page=2(?:&|['"`])|per_page=(?!25)|\/laps(?:\?|['"`])/);
 });
 
 test('served 1,000-file planning smoke records runtime and zero eager reads', async () => {
