@@ -333,8 +333,13 @@ export function createSourceManagerAuthorization(options) {
                 referrerPolicy: 'no-referrer',
                 signal: controller.signal
             });
-            return await readBoundedJson(response);
+            const data = await readBoundedJson(response);
+            assertOpen();
+            return data;
         } catch {
+            if (closed) {
+                throw authorizationError(SOURCE_MANAGER_AUTHORIZATION_ERROR_CODE.CLOSED);
+            }
             throw authorizationError(failureCode);
         } finally {
             controllers.delete(controller);
@@ -388,6 +393,7 @@ export function createSourceManagerAuthorization(options) {
             url.searchParams.set('response_type', 'code');
             url.searchParams.set('scope', REQUIRED_SCOPES.join(','));
             url.searchParams.set('state', state);
+            assertOpen();
             dependencies.navigate(url.toString());
             return REDIRECTING;
         } catch (error) {
@@ -492,7 +498,8 @@ export function createSourceManagerAuthorization(options) {
             );
             const result = exactOwnData(data, REVOKE_FIELDS);
             return result?.revoked === true;
-        } catch {
+        } catch (error) {
+            if (error?.code === SOURCE_MANAGER_AUTHORIZATION_ERROR_CODE.CLOSED) throw error;
             return false;
         }
     }

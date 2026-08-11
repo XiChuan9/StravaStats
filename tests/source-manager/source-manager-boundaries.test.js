@@ -90,10 +90,10 @@ test('same-origin page has four source cards and complete accessible import cont
         'no-referrer policy precedes subresource loading'
     );
     const apiCard = html.match(/<article[^>]+data-source-card="api"[\s\S]*?<\/article>/)?.[0] || '';
-    assert.match(apiCard, /data-status="unconfigured"/);
-    assert.match(apiCard, />Not connected</);
-    assert.match(apiCard, /confirming that this is the Strava account for this local library/);
-    assert.match(apiCard, /<button[^>]+id="source-api-connect"[^>]*>Connect<\/button>/);
+    assert.match(apiCard, /data-status="callback_processing"/);
+    assert.match(apiCard, />Authorization in progress</);
+    assert.match(apiCard, /Completing authorization locally/);
+    assert.match(apiCard, /<button[^>]+id="source-api-connect"[^>]+disabled hidden>Connect<\/button>/);
     assert.match(apiCard, /id="source-api-sync" disabled hidden>Sync<\/button>/);
     assert.match(apiCard, /id="source-api-disconnect" disabled hidden>Disconnect<\/button>/);
     assert.equal((apiCard.match(/<button/g) || []).length, 3);
@@ -171,6 +171,7 @@ test('composition root uses only existing public Import/V2 boundaries and keeps 
     assert.equal((app.match(/createSourceManagerConnectionController\(\{/g) || []).length, 1);
     assert.match(app, /mode === SOURCE_MANAGER_SESSION_MODE\.REAL/);
     assert.match(app, /connectionFacade/);
+    assert.doesNotMatch(app, /if \(connectionFacade\) await connectionFacade\.initialize\(\)/);
     assert.doesNotMatch(app, /location\?\.search|URLSearchParams/);
     assert.match(app, /await page\.initialize\(\);[\s\S]*await page\.close\(\)\.catch\(\(\) => \{\}\);/);
 });
@@ -192,6 +193,23 @@ test('C1-A3 sanitizer is the first bootstrap operation and the controller remain
     }
     assert.match(app, /from '\.\/source-manager-connection\.js'/);
     assert.doesNotMatch(page, /source-manager-connection\.js/);
+    const connectionInitialization = page.indexOf(
+        'const connectionInitialization = connectionFacade?.initialize();'
+    );
+    const immediateCallbackRender = page.indexOf(
+        "if (immediateSnapshot?.status === 'callback_processing')",
+        connectionInitialization
+    );
+    const awaitConnection = page.indexOf(
+        'await connectionInitialization;',
+        connectionInitialization
+    );
+    assert.ok(
+        connectionInitialization >= 0
+        && connectionInitialization < immediateCallbackRender
+        && immediateCallbackRender < awaitConnection,
+        'callback_processing renders before the authorization exchange settles'
+    );
     assert.doesNotMatch(connection, /fetch\s*\(|XMLHttpRequest|WebSocket|localStorage|sessionStorage|indexedDB|\/api\/|strava\.com|Bearer|access_token|refresh_token/);
     assert.match(root, /let pageHidden = false;/);
     assert.ok(

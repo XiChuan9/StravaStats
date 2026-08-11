@@ -414,6 +414,9 @@ export function createSourceManagerConnectionController(options) {
             initialized = true;
             return result('error', INITIALIZATION_ERROR.code);
         }
+        if (dependencies.callback !== null && dependencies.callback !== undefined) {
+            setSnapshot('callback_processing');
+        }
         initializing = (async () => {
             try {
                 await dependencies.connectionStore.initialize();

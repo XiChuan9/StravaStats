@@ -177,7 +177,6 @@ export async function startSourceManager(dependencies) {
     const connectionFacade = mode === SOURCE_MANAGER_SESSION_MODE.REAL
         ? realConnectionFacade(dependencies)
         : null;
-    if (connectionFacade) await connectionFacade.initialize();
     const page = createSourceManagerPage({
         document: dependencies.document,
         sessionMode: mode,

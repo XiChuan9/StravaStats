@@ -158,6 +158,57 @@ test('beginAuthorization stores one 32-byte ten-minute state before exact config
     assert.equal(url.searchParams.get('state'), record.state);
 });
 
+test('close blocks abort-insensitive late config settlement before navigation', async () => {
+    let resolveFetch;
+    const fetchResponse = new Promise(resolve => { resolveFetch = resolve; });
+    const { authorization, calls, storage } = harness({
+        fetchImpl: async () => fetchResponse
+    });
+    const pending = authorization.beginAuthorization();
+    assert.equal(storage.values.has(STATE_KEY), true);
+    assert.deepEqual(await authorization.close(), { status: 'closed' });
+    resolveFetch(response({ stravaClientId: '12345' }));
+    await assert.rejects(pending, error => {
+        assert.deepEqual(error, { code: 'AUTHORIZATION_CLOSED' });
+        return true;
+    });
+    assert.deepEqual(calls.navigate, []);
+    assert.equal(storage.values.has(STATE_KEY), false);
+});
+
+test('close blocks abort-insensitive late exchange and revoke settlement', async () => {
+    const state = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq';
+    for (const operation of ['exchange', 'revoke']) {
+        let resolveFetch;
+        const fetchResponse = new Promise(resolve => { resolveFetch = resolve; });
+        const storage = new MemoryStorage({ [STATE_KEY]: storedState(new MemoryStorage()) });
+        const { authorization } = harness({
+            storage,
+            fetchImpl: async () => fetchResponse
+        });
+        const pending = operation === 'exchange'
+            ? authorization.processCallback({
+                kind: 'code',
+                code: 'synthetic-code',
+                state,
+                grantedScopes: [...SCOPES]
+            })
+            : authorization.revoke('synthetic-refresh');
+        assert.deepEqual(await authorization.close(), { status: 'closed' });
+        resolveFetch(response(operation === 'exchange' ? {
+            access_token: 'synthetic-access',
+            refresh_token: 'synthetic-refresh',
+            expires_at: 2_100_000_000,
+            subject_id: '424242',
+            granted_scopes: [...SCOPES]
+        } : { revoked: true }));
+        await assert.rejects(pending, error => {
+            assert.deepEqual(error, { code: 'AUTHORIZATION_CLOSED' });
+            return true;
+        });
+    }
+});
+
 test('callback consumes state before exchange and returns only exact five-field authority', async () => {
     const state = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq';
     const storage = new MemoryStorage({ [STATE_KEY]: storedState(new MemoryStorage()) });

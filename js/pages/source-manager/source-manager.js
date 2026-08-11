@@ -1332,6 +1332,12 @@ export function createSourceManagerPage({
         if (sessionMode === SOURCE_MANAGER_SESSION_MODE.REAL) {
             let snapshot = null;
             try {
+                const connectionInitialization = connectionFacade?.initialize();
+                const immediateSnapshot = connectionFacade?.getConnectionSnapshot();
+                if (immediateSnapshot?.status === 'callback_processing') {
+                    renderConnectionSnapshot(immediateSnapshot);
+                }
+                await connectionInitialization;
                 snapshot = connectionFacade?.getConnectionSnapshot();
             } catch {
                 // The page exposes only the fixed unavailable state.
