@@ -68,6 +68,7 @@ function harness({
     streams,
     report,
     transitionFailure = false,
+    transitionConnection,
     importArtifacts,
     waitForJob,
     cancelJob
@@ -134,6 +135,10 @@ function harness({
                 calls.transitions.push(value);
                 calls.order.push(`transition:${value.status}`);
                 if (transitionFailure) throw codedError('CONFLICT');
+                if (transitionConnection) {
+                    current = await transitionConnection(value, calls, current);
+                    return current;
+                }
                 current = connection({
                     ...current,
                     status: value.status,
@@ -610,6 +615,60 @@ test('cancellation queued after wait resolution but before continuation prevents
     assert.equal(result.historyAdvanced, false);
     assert.deepEqual(calls.cancels, ['synthetic-job']);
     assert.deepEqual(calls.transitions, []);
+});
+
+test('after the success-CAS gate Cancel is unavailable and close only drains the commit', async () => {
+    let casStartedResolve;
+    const casStarted = new Promise(resolve => { casStartedResolve = resolve; });
+    let releaseCas;
+    const casGate = new Promise(resolve => { releaseCas = resolve; });
+    const { controller, calls } = harness({
+        async transitionConnection(value, callLog, current) {
+            casStartedResolve();
+            await casGate;
+            return connection({
+                ...current,
+                status: value.status,
+                lastSyncAt: value.lastSyncAt,
+                errorCode: value.errorCode,
+                revision: current.revision + 1
+            });
+        }
+    });
+    await controller.initialize();
+    const syncing = controller.syncLatest();
+    await casStarted;
+
+    assert.deepEqual(controller.getSnapshot(), {
+        schemaVersion: 1,
+        status: 'syncing',
+        code: null,
+        actions: { sync: false, cancel: false },
+        totals: null,
+        completedItemsRetained: false,
+        historyAdvanced: false
+    });
+    await assert.rejects(controller.cancel(), error => {
+        assert.deepEqual(error, { code: 'SYNC_ACTION_UNAVAILABLE' });
+        return true;
+    });
+    assert.deepEqual(calls.cancels, []);
+
+    let closeSettled = false;
+    const closing = controller.close().then(value => {
+        closeSettled = true;
+        return value;
+    });
+    await Promise.resolve();
+    assert.equal(closeSettled, false);
+    assert.deepEqual(calls.cancels, []);
+    releaseCas();
+
+    assert.deepEqual(await closing, { status: 'closed' });
+    assert.equal((await syncing).status, 'closed');
+    assert.equal(controller.getSnapshot().status, 'closed');
+    assert.equal(calls.transitions.length, 1);
+    assert.equal(calls.transitions[0].lastSyncAt, ACQUIRED_AT);
 });
 
 test('awaitInactive waits without cancelling, while close cancels Import and is idempotent', async () => {

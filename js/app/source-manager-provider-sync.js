@@ -202,7 +202,8 @@ function snapshot({
     code = null,
     totals = null,
     completedItemsRetained = false,
-    historyAdvanced = false
+    historyAdvanced = false,
+    cancelAvailable = status === 'syncing'
 }) {
     const canSync = ['ready', 'completed', 'cancelled'].includes(status)
         || (status === 'error' && code !== 'SYNC_INITIALIZATION_FAILED');
@@ -212,7 +213,7 @@ function snapshot({
         code,
         actions: Object.freeze({
             sync: canSync,
-            cancel: status === 'syncing'
+            cancel: cancelAvailable
         }),
         totals,
         completedItemsRetained,
@@ -338,6 +339,7 @@ export function createSourceManagerProviderSyncController(options) {
     let importCancel = null;
     let cancelRequested = false;
     let suppressSuccessCas = false;
+    let successCommitStarted = false;
     let currentSnapshot = snapshot({
         status: 'error',
         code: 'SYNC_INITIALIZATION_FAILED'
@@ -622,6 +624,8 @@ export function createSourceManagerProviderSyncController(options) {
                         completedItemsRetained: true
                     });
                 }
+                activeJobId = null;
+                importCancel = null;
                 report = safeReport(rawReport);
                 if (!report) {
                     return terminal({
@@ -655,6 +659,8 @@ export function createSourceManagerProviderSyncController(options) {
                         completedItemsRetained: retained
                     });
                 }
+                successCommitStarted = true;
+                setSnapshot({ status: 'syncing', cancelAvailable: false });
                 try {
                     await dependencies.transitionConnection(transitionInput(
                         connection,
@@ -699,6 +705,7 @@ export function createSourceManagerProviderSyncController(options) {
         if (active !== null) throw ACTION_ERROR;
         cancelRequested = false;
         suppressSuccessCas = false;
+        successCommitStarted = false;
         setSnapshot({ status: 'syncing' });
         let operation;
         operation = runSync().finally(() => {
@@ -711,7 +718,7 @@ export function createSourceManagerProviderSyncController(options) {
     async function cancel() {
         if (closed) throw CLOSED_ERROR;
         if (!initialized || !dependencies) throw INITIALIZATION_ERROR;
-        if (active === null) throw ACTION_ERROR;
+        if (active === null || successCommitStarted) throw ACTION_ERROR;
         cancelRequested = true;
         suppressSuccessCas = true;
         setSnapshot({ status: 'cancelling' });
@@ -740,13 +747,16 @@ export function createSourceManagerProviderSyncController(options) {
         },
         close() {
             if (closing) return closing;
+            const drainSuccessCommit = successCommitStarted;
             closed = true;
-            cancelRequested = true;
-            suppressSuccessCas = true;
             currentSnapshot = snapshot({ status: 'closed' });
-            abortAcquisition();
+            if (!drainSuccessCommit) {
+                cancelRequested = true;
+                suppressSuccessCas = true;
+                abortAcquisition();
+            }
             closing = (async () => {
-                await requestImportCancellation();
+                if (!drainSuccessCommit) await requestImportCancellation();
                 if (active) await active;
                 return CLOSED_RESULT;
             })();
