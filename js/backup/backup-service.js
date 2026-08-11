@@ -613,6 +613,37 @@ function validRawArtifact(record, profile) {
         || (value.state === 'committed' && opaque(value.activityId));
 }
 
+function validProviderArtifactLink(artifact, sources) {
+    if (
+        artifact.mediaType !== STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE
+        || artifact.state === 'pending'
+    ) return true;
+    let expectedSource;
+    try {
+        const bundle = stravaProviderArtifactDecoder.decode({
+            mediaType: artifact.mediaType,
+            content: artifact.content
+        });
+        expectedSource = bundle.sources[0];
+    } catch {
+        return false;
+    }
+    const acceptedIds = new Set([
+        expectedSource.id,
+        `exact-source:${artifact.id}:0`
+    ]);
+    return sources.some(source => (
+        acceptedIds.has(source.id)
+        && source.rawArtifactId === artifact.id
+        && source.activityId === artifact.activityId
+        && source.provider === expectedSource.provider
+        && source.externalId === expectedSource.externalId
+        && source.acquisitionMethod === expectedSource.acquisitionMethod
+        && source.deviceId === expectedSource.deviceId
+        && source.importedAt === expectedSource.importedAt
+    ));
+}
+
 function validJob(record) {
     const fields = [
         'id', 'status', 'totalItems', 'completedItems', 'createdAt',
@@ -823,14 +854,10 @@ function validateRecords(records, operation = 'validate', profile = BACKUP_PROFI
                     && decisions[0].decision === candidate.status;
         });
     const providerLinksValid = records[V2_STORE_NAME.RAW_ARTIFACTS].every(artifact => (
-        artifact.mediaType !== STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE
-        || artifact.state === 'pending'
-        || records[V2_STORE_NAME.ACTIVITY_SOURCES].some(source => (
-            source.rawArtifactId === artifact.id
-            && source.activityId === artifact.activityId
-            && source.provider === 'strava'
-            && source.acquisitionMethod === 'strava-api'
-        ))
+        validProviderArtifactLink(
+            artifact,
+            records[V2_STORE_NAME.ACTIVITY_SOURCES]
+        )
     ));
     const referencesValid = records[V2_STORE_NAME.ACTIVITY_SOURCES].every(record => (
         (record.rawArtifactId === undefined || record.rawArtifactId === null

@@ -448,6 +448,15 @@ test('format 2 validates and restores provider artifacts with the exact portable
     assert.equal(portableConnection.status, 'reconnect_required');
     assert.equal(portableConnection.errorCode, 'AUTHORIZATION_REQUIRED');
     assert.equal((await source.validateBackup(archive.blob)).status, 'validated');
+    const generatedExactLink = await mutateArchivePayload(
+        archive.blob,
+        'sources.jsonl',
+        records => { records[0].id = `exact-source:${raw.id}:0`; }
+    );
+    assert.equal(
+        (await source.validateBackup(generatedExactLink)).status,
+        'validated'
+    );
 
     const targetFactory = new IDBFactory();
     const target = service(targetFactory);
@@ -502,13 +511,19 @@ test('format 1 and malformed format-2 provider provenance fail before target mut
         'sources.jsonl',
         records => { records[0].rawArtifactId = null; }
     );
+    const mismatchedProviderSource = await mutateArchivePayload(
+        archive,
+        'sources.jsonl',
+        records => { records[0].externalId = '999999999'; }
+    );
     for (const invalid of [
         legacy,
         wrongPair,
         malformed,
         missingConnection,
         brokenRawReference,
-        severedProviderChain
+        severedProviderChain,
+        mismatchedProviderSource
     ]) {
         const targetFactory = new IDBFactory();
         const target = service(targetFactory);
