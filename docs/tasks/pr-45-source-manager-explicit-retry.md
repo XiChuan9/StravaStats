@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | M33 / P0-RETRY Option A |
-| Status | Complete material options frozen; awaiting owner selection; implementation blocked |
+| Status | Executable Option A1 approved; implementation in progress; PR remains Draft |
 | Base branch | `integration/v2` |
 | Exact base | `integration/v2@1669d1636188184232d76b3c05305496d26ff313` |
 | Exact base tree | `d62d29bee122ee2d9abcd76d805309564d91dbe9` |
@@ -33,6 +33,21 @@ The required sequence is:
 Draft-to-Ready is authorized only after implementation, all required checks, genuinely independent
 findings-first review, fresh no-findings re-review, exact remote-head verification, and exact-head
 CI all pass. Ready is not merge authorization.
+
+## Owner approval recorded
+
+On 2026-08-12, the owner selected **Executable Option A1**, the controller-owned ephemeral Retry
+catalog, and approved the complete common executable contract exactly as frozen at
+`bf14bd4c9aeb7c5684cde30b92e0a1d2e3c5457a`. Eligibility requires at least one retryable item and
+exact retained pending bytes for every retryable item. The approval authorizes only the separate
+failure-first implementation tranche and disposable synthetic Chromium evidence within the literal
+eleven-path hard maximum.
+
+The approval does not authorize any public API, schema, migration, Backup, dependency, Worker,
+Service Worker, provider/auth, Token, retention, terminal-state, release, deployment, merge, or
+historical-PR expansion. PR #57 must remain OPEN/Draft until implementation, independent
+findings-first review and fresh no-findings re-review, every frozen gate, exact remote-head
+verification, and exact-head CI pass. Ready is not merge authorization.
 
 ## Exact-base evidence
 
