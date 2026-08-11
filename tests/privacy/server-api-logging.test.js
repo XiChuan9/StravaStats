@@ -319,6 +319,7 @@ test('Source Manager exchange is exact, bounded, reduced, timed, and no-store', 
             access_token: 'synthetic-access',
             refresh_token: 'synthetic-refresh',
             expires_at: 2_100_000_000,
+            scope: 'read activity:read_all',
             athlete: {
                 id: 424242,
                 firstname: 'private-profile-canary'
@@ -383,6 +384,34 @@ test('Source Manager exchange keeps the upstream timeout active through body con
         globalThis.clearTimeout = originalClearTimeout;
     }
     assert.equal(clearedAfterBody, true);
+});
+
+test('Source Manager exchange requires exact ordered upstream scope evidence', async () => {
+    for (const scope of [
+        undefined,
+        'read',
+        'activity:read_all read',
+        'read activity:read_all extra',
+        ['read', 'activity:read_all']
+    ]) {
+        const providerBody = {
+            access_token: 'synthetic-access',
+            refresh_token: 'synthetic-refresh',
+            expires_at: 2_100_000_000,
+            athlete: { id: 424242 }
+        };
+        if (scope !== undefined) providerBody.scope = scope;
+        await withCapturedRuntime(async () => jsonProviderResponse(providerBody), async logs => {
+            const response = createResponse();
+            await authHandler(sourceManagerAuthRequest({
+                code: 'synthetic-code',
+                granted_scopes: ['read', 'activity:read_all']
+            }), response);
+            assert.equal(response.statusCode, 502);
+            assertExactBody(response, { error: 'AUTH_RESPONSE_INVALID' });
+            assertClosedLogs(logs, [EXPECTED_EVENTS.AUTH_RESPONSE_INVALID]);
+        });
+    }
 });
 
 test('legacy code-only exchange stays reduced and cannot invent five-field authority', async () => {

@@ -5,6 +5,7 @@ import { logServerEvent, SERVER_API_EVENT } from './_shared.js';
 const LEGACY_BODY_FIELDS = Object.freeze(['code']);
 const SOURCE_MANAGER_BODY_FIELDS = Object.freeze(['code', 'granted_scopes']);
 const REQUIRED_SCOPES = Object.freeze(['read', 'activity:read_all']);
+const REQUIRED_PROVIDER_SCOPE = REQUIRED_SCOPES.join(' ');
 const UPSTREAM_TIMEOUT_MS = 12_000;
 const MAX_CODE_LENGTH = 512;
 const MAX_TOKEN_LENGTH = 4_096;
@@ -155,12 +156,14 @@ function normalizeProviderToken(value, grantedScopes) {
     const expiresAt = readOwnData(value, 'expires_at');
     const athlete = readOwnData(value, 'athlete');
     const subjectId = positiveDecimal(readOwnData(athlete, 'id'));
+    const providerScope = readOwnData(value, 'scope');
     if (
         !boundedString(accessToken, MAX_TOKEN_LENGTH)
         || !boundedString(refreshToken, MAX_TOKEN_LENGTH)
         || !Number.isSafeInteger(expiresAt)
         || expiresAt <= 0
         || subjectId === null
+        || (grantedScopes !== null && providerScope !== REQUIRED_PROVIDER_SCOPE)
     ) return null;
     const reduced = {
         access_token: accessToken,
@@ -168,7 +171,7 @@ function normalizeProviderToken(value, grantedScopes) {
         expires_at: expiresAt,
         subject_id: subjectId
     };
-    if (grantedScopes !== null) reduced.granted_scopes = [...grantedScopes];
+    if (grantedScopes !== null) reduced.granted_scopes = [...REQUIRED_SCOPES];
     return reduced;
 }
 
