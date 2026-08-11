@@ -1,8 +1,14 @@
 import { createImportService, createBrowserImportWorker } from '../import/index.js';
-import { createImportStore, createSourceConnectionStore } from '../storage/index.js';
+import { recoverImportServiceJob } from '../import/import-service.js';
+import {
+    createImportStore,
+    createSourceConnectionStore,
+    createSourceOperationStore
+} from '../storage/index.js';
 import { createSourceManagerPage, SOURCE_MANAGER_SESSION_MODE } from '../pages/source-manager/source-manager.js';
 import { createSourceManagerConnectionController } from './source-manager-connection.js';
 import { createSourceManagerProviderSyncController } from './source-manager-provider-sync.js';
+import { createSourceManagerRecoveryController } from './source-manager-recovery.js';
 import { createSourceManagerAuthorization } from './source-manager-authorization.js';
 import { createAuthLifecycle, inspectLegacyIndexedDbPresence } from './auth-lifecycle.js';
 import {
@@ -106,7 +112,10 @@ function realFacade({ indexedDB, IDBKeyRange, crypto, Worker }) {
     }
     return Object.freeze({
         initialize: () => service.initialize(),
-        importArtifacts: artifacts => service.importArtifacts(artifacts),
+        importArtifacts: (artifacts, sourceOperationLink) => (
+            service.importArtifacts(artifacts, sourceOperationLink)
+        ),
+        recoverJob: jobId => recoverImportServiceJob(service, jobId),
         cancelJob: jobId => service.cancelJob(jobId),
         getReport: jobId => service.getReport(jobId),
         waitForJob: jobId => service.waitForJob(jobId),
@@ -128,7 +137,7 @@ function realFacade({ indexedDB, IDBKeyRange, crypto, Worker }) {
     });
 }
 
-function realConnectionFacades(dependencies, importFacade) {
+function realConnectionFacades(dependencies, importFacade, recoveryFacade) {
     const connectionStore = createSourceConnectionStore({
         indexedDB: dependencies.indexedDB,
         IDBKeyRange: dependencies.IDBKeyRange,
@@ -166,7 +175,14 @@ function realConnectionFacades(dependencies, importFacade) {
         connectionStore,
         createMapper: createStravaImportMapper,
         createArtifacts: createStravaProviderArtifacts,
-        importFacade,
+        importFacade: Object.freeze({
+            importArtifacts: (artifacts, provenance) => (
+                recoveryFacade.importArtifacts(artifacts, provenance)
+            ),
+            cancelJob: jobId => importFacade.cancelJob(jobId),
+            waitForJob: jobId => importFacade.waitForJob(jobId)
+        }),
+        beginHistoryCommit: () => recoveryFacade.beginHistoryCommit(),
         now: () => {
             const timestamp = dependencies.now();
             return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
@@ -199,18 +215,62 @@ export async function startSourceManager(dependencies) {
         page.showBlockingError(error);
         return Object.freeze({ status: 'blocked', close: page.close });
     }
-    const importFacade = mode === SOURCE_MANAGER_SESSION_MODE.DEMO
+    const rawImportFacade = mode === SOURCE_MANAGER_SESSION_MODE.DEMO
         ? demoFacade()
         : realFacade(dependencies);
+    let syncFacade = null;
+    const recoveryFacade = mode === SOURCE_MANAGER_SESSION_MODE.REAL
+        ? createSourceManagerRecoveryController({
+            operationStore: createSourceOperationStore({
+                indexedDB: dependencies.indexedDB,
+                IDBKeyRange: dependencies.IDBKeyRange,
+                now: dependencies.now,
+                applicationVersion: 'source-manager-recovery@1'
+            }),
+            importFacade: rawImportFacade,
+            locks: dependencies.locks,
+            crypto: dependencies.crypto,
+            now: dependencies.now,
+            document: dependencies.document,
+            setTimeoutImpl: dependencies.setTimeoutImpl,
+            clearTimeoutImpl: dependencies.clearTimeoutImpl,
+            isOnline: dependencies.isOnline,
+            cancelProviderAcquisition: () => (
+                syncFacade?.cancel() ?? Promise.resolve()
+            ),
+            advanceProviderHistory: value => (
+                syncFacade?.advanceRecoveredHistory(value) ?? Promise.resolve(false)
+            )
+        })
+        : null;
     const liveFacades = mode === SOURCE_MANAGER_SESSION_MODE.REAL
-        ? realConnectionFacades(dependencies, importFacade)
+        ? realConnectionFacades(dependencies, rawImportFacade, recoveryFacade)
         : Object.freeze({ connectionFacade: null, syncFacade: null });
+    syncFacade = liveFacades.syncFacade;
+    const importFacade = mode === SOURCE_MANAGER_SESSION_MODE.REAL
+        ? Object.freeze({
+            initialize: () => rawImportFacade.initialize(),
+            importArtifacts: artifacts => recoveryFacade.importArtifacts(artifacts),
+            cancelJob: jobId => rawImportFacade.cancelJob(jobId),
+            getReport: jobId => rawImportFacade.getReport(jobId),
+            waitForJob: jobId => rawImportFacade.waitForJob(jobId),
+            previewActivities: () => rawImportFacade.previewActivities(),
+            listPersistedReports: () => rawImportFacade.listPersistedReports(),
+            listDuplicateReviews: () => rawImportFacade.listDuplicateReviews(),
+            getDuplicateReview: token => rawImportFacade.getDuplicateReview(token),
+            decideDuplicateReview: (token, decision) => (
+                rawImportFacade.decideDuplicateReview(token, decision)
+            ),
+            close: () => rawImportFacade.close()
+        })
+        : rawImportFacade;
     const page = createSourceManagerPage({
         document: dependencies.document,
         sessionMode: mode,
         importFacade,
         connectionFacade: liveFacades.connectionFacade,
-        syncFacade: liveFacades.syncFacade
+        syncFacade: liveFacades.syncFacade,
+        recoveryFacade
     });
     const startupCloseRequested = dependencies.startupCloseRequested instanceof Promise
         ? dependencies.startupCloseRequested

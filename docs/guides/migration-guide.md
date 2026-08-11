@@ -10,7 +10,7 @@ Legacy and V2 are physically isolated:
 | Library | Browser storage | Role |
 | --- | --- | --- |
 | Legacy | IndexedDB `strava-dashboard-cache` plus established Legacy localStorage keys | Preserved V1-compatible read and rollback path |
-| V2 Canonical | IndexedDB `strava-stats-v2`, physical V5, schema `strava-stats-v2@5` | Current local-first default |
+| V2 Canonical | IndexedDB `strava-stats-v2`, physical V6, schema `strava-stats-v2@6` | Current local-first default |
 
 There is no automatic copy or migration from Legacy to V2. Opening V2, switching modes, importing a
 file, disconnecting Strava, or rolling back does not clear, repair, overwrite, downgrade, or
@@ -39,8 +39,8 @@ unproved or unsafe local state -> blocked recovery UI and Diagnostics path
 
 An empty Canonical library is a normal First-run state. It does not mean Legacy activities were
 lost, copied, or inspected. Use Sources to import FIT, TCX, GPX, English Strava `activities.csv`, or
-a bounded Strava ZIP. The current Sources Strava API buttons are disabled; they are not a migration
-tool.
+a bounded Strava ZIP. Explicit provider Sync uses the same durable local operation fence; it is not
+a Legacy migration tool and never starts automatically.
 
 ## Explicit Legacy, Shadow, and Canonical modes
 
@@ -69,35 +69,38 @@ flags already frozen during import. There is no persisted end-user mode setting 
 toggle, so a deployment owner must inject the override in the bootstrap document or controlled test
 harness before `/js/main.js` loads.
 
-## IndexedDB physical V5 and compatibility
+## IndexedDB physical V6 and compatibility
 
-The current V2 database version is 5 and contains fourteen stores. The implementation can create a
-fresh V5 database or upgrade accepted V1, V2, V3, and V4 physical layouts additively and
-transactionally. Failed upgrades abort without partially rewriting the prior accepted version.
-V4-to-V5 adds only the empty `sourceConnections` store, its unique `byProvider` index, and the fifth
-structural migration record. It does not infer an account from activities or provenance.
+The current V2 database version is 6 and contains fifteen stores. The implementation can create a
+fresh V6 database or upgrade accepted V1 through V5 physical layouts additively and transactionally.
+Failed upgrades abort without partially rewriting the prior accepted version. V5-to-V6 adds only
+the fixed idle `sourceOperations` row in its no-index object store and the sixth structural
+migration record. It does not inspect, claim, resume, terminalize, or infer ownership for preserved
+Import records. V4-to-V5 remains the additive SourceConnection migration described in the durable
+migration history.
 
 Compatibility is forward-only at the browser database boundary:
 
-- a build that expects an older physical version may be unable to open a V5 database;
+- a build that expects an older physical version may be unable to open a V6 database;
 - an unsupported higher version or same-version schema mismatch fails closed with
   `VERSION_UNSUPPORTED` or `SCHEMA_MISMATCH`;
 - the application does not downgrade, delete, rename, or recreate a database as recovery;
-- newly created V2 backups are format 2/V5 exact-current archives. Restore also accepts the frozen
-  format 1/V4 profile through one narrow additive transformation that preserves every V4 record,
-  creates no connection identity, and appends only the V5 metadata/migration state.
+- newly created V2 backups are format 3/V6 exact-current archives. Restore also accepts the frozen
+  format 2/V5 and format 1/V4 profiles through narrow additive transformations that preserve every
+  prior record, create an idle operation row, and never automatically claim or resume a preserved
+  nonterminal ImportJob.
 
-If an older build cannot read V5, select explicit Legacy mode or restore a V5-aware application
-deployment while retaining V5. Do not delete or downgrade V5 to make an old build start.
+If an older build cannot read V6, select explicit Legacy mode or restore a V6-aware application
+deployment while retaining V6. Do not delete or downgrade V6 to make an old build start.
 
 ## SourceConnection is local control state
 
-V5 can retain one private Strava subject identity and a stable connection state in
+V6 retains the V5 private Strava subject identity and stable connection state in
 `sourceConnections`. Absence means unconfigured. A disconnected row is a retained tombstone: it
 does not remove Canonical activities, ActivitySource provenance, RawArtifacts, Import history,
 duplicate decisions, settings, backups, or Legacy data. C2 performs no OAuth, Token, provider,
-account, or network operation, and the Source Manager remains fail-closed until a later separately
-approved controller integration exists.
+account, or network operation. Durable Source Manager operation state is a separate V6 record; it
+never stores a Token or replaces SourceConnection authorization state.
 
 ## Non-destructive rollback
 
@@ -126,7 +129,7 @@ or user setting is cleared. Disconnecting Strava remains separate from deleting 
 - no reverse migration from V2 to Legacy;
 - no merge of Legacy and V2 libraries;
 - no cross-origin or cross-browser synchronization;
-- no compatibility beyond the exact format 1/V4 and format 2/V5 backup profiles;
+- no compatibility beyond the exact format 1/V4, format 2/V5, and format 3/V6 backup profiles;
 - no release tag, deployment, or production approval.
 
 For error-specific recovery, use [Troubleshooting](./troubleshooting.md). For protected restore,

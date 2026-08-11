@@ -159,7 +159,7 @@ export function buildBackupManifest(database, dependencies) {
                 return { name, recordCount };
             });
             return deepFreeze({
-                backupFormatVersion: 2,
+                backupFormatVersion: 3,
                 databaseName: V2_DATABASE_NAME,
                 indexedDbVersion: V2_DATABASE_VERSION,
                 canonicalSchemaVersion: V2_CANONICAL_SCHEMA_VERSION,

@@ -71,7 +71,8 @@ function harness({
     transitionConnection,
     importArtifacts,
     waitForJob,
-    cancelJob
+    cancelJob,
+    beginHistoryCommit
 } = {}) {
     const calls = {
         authority: 0,
@@ -86,6 +87,7 @@ function harness({
         imports: [],
         waits: [],
         cancels: [],
+        historyCommits: 0,
         transitions: [],
         order: []
     };
@@ -186,6 +188,11 @@ function harness({
                 return report ?? successfulReport(list.length);
             }
         }),
+        async beginHistoryCommit() {
+            calls.historyCommits += 1;
+            calls.order.push('history-commit');
+            if (beginHistoryCommit) return beginHistoryCommit(calls);
+        },
         now() { return ACQUIRED_AT; },
         AbortControllerImpl: AbortController
     };
@@ -204,6 +211,7 @@ test('controller surface is fixed and initialize is completely inert', async () 
         'getSnapshot',
         'syncLatest',
         'cancel',
+        'advanceRecoveredHistory',
         'awaitInactive',
         'close'
     ]);
@@ -220,7 +228,8 @@ test('controller surface is fixed and initialize is completely inert', async () 
     assert.deepEqual(calls, {
         authority: 0, connection: 0, reader: 0, list: 0,
         detail: [], streams: [], readerClose: 0, mapper: [], artifacts: [],
-        imports: [], waits: [], cancels: [], transitions: [], order: []
+        imports: [], waits: [], cancels: [], historyCommits: 0,
+        transitions: [], order: []
     });
     assertDeepFrozen(controller.getSnapshot());
 });
@@ -326,6 +335,11 @@ test('error recovery CAS precedes provider I/O and successful pipeline preserves
     assert.deepEqual(calls.artifacts[0].bundles.map(bundle => bundle.id), ['301', '302', '303']);
     assert.equal(calls.imports.length, 1);
     assert.equal(calls.waits.length, 1);
+    assert.equal(calls.historyCommits, 1);
+    assert.ok(
+        calls.order.indexOf('history-commit')
+            < calls.order.lastIndexOf('transition:connected')
+    );
     assert.equal(calls.readerClose, 1);
     assert.equal(result.status, 'completed');
     assert.equal(result.code, null);
@@ -709,4 +723,41 @@ test('awaitInactive waits without cancelling, while close cancels Import and is 
         assert.deepEqual(error, { code: 'SYNC_CLOSED' });
         return true;
     });
+});
+
+test('recovered history advances only with current exact authority and original revision CAS', async () => {
+    const accepted = successfulReport(2);
+    const valid = harness();
+    await valid.controller.initialize();
+    assert.equal(await valid.controller.advanceRecoveredHistory({
+        sourceConnectionRevision: 3,
+        acquiredAt: ACQUIRED_AT,
+        report: accepted
+    }), true);
+    assert.equal(valid.calls.reader, 0);
+    assert.equal(valid.calls.imports.length, 0);
+    assert.deepEqual(valid.calls.transitions, [{
+        id: 'source-connection:strava',
+        expectedRevision: 3,
+        status: 'connected',
+        lastSyncAt: ACQUIRED_AT,
+        errorCode: null
+    }]);
+
+    for (const setup of [
+        { tokenAuthority: null },
+        { tokenAuthority: authority({ subjectId: '525252' }) },
+        { sourceConnection: connection({ revision: 4 }) },
+        { report: { ...accepted, status: 'cancelled' } }
+    ]) {
+        const value = harness(setup);
+        await value.controller.initialize();
+        assert.equal(await value.controller.advanceRecoveredHistory({
+            sourceConnectionRevision: 3,
+            acquiredAt: ACQUIRED_AT,
+            report: setup.report ?? accepted
+        }), false);
+        assert.equal(value.calls.reader, 0);
+        assert.deepEqual(value.calls.transitions, []);
+    }
 });

@@ -15,6 +15,46 @@
 | Control tower | `019fa697-6cbf-70f1-a120-bf31ecc9e2ba` |
 | Current authority | A0, A1 Draft publication, and read-only A2 decision package only |
 
+## Owner approval and A3 authority
+
+Owner approval received verbatim:
+
+> “批准 C4 Option A、完整共同合同、V6 sourceOperations/schema-0006-source-operation-lease、Backup format 3、精确 51 路径上限，并授权 A3 实施及 disposable synthetic Chromium 证据；不授权真实账号、Token、provider/private data、部署、发布或合并。”
+
+This authorizes implementation and failure-first verification of Option A and the complete common
+contract inside the exact 51-path cumulative maximum. It also authorizes actual-served evidence in
+a disposable synthetic Chromium profile with interception before navigation and zero external,
+credential, real-provider, private-data, or user-profile use. It does not authorize merge,
+auto-merge, cleanup, deployment, release, a final release audit, or mutation of `integration/v2`,
+`main`, or `maintenance/v1`.
+
+Test-only path expansion approval received verbatim:
+
+> “批准 C4 test-only 两路径扩展：加入 tests/storage/exact-identity-boundaries.test.js 与 tests/shadow/shadow-boundaries.test.js，累计硬上限改为精确 53；仅可更新已批准的 createSourceOperationStore 导出边界。”
+
+The selected Option A cumulative hard maximum is therefore exactly 53 paths: its original 51 plus
+only `tests/storage/exact-identity-boundaries.test.js` and
+`tests/shadow/shadow-boundaries.test.js`. Those two files may change only their frozen public Storage
+export assertions for the approved `createSourceOperationStore` factory. Source-operation constants
+and every other public boundary remain internal/frozen.
+
+Test-only path 54 approval received verbatim:
+
+> “批准 C4 test-only 第 54 路径扩展”
+
+The selected Option A cumulative hard maximum is therefore exactly 54 paths: the prior 53 plus only
+`tests/storage/source-connection-store.test.js`. That file may change only the two stale
+`indexedDB.open('strava-stats-v2', 5)` test fixture opens required by the approved V6 baseline; no
+other assertion or behavior change is authorized.
+
+Crash-gap owner selection received verbatim:
+
+> “Owner selected C4 crash-gap Option A. Resume PR #55 within the existing exact 54-path maximum. Freeze and implement terminal-aware explicit Recover/Abandon exactly as proposed: completed/completed_with_warnings linked jobs offer Recover or Abandon; failed/cancelled terminal linked jobs offer Abandon only. Neither action may modify terminal jobs, ImportItems, RawArtifacts, or committed Canonical data. Recover clears only the stale SourceOperation and may advance provider history solely under the existing exact provenance/current Token/C2 subject/original revision CAS rules; otherwise record RECOVERY_HISTORY_NOT_ADVANCED. Abandon clears only the operation and records RECOVERY_ABANDONED. Both still require exclusive Web Lock plus exact revision CAS; no automatic action. Also failure-first repair all independent-review findings already listed: real source-manager facade forwards ImportService’s second SourceOperation argument atomically; lease/CAS loss before job creation cancels active provider acquisition; finite out-of-range clocks normalize to SOURCE_OPERATION_CLOCK_INVALID; substantially expand the frozen regression matrix.”
+
+This selection resolves the terminal ImportJob / still-active SourceOperation crash gap without a
+55th path or a new schema, Backup, public API, lease, or automatic-resume contract. All previously
+authorized prohibitions and the exact 54-path cumulative maximum remain unchanged.
+
 ## Goal
 
 Define a materially complete owner decision for C4 durable Source Manager coordination after merged
@@ -400,6 +440,12 @@ meet part of it says so explicitly.
   exact record revision. Any CAS loss stops new scheduling, aborts provider fetch/reader and Worker
   work best-effort, requests Import cancellation when a job is known, and releases the Web Lock only
   after those promises settle or reject.
+- One explicit multi-batch local-file selection retains the same Web Lock and active operation. The
+  next ImportJob creation may replace the active `jobId` only in its atomic creation transaction,
+  only after the previously linked job and every one of its items validate as exact terminal
+  records, and only under the same owner/operation and exact revision CAS. The row never becomes
+  idle between batches. Provider sync remains exactly one ImportJob per operation and cannot roll
+  its link.
 - An active record is stale only when `now >= leaseExpiresAt`. Staleness makes explicit action UI
   eligible; it never proves the old context dead. Recover/Abandon must still obtain the Web Lock
   immediately and CAS the exact observed revision. If the lock is unavailable, show
@@ -417,11 +463,12 @@ meet part of it says so explicitly.
 
 ### Exact action eligibility and effects
 
-The recovery panel is visible only for either (a) one stale active record with a linked nonterminal
-job, or (b) a preserved orphan nonterminal job that has no active owner after migration/restore. It
-shows fixed redacted state/counts and requires a confirmation naming the action, never a provider,
-subject, filename, activity, or owner ID. If several orphan jobs exist, the user selects one opaque
-UI ordinal and handles one under the global fence at a time.
+The recovery panel is visible only for either (a) one stale active record with a linked exact
+nonterminal or terminal job, (b) one stale active acquisition record with no job, or (c) a preserved
+orphan nonterminal job that has no active owner after migration/restore. It shows fixed redacted
+state/counts and requires a confirmation naming the action, never a provider, subject, filename,
+activity, or owner ID. If several orphan jobs exist, the user selects one opaque UI ordinal and
+handles one under the global fence at a time. Terminal orphan jobs are never candidates.
 
 `Recover` is eligible only for the exact nonterminal job states listed above. For every exact
 nonterminal item, its RawArtifact must exist, validate, be `pending`, and match the item's artifact
@@ -441,13 +488,23 @@ terminal records. Recover performs no Worker/provider/item persistence and conse
 job to `completed_with_warnings` with exact recomputed totals. A malformed or nonterminal item makes
 finalize unavailable and leaves Abandon. This is the only recovery that does not schedule bytes.
 
-`Abandon` is eligible for any exact nonterminal job state. In one atomic ImportJob/ImportItem
-transaction it preserves every terminal item and committed RawArtifact/canonical record, converts
-every nonterminal item to `cancelled`, `retryable: false`, `activityId: null`, error
-`RECOVERY_ABANDONED`, and sets the job `cancelled`, exact terminal count, `completedAt = now`, and
-error `RECOVERY_ABANDONED`. It performs no provider, Worker, retry, new job, disconnect, provenance
-delete, or raw/canonical delete. A stale acquisition record with `jobId: null` can only be abandoned;
-it changes no Import record.
+A linked `completed` or `completed_with_warnings` job left behind by a crash after terminalization
+offers explicit Recover or Abandon. Recover takes the exclusive Web Lock, claims the exact stale
+SourceOperation revision, and clears only that SourceOperation after the existing provider-history
+rule below is attempted. It never changes the terminal ImportJob, any ImportItem, RawArtifact, or
+committed Canonical record. A linked `failed_validation`, `failed_decode`, `failed_storage`, or
+`cancelled` terminal job offers Abandon only. Terminal jobs must have exact terminal totals and
+terminal items or the record fails closed as a schema mismatch.
+
+`Abandon` is eligible for any exact nonterminal job state and every linked exact terminal job state.
+For a nonterminal job, one atomic ImportJob/ImportItem transaction preserves every terminal item and
+committed RawArtifact/canonical record, converts every nonterminal item to `cancelled`, `retryable:
+false`, `activityId: null`, error `RECOVERY_ABANDONED`, and sets the job `cancelled`, exact terminal
+count, `completedAt = now`, and error `RECOVERY_ABANDONED`. For a linked terminal job, Abandon clears
+only the SourceOperation and records `RECOVERY_ABANDONED`; it does not write the ImportJob or any
+ImportItem. It performs no provider, Worker, retry, new job, disconnect, provenance delete, or
+raw/canonical delete. A stale acquisition record with `jobId: null` can only be abandoned; it changes
+no Import record.
 
 An IndexedDB transaction already committing is allowed to complete or abort atomically before a
 subsequent recovery transaction can observe it. C4 never claims to cancel that commit. If a prior
@@ -616,6 +673,9 @@ tests/import/import-state-machine.test.js
 tests/import/import-core.test.js
 tests/import/import-boundaries.test.js
 tests/storage/source-operation-store.test.js
+tests/storage/exact-identity-boundaries.test.js
+tests/shadow/shadow-boundaries.test.js
+tests/storage/source-connection-store.test.js
 tests/storage/indexeddb-v2-schema.test.js
 tests/storage/indexeddb-v2-transactions.test.js
 tests/storage/indexeddb-v2-boundaries.test.js

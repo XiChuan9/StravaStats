@@ -372,3 +372,34 @@ metadata，并追加第五条 migration。format 2 恢复已验证的 portable V
 absent 或 exact empty V5 target，在单一 transaction 中提交 14 个 store；重复相同恢复为
 零写入幂等，其他 non-empty/different connection tombstone 返回安全冲突。未知、混合、重复、
 乱序、损坏或引用无效的 profile 在任何 target mutation 前失败。
+
+## 21. C4 accepted physical V6, durable Source Operation, and backup format 3
+
+C4 将物理版本从 5 增加到 6，schema ID 为 `strava-stats-v2@6`，migration ID 为
+`schema-0006-source-operation-lease`。V5 的 14 个 store、index 和全部记录保持原样，只新增：
+
+```text
+sourceOperations
+  keyPath: id
+  no indexes
+```
+
+V5 -> V6 在一个 versionchange transaction 中创建 store、写入固定 idle
+`source-operation:manager` row、更新 metadata，并追加第六条 migration。它不检查、认领、
+恢复、终止或删除任何 ImportJob、ImportItem、RawArtifact、SourceConnection、Canonical、
+Legacy 或 V1 记录。失败回滚整个升级并保留可重试 V5；成功 V6 不支持旧 V5 binary
+downgrade，也不得通过删除或重建恢复。
+
+Real local import 与 provider Sync 共用一个强制 exclusive Web Lock 和 90 秒 durable lease。
+Document owner 与每次 operation 使用互相独立的 UUID；Demo 不创建 identity 或 lease。
+startup、reload、restore、pageshow、visibility、online、heartbeat、expiry 和通知只可读取、
+校验、显示或为当前 live owner 更新 heartbeat，绝不自动 claim、resume、retry、Recover 或
+Abandon。过期 linked job 与 restore/migration orphan 只能由用户显式选择 Recover/Abandon；
+所有已 committed item 保持不变。
+
+新备份使用 format 3/V6，共 19 个固定顺序 entry，并在 `connections.jsonl` 后增加
+`operations/source-manager.jsonl`。任何 active row（包括已过期但未处理）使 export 以
+`ACTIVE_SOURCE_OPERATION` 失败。portable operation 必须 idle，清空 current owner、operation、
+job、phase、provenance 和 lease fields，只允许固定 redacted audit。format 1/V4 与 format
+2/V5 仍以各自 exact profile 验证，然后 additive 写入 V6 idle row 和缺失 migration；保留的
+nonterminal jobs 仅成为显式 orphan candidates，不在 restore 或 migration 中自动运行。

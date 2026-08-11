@@ -85,7 +85,7 @@ test('deterministic stored ZIP bytes and central hashes are byte-identical', asy
         entries().map(entry => new TextDecoder().decode(entry.bytes)));
 });
 
-test('codec dispatches exact format-1 and format-2 entry profiles', async () => {
+test('codec dispatches exact format-1, format-2, and format-3 entry profiles', async () => {
     assert.deepEqual(BACKUP_ENTRY_PATHS_BY_FORMAT[1], [
         'manifest.json',
         'activities.jsonl',
@@ -125,8 +125,29 @@ test('codec dispatches exact format-1 and format-2 entry profiles', async () => 
         'review/candidates.jsonl',
         'review/decisions.jsonl'
     ]);
-    assert.equal(BACKUP_ENTRY_PATHS, BACKUP_ENTRY_PATHS_BY_FORMAT[2]);
-    for (const format of [1, 2]) {
+    assert.deepEqual(BACKUP_ENTRY_PATHS_BY_FORMAT[3], [
+        'manifest.json',
+        'activities.jsonl',
+        'sources.jsonl',
+        'connections.jsonl',
+        'operations/source-manager.jsonl',
+        'streams/series.jsonl',
+        'laps.jsonl',
+        'events.jsonl',
+        'devices.jsonl',
+        'overrides.jsonl',
+        'analysis/snapshots.jsonl',
+        'settings.json',
+        'raw/artifacts.jsonl',
+        'system/metadata.jsonl',
+        'system/migrations.jsonl',
+        'imports/jobs.jsonl',
+        'imports/items.jsonl',
+        'review/candidates.jsonl',
+        'review/decisions.jsonl'
+    ]);
+    assert.equal(BACKUP_ENTRY_PATHS, BACKUP_ENTRY_PATHS_BY_FORMAT[3]);
+    for (const format of [1, 2, 3]) {
         const archive = await createDeterministicZip(formatEntries(format), webcrypto);
         const parsed = await parseDeterministicZip(archive, webcrypto);
         assert.deepEqual(parsed.map(entry => entry.path), BACKUP_ENTRY_PATHS_BY_FORMAT[format]);

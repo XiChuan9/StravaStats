@@ -32,7 +32,8 @@ import { createStravaImportMapper } from '../../js/connectors/strava/strava-impo
 import {
     createCanonicalStore,
     createImportStore,
-    createSourceConnectionStore
+    createSourceConnectionStore,
+    createSourceOperationStore
 } from '../../js/storage/index.js';
 import {
     SYNTHETIC_ACQUIRED_AT,
@@ -200,7 +201,55 @@ function hex(bytes) {
     return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-async function legacyFormat1Archive(format2Blob) {
+async function legacyFormat2Archive(format3Blob) {
+    const parsed = await parseDeterministicZip(
+        new Uint8Array(await format3Blob.arrayBuffer()),
+        webcrypto
+    );
+    const manifest = decodeCanonicalJson(parsed[0].bytes);
+    const payloads = parsed.slice(1)
+        .filter(entry => entry.path !== 'operations/source-manager.jsonl')
+        .map(entry => ({ path: entry.path, bytes: entry.bytes }));
+    const metadataPayload = payloads.find(entry => entry.path === 'system/metadata.jsonl');
+    const metadata = decodeJsonLines(metadataPayload.bytes);
+    metadata[0] = {
+        ...metadata[0],
+        schemaId: 'strava-stats-v2@5',
+        indexedDbVersion: 5
+    };
+    metadataPayload.bytes = encodeJsonLines(metadata);
+    const migrationsPayload = payloads.find(entry => entry.path === 'system/migrations.jsonl');
+    migrationsPayload.bytes = encodeJsonLines(
+        decodeJsonLines(migrationsPayload.bytes).slice(0, 5)
+    );
+    manifest.backupFormatVersion = 2;
+    manifest.indexedDbVersion = 5;
+    manifest.schemaId = 'strava-stats-v2@5';
+    manifest.stores = manifest.stores.filter(store => store.name !== 'sourceOperations');
+    manifest.stores.find(store => store.name === 'metadata').recordCount = 1;
+    manifest.stores.find(store => store.name === 'migrations').recordCount = 5;
+    manifest.files = manifest.files.filter(
+        file => file.path !== 'operations/source-manager.jsonl'
+    );
+    manifest.hashes = manifest.hashes.filter(
+        hash => hash.path !== 'operations/source-manager.jsonl'
+    );
+    for (const payload of payloads) {
+        const file = manifest.files.find(candidate => candidate.path === payload.path);
+        file.byteLength = payload.bytes.byteLength;
+        if (payload.path === 'system/metadata.jsonl') file.recordCount = 1;
+        if (payload.path === 'system/migrations.jsonl') file.recordCount = 5;
+        const hash = manifest.hashes.find(candidate => candidate.path === payload.path);
+        hash.sha256 = hex(await sha256(payload.bytes, webcrypto));
+    }
+    return new Blob([await createDeterministicZip([
+        { path: 'manifest.json', bytes: encodeCanonicalJson(manifest) },
+        ...payloads
+    ], webcrypto)], { type: 'application/zip' });
+}
+
+async function legacyFormat1Archive(format3Blob) {
+    const format2Blob = await legacyFormat2Archive(format3Blob);
     const parsed = await parseDeterministicZip(
         new Uint8Array(await format2Blob.arrayBuffer()),
         webcrypto
@@ -373,7 +422,52 @@ test('exports deterministic full archive, validates it, and restores into a fres
     assert.equal(restored.activityCount, 1);
 });
 
-test('format 2 exports portable reconnect state and restores it without credentials', async () => {
+test('format 3 exports one portable idle operation and refuses every active lease', async () => {
+    const indexedDB = new IDBFactory();
+    await initializedLibrary(indexedDB, false);
+    const backup = service(indexedDB);
+    const idleArchive = await backup.exportLibrary();
+    const entries = await parseDeterministicZip(
+        new Uint8Array(await idleArchive.blob.arrayBuffer()),
+        webcrypto
+    );
+    const manifest = decodeCanonicalJson(entries[0].bytes);
+    assert.equal(manifest.backupFormatVersion, 3);
+    assert.equal(manifest.indexedDbVersion, 6);
+    assert.equal(manifest.schemaId, 'strava-stats-v2@6');
+    const [portable] = decodeJsonLines(
+        entries.find(entry => entry.path === 'operations/source-manager.jsonl').bytes
+    );
+    assert.equal(portable.status, 'idle');
+    assert.equal(portable.ownerId, null);
+    assert.equal(portable.operationId, null);
+    assert.equal(portable.jobId, null);
+
+    const operations = createSourceOperationStore({
+        indexedDB,
+        IDBKeyRange,
+        now: () => FIXED_TIME,
+        applicationVersion: 'backup-test@1'
+    });
+    await operations.initialize();
+    const heartbeatAt = new Date(FIXED_TIME).toISOString();
+    await operations.claimOperation({
+        expectedRevision: 0,
+        ownerId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        operationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        kind: 'local_import',
+        startedAt: heartbeatAt,
+        heartbeatAt,
+        leaseExpiresAt: new Date(FIXED_TIME + 90_000).toISOString()
+    });
+    await operations.close();
+    await assert.rejects(
+        backup.exportLibrary(),
+        error => error.code === BACKUP_ERROR_CODE.ACTIVE_SOURCE_OPERATION
+    );
+});
+
+test('format 3 exports portable reconnect state and restores it without credentials', async () => {
     for (const sourceStatus of [
         'connected', 'error', 'reconnect_required', 'disconnected'
     ]) {
@@ -391,6 +485,7 @@ test('format 2 exports portable reconnect state and restores it without credenti
             'sources.jsonl',
             'connections.jsonl'
         ]);
+        assert.ok(entries.some(entry => entry.path === 'operations/source-manager.jsonl'));
         const [portable] = decodeJsonLines(
             entries.find(entry => entry.path === 'connections.jsonl').bytes
         );
@@ -419,7 +514,7 @@ test('format 2 exports portable reconnect state and restores it without credenti
     }
 });
 
-test('format 2 validates and restores provider artifacts with the exact portable provenance chain', async () => {
+test('format 3 validates and restores provider artifacts with the exact portable provenance chain', async () => {
     const sourceFactory = new IDBFactory();
     await providerLibrary(sourceFactory);
     const source = service(sourceFactory);
@@ -477,7 +572,7 @@ test('format 2 validates and restores provider artifacts with the exact portable
     await restoredImports.close();
 });
 
-test('format 1 and malformed format-2 provider provenance fail before target mutation', async () => {
+test('format 1 and malformed format-3 provider provenance fail before target mutation', async () => {
     const sourceFactory = new IDBFactory();
     await providerLibrary(sourceFactory);
     const archive = (await service(sourceFactory).exportLibrary()).blob;
@@ -566,46 +661,53 @@ test('format 1 and malformed format-2 provider provenance fail before target mut
     );
 });
 
-test('format 1 V4 archive restores one-way into V5 with no inferred connection', async () => {
+test('formats 1 and 2 restore one-way into idle V6 without inferred ownership', async () => {
     const sourceFactory = new IDBFactory();
     await initializedLibrary(sourceFactory);
     const current = await service(sourceFactory).exportLibrary();
-    const legacyArchive = await legacyFormat1Archive(current.blob);
-    assert.equal((await service(sourceFactory).validateBackup(legacyArchive)).status, 'validated');
-
-    const targetFactory = new IDBFactory();
-    const target = service(targetFactory);
-    assert.equal((await target.restoreBackup(legacyArchive)).status, 'restored');
-    const connections = createSourceConnectionStore({
-        indexedDB: targetFactory,
-        IDBKeyRange,
-        now: () => FIXED_TIME,
-        applicationVersion: 'backup-test@1'
-    });
-    await connections.initialize();
-    assert.equal(await connections.getConnection('strava'), null);
-    await connections.close();
-    assert.equal((await target.restoreBackup(legacyArchive)).status, 'already_restored');
-
-    const upgraded = await target.exportLibrary();
-    const entries = await parseDeterministicZip(
-        new Uint8Array(await upgraded.blob.arrayBuffer()),
-        webcrypto
-    );
-    const manifest = decodeCanonicalJson(entries[0].bytes);
-    assert.equal(manifest.backupFormatVersion, 2);
-    assert.equal(manifest.indexedDbVersion, 5);
-    assert.equal(manifest.schemaId, 'strava-stats-v2@5');
-    assert.equal(manifest.stores.find(store => store.name === 'migrations').recordCount, 5);
-    assert.equal(manifest.stores.find(store => store.name === 'sourceConnections').recordCount, 0);
+    const formats = [
+        await legacyFormat1Archive(current.blob),
+        await legacyFormat2Archive(current.blob)
+    ];
+    for (const legacyArchive of formats) {
+        assert.equal(
+            (await service(sourceFactory).validateBackup(legacyArchive)).status,
+            'validated'
+        );
+        const targetFactory = new IDBFactory();
+        const target = service(targetFactory);
+        assert.equal((await target.restoreBackup(legacyArchive)).status, 'restored');
+        const operations = createSourceOperationStore({
+            indexedDB: targetFactory,
+            IDBKeyRange,
+            now: () => FIXED_TIME,
+            applicationVersion: 'backup-test@1'
+        });
+        await operations.initialize();
+        assert.equal((await operations.getOperation()).status, 'idle');
+        await operations.close();
+        assert.equal((await target.restoreBackup(legacyArchive)).status, 'already_restored');
+        const upgraded = await target.exportLibrary();
+        const entries = await parseDeterministicZip(
+            new Uint8Array(await upgraded.blob.arrayBuffer()),
+            webcrypto
+        );
+        const manifest = decodeCanonicalJson(entries[0].bytes);
+        assert.equal(manifest.backupFormatVersion, 3);
+        assert.equal(manifest.indexedDbVersion, 6);
+        assert.equal(manifest.schemaId, 'strava-stats-v2@6');
+        assert.equal(manifest.stores.find(store => store.name === 'migrations').recordCount, 6);
+        assert.equal(manifest.stores.find(store => store.name === 'sourceOperations').recordCount, 1);
+    }
 });
 
-test('format 1 and format 2 reject non-exact structural migration timing', async () => {
+test('formats 1, 2, and 3 reject non-exact structural migration timing', async () => {
     const sourceFactory = new IDBFactory();
     await initializedLibrary(sourceFactory);
     const current = await service(sourceFactory).exportLibrary();
     const archives = [
         current.blob,
+        await legacyFormat2Archive(current.blob),
         await legacyFormat1Archive(current.blob)
     ];
     for (const archive of archives) {
@@ -627,7 +729,7 @@ test('repeat restore is idempotent and reports already_restored with zero databa
     assert.equal((await target.restoreBackup(archive)).status, 'already_restored');
 });
 
-test('exact empty V5 baseline accepts restore while a non-empty current library is protected', async () => {
+test('exact empty V6 baseline accepts restore while a non-empty current library is protected', async () => {
     const sourceFactory = new IDBFactory();
     await initializedLibrary(sourceFactory);
     const archive = (await service(sourceFactory).exportLibrary()).blob;
@@ -761,7 +863,7 @@ test('public errors are fixed, frozen, and never disclose raw causes or private 
     });
 });
 
-test('all fourteen V5 stores, raw bytes, import audit, and duplicate-review records round-trip', async () => {
+test('all fifteen V6 stores, raw bytes, import audit, and duplicate-review records round-trip', async () => {
     const sourceFactory = new IDBFactory();
     await fullV5Library(sourceFactory);
     const source = service(sourceFactory);

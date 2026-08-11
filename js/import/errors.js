@@ -45,6 +45,8 @@ export const IMPORT_ERROR_CODE = Object.freeze({
     STORAGE_QUOTA_EXCEEDED: 'STORAGE_QUOTA_EXCEEDED',
     WORKER_CRASHED: 'WORKER_CRASHED',
     IMPORT_CANCELLED: 'IMPORT_CANCELLED',
+    RECOVERY_SOURCE_UNAVAILABLE: 'RECOVERY_SOURCE_UNAVAILABLE',
+    RECOVERY_ABANDONED: 'RECOVERY_ABANDONED',
     NOT_FOUND: 'NOT_FOUND',
     RETRY_NOT_ALLOWED: 'RETRY_NOT_ALLOWED'
 });
@@ -96,6 +98,8 @@ const MESSAGES = Object.freeze({
     [IMPORT_ERROR_CODE.STORAGE_QUOTA_EXCEEDED]: 'The storage quota was exceeded.',
     [IMPORT_ERROR_CODE.WORKER_CRASHED]: 'The import worker stopped unexpectedly.',
     [IMPORT_ERROR_CODE.IMPORT_CANCELLED]: 'The import was cancelled.',
+    [IMPORT_ERROR_CODE.RECOVERY_SOURCE_UNAVAILABLE]: 'The stored import source is unavailable.',
+    [IMPORT_ERROR_CODE.RECOVERY_ABANDONED]: 'The unfinished import was abandoned.',
     [IMPORT_ERROR_CODE.NOT_FOUND]: 'The import record was not found.',
     [IMPORT_ERROR_CODE.RETRY_NOT_ALLOWED]: 'The import item cannot be retried.'
 });

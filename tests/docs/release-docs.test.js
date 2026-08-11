@@ -113,7 +113,7 @@ test('README commands, routes, and release status match executable repository fa
     assert.doesNotMatch(readme, /v2\.0\.0 (?:is |has been )?(?:released|deployed|published)/i);
 });
 
-test('guides freeze exact Canonical, V5, backup compatibility, privacy, and rollback facts', async () => {
+test('guides freeze exact Canonical, V6, backup compatibility, privacy, and rollback facts', async () => {
     const [migration, backup, limitations, privacy, troubleshooting, flags, constants, codec] = await Promise.all([
         source('docs/guides/migration-guide.md'),
         source('docs/guides/backup-guide.md'),
@@ -125,15 +125,15 @@ test('guides freeze exact Canonical, V5, backup compatibility, privacy, and roll
         source('js/backup/codec.js')
     ]);
     assert.match(flags, /dataRepositoryMode: 'canonical'/);
-    assert.match(constants, /V2_DATABASE_VERSION = 5/);
-    assert.match(constants, /V2_SCHEMA_ID = 'strava-stats-v2@5'/);
+    assert.match(constants, /V2_DATABASE_VERSION = 6/);
+    assert.match(constants, /V2_SCHEMA_ID = 'strava-stats-v2@6'/);
     assert.match(codec, /BACKUP_BYTE_LIMIT = 268_435_456/);
     for (const pattern of [
         /physical(?:ly)? (?:separate|isolated)/i,
         /no automatic (?:copy|migration)/i,
         /`legacy`[\s\S]*`shadow`[\s\S]*`canonical`/i,
         /First-run/i,
-        /IndexedDB[^\n]*V5/i,
+        /IndexedDB[^\n]*V6/i,
         /non-destructive rollback/i
     ]) assert.match(migration, pattern);
     for (const pattern of [
@@ -144,6 +144,9 @@ test('guides freeze exact Canonical, V5, backup compatibility, privacy, and roll
         /`TARGET_NOT_EMPTY`/,
         /`SETTINGS_PENDING`/,
         /format 1\/V4/i,
+        /format 2\/V5/i,
+        /format 3\/V6/i,
+        /ACTIVE_SOURCE_OPERATION/,
         /reconnect_required/
     ]) assert.match(backup, pattern);
     for (const pattern of [

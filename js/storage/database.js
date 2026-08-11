@@ -11,6 +11,7 @@ import {
     V2_METADATA_KEY,
     V2_SCHEMA_ID,
     V2_SOURCE_CONNECTION_MIGRATION_ID,
+    V2_SOURCE_OPERATION_MIGRATION_ID,
     V2_STORE_NAME
 } from './constants.js';
 import {
@@ -289,6 +290,22 @@ function validSourceConnectionMigration(value) {
         && migration.retryCount === 0;
 }
 
+function validSourceOperationMigration(value) {
+    const migration = ownDataValues(value, MIGRATION_FIELDS);
+    return migration !== null
+        && migration.id === V2_SOURCE_OPERATION_MIGRATION_ID
+        && migration.fromVersion === 5
+        && migration.toVersion === 6
+        && migration.status === 'completed'
+        && isStrictUtcInstant(migration.startedAt)
+        && migration.completedAt === migration.startedAt
+        && isOpaqueString(migration.applicationVersion)
+        && validSummary(migration.inputSummary, 14)
+        && validSummary(migration.outputSummary, 15)
+        && migration.errorCode === null
+        && migration.retryCount === 0;
+}
+
 function closeDatabase(database) {
     try {
         database.onversionchange = null;
@@ -367,6 +384,7 @@ function verifyDatabaseState(database) {
         let exactIdentityMigrationRequest;
         let duplicateReviewMigrationRequest;
         let sourceConnectionMigrationRequest;
+        let sourceOperationMigrationRequest;
         let requestFailed = false;
 
         try {
@@ -392,6 +410,9 @@ function verifyDatabaseState(database) {
             sourceConnectionMigrationRequest = transaction
                 .objectStore(V2_STORE_NAME.MIGRATIONS)
                 .get(V2_SOURCE_CONNECTION_MIGRATION_ID);
+            sourceOperationMigrationRequest = transaction
+                .objectStore(V2_STORE_NAME.MIGRATIONS)
+                .get(V2_SOURCE_OPERATION_MIGRATION_ID);
         } catch {
             reject(storageError(
                 STORAGE_ERROR_CODE.SCHEMA_MISMATCH,
@@ -418,6 +439,9 @@ function verifyDatabaseState(database) {
         sourceConnectionMigrationRequest.onerror = () => {
             requestFailed = true;
         };
+        sourceOperationMigrationRequest.onerror = () => {
+            requestFailed = true;
+        };
         transaction.onerror = () => {
             requestFailed = true;
         };
@@ -434,6 +458,7 @@ function verifyDatabaseState(database) {
             let exactIdentityMigration;
             let duplicateReviewMigration;
             let sourceConnectionMigration;
+            let sourceOperationMigration;
             try {
                 metadata = metadataRequest.result;
                 migration = migrationRequest.result;
@@ -441,6 +466,7 @@ function verifyDatabaseState(database) {
                 exactIdentityMigration = exactIdentityMigrationRequest.result;
                 duplicateReviewMigration = duplicateReviewMigrationRequest.result;
                 sourceConnectionMigration = sourceConnectionMigrationRequest.result;
+                sourceOperationMigration = sourceOperationMigrationRequest.result;
             } catch {
                 requestFailed = true;
             }
@@ -453,6 +479,7 @@ function verifyDatabaseState(database) {
                 || !validExactIdentityMigration(exactIdentityMigration)
                 || !validDuplicateReviewMigration(duplicateReviewMigration)
                 || !validSourceConnectionMigration(sourceConnectionMigration)
+                || !validSourceOperationMigration(sourceOperationMigration)
             ) {
                 reject(storageError(
                     STORAGE_ERROR_CODE.SCHEMA_MISMATCH,

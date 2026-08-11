@@ -31,12 +31,19 @@ const FORMAT_2_ENTRY_PATHS = Object.freeze([
     ...FORMAT_1_ENTRY_PATHS.slice(3)
 ]);
 
+const FORMAT_3_ENTRY_PATHS = Object.freeze([
+    ...FORMAT_2_ENTRY_PATHS.slice(0, 4),
+    'operations/source-manager.jsonl',
+    ...FORMAT_2_ENTRY_PATHS.slice(4)
+]);
+
 export const BACKUP_ENTRY_PATHS_BY_FORMAT = Object.freeze({
     1: FORMAT_1_ENTRY_PATHS,
-    2: FORMAT_2_ENTRY_PATHS
+    2: FORMAT_2_ENTRY_PATHS,
+    3: FORMAT_3_ENTRY_PATHS
 });
 
-export const BACKUP_ENTRY_PATHS = FORMAT_2_ENTRY_PATHS;
+export const BACKUP_ENTRY_PATHS = FORMAT_3_ENTRY_PATHS;
 
 const ZIP_LOCAL_SIGNATURE = 0x04034b50;
 const ZIP_CENTRAL_SIGNATURE = 0x02014b50;
