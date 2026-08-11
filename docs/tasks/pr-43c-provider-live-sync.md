@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | M29 / C1.1 Source Manager authorization |
-| Status | A2 collision/readiness package frozen; awaiting explicit A3 implementation authorization |
+| Status | A3 implementation authorized; failure-first implementation in progress |
 | Base branch | `integration/v2` |
 | Exact base | `integration/v2@43455a6c9f513cca57d661a1aef179bb588897ae` |
 | Exact base tree | `14f60e943fea98a3d35d1c116f04493c8b523154` |
@@ -13,7 +13,7 @@
 | Owner decision | `D-C3c.R-A + D-C3c A` |
 | Parent package | Draft PR #52 A2 Package A |
 | Control tower | `019fa697-6cbf-70f1-a120-bf31ecc9e2ba` |
-| Current authority | A0, A1, and a short Task-Brief-only collision/readiness audit |
+| Current authority | Complete frozen C1.1 A3 implementation within the exact 23-path maximum |
 
 ## Goal
 
@@ -371,6 +371,18 @@ No C3c, C4, real/private provider evidence, Ready, merge, cleanup, deploy, or re
 ```
 
 Until that explicit authorization is relayed, no production or test implementation is authorized.
+
+## A3 owner authorization
+
+The control tower relayed the owner authorization verbatim:
+
+> 批准 C1.1 A3 实施及精确 23 路径上限。
+
+This authorizes complete failure-first implementation of the frozen C1.1 contract on open Draft PR
+#53 from exact A2 head `f77574212a28a21fa60eb977770965e5311122f0`, subject to every hard boundary,
+stop condition, evidence gate, independent review, Closure, and Ready-only condition in this brief.
+It does not authorize merge, auto-merge, cleanup, deployment, release, C3c, C4, real/private
+provider evidence, changes to `integration/v2`, or changes outside the exact 23-path maximum.
 
 ## A2 local publication evidence
 
