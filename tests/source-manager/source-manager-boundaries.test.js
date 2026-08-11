@@ -482,6 +482,8 @@ test('C3c composition is Real-only and retains the exact C3a C3b Import pipeline
     );
     assert.match(page, /Sync latest 25/);
     assert.match(page, /Cancel sync/);
+    assert.match(page, /let initializedConnectionSnapshot = null;/);
+    assert.doesNotMatch(page, /renderConnectionSnapshot\(snapshot\)/);
     assert.doesNotMatch(page, /fetch\s*\(|\/api\/|localStorage|sessionStorage/);
 
     assert.match(connector, /fetchImpl\('\/api\/strava-sync'/);

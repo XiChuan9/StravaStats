@@ -839,6 +839,8 @@ export function createSourceManagerPage({
         const syncValid = syncInitialized && validSyncSnapshot(syncSnapshot);
         const syncActive = syncValid
             && (syncSnapshot.status === 'syncing' || syncSnapshot.status === 'cancelling');
+        const syncEligibleConnection = snapshot.status === 'connected'
+            || (snapshot.status === 'error' && snapshot.actions.disconnect);
         setSourceStatus('api', syncActive ? syncSnapshot.status : snapshot.status);
         const copy = {
             unconfigured: 'Connect only after confirming that this is the Strava account for this local library.',
@@ -871,9 +873,8 @@ export function createSourceManagerPage({
         elements.apiSync.textContent = syncActive ? 'Cancel sync' : 'Sync latest 25';
         elements.apiSync.disabled = syncActive
             ? !syncSnapshot.actions.cancel
-            : !syncValid || !syncSnapshot.actions.sync;
-        elements.apiSync.hidden = !syncActive
-            && (snapshot.status !== 'connected' && snapshot.status !== 'error');
+            : !syncEligibleConnection || !syncValid || !syncSnapshot.actions.sync;
+        elements.apiSync.hidden = !syncActive && !syncEligibleConnection;
         elements.apiDisconnect.disabled = syncActive || !snapshot.actions.disconnect;
         elements.apiDisconnect.hidden = !snapshot.actions.disconnect;
         return true;
@@ -1477,12 +1478,12 @@ export function createSourceManagerPage({
     async function initialize() {
         if (closed) return PAGE_CLOSED;
         bind();
+        let initializedConnectionSnapshot = null;
         elements.sessionLabel.textContent = sessionMode === SOURCE_MANAGER_SESSION_MODE.DEMO
             ? 'Demo presentation session' : 'Real local library';
         setSourceStatus('demo', sessionMode === SOURCE_MANAGER_SESSION_MODE.DEMO
             ? 'available' : 'not_configured');
         if (sessionMode === SOURCE_MANAGER_SESSION_MODE.REAL) {
-            let snapshot = null;
             try {
                 const connectionInitialization = connectionFacade?.initialize();
                 const immediateSnapshot = connectionFacade?.getConnectionSnapshot();
@@ -1491,11 +1492,11 @@ export function createSourceManagerPage({
                 }
                 await connectionInitialization;
                 if (closed) return PAGE_CLOSED;
-                snapshot = connectionFacade?.getConnectionSnapshot();
+                initializedConnectionSnapshot = connectionFacade?.getConnectionSnapshot();
             } catch {
                 // The page exposes only the fixed unavailable state.
             }
-            renderConnectionSnapshot(snapshot);
+            renderConnectionSnapshot(initializedConnectionSnapshot);
         } else {
             setSourceStatus('api', 'unconfigured');
             elements.apiCopy.textContent = 'Demo — no provider connection';
@@ -1514,7 +1515,7 @@ export function createSourceManagerPage({
                 await syncFacade?.initialize();
                 if (closed) return PAGE_CLOSED;
                 syncInitialized = true;
-                renderConnectionSnapshot(snapshot);
+                renderConnectionSnapshot(initializedConnectionSnapshot);
             }
             await refreshPublicReads();
         } catch (error) {

@@ -657,6 +657,8 @@
                 30_000
             );
             assert(realFrame.contentDocument.querySelectorAll('.report-card').length >= 11, 'RELOAD_IMPORT_LOG');
+            const persistedReportCountBeforeAuthorization = realFrame.contentDocument
+                .querySelectorAll('.report-card').length;
             assert(
                 Array.from(realFrame.contentDocument.querySelectorAll('.report-card')).every(
                     card => card.querySelectorAll('.report-item').length <= 100
@@ -700,6 +702,12 @@
             assert(!syncButton.hidden, 'SYNC_ACTION_VISIBLE');
             assert(!syncButton.disabled, 'SYNC_ACTION_ENABLED');
             assert(syncButton.textContent === 'Sync latest 25', 'SYNC_ACTION_EXACT_LABEL');
+            await waitFor(
+                () => authorizedDocument.querySelectorAll('.report-card').length
+                    === persistedReportCountBeforeAuthorization,
+                'SYNC_INITIAL_REPORTS_TIMEOUT',
+                30_000
+            );
             const reportsBeforeSync = authorizedDocument.querySelectorAll('.report-card').length;
             syncButton.click();
             assert(
@@ -902,6 +910,18 @@
             state.textContent = 'passed';
             summary.textContent = JSON.stringify(result, null, 2);
         } catch (error) {
+            const diagnostic = authorizedFrame?.contentDocument
+                ? {
+                    apiStatus: authorizedFrame.contentDocument
+                        .querySelector('[data-source-card="api"]')?.dataset.status ?? null,
+                    apiCopy: authorizedFrame.contentDocument
+                        .getElementById('source-api-copy')?.textContent ?? null,
+                    importAlert: authorizedFrame.contentDocument
+                        .getElementById('import-alert')?.textContent ?? null,
+                    reportCount: authorizedFrame.contentDocument
+                        .querySelectorAll('.report-card').length ?? 0
+                }
+                : null;
             realFrame?.remove();
             demoFrame?.remove();
             authorizedFrame?.remove();
@@ -913,7 +933,8 @@
                 status: 'failed',
                 code: typeof error?.message === 'string' ? error.message : 'BROWSER_SMOKE_FAILED',
                 gates,
-                metrics
+                metrics,
+                diagnostic
             }, null, 2);
         }
     </script>
