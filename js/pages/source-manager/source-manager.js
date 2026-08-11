@@ -74,6 +74,19 @@ const PREFLIGHT_COPY = Object.freeze({
     CONNECTION_UPDATE_FAILED: 'The connection record could not be updated.',
     CONNECTION_ACTION_UNAVAILABLE: 'That connection action is not available.',
     REVOCATION_UNCONFIRMED: 'Disconnected locally. Provider revocation was not confirmed.',
+    SYNC_INITIALIZATION_FAILED: 'Provider Sync could not be initialized.',
+    CONNECTION_REQUIRED: 'Connect explicitly before starting provider Sync.',
+    RECONNECT_REQUIRED: 'Reconnect explicitly before starting provider Sync.',
+    TRY_LATER: 'The provider asked this browser to try again later.',
+    PROVIDER_LIST_FAILED: 'The latest provider activities could not be read.',
+    NO_ACTIVITIES: 'No provider activities were available to import.',
+    CLOCK_INVALID: 'The provider acquisition time could not be recorded.',
+    MAPPING_FAILED: 'The provider activities could not be mapped safely.',
+    ARTIFACT_FAILED: 'The provider activities could not enter the Import pipeline.',
+    IMPORT_REPORT_INVALID: 'The Import result could not be verified.',
+    IMPORT_INCOMPLETE: 'Provider Sync completed without accepting every item.',
+    HISTORY_NOT_ADVANCED: 'Imported items were kept, but Sync history was not advanced.',
+    SYNC_CANCELLED: 'Provider Sync was cancelled. Completed items were kept.',
     IMPORT_FAILED: 'The import could not be completed.'
 });
 
@@ -644,11 +657,78 @@ function validConnectionSnapshot(value) {
     }
 }
 
+const SYNC_STATUSES = new Set([
+    'error', 'ready', 'syncing', 'cancelling', 'reconnect_required',
+    'completed', 'cancelled', 'closed'
+]);
+const SYNC_CODES = new Set([
+    null, 'SYNC_INITIALIZATION_FAILED', 'AUTHORIZATION_REQUIRED',
+    'CONNECTION_REQUIRED', 'IDENTITY_MISMATCH', 'CONNECTION_UPDATE_FAILED',
+    'RECONNECT_REQUIRED', 'TRY_LATER', 'PROVIDER_LIST_FAILED', 'NO_ACTIVITIES',
+    'CLOCK_INVALID', 'MAPPING_FAILED', 'ARTIFACT_FAILED', 'IMPORT_FAILED',
+    'IMPORT_REPORT_INVALID', 'IMPORT_INCOMPLETE', 'HISTORY_NOT_ADVANCED',
+    'SYNC_CANCELLED'
+]);
+const SYNC_TOTAL_FIELDS = Object.freeze([
+    'total', 'completed', 'reviewRequired', 'skippedExactDuplicate', 'failed', 'cancelled'
+]);
+
+function validSyncSnapshot(value) {
+    try {
+        if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+        const fields = Object.getOwnPropertyDescriptors(value);
+        const exact = [
+            'schemaVersion', 'status', 'code', 'actions', 'totals',
+            'completedItemsRetained', 'historyAdvanced'
+        ];
+        if (
+            Reflect.ownKeys(fields).length !== exact.length
+            || !exact.every(key => fields[key]?.enumerable && Object.hasOwn(fields[key], 'value'))
+        ) return false;
+        const read = key => fields[key].value;
+        const actions = read('actions');
+        const actionFields = actions && typeof actions === 'object'
+            ? Object.getOwnPropertyDescriptors(actions) : null;
+        if (
+            !actionFields
+            || Reflect.ownKeys(actionFields).length !== 2
+            || !['sync', 'cancel'].every(
+                key => actionFields[key]?.enumerable
+                    && Object.hasOwn(actionFields[key], 'value')
+                    && typeof actionFields[key].value === 'boolean'
+            )
+        ) return false;
+        const totals = read('totals');
+        if (totals !== null) {
+            const totalFields = totals && typeof totals === 'object'
+                ? Object.getOwnPropertyDescriptors(totals) : null;
+            if (
+                !totalFields
+                || Reflect.ownKeys(totalFields).length !== SYNC_TOTAL_FIELDS.length
+                || !SYNC_TOTAL_FIELDS.every(key => (
+                    totalFields[key]?.enumerable
+                    && Object.hasOwn(totalFields[key], 'value')
+                    && Number.isSafeInteger(totalFields[key].value)
+                    && totalFields[key].value >= 0
+                ))
+            ) return false;
+        }
+        return read('schemaVersion') === 1
+            && SYNC_STATUSES.has(read('status'))
+            && SYNC_CODES.has(read('code'))
+            && typeof read('completedItemsRetained') === 'boolean'
+            && typeof read('historyAdvanced') === 'boolean';
+    } catch {
+        return false;
+    }
+}
+
 export function createSourceManagerPage({
     document,
     sessionMode,
     importFacade,
-    connectionFacade = null
+    connectionFacade = null,
+    syncFacade = null
 }) {
     const elements = Object.freeze({
         blocking: document.getElementById('blocking-error'),
@@ -705,6 +785,8 @@ export function createSourceManagerPage({
     let activeReviewToken = null;
     let importActive = false;
     let batchCancellationRequested = false;
+    let connectionSnapshot = null;
+    let syncInitialized = false;
     let closed = false;
 
     function setSourceStatus(source, status) {
@@ -717,6 +799,7 @@ export function createSourceManagerPage({
             callback_processing: 'Authorization in progress', connected: 'Connected locally',
             reconnect_required: 'Reconnect required', disconnecting: 'Disconnecting',
             disconnected: 'Disconnected', closed: 'Disconnected',
+            syncing: 'Syncing', cancelling: 'Cancelling',
             importing: 'Importing', success: 'Success', error: 'Error'
         };
         card.dataset.status = status;
@@ -725,17 +808,43 @@ export function createSourceManagerPage({
             : labels[status] || 'Error';
     }
 
-    function renderConnectionSnapshot(snapshot) {
+    function syncCompletionCopy(snapshot) {
+        const totals = snapshot.totals;
+        if (snapshot.status === 'completed' && totals !== null) {
+            const accepted = totals.completed
+                + totals.reviewRequired
+                + totals.skippedExactDuplicate;
+            const history = snapshot.historyAdvanced
+                ? ' Sync history advanced.'
+                : ' Sync history did not advance.';
+            return `Provider Sync finished: ${accepted} of ${totals.total} items accepted.${history}`;
+        }
+        if (snapshot.status === 'cancelled') {
+            return snapshot.completedItemsRetained
+                ? 'Provider Sync was cancelled. Completed items were kept.'
+                : 'Provider Sync was cancelled before Import started.';
+        }
+        return snapshot.code === null
+            ? null
+            : safeCopy(snapshot.code);
+    }
+
+    function renderConnectionSnapshot(snapshot = connectionSnapshot) {
         if (!validConnectionSnapshot(snapshot)) {
             showBlockingError(Object.freeze({ code: 'CONNECTION_INITIALIZATION_FAILED' }));
             return false;
         }
-        setSourceStatus('api', snapshot.status);
+        connectionSnapshot = snapshot;
+        const syncSnapshot = syncFacade?.getSnapshot?.() ?? null;
+        const syncValid = syncInitialized && validSyncSnapshot(syncSnapshot);
+        const syncActive = syncValid
+            && (syncSnapshot.status === 'syncing' || syncSnapshot.status === 'cancelling');
+        setSourceStatus('api', syncActive ? syncSnapshot.status : snapshot.status);
         const copy = {
             unconfigured: 'Connect only after confirming that this is the Strava account for this local library.',
             authorizing: 'Continue authorization in this tab.',
             callback_processing: 'Completing authorization locally.',
-            connected: 'Authorization is stored locally and is not automatically checked.',
+            connected: 'Authorization is stored locally and is not automatically checked. Press Sync to import at most the latest 25.',
             reconnect_required: 'Reconnect explicitly to restore exact local authorization.',
             error: snapshot.code === null
                 ? 'The connection could not be used.'
@@ -746,15 +855,53 @@ export function createSourceManagerPage({
                 : 'Disconnected locally. Local data was preserved.',
             closed: 'Connection controls are closed.'
         };
-        elements.apiCopy.textContent = copy[snapshot.status];
+        const terminalCopy = syncValid && !syncActive
+            ? syncCompletionCopy(syncSnapshot)
+            : null;
+        elements.apiCopy.textContent = syncActive
+            ? syncSnapshot.status === 'cancelling'
+                ? 'Cancelling provider Sync. Completed imported items are kept.'
+                : 'Syncing at most the latest 25 provider activities.'
+            : terminalCopy ?? copy[snapshot.status];
         elements.apiConnect.textContent = snapshot.actions.reconnect ? 'Reconnect' : 'Connect';
-        elements.apiConnect.disabled = !snapshot.actions.connect && !snapshot.actions.reconnect;
+        elements.apiConnect.disabled = syncActive
+            || (!snapshot.actions.connect && !snapshot.actions.reconnect);
         elements.apiConnect.hidden = !snapshot.actions.connect && !snapshot.actions.reconnect;
-        elements.apiSync.disabled = true;
-        elements.apiSync.hidden = snapshot.status !== 'connected' && snapshot.status !== 'error';
-        elements.apiDisconnect.disabled = !snapshot.actions.disconnect;
+        elements.apiSync.textContent = syncActive ? 'Cancel sync' : 'Sync latest 25';
+        elements.apiSync.disabled = syncActive
+            ? !syncSnapshot.actions.cancel
+            : !syncValid || !syncSnapshot.actions.sync;
+        elements.apiSync.hidden = !syncActive
+            && (snapshot.status !== 'connected' && snapshot.status !== 'error');
+        elements.apiDisconnect.disabled = syncActive || !snapshot.actions.disconnect;
         elements.apiDisconnect.hidden = !snapshot.actions.disconnect;
         return true;
+    }
+
+    async function runProviderSync() {
+        const before = syncFacade?.getSnapshot?.();
+        if (!validSyncSnapshot(before)) return;
+        if (!before.actions.sync && !before.actions.cancel) return;
+        try {
+            const pending = before.actions.cancel
+                ? syncFacade.cancel()
+                : syncFacade.syncLatest();
+            renderConnectionSnapshot();
+            await pending;
+            await connectionFacade.refresh();
+            connectionSnapshot = connectionFacade.getConnectionSnapshot();
+            renderConnectionSnapshot();
+            await refreshPublicReads();
+        } catch (error) {
+            await connectionFacade.refresh().catch(() => {});
+            connectionSnapshot = connectionFacade.getConnectionSnapshot();
+            renderConnectionSnapshot();
+            elements.alert.textContent = safeCopy(safeCode(error));
+            recordDiagnosticError({
+                page: 'source-manager', category: 'provider-sync',
+                code: 'SOURCE_MANAGER_OPERATION_FAILED'
+            });
+        }
     }
 
     async function beginConnection() {
@@ -1242,6 +1389,7 @@ export function createSourceManagerPage({
     function bind() {
         if (sessionMode === SOURCE_MANAGER_SESSION_MODE.REAL) {
             elements.apiConnect.addEventListener('click', beginConnection);
+            elements.apiSync.addEventListener('click', runProviderSync);
             elements.apiDisconnect.addEventListener('click', () => {
                 elements.disconnectDialog.showModal();
                 queueMicrotask(() => elements.disconnectDialogTitle.focus());
@@ -1361,6 +1509,12 @@ export function createSourceManagerPage({
         try {
             await importFacade.initialize();
             if (closed) return PAGE_CLOSED;
+            if (sessionMode === SOURCE_MANAGER_SESSION_MODE.REAL) {
+                await syncFacade?.initialize();
+                if (closed) return PAGE_CLOSED;
+                syncInitialized = true;
+                renderConnectionSnapshot(snapshot);
+            }
             await refreshPublicReads();
         } catch (error) {
             if (closed) return PAGE_CLOSED;
@@ -1372,6 +1526,7 @@ export function createSourceManagerPage({
     async function close() {
         closed = true;
         if (sessionMode === SOURCE_MANAGER_SESSION_MODE.REAL) {
+            await syncFacade?.close();
             await connectionFacade?.close();
         }
         await importFacade.close();
