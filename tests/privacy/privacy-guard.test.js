@@ -19,6 +19,13 @@ const C3B_FILES = Object.freeze([
     '../../js/storage/import-store.js',
     '../../js/backup/backup-service.js'
 ]);
+const C1_BROWSER_FILES = Object.freeze([
+    '../../js/source-manager.js',
+    '../../js/app/source-manager.js',
+    '../../js/app/source-manager-connection.js',
+    '../../js/app/source-manager-authorization.js',
+    '../../js/pages/source-manager/source-manager.js'
+]);
 
 test('C3a production mapper contains no credential, storage, provider route, or logging seam', async () => {
     const source = await readFile(MAPPER, 'utf8');
@@ -75,4 +82,25 @@ test('C3b provider artifact path has no credential, network, logging, or private
         );
         assert.equal(findContentViolation(relative, source), null, relative);
     }
+});
+
+test('C1.1 browser authorization stays same-origin, redacted, and outside page/provider selection', async () => {
+    const sources = await Promise.all(C1_BROWSER_FILES.map(async relative => ({
+        relative,
+        source: await readFile(new URL(relative, import.meta.url), 'utf8')
+    })));
+    for (const { relative, source } of sources) {
+        assert.doesNotMatch(source, /console\.|tests\/fixtures\/private/i, relative);
+        assert.doesNotMatch(source, /client_secret|Authorization\s*:/, relative);
+        assert.equal(findContentViolation(relative, source), null, relative);
+    }
+    const authorization = sources.find(item => item.relative.endsWith('source-manager-authorization.js')).source;
+    assert.match(authorization, /\/api\/config/);
+    assert.match(authorization, /\/api\/strava-auth/);
+    assert.match(authorization, /\/api\/strava-revoke/);
+    assert.match(authorization, /credentials: 'same-origin'/);
+    assert.doesNotMatch(authorization, /oauth\/deauthorize|fetch\(['"]https:\/\/www\.strava\.com/);
+
+    const page = sources.find(item => item.relative.endsWith('pages/source-manager/source-manager.js')).source;
+    assert.doesNotMatch(page, /access_token|refresh_token|subject_id|granted_scopes|localStorage|sessionStorage/);
 });

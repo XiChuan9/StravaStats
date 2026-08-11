@@ -1,7 +1,9 @@
 import { createImportService, createBrowserImportWorker } from '../import/index.js';
-import { createImportStore } from '../storage/index.js';
+import { createImportStore, createSourceConnectionStore } from '../storage/index.js';
 import { createSourceManagerPage, SOURCE_MANAGER_SESSION_MODE } from '../pages/source-manager/source-manager.js';
 import { createSourceManagerConnectionController } from './source-manager-connection.js';
+import { createSourceManagerAuthorization } from './source-manager-authorization.js';
+import { createAuthLifecycle, inspectLegacyIndexedDbPresence } from './auth-lifecycle.js';
 
 const TERMINAL_JOB_STATUSES = new Set([
     'completed', 'completed_with_warnings', 'failed_validation',
@@ -119,6 +121,40 @@ function realFacade({ indexedDB, IDBKeyRange, crypto, Worker }) {
     });
 }
 
+function realConnectionFacade(dependencies) {
+    const connectionStore = createSourceConnectionStore({
+        indexedDB: dependencies.indexedDB,
+        IDBKeyRange: dependencies.IDBKeyRange,
+        now: dependencies.now,
+        applicationVersion: 'source-manager-authorization@1'
+    });
+    const authorization = createSourceManagerAuthorization({
+        fetchImpl: dependencies.fetchImpl,
+        sessionStorage: dependencies.sessionStorage,
+        crypto: dependencies.crypto,
+        origin: dependencies.origin,
+        navigate: dependencies.navigate,
+        now: dependencies.now,
+        setTimeoutImpl: dependencies.setTimeoutImpl,
+        clearTimeoutImpl: dependencies.clearTimeoutImpl,
+        AbortControllerImpl: dependencies.AbortControllerImpl
+    });
+    const authLifecycle = createAuthLifecycle({
+        storage: dependencies.localStorage,
+        inspectIndexedDb: () => inspectLegacyIndexedDbPresence({
+            indexedDB: dependencies.indexedDB
+        }),
+        revokeTokenKind: 'refresh',
+        revokeAccessToken: refreshToken => authorization.revoke(refreshToken)
+    });
+    return createSourceManagerConnectionController({
+        authorization,
+        authLifecycle,
+        connectionStore,
+        callback: dependencies.callback
+    });
+}
+
 export async function startSourceManager(dependencies) {
     const mode = dependencies?.sessionMode;
     if (
@@ -139,7 +175,7 @@ export async function startSourceManager(dependencies) {
         ? demoFacade()
         : realFacade(dependencies);
     const connectionFacade = mode === SOURCE_MANAGER_SESSION_MODE.REAL
-        ? createSourceManagerConnectionController()
+        ? realConnectionFacade(dependencies)
         : null;
     const page = createSourceManagerPage({
         document: dependencies.document,
@@ -147,8 +183,20 @@ export async function startSourceManager(dependencies) {
         importFacade,
         connectionFacade
     });
+    const startupCloseRequested = dependencies.startupCloseRequested instanceof Promise
+        ? dependencies.startupCloseRequested
+        : new Promise(() => {});
+    const initialization = page.initialize();
     try {
-        await page.initialize();
+        const outcome = await Promise.race([
+            initialization.then(() => 'initialized'),
+            startupCloseRequested.then(() => 'close')
+        ]);
+        if (outcome === 'close') {
+            await page.close();
+            await Promise.allSettled([initialization]);
+            return Object.freeze({ status: 'closed', close: page.close });
+        }
     } catch (error) {
         await page.close().catch(() => {});
         throw error;

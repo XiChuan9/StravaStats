@@ -1,5 +1,7 @@
 import { startSourceManager } from './app/source-manager.js';
 import { sanitizeSourceManagerNavigation } from './app/source-manager-connection.js';
+import { discardSourceManagerAuthorizationState } from
+    './app/source-manager-authorization.js';
 import { configureImportPerformance } from './diagnostics/import-performance.js';
 import {
     installGlobalDiagnosticsListeners,
@@ -23,6 +25,13 @@ let application = null;
 let pageHidden = false;
 
 if (navigation.status === 'blocked') {
+    if (navigation.discardAuthorizationState === true) {
+        try {
+            discardSourceManagerAuthorizationState(sessionStorage);
+        } catch {
+            // The navigation remains blocked when state storage is unavailable.
+        }
+    }
     const panel = document.getElementById('blocking-error');
     const code = document.getElementById('blocking-error-code');
     const copy = document.getElementById('blocking-error-copy');
@@ -45,10 +54,31 @@ if (navigation.status === 'blocked') {
         now: () => performance.now()
     });
 
+    let requestStartupClose;
+    const startupCloseRequested = new Promise(resolve => {
+        requestStartupClose = resolve;
+    });
+
     addEventListener('pagehide', () => {
         pageHidden = true;
+        requestStartupClose();
         application?.close().catch(() => {});
     }, { once: true });
+
+    const liveAuthorization = navigation.sessionMode === 'real'
+        ? {
+            callback: navigation.callback ?? null,
+            localStorage,
+            sessionStorage,
+            fetchImpl: fetch.bind(globalThis),
+            origin: location.origin,
+            navigate: url => location.assign(url),
+            now: Date.now,
+            setTimeoutImpl: setTimeout.bind(globalThis),
+            clearTimeoutImpl: clearTimeout.bind(globalThis),
+            AbortControllerImpl: AbortController
+        }
+        : {};
 
     startSourceManager({
         document,
@@ -56,10 +86,12 @@ if (navigation.status === 'blocked') {
         indexedDB,
         IDBKeyRange,
         crypto,
-        Worker
+        Worker,
+        startupCloseRequested,
+        ...liveAuthorization
     }).then(async result => {
         application = result;
-        if (pageHidden) await application.close();
+        if (pageHidden && application.status !== 'closed') await application.close();
     }).catch(() => {
         recordDiagnosticError({
             page: 'source-manager',

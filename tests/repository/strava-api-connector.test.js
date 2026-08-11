@@ -19,6 +19,13 @@ const RAW_TOKEN = JSON.stringify({
     refresh_token: 'synthetic-refresh-token',
     expires_at: 4102444800
 });
+const AUTHORITY_TOKEN = JSON.stringify({
+    access_token: 'synthetic-access-token',
+    refresh_token: 'synthetic-refresh-token',
+    expires_at: 4102444800,
+    subject_id: '424242',
+    granted_scopes: ['read', 'activity:read_all']
+});
 const ENCODED_TOKEN = 'synthetic-encoded-token';
 
 function syntheticResponse({
@@ -545,7 +552,15 @@ const malformedTokens = [
     { access_token: '', refresh_token: 'r', expires_at: 1 },
     { access_token: 'a', refresh_token: '', expires_at: 1 },
     { access_token: 'a', refresh_token: 'r', expires_at: Infinity },
-    { access_token: 'a', refresh_token: 'r', expires_at: '1' }
+    { access_token: 'a', refresh_token: 'r', expires_at: '1' },
+    {
+        access_token: 'a', refresh_token: 'r', expires_at: -1,
+        subject_id: '424242', granted_scopes: ['read', 'activity:read_all']
+    },
+    {
+        access_token: 'a', refresh_token: 'r', expires_at: 1.5,
+        subject_id: '424242', granted_scopes: ['read', 'activity:read_all']
+    }
 ];
 
 for (const malformedToken of malformedTokens) {
@@ -870,6 +885,84 @@ test('refreshed token is validated, reduced, and written exactly once before ret
     });
     assert.deepEqual(result, [{ id: 1 }]);
     assert.equal(Object.hasOwn(result, 'transport_extra'), false);
+});
+
+test('refresh preserves exact subject and ordered scopes for five-field authority', async () => {
+    const { connector, calls } = createHarness({
+        rawToken: AUTHORITY_TOKEN,
+        response: syntheticResponse({
+            body: {
+                activities: [],
+                tokens: {
+                    access_token: 'synthetic-new-access',
+                    refresh_token: 'synthetic-new-refresh',
+                    expires_at: 4200000000
+                }
+            }
+        })
+    });
+    await connector.fetchActivities();
+    assert.deepEqual(JSON.parse(calls.writes[0]), {
+        access_token: 'synthetic-new-access',
+        refresh_token: 'synthetic-new-refresh',
+        expires_at: 4200000000,
+        subject_id: '424242',
+        granted_scopes: ['read', 'activity:read_all']
+    });
+});
+
+test('authority refresh rejects non-positive, fractional, and unsafe expiry before writing', async () => {
+    for (const expiresAt of [-1, 0, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+        const { connector, calls } = createHarness({
+            rawToken: AUTHORITY_TOKEN,
+            response: syntheticResponse({
+                body: {
+                    activities: [],
+                    tokens: {
+                        access_token: 'synthetic-new-access',
+                        refresh_token: 'synthetic-new-refresh',
+                        expires_at: expiresAt
+                    }
+                }
+            })
+        });
+        await assertConnectorError(
+            connector.fetchActivities(),
+            STRAVA_CONNECTOR_ERROR_CODE.INVALID_ENVELOPE,
+            { operation: 'listActivities' }
+        );
+        assert.deepEqual(calls.writes, []);
+    }
+});
+
+test('refresh cannot change or downgrade five-field authority evidence', async () => {
+    for (const authorityFields of [
+        { subject_id: '525252', granted_scopes: ['read', 'activity:read_all'] },
+        { subject_id: '424242', granted_scopes: ['activity:read_all', 'read'] },
+        { subject_id: '424242' },
+        { granted_scopes: ['read', 'activity:read_all'] }
+    ]) {
+        const { connector, calls } = createHarness({
+            rawToken: AUTHORITY_TOKEN,
+            response: syntheticResponse({
+                body: {
+                    activities: [],
+                    tokens: {
+                        access_token: 'synthetic-new-access',
+                        refresh_token: 'synthetic-new-refresh',
+                        expires_at: 4200000000,
+                        ...authorityFields
+                    }
+                }
+            })
+        });
+        await assertConnectorError(
+            connector.fetchActivities(),
+            STRAVA_CONNECTOR_ERROR_CODE.INVALID_ENVELOPE,
+            { operation: 'listActivities' }
+        );
+        assert.deepEqual(calls.writes, []);
+    }
 });
 
 test('null or absent refreshed tokens do not write', async () => {

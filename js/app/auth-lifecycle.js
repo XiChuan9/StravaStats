@@ -9,6 +9,7 @@ import {
 
 const TOKEN_KEY = 'strava_tokens';
 const ATHLETE_KEY = LEGACY_LOCAL_STORAGE_KEYS.athlete;
+const REQUIRED_SCOPES = Object.freeze(['read', 'activity:read_all']);
 
 const LOCAL_LIBRARY_KEYS = Object.freeze([
     LEGACY_LOCAL_STORAGE_KEYS.activities,
@@ -80,12 +81,66 @@ function readStoredTokens(storage) {
         ) {
             return { status: 'invalid', accessToken: null };
         }
+        const authority = exactTokenAuthority(parsed);
+        if (
+            authority === null
+            && (Object.hasOwn(parsed, 'subject_id') || Object.hasOwn(parsed, 'granted_scopes'))
+        ) {
+            return { status: 'invalid', accessToken: null };
+        }
         return {
             status: 'valid',
-            accessToken: parsed.access_token
+            accessToken: parsed.access_token,
+            refreshToken: typeof parsed.refresh_token === 'string'
+                ? parsed.refresh_token
+                : null,
+            expiresAt: parsed.expires_at,
+            authority
         };
     } catch {
-        return { status: 'read-error', accessToken: null };
+        return {
+            status: 'read-error',
+            accessToken: null,
+            revocationToken: null,
+            authority: null
+        };
+    }
+}
+
+function exactScopes(value) {
+    try {
+        return Array.isArray(value)
+            && Object.getPrototypeOf(value) === Array.prototype
+            && Reflect.ownKeys(value).length === 3
+            && value.length === 2
+            && value[0] === REQUIRED_SCOPES[0]
+            && value[1] === REQUIRED_SCOPES[1];
+    } catch {
+        return false;
+    }
+}
+
+function exactTokenAuthority(value) {
+    try {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+        const keys = Reflect.ownKeys(value);
+        const exact = [
+            'access_token', 'refresh_token', 'expires_at',
+            'subject_id', 'granted_scopes'
+        ];
+        if (
+            keys.length !== exact.length
+            || keys.some(key => typeof key !== 'string' || !exact.includes(key))
+            || typeof value.refresh_token !== 'string'
+            || value.refresh_token.trim().length === 0
+            || !Number.isSafeInteger(value.expires_at)
+            || value.expires_at <= 0
+            || normalizeIdentity(value.subject_id) === null
+            || !exactScopes(value.granted_scopes)
+        ) return null;
+        return Object.freeze({ subjectId: normalizeIdentity(value.subject_id) });
+    } catch {
+        return null;
     }
 }
 
@@ -98,7 +153,13 @@ function tokenRecordFromExchange(exchangeResponse) {
     ) {
         return null;
     }
-    return {
+    const subjectId = normalizeIdentity(exchangeResponse.subject_id)
+        || normalizeIdentity(exchangeResponse?.athlete?.id);
+    const hasScopes = Object.hasOwn(exchangeResponse, 'granted_scopes');
+    if (hasScopes && (subjectId === null || !exactScopes(exchangeResponse.granted_scopes))) {
+        return null;
+    }
+    const record = {
         access_token: exchangeResponse.access_token,
         refresh_token: typeof exchangeResponse.refresh_token === 'string'
             ? exchangeResponse.refresh_token
@@ -107,6 +168,17 @@ function tokenRecordFromExchange(exchangeResponse) {
             ? exchangeResponse.expires_at
             : null
     };
+    if (hasScopes) {
+        if (
+            record.refresh_token === null
+            || record.refresh_token.trim().length === 0
+            || !Number.isSafeInteger(record.expires_at)
+            || record.expires_at <= 0
+        ) return null;
+        record.subject_id = subjectId;
+        record.granted_scopes = [...REQUIRED_SCOPES];
+    }
+    return { record, subjectId };
 }
 
 function inspectLocalStorageLibrary(storage) {
@@ -408,6 +480,7 @@ export async function inspectLegacyIndexedDbPresence({
 export function createAuthLifecycle({
     storage = globalThis.localStorage,
     revokeAccessToken,
+    revokeTokenKind = 'access',
     inspectIndexedDb = null
 } = {}) {
     if (
@@ -417,6 +490,9 @@ export function createAuthLifecycle({
         || typeof storage.removeItem !== 'function'
     ) {
         throw new TypeError('A storage dependency is required.');
+    }
+    if (revokeTokenKind !== 'access' && revokeTokenKind !== 'refresh') {
+        throw new TypeError('A supported revoke token kind is required.');
     }
 
     async function inspectLibraryIdentity() {
@@ -475,7 +551,10 @@ export function createAuthLifecycle({
                 revocationConfirmed = false;
             } else {
                 try {
-                    const result = await revokeAccessToken(tokenRead.accessToken);
+                    const token = revokeTokenKind === 'refresh' && tokenRead.authority !== null
+                        ? tokenRead.refreshToken
+                        : tokenRead.accessToken;
+                    const result = await revokeAccessToken(token);
                     revocationConfirmed = result !== false && result?.ok !== false;
                 } catch {
                     revocationConfirmed = false;
@@ -500,6 +579,19 @@ export function createAuthLifecycle({
         try {
             storage.removeItem(TOKEN_KEY);
         } catch {
+            const tokenRead = readStoredTokens(storage);
+            if (tokenRead.status === 'valid' && tokenRead.authority !== null) {
+                try {
+                    storage.setItem(TOKEN_KEY, JSON.stringify({
+                        access_token: tokenRead.accessToken,
+                        refresh_token: tokenRead.refreshToken,
+                        expires_at: tokenRead.expiresAt
+                    }));
+                    if (readStoredTokens(storage).authority === null) {
+                        return lifecycleResult(AUTH_LIFECYCLE_STATUS.TOKEN_EXPIRED);
+                    }
+                } catch {}
+            }
             return lifecycleResult(AUTH_LIFECYCLE_STATUS.TOKEN_REMOVAL_FAILED);
         }
         return lifecycleResult(AUTH_LIFECYCLE_STATUS.TOKEN_EXPIRED);
@@ -516,9 +608,28 @@ export function createAuthLifecycle({
         );
     }
 
-    async function acceptOAuthTokenResponse(exchangeResponse) {
-        const tokenRecord = tokenRecordFromExchange(exchangeResponse);
-        if (!tokenRecord) {
+    function inspectTokenAuthority() {
+        const tokenRead = readStoredTokens(storage);
+        if (tokenRead.status === 'absent') {
+            return lifecycleResult('absent', { subjectId: null });
+        }
+        if (tokenRead.status !== 'valid') {
+            return lifecycleResult('invalid', { subjectId: null });
+        }
+        if (tokenRead.authority === null) {
+            return lifecycleResult('legacy', { subjectId: null });
+        }
+        return lifecycleResult('authority', {
+            subjectId: tokenRead.authority.subjectId
+        });
+    }
+
+    async function acceptOAuthTokenResponse(exchangeResponse, commitGuard = null) {
+        if (commitGuard !== null && typeof commitGuard !== 'function') {
+            return lifecycleResult(AUTH_LIFECYCLE_STATUS.UNAUTHENTICATED);
+        }
+        const candidate = tokenRecordFromExchange(exchangeResponse);
+        if (!candidate) {
             return lifecycleResult(AUTH_LIFECYCLE_STATUS.UNAUTHENTICATED);
         }
 
@@ -528,7 +639,7 @@ export function createAuthLifecycle({
         }
 
         if (library.present) {
-            const newAthleteId = normalizeIdentity(exchangeResponse?.athlete?.id);
+            const newAthleteId = candidate.subjectId;
             if (!library.athleteId || !newAthleteId) {
                 return lifecycleResult(AUTH_LIFECYCLE_STATUS.IDENTITY_UNCONFIRMED);
             }
@@ -537,8 +648,18 @@ export function createAuthLifecycle({
             }
         }
 
+        if (commitGuard !== null) {
+            let commitAllowed = false;
+            try {
+                commitAllowed = Reflect.apply(commitGuard, null, []) === true;
+            } catch {}
+            if (!commitAllowed) {
+                return lifecycleResult(AUTH_LIFECYCLE_STATUS.UNAUTHENTICATED);
+            }
+        }
+
         try {
-            storage.setItem(TOKEN_KEY, JSON.stringify(tokenRecord));
+            storage.setItem(TOKEN_KEY, JSON.stringify(candidate.record));
         } catch {
             return lifecycleResult(AUTH_LIFECYCLE_STATUS.TOKEN_WRITE_FAILED);
         }
@@ -553,6 +674,7 @@ export function createAuthLifecycle({
         acceptOAuthTokenResponse,
         disconnect,
         expireToken,
-        handleAuthFailure
+        handleAuthFailure,
+        inspectTokenAuthority
     });
 }

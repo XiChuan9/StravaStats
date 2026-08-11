@@ -38,6 +38,7 @@ class MemoryStorage {
         this.setCalls = 0;
         this.getItemCalls = [];
         this.failGetItem = false;
+        this.failRemoveItem = false;
     }
 
     get length() {
@@ -61,6 +62,7 @@ class MemoryStorage {
     }
 
     removeItem(key) {
+        if (this.failRemoveItem) throw new Error('SyntheticStorageRemoveFailure');
         this.operations.push({ operation: 'remove', key });
         this.values.delete(key);
     }
@@ -135,6 +137,16 @@ function oauthResponse(athleteId = SYNTHETIC_ATHLETE_ID) {
         refresh_token: 'synthetic-new-refresh-token',
         expires_at: 2100000000,
         athlete: athleteId === null ? {} : { id: athleteId }
+    };
+}
+
+function sourceManagerOAuthResponse(subjectId = String(SYNTHETIC_ATHLETE_ID)) {
+    return {
+        access_token: 'synthetic-manager-access-token',
+        refresh_token: 'synthetic-manager-refresh-token',
+        expires_at: 2100000000,
+        subject_id: subjectId,
+        granted_scopes: ['read', 'activity:read_all']
     };
 }
 
@@ -332,6 +344,43 @@ test('Disconnect revoke success removes only tokens and preserves Local Library'
     }]);
 });
 
+test('V1 Disconnect keeps using the access token for exact five-field authority', async () => {
+    const storage = new MemoryStorage({
+        ...syntheticLibrary(),
+        strava_tokens: JSON.stringify(sourceManagerOAuthResponse())
+    });
+    let received = null;
+    const result = await lifecycle(storage, {
+        revokeAccessToken: async token => {
+            received = token;
+            return true;
+        }
+    }).disconnect();
+
+    assert.equal(result.status, AUTH_LIFECYCLE_STATUS.SUCCESS);
+    assert.equal(received, 'synthetic-manager-access-token');
+    assert.equal(storage.getItem('strava_tokens'), null);
+});
+
+test('Source Manager Disconnect explicitly uses refresh token for exact five-field authority', async () => {
+    const storage = new MemoryStorage({
+        ...syntheticLibrary(),
+        strava_tokens: JSON.stringify(sourceManagerOAuthResponse())
+    });
+    let received = null;
+    const result = await lifecycle(storage, {
+        revokeTokenKind: 'refresh',
+        revokeAccessToken: async token => {
+            received = token;
+            return true;
+        }
+    }).disconnect();
+
+    assert.equal(result.status, AUTH_LIFECYCLE_STATUS.SUCCESS);
+    assert.equal(received, 'synthetic-manager-refresh-token');
+    assert.equal(storage.getItem('strava_tokens'), null);
+});
+
 test('Disconnect network failure returns revocation-unconfirmed and removes tokens', async () => {
     const storage = new MemoryStorage(syntheticLibrary());
     const before = storage.snapshot();
@@ -473,6 +522,25 @@ test('Expired token removes only tokens and returns token-expired', () => {
     }]);
 });
 
+test('failed exact-authority removal downgrades the surviving record to V1-only authority', () => {
+    const storage = new MemoryStorage({
+        ...syntheticLibrary(),
+        strava_tokens: JSON.stringify(sourceManagerOAuthResponse())
+    });
+    storage.failRemoveItem = true;
+    const instance = lifecycle(storage);
+
+    assert.equal(instance.expireToken().status, AUTH_LIFECYCLE_STATUS.TOKEN_EXPIRED);
+    assert.deepEqual(JSON.parse(storage.getItem('strava_tokens')), {
+        access_token: 'synthetic-manager-access-token',
+        refresh_token: 'synthetic-manager-refresh-token',
+        expires_at: 2100000000
+    });
+    assert.deepEqual(instance.inspectTokenAuthority(), {
+        status: 'legacy', subjectId: null
+    });
+});
+
 test('Refresh failure preserves the complete Local Library and tokens', () => {
     const storage = new MemoryStorage(syntheticLibrary());
     const before = storage.snapshot();
@@ -548,6 +616,79 @@ test('OAuth same account updates tokens and preserves the Local Library', async 
     );
     assertLibraryPreserved(storage, before);
     assert.equal(storage.setCalls, 1);
+});
+
+test('Source Manager OAuth stores exact five-field authority after the Legacy guard', async () => {
+    const storage = new MemoryStorage(syntheticLibrary());
+    const lifecycleInstance = lifecycle(storage);
+    const result = await lifecycleInstance.acceptOAuthTokenResponse(
+        sourceManagerOAuthResponse()
+    );
+
+    assert.equal(result.status, AUTH_LIFECYCLE_STATUS.SUCCESS);
+    assert.deepEqual(JSON.parse(storage.getItem('strava_tokens')), {
+        access_token: 'synthetic-manager-access-token',
+        refresh_token: 'synthetic-manager-refresh-token',
+        expires_at: 2100000000,
+        subject_id: String(SYNTHETIC_ATHLETE_ID),
+        granted_scopes: ['read', 'activity:read_all']
+    });
+    assert.deepEqual(lifecycleInstance.inspectTokenAuthority(), {
+        status: 'authority',
+        subjectId: String(SYNTHETIC_ATHLETE_ID)
+    });
+});
+
+test('Source Manager OAuth commit guard blocks a late Token write', async () => {
+    const storage = new MemoryStorage(syntheticLibrary());
+    const before = storage.snapshot();
+    let guardCalls = 0;
+    const result = await lifecycle(storage).acceptOAuthTokenResponse(
+        sourceManagerOAuthResponse(),
+        () => {
+            guardCalls += 1;
+            return false;
+        }
+    );
+
+    assert.equal(result.status, AUTH_LIFECYCLE_STATUS.UNAUTHENTICATED);
+    assert.equal(guardCalls, 1);
+    assert.deepEqual(storage.snapshot(), before);
+    assert.equal(storage.setCalls, 0);
+});
+
+test('Source Manager subject mismatch preserves the prior Token byte-for-byte', async () => {
+    const storage = new MemoryStorage(syntheticLibrary());
+    const before = storage.snapshot();
+    const result = await lifecycle(storage).acceptOAuthTokenResponse(
+        sourceManagerOAuthResponse(String(SYNTHETIC_OTHER_ATHLETE_ID))
+    );
+
+    assert.equal(result.status, AUTH_LIFECYCLE_STATUS.IDENTITY_MISMATCH);
+    assert.deepEqual(storage.snapshot(), before);
+    assert.equal(storage.setCalls, 0);
+});
+
+test('legacy three-field Token is reported as insufficient Source Manager authority', () => {
+    const storage = new MemoryStorage(syntheticLibrary());
+    assert.deepEqual(lifecycle(storage).inspectTokenAuthority(), {
+        status: 'legacy',
+        subjectId: null
+    });
+});
+
+test('non-positive, fractional, and unsafe exact five-field expiries are never authority', () => {
+    for (const expiresAt of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+        const storage = new MemoryStorage({
+            strava_tokens: JSON.stringify({
+                ...sourceManagerOAuthResponse(),
+                expires_at: expiresAt
+            })
+        });
+        assert.deepEqual(lifecycle(storage).inspectTokenAuthority(), {
+            status: 'invalid', subjectId: null
+        });
+    }
 });
 
 test('OAuth identity guard reads only the athlete metadata value', async () => {

@@ -90,12 +90,15 @@ test('same-origin page has four source cards and complete accessible import cont
         'no-referrer policy precedes subresource loading'
     );
     const apiCard = html.match(/<article[^>]+data-source-card="api"[\s\S]*?<\/article>/)?.[0] || '';
-    assert.match(apiCard, /data-status="authorization_unavailable"/);
-    assert.match(apiCard, />Authorization unavailable</);
-    assert.match(apiCard, /Connection controller staged; authorization remains unavailable until connection identity and provider import are ready\./);
-    assert.match(apiCard, /<button[^>]+id="source-api-connect"[^>]+disabled>Connect unavailable<\/button>/);
-    assert.equal((apiCard.match(/<button/g) || []).length, 1);
-    assert.doesNotMatch(apiCard, /Connect later|>Disconnect<|>Sync</);
+    assert.match(apiCard, /data-status="callback_processing"/);
+    assert.match(apiCard, />Authorization in progress</);
+    assert.match(apiCard, /Completing authorization locally/);
+    assert.match(apiCard, /<button[^>]+id="source-api-connect"[^>]+disabled hidden>Connect<\/button>/);
+    assert.match(apiCard, /id="source-api-sync" disabled hidden>Sync<\/button>/);
+    assert.match(apiCard, /id="source-api-disconnect" disabled hidden>Disconnect<\/button>/);
+    assert.equal((apiCard.match(/<button/g) || []).length, 3);
+    assert.match(html, /origin-shared Legacy credential/);
+    assert.match(html, /Provider revocation may be unconfirmed while offline/);
     assert.match(html, /href="\/storage-backup\.html">Storage &amp; Backup<\/a>/);
     assert.doesNotMatch(html, /storage-backup\.html\?mode=real/);
     const backupApp = await source('js/app/storage-backup.js');
@@ -138,6 +141,8 @@ test('page consumer does not select storage/provider/auth or disclose raw inputs
     assert.doesNotMatch(page, /console\.|innerHTML|insertAdjacentHTML|outerHTML/);
     assert.doesNotMatch(page, /error\.(message|stack|cause)|file\.name[^,;\n]*textContent/);
     assert.match(page, /SAFE_UI_CODES\.has\(descriptor\.value\)/);
+    assert.match(page, /AUTHORIZATION_REQUIRED: 'Reconnect explicitly to restore exact local authorization\.'/);
+    assert.match(page, /CONNECTION_ERROR: 'The connection could not be used\.'/);
     assert.match(page, /label: `CSV file \$\{ordinal \+ 1\}`/);
     assert.match(page, /label: `ZIP file \$\{ordinal \+ 1\}`/);
     assert.match(page, /label: `FIT file \$\{ordinal \+ 1\}`/);
@@ -155,14 +160,20 @@ test('composition root uses only existing public Import/V2 boundaries and keeps 
     assert.match(app, /importStore\.getDuplicateReviewCandidate\(id\)/);
     assert.match(app, /importStore\.decideDuplicateReviewCandidate/);
     assert.doesNotMatch(app, /getRawArtifact|storeRawArtifact|persistImportItem|transaction|objectStore/);
-    assert.doesNotMatch(app, /fetch\s*\(|\/api\/|Authorization|Token|localStorage|sessionStorage/);
+    assert.doesNotMatch(app, /fetch\s*\(|\/api\//);
+    assert.match(app, /createSourceManagerAuthorization/);
+    assert.match(app, /createAuthLifecycle/);
+    assert.match(app, /createSourceConnectionStore/);
+    assert.match(app, /revokeTokenKind: 'refresh'/);
+    assert.match(app, /revokeAccessToken: refreshToken => authorization\.revoke\(refreshToken\)/);
     assert.match(app, /mode === SOURCE_MANAGER_SESSION_MODE\.DEMO\s*\? demoFacade\(\)/);
-    assert.match(app, /createSourceManagerConnectionController\(\)/);
-    assert.equal((app.match(/createSourceManagerConnectionController\(\)/g) || []).length, 1);
+    assert.match(app, /createSourceManagerConnectionController\(\{/);
+    assert.equal((app.match(/createSourceManagerConnectionController\(\{/g) || []).length, 1);
     assert.match(app, /mode === SOURCE_MANAGER_SESSION_MODE\.REAL/);
     assert.match(app, /connectionFacade/);
+    assert.doesNotMatch(app, /if \(connectionFacade\) await connectionFacade\.initialize\(\)/);
     assert.doesNotMatch(app, /location\?\.search|URLSearchParams/);
-    assert.match(app, /await page\.initialize\(\);[\s\S]*await page\.close\(\)\.catch\(\(\) => \{\}\);/);
+    assert.match(app, /const initialization = page\.initialize\(\);[\s\S]*await page\.close\(\);[\s\S]*await page\.close\(\)\.catch\(\(\) => \{\}\);/);
 });
 
 test('C1-A3 sanitizer is the first bootstrap operation and the controller remains app-local', async () => {
@@ -182,13 +193,36 @@ test('C1-A3 sanitizer is the first bootstrap operation and the controller remain
     }
     assert.match(app, /from '\.\/source-manager-connection\.js'/);
     assert.doesNotMatch(page, /source-manager-connection\.js/);
+    const connectionInitialization = page.indexOf(
+        'const connectionInitialization = connectionFacade?.initialize();'
+    );
+    const immediateCallbackRender = page.indexOf(
+        "if (immediateSnapshot?.status === 'callback_processing')",
+        connectionInitialization
+    );
+    const awaitConnection = page.indexOf(
+        'await connectionInitialization;',
+        connectionInitialization
+    );
+    assert.ok(
+        connectionInitialization >= 0
+        && connectionInitialization < immediateCallbackRender
+        && immediateCallbackRender < awaitConnection,
+        'callback_processing renders before the authorization exchange settles'
+    );
     assert.doesNotMatch(connection, /fetch\s*\(|XMLHttpRequest|WebSocket|localStorage|sessionStorage|indexedDB|\/api\/|strava\.com|Bearer|access_token|refresh_token/);
     assert.match(root, /let pageHidden = false;/);
+    assert.match(root, /const startupCloseRequested = new Promise/);
     assert.ok(
         root.indexOf("addEventListener('pagehide'") < root.indexOf('startSourceManager({'),
         'pagehide lifecycle is armed before asynchronous initialization'
     );
-    assert.match(root, /if \(pageHidden\) await application\.close\(\);/);
+    assert.match(root, /pageHidden = true;\s*requestStartupClose\(\);\s*application\?\.close/);
+    assert.match(root, /startupCloseRequested,/);
+    assert.match(root, /if \(pageHidden && application\.status !== 'closed'\)/);
+    assert.match(app, /Promise\.race\(\[\s*initialization\.then/);
+    assert.match(app, /startupCloseRequested\.then\(\(\) => 'close'\)/);
+    assert.match(app, /await page\.close\(\);\s*await Promise\.allSettled\(\[initialization\]\)/);
     assert.match(serviceWorker, /url\.search !== '' \|\| url\.hash !== ''\) \{\s*return null;/);
     assert.match(serviceWorker, /const requestInfo = inspectCacheableRequest\(request\);\s*if \(!requestInfo\) return;\s*event\.respondWith/);
 });
@@ -196,9 +230,9 @@ test('C1-A3 sanitizer is the first bootstrap operation and the controller remain
 test('blocked bootstrap executes sanitization before every application capability', async () => {
     const protectedNames = [
         'fetch', 'Worker', 'indexedDB', 'IDBKeyRange', 'crypto',
-        'localStorage', 'sessionStorage', 'performance', 'addEventListener'
+        'localStorage', 'performance', 'addEventListener'
     ];
-    const globalNames = [...protectedNames, 'document', 'location', 'history'];
+    const globalNames = [...protectedNames, 'sessionStorage', 'document', 'location', 'history'];
     let importIndex = 0;
 
     for (const historyThrows of [false, true]) {
@@ -219,6 +253,15 @@ test('blocked bootstrap executes sanitization before every application capabilit
                     }
                 });
             }
+            Object.defineProperty(globalThis, 'sessionStorage', {
+                configurable: true,
+                get() {
+                    touched.push('sessionStorage');
+                    return Object.freeze({
+                        removeItem(key) { order.push(['storage', key]); }
+                    });
+                }
+            });
             Object.defineProperty(globalThis, 'location', {
                 configurable: true,
                 value: Object.freeze({
@@ -249,10 +292,18 @@ test('blocked bootstrap executes sanitization before every application capabilit
 
             importIndex += 1;
             await import(`../../js/source-manager.js?blocked-bootstrap=${importIndex}-${Date.now()}`);
-            assert.deepEqual(touched, []);
+            assert.deepEqual(touched, historyThrows ? [] : ['sessionStorage']);
             assert.equal(order[0][0], 'history');
             assert.deepEqual(order[0].slice(1), [null, '', '/source-manager.html']);
             assert.equal(order.filter(entry => entry[0] === 'history').length, 1);
+            if (historyThrows) {
+                assert.equal(order.some(entry => entry[0] === 'storage'), false);
+            } else {
+                assert.deepEqual(order[1], [
+                    'storage', 'source_manager_authorization_state'
+                ]);
+                assert.ok(order.findIndex(entry => entry[0] === 'dom') > 1);
+            }
             assert.equal(nodes.get('blocking-error-code').textContent, 'NAVIGATION_SANITIZATION_FAILED');
             assert.equal(
                 nodes.get('blocking-error-copy').textContent,
