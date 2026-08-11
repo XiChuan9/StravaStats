@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | M30 / narrow C3c live provider sync orchestration |
-| Status | A3 implementation authorized from exact A2 head |
+| Status | A3 implementation complete; Final Review Closure recorded |
 | Base branch | `integration/v2` |
 | Exact base | `integration/v2@df5a27430ff07da05051e9d38d7fe3acf52519ff` |
 | Exact base tree | `6b89d83a7e6f797e7568b7cb9cbf0446bac9ee1a` |
@@ -13,7 +13,7 @@
 | Owner decision | `D-C3c.R-A + D-C3c A` |
 | Completed prerequisites | C1.1 PR #53, C2 SourceConnection/Backup, C3a mapper, C3b artifact builder/import |
 | Control tower | `019fa697-6cbf-70f1-a120-bf31ecc9e2ba` |
-| Current authority | Complete frozen narrow C3c implementation and verification within the exact 19-path maximum |
+| Current authority | Publish the Task-Brief-only closure head, verify exact-head CI, and mark PR #54 Ready only if every gate remains green |
 
 ## Goal
 
@@ -451,3 +451,83 @@ cumulative 19-path maximum and every stop condition above. It does not authorize
 required implementation, local, served-browser, privacy, independent-review, remote-depth, and
 exact-head CI gates pass. Ready is not merge authorization. Merge, auto-merge, cleanup, deployment,
 release, C4, PR #52 mutation, and any `integration/v2` mutation remain prohibited.
+
+## Final Review Closure
+
+The reviewed implementation head is
+`1c612f08f8339cacde7cf88390dda5248805b02a`, descended from exact authorized A2 head
+`d980965a5ff4fe5980322db1ffbd31340f0d7218`. Production and test implementation is frozen at that
+head. This closure changes only this Task Brief; the resulting closure commit is the publication and
+exact-head CI candidate.
+
+### Implemented contract and bounded scope
+
+- Real mode constructs the live capability only after the existing Import facade, exposes one
+  explicit `Sync latest 25` action, and never starts Sync from Connect, startup, reload, restore, or
+  offline observation. Demo constructs no connection, Token, provider, Import-storage, Worker, or
+  network capability and exposes no live action.
+- An opaque exact five-field Token snapshot and the exact current C2 subject/status/revision gate the
+  dedicated reader before provider I/O. Missing, Legacy, reduced, malformed, or mismatched authority
+  creates no reader and mutates neither Token nor SourceConnection. The C2 Backup subject remains
+  solely the immutable exact reconnect identity.
+- The browser uses only fixed same-origin `POST /api/strava-sync` list/detail/streams bodies. The
+  server issues the exact one-page/latest-25 provider requests, reduces fields before returning,
+  applies the frozen record, point, lap, byte, 12-second upstream, and 15-second browser bounds, and
+  never retries. Two workers preserve provider order and each performs detail then streams.
+- The only persistence path is the reduced reader into merged C3a, merged C3b, and one existing
+  ImportService submission. Empty, partial, quota, cancel, stale-CAS, and write-failure outcomes do
+  not advance history; committed Import items are never rolled back.
+- Success history uses the original C2 revision and shared `acquiredAt`. A synchronous app-local
+  success-commit gate linearizes cancellation before invoking the non-cancellable frozen C2 CAS:
+  pre-gate cancel/close suppresses it, while post-gate Cancel is unavailable and close drains the
+  already-started single CAS without reporting a false cancellation.
+- The cumulative diff changes 18 of the exact 19 allowed paths. The unused listed path is
+  `tests/source-manager/source-manager.test.js`. There is no twentieth path or substitution and no
+  public API, schema, migration, dependency, Worker, Service Worker, CSP, server-routing/config,
+  Backup, Repository, C3a, C3b, Import, Legacy route, or C4 expansion.
+
+### Failure-first repairs and independent review
+
+- Failure-first audits repaired a concurrent shared 32 MiB browser-accounting race, keeping the
+  losing optional body as literal null and list overflow fatal; a deterministic two-stream
+  regression proves that only one concurrent optional body can claim the remaining budget.
+- Disposable served-browser work exposed and repaired initial-snapshot scoping, premature Sync
+  enablement, terminal connection-copy restoration, and persisted-report readiness races. No
+  browser pass was claimed from the in-app environment that lacked IndexedDB/Worker capability.
+- The first genuinely independent findings-first review found one release-blocking cancel versus
+  in-flight success-CAS race at head `5d9a3ddc7fa78b88f0f14d4470921717a951c1de`. The two-path
+  linearization repair and deterministic before/after-gate tests landed as
+  `1c612f08f8339cacde7cf88390dda5248805b02a`.
+- A fresh independent reviewer then audited the complete baseline-to-head diff and returned no
+  actionable findings. It independently validated the repaired race, identity gate, reader/server
+  bounds, error/degradation rules, ordered single Import pipeline, report/CAS semantics,
+  cancellation/Disconnect barrier, Real/Demo composition, privacy, 18-path scope, and exclusions.
+
+### Exact implementation-head evidence
+
+- `npm ci` completed with six packages; focused C3c tests passed 140/140; full `npm test` passed
+  1864/1864; `npm run check:syntax` passed for 279 files; `npm run check:privacy` passed; and
+  `git diff --check` passed on the clean implementation head.
+- Actual-served evidence used installed Chrome in a new disposable Playwright context and temporary
+  profile. Browser request interception was installed before navigation, and a temporary server-side
+  fetch injection returned only deterministic synthetic OAuth/revoke/provider data and rejected any
+  unexpected upstream URL. It used no user Chrome/profile, real account, real provider request,
+  private fixture, or private evidence.
+- The final run passed with exact Sync operations `list`, `detail`, `streams`; six bounded same-origin
+  API requests; zero external browser HTTP, real-provider, telemetry, XHR, or WebSocket requests;
+  zero uncaught page errors or unexpected request failures; zero private canary observations; and one
+  expected fixed revoke `502` resource warning. The origin was stopped before the offline continuation,
+  which preserved local state and restored empty Service Worker/cache state.
+
+### Privacy, migration, rollback, and publication handoff
+
+- Token material, authorization headers, subject, provider IDs, activity IDs, raw provider values,
+  route/health/power data, and raw errors are absent from DOM, Diagnostics, logs, evidence, and Git.
+  Only invented deterministic values crossed the disposable same-origin test seams.
+- There is no migration or schema change. Rollback removes/disables only the C3c UI/controller/route;
+  it preserves Legacy and V2 data, C2 identity/history, and every item already committed through
+  ImportService. Disconnect and local-data deletion remain separate.
+- Standing owner authority permits publication of this Task-Brief-only closure, true remote
+  depth-one/exact-head verification, exact-head CI, a safe PR-body evidence update, and transition of
+  PR #54 from Draft to Ready only if all those checks pass. Ready is explicitly not merge authority;
+  Squash Merge still requires a separate bounded owner decision on the exact Ready head.
