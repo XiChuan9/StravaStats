@@ -911,6 +911,30 @@ test('refresh preserves exact subject and ordered scopes for five-field authorit
     });
 });
 
+test('authority refresh rejects non-positive, fractional, and unsafe expiry before writing', async () => {
+    for (const expiresAt of [-1, 0, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+        const { connector, calls } = createHarness({
+            rawToken: AUTHORITY_TOKEN,
+            response: syntheticResponse({
+                body: {
+                    activities: [],
+                    tokens: {
+                        access_token: 'synthetic-new-access',
+                        refresh_token: 'synthetic-new-refresh',
+                        expires_at: expiresAt
+                    }
+                }
+            })
+        });
+        await assertConnectorError(
+            connector.fetchActivities(),
+            STRAVA_CONNECTOR_ERROR_CODE.INVALID_ENVELOPE,
+            { operation: 'listActivities' }
+        );
+        assert.deepEqual(calls.writes, []);
+    }
+});
+
 test('refresh cannot change or downgrade five-field authority evidence', async () => {
     for (const authorityFields of [
         { subject_id: '525252', granted_scopes: ['read', 'activity:read_all'] },

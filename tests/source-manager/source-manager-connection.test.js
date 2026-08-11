@@ -216,6 +216,26 @@ test('legacy Token initializes reconnect-required and explicit reconnect enters 
     assert.equal(controller.getConnectionSnapshot().status, 'authorizing');
 });
 
+test('exact reconnect restores authority without an illegal connected-to-connected C2 CAS', async () => {
+    const token = Object.freeze({
+        access_token: 'synthetic-access', refresh_token: 'synthetic-refresh',
+        expires_at: 2_100_000_000, subject_id: SUBJECT,
+        granted_scopes: Object.freeze(['read', 'activity:read_all'])
+    });
+    const { controller, calls } = controllerHarness({
+        record: connectionRecord(),
+        callback: Object.freeze({
+            kind: 'code', code: 'synthetic-code', state: 'synthetic-state',
+            grantedScopes: Object.freeze(['read', 'activity:read_all'])
+        }),
+        callbackToken: token
+    });
+    assert.deepEqual(await controller.initialize(), { status: 'connected' });
+    assert.equal(calls.accept.length, 1);
+    assert.deepEqual(calls.transition, []);
+    assert.equal(calls.expire, 0);
+});
+
 test('restored C2 subject mismatch stores nothing and never mutates connection', async () => {
     const token = Object.freeze({
         access_token: 'synthetic-access',

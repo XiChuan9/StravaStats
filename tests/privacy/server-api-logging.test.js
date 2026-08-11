@@ -294,6 +294,15 @@ function jsonProviderResponse(body, status = 200) {
     };
 }
 
+function emptyRevokeResponse() {
+    return {
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        async text() { return ''; }
+    };
+}
+
 function sourceManagerAuthRequest(body) {
     return {
         method: 'POST',
@@ -440,7 +449,7 @@ test('server revoke uses refresh token only upstream with Basic auth and a reduc
     let upstream;
     await withCapturedRuntime(async (...args) => {
         upstream = args;
-        return { ok: true, status: 200 };
+        return emptyRevokeResponse();
     }, async logs => {
         const response = createResponse();
         await revokeHandler(sourceManagerAuthRequest({
@@ -461,6 +470,50 @@ test('server revoke uses refresh token only upstream with Basic auth and a reduc
     assert.equal(upstream[1].body, 'token=synthetic-refresh');
     assert.equal(upstream[1].signal instanceof AbortSignal, true);
     assert.doesNotMatch(JSON.stringify(upstream[1].headers), /synthetic-refresh/);
+});
+
+test('server revoke confirms only the exact bounded empty provider response', async () => {
+    for (const providerResponse of [
+        {
+            ok: true,
+            status: 200,
+            headers: { get: name => String(name).toLowerCase() === 'content-type' ? 'text/html' : null },
+            async text() { return '<html>synthetic proxy response</html>'; }
+        },
+        {
+            ok: true,
+            status: 200,
+            headers: { get: name => String(name).toLowerCase() === 'content-length' ? '1' : null },
+            async text() { return 'x'; }
+        },
+        {
+            ok: true,
+            status: 204,
+            headers: { get: () => null },
+            async text() { return ''; }
+        },
+        {
+            ok: true,
+            status: 200,
+            async text() { return ''; }
+        },
+        {
+            ok: true,
+            status: 200,
+            headers: { get() { throw new Error('synthetic header failure'); } },
+            async text() { return ''; }
+        }
+    ]) {
+        await withCapturedRuntime(async () => providerResponse, async logs => {
+            const response = createResponse();
+            await revokeHandler(sourceManagerAuthRequest({
+                refresh_token: 'synthetic-refresh'
+            }), response);
+            assert.equal(response.statusCode, 502);
+            assertExactBody(response, { error: 'REVOCATION_UNCONFIRMED' });
+            assertClosedLogs(logs, [EXPECTED_EVENTS.REVOKE_PROVIDER_REJECTED]);
+        });
+    }
 });
 
 test('server revoke failures are fixed and never reflect refresh token or provider details', async () => {

@@ -57,6 +57,24 @@ function boundedString(value, maxLength) {
         && value.trim().length > 0;
 }
 
+async function exactEmptyProviderResponse(response) {
+    const headers = response?.headers;
+    if (!headers || typeof headers.get !== 'function') return false;
+    let type;
+    let length;
+    try {
+        type = headers.get('content-type');
+        length = headers.get('content-length');
+    } catch {
+        return false;
+    }
+    if (type !== null) return false;
+    if (length !== null && length !== '0') return false;
+    if (typeof response?.text !== 'function') return false;
+    const text = await response.text();
+    return text === '';
+}
+
 function setFixedHeaders(res) {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Pragma', 'no-cache');
@@ -87,24 +105,34 @@ export default async function handler(req, res) {
     const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
     let response;
     try {
-        response = await fetch('https://www.strava.com/oauth/revoke', {
-            method: 'POST',
-            headers: {
-                Authorization: `Basic ${authorization}`,
-                'Content-Type': 'application/x-www-form-urlencoded'
-            },
-            body: new URLSearchParams({ token: refreshToken }).toString(),
-            signal: controller.signal
-        });
-    } catch {
-        logServerEvent(SERVER_API_EVENT.REVOKE_NETWORK_FAILED);
-        return res.status(502).json({ error: 'REVOCATION_UNCONFIRMED' });
+        try {
+            response = await fetch('https://www.strava.com/oauth/revoke', {
+                method: 'POST',
+                headers: {
+                    Authorization: `Basic ${authorization}`,
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: new URLSearchParams({ token: refreshToken }).toString(),
+                signal: controller.signal
+            });
+        } catch {
+            logServerEvent(SERVER_API_EVENT.REVOKE_NETWORK_FAILED);
+            return res.status(502).json({ error: 'REVOCATION_UNCONFIRMED' });
+        }
+        let confirmed = false;
+        if (response?.ok === true && response.status === 200) {
+            try {
+                confirmed = await exactEmptyProviderResponse(response);
+            } catch {
+                confirmed = false;
+            }
+        }
+        if (!confirmed) {
+            logServerEvent(SERVER_API_EVENT.REVOKE_PROVIDER_REJECTED);
+            return res.status(502).json({ error: 'REVOCATION_UNCONFIRMED' });
+        }
+        return res.status(200).json({ revoked: true });
     } finally {
         clearTimeout(timeout);
     }
-    if (!response || response.ok !== true || response.status < 200 || response.status >= 300) {
-        logServerEvent(SERVER_API_EVENT.REVOKE_PROVIDER_REJECTED);
-        return res.status(502).json({ error: 'REVOCATION_UNCONFIRMED' });
-    }
-    return res.status(200).json({ revoked: true });
 }

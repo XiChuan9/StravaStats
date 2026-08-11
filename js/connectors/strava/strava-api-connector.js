@@ -849,6 +849,15 @@ export class StravaApiConnector {
         const refreshedHasAuthority = Object.hasOwn(validated, 'subject_id');
         if (authority !== null) {
             if (
+                !Number.isSafeInteger(validated.expires_at)
+                || validated.expires_at <= 0
+            ) {
+                throw connectorError(
+                    STRAVA_CONNECTOR_ERROR_CODE.INVALID_ENVELOPE,
+                    operation
+                );
+            }
+            if (
                 refreshedHasAuthority
                 && (
                     validated.subject_id !== authority.subject_id

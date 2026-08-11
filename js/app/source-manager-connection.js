@@ -353,8 +353,8 @@ export function createSourceManagerConnectionController(options) {
         }
 
         try {
-            current = current === null
-                ? await dependencies.connectionStore.createConnection({
+            if (current === null) {
+                current = await dependencies.connectionStore.createConnection({
                     id: 'source-connection:strava',
                     provider: 'strava',
                     subjectId,
@@ -362,10 +362,12 @@ export function createSourceManagerConnectionController(options) {
                     lastSyncAt: null,
                     errorCode: null,
                     revision: 1
-                })
-                : await dependencies.connectionStore.transitionConnection(
+                });
+            } else if (current.status !== 'connected') {
+                current = await dependencies.connectionStore.transitionConnection(
                     transitionInput(current, 'connected', null)
                 );
+            }
         } catch {
             let rollbackStatus = 'token-removal-failed';
             try {
