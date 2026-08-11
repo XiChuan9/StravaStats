@@ -58,6 +58,27 @@ origin-shared Token even if provider revocation cannot be confirmed. It preserve
 import, source, backup, and settings data. Provider revocation does not mean local-data deletion,
 and offline revocation may remain unconfirmed.
 
+## Bounded provider Sync
+
+Real-mode `Sync latest 25` is an explicit foreground action. Connect, startup, reload, restore,
+offline/online observation, and Demo mode never start it. Before provider I/O, Source Manager
+requires the exact five-field local Token and an exact connected SourceConnection with the same
+immutable subject. Missing, Legacy, malformed, reduced, or mismatched authority changes neither
+record and sends no request.
+
+The browser sends fixed JSON operations only to same-origin `POST /api/strava-sync`; provider and
+activity IDs never enter browser URLs. The server uses the access credential only for the fixed
+provider request, removes profile/name/map/gear/device/unknown fields, and returns only the reduced
+summary, optional detail/laps, and exact stream set. Responses are no-store and subject to fixed
+request, record, point, lap, byte, timeout, concurrency, and total-acquisition limits. There is no
+retry, second page, polling, webhook, background Sync, or cross-tab owner claim.
+
+Reduced GPS, heart-rate, power, and other activity values still remain private athlete data. They
+may enter the browser only through the bounded same-origin route and reach durable storage only
+through the reviewed C3a mapper, C3b provider-artifact builder, and existing ImportService. They
+must not enter DOM, Diagnostics, logs, screenshots, PR evidence, or support messages. Cancellation
+keeps Import items already committed; a stale history CAS never rolls them back.
+
 ## Diagnostics is not a backup
 
 | Property | Diagnostics export | V2 backup |
@@ -92,8 +113,9 @@ sharing or restoring anything.
 
 ## Provider, external service, and telemetry boundary
 
-Source Manager local import does not call a provider or upload selected file bytes. Existing local
-Canonical startup and browsing do not require Token/auth/provider network.
+Source Manager local-file import does not call a provider or upload selected file bytes. The
+separate explicit `Sync latest 25` action uses the bounded same-origin route described above.
+Existing local Canonical startup and browsing do not require Token/auth/provider network.
 
 Other established pages are not fully offline. Runtime telemetry is completely disabled: root,
 detail, Gear, Source Manager, Backup, and Diagnostics do not load Google Tag Manager, Google
