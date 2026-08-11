@@ -40,7 +40,7 @@ Rollback must not delete, repair, overwrite, downgrade, or reverse-copy either d
 | --- | --- | --- |
 | `UNAVAILABLE` / `OPEN_FAILED` | Browser storage could not be opened | Close other tabs for the same origin, confirm storage permission, restart the browser, then retry once |
 | `OPEN_BLOCKED` | Another connection/build is blocking an upgrade | Close all other StravaStats tabs/windows for that origin; do not delete the database |
-| `VERSION_UNSUPPORTED` | Database is newer than this build supports | Use the matching/newer build or explicit Legacy mode; preserve V4 and backups |
+| `VERSION_UNSUPPORTED` | Database is newer than this build supports | Use the matching/newer build or explicit Legacy mode; preserve V6 and backups |
 | `SCHEMA_MISMATCH` | Same-version stores/indexes do not match the accepted schema | Stop writes, export Diagnostics, preserve the database, and escalate; do not auto-repair |
 | `MIGRATION_FAILED` / `MIGRATION_INTERRUPTED` | Additive V2 upgrade aborted or was interrupted | Close competing tabs and retry with the same build; transaction rollback should preserve the prior version |
 | `QUOTA_EXCEEDED` | Browser refused a storage transaction | Preserve current data, free unrelated storage outside the app if possible, then retry the single operation |
@@ -66,6 +66,27 @@ Source Manager exposes safe codes rather than raw filenames or parser messages.
 One failed file should not remove successful siblings. Check the persisted Import Log before
 retrying so exact duplicates are not mistaken for failures.
 
+## Interrupted Source Manager operation
+
+Reload, startup, visibility, online, lease expiry, and restore never resume work automatically. A
+stale linked operation or preserved orphan is handled only from the explicit Sources recovery
+panel:
+
+- `SOURCE_OPERATION_ACTIVE` means the exclusive operation is still live in another tab; do not
+  steal its lock.
+- `SOURCE_OPERATION_CONFLICT` means another tab changed the exact revision; review the refreshed
+  state.
+- **Recover** schedules only valid pending bytes already stored locally. Missing or malformed
+  sources become `RECOVERY_SOURCE_UNAVAILABLE`; committed items remain unchanged.
+- **Abandon** marks only unfinished items `RECOVERY_ABANDONED`; committed activities, raw/canonical
+  data, provenance, Legacy data, and settings remain.
+- `SOURCE_OPERATION_STORAGE_FAILED` means the atomic action did not commit. Resolve quota/storage
+  availability and retry the same explicit action.
+
+Recovered provider items advance history only when original provenance and current exact authority,
+subject, connection, and revision still match. Otherwise the items remain and the audit reports
+`RECOVERY_HISTORY_NOT_ADVANCED`.
+
 ## Possible duplicate review
 
 - **Confirm same activity** records identity intent only; both activities/sources remain.
@@ -80,7 +101,8 @@ candidate.
 
 | Code/result | Action |
 | --- | --- |
-| `TARGET_NOT_EMPTY` | Stop. Create backups of both libraries and restore only into a genuinely absent/exact empty V4 target |
+| `TARGET_NOT_EMPTY` | Stop. Create backups of both libraries and restore only into a genuinely absent/exact empty V6 target |
+| `ACTIVE_SOURCE_OPERATION` | Return to Sources and explicitly Recover or Abandon the unresolved operation; Backup does not do this automatically |
 | `already_restored` | No database rewrite is needed; verify the library and settings |
 | `SETTINGS_PENDING` | Retry the same backup; do not delete the restored database or overwrite existing settings |
 | `TARGET_SETTINGS_CONFLICT` | Preserve the existing setting and stop for an owner decision |
@@ -99,8 +121,8 @@ Status may say `provider offline`; this is not a reason to delete or reconnect l
 1. Open `/` and confirm local summaries render.
 2. Open Sources or Storage & Backup directly if provider UI is unavailable.
 3. Do not paste Token/Authorization data into Diagnostics or support messages.
-4. Reconnect only through the explicit provider flow when it is intentionally available. The
-   current Sources API card is disabled `Connect later`.
+4. Reconnect only through the explicit provider flow when it is intentionally available. Sync is
+   always a separate explicit action and never begins merely because connectivity returns.
 
 Legacy weather, maps, CDN assets, telemetry, provider detail, or external AI features may still
 require network. The whole app is not fully offline.

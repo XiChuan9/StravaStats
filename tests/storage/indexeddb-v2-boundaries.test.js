@@ -137,7 +137,8 @@ test('public import is side-effect free and exports exactly the frozen API', asy
         'V2_SCHEMA',
         'createCanonicalStore',
         'createImportStore',
-        'createSourceConnectionStore'
+        'createSourceConnectionStore',
+        'createSourceOperationStore'
     ]);
     assert.equal(Object.isFrozen(storageModule.STORAGE_ERROR_CODE), true);
     assert.equal(Object.isFrozen(storageModule.V2_SCHEMA), true);

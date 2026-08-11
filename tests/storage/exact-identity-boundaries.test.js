@@ -30,7 +30,7 @@ function source(relativePath) {
     return readFile(new URL(`../../${relativePath}`, import.meta.url), 'utf8');
 }
 
-test('public storage exports remain the frozen eight-member surface', () => {
+test('public storage exports include only the approved Source Operation factory expansion', () => {
     assert.deepEqual(Object.keys(storage).sort(), [
         'STORAGE_ERROR_CODE',
         'StorageError',
@@ -39,7 +39,8 @@ test('public storage exports remain the frozen eight-member surface', () => {
         'V2_SCHEMA',
         'createCanonicalStore',
         'createImportStore',
-        'createSourceConnectionStore'
+        'createSourceConnectionStore',
+        'createSourceOperationStore'
     ]);
 });
 

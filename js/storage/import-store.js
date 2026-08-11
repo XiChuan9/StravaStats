@@ -27,6 +27,7 @@ import {
     enqueueExactIdentityTargetValidation
 } from './exact-identity-resolver.js';
 import { runTransaction } from './transaction.js';
+import { enqueueSourceOperationJobLink } from './source-operation-store.js';
 
 const OPTION_FIELDS = Object.freeze([
     'indexedDB',
@@ -501,6 +502,23 @@ function validStoredArtifact(value) {
         : null;
 }
 
+// Internal exact-record seams used by the additive Source Operation store and
+// Backup validation. They intentionally remain outside the public storage index.
+function normalizeImportJobRecord(value) {
+    const record = validJob(value);
+    return record ? Object.freeze({ ...record }) : null;
+}
+
+function normalizeImportItemRecord(value) {
+    const record = validItem(value);
+    return record ? Object.freeze({ ...record }) : null;
+}
+
+function normalizeRawArtifactRecord(value) {
+    const record = validStoredArtifact(value);
+    return record ? Object.freeze({ ...record }) : null;
+}
+
 function sameArtifact(left, right) {
     return ARTIFACT_FIELDS.every(field => Object.is(left[field], right[field]));
 }
@@ -912,12 +930,16 @@ export function createImportStore(options) {
         return () => result;
     }
 
-    function createImportJob(jobId, itemIds) {
+    function createImportJob(jobId, itemIds, sourceOperationLink = null) {
         const ids = denseStrings(itemIds);
         if (
             !opaqueString(jobId)
             || !ids
             || new Set(ids).size !== ids.length
+            || (sourceOperationLink !== null && (
+                typeof sourceOperationLink !== 'object'
+                || Array.isArray(sourceOperationLink)
+            ))
         ) {
             return Promise.reject(dataInvalid(STORAGE_OPERATION.CREATE_IMPORT_JOB));
         }
@@ -949,7 +971,10 @@ export function createImportStore(options) {
             runTransaction(database, {
                 storeNames: [
                     V2_STORE_NAME.IMPORT_JOBS,
-                    V2_STORE_NAME.IMPORT_ITEMS
+                    V2_STORE_NAME.IMPORT_ITEMS,
+                    ...(sourceOperationLink === null
+                        ? []
+                        : [V2_STORE_NAME.SOURCE_OPERATIONS])
                 ],
                 mode: 'readwrite',
                 operation: STORAGE_OPERATION.CREATE_IMPORT_JOB
@@ -958,8 +983,17 @@ export function createImportStore(options) {
                 for (const item of items) {
                     context.add(V2_STORE_NAME.IMPORT_ITEMS, item);
                 }
+                const linkedOperation = sourceOperationLink === null
+                    ? null
+                    : enqueueSourceOperationJobLink(
+                        context,
+                        { ...sourceOperationLink, jobId },
+                        STORAGE_OPERATION.CREATE_IMPORT_JOB
+                    );
                 return () => cloneFrozen(
-                    { job, items },
+                    linkedOperation
+                        ? { job, items, sourceOperation: linkedOperation() }
+                        : { job, items },
                     STORAGE_OPERATION.CREATE_IMPORT_JOB
                 );
             })

@@ -342,7 +342,16 @@ test('PR-41 freezes the exact ten-path hard maximum and prohibited expansion', a
 });
 
 test('progress, duplicate, cancel, reload, and report UI are driven by real boundary values', async () => {
+    const app = await source('js/app/source-manager.js');
     const page = await source('js/pages/source-manager/source-manager.js');
+    assert.match(
+        app,
+        /importArtifacts:\s*\(artifacts, sourceOperationLink\)\s*=>[\s\S]*?service\.importArtifacts\(artifacts, sourceOperationLink\)/
+    );
+    assert.match(
+        app,
+        /cancelProviderAcquisition:\s*\(\)\s*=>[\s\S]*?syncFacade\?\.cancel\(\)/
+    );
     assert.match(page, /importFacade\.importArtifacts\(artifacts\)/);
     assert.match(page, /importFacade\.getReport\(activeJobId\)/);
     assert.match(page, /importFacade\.waitForJob\(activeJobId\)/);

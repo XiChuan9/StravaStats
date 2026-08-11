@@ -87,7 +87,18 @@ const PREFLIGHT_COPY = Object.freeze({
     IMPORT_INCOMPLETE: 'Provider Sync completed without accepting every item.',
     HISTORY_NOT_ADVANCED: 'Imported items were kept, but Sync history was not advanced.',
     SYNC_CANCELLED: 'Provider Sync was cancelled. Completed items were kept.',
-    IMPORT_FAILED: 'The import could not be completed.'
+    IMPORT_FAILED: 'The import could not be completed.',
+    SOURCE_OPERATION_ACTIVE: 'This Source Manager operation is still active in another tab.',
+    SOURCE_OPERATION_RECOVERY_REQUIRED: 'An interrupted Source Manager operation needs an explicit action.',
+    SOURCE_OPERATION_CLOCK_INVALID: 'The local clock could not safely update the Source Manager lease.',
+    SOURCE_OPERATION_CONFLICT: 'The operation changed in another tab. Review its latest state.',
+    SOURCE_OPERATION_UNAVAILABLE: 'Source Manager operation coordination is unavailable.',
+    SOURCE_OPERATION_STORAGE_FAILED: 'The operation could not be saved. Free local storage and try again.',
+    RECOVERY_NOT_AVAILABLE: 'This operation can no longer be recovered.',
+    RECOVERY_REQUEUED: 'Preserved pending bytes were explicitly scheduled for recovery.',
+    RECOVERY_SOURCE_UNAVAILABLE: 'Some interrupted items had no valid pending bytes and were cancelled.',
+    RECOVERY_ABANDONED: 'The interrupted operation was abandoned. Committed items were kept.',
+    RECOVERY_HISTORY_NOT_ADVANCED: 'Recovered items were kept, but provider Sync history was not advanced.'
 });
 
 const IMPORT_COPY = Object.freeze({
@@ -728,12 +739,16 @@ export function createSourceManagerPage({
     sessionMode,
     importFacade,
     connectionFacade = null,
-    syncFacade = null
+    syncFacade = null,
+    recoveryFacade = null
 }) {
     const elements = Object.freeze({
         blocking: document.getElementById('blocking-error'),
         blockingCode: document.getElementById('blocking-error-code'),
         blockingCopy: document.getElementById('blocking-error-copy'),
+        recoveryPanel: document.getElementById('source-operation-recovery'),
+        recoveryState: document.getElementById('source-operation-recovery-state'),
+        recoveryList: document.getElementById('source-operation-recovery-list'),
         apiCopy: document.getElementById('source-api-copy'),
         apiConnect: document.getElementById('source-api-connect'),
         apiSync: document.getElementById('source-api-sync'),
@@ -787,6 +802,7 @@ export function createSourceManagerPage({
     let batchCancellationRequested = false;
     let connectionSnapshot = null;
     let syncInitialized = false;
+    let recoveryInitialized = false;
     let closed = false;
 
     function setSourceStatus(source, status) {
@@ -827,6 +843,79 @@ export function createSourceManagerPage({
         return snapshot.code === null
             ? null
             : safeCopy(snapshot.code);
+    }
+
+    function renderRecoveryState(snapshot = recoveryFacade?.getRecoveryState?.()) {
+        if (!elements.recoveryPanel || !elements.recoveryState || !elements.recoveryList) {
+            return;
+        }
+        const candidates = Array.isArray(snapshot?.candidates)
+            ? snapshot.candidates
+            : [];
+        const available = sessionMode === SOURCE_MANAGER_SESSION_MODE.REAL
+            && snapshot?.status === 'recovery_available'
+            && candidates.length > 0;
+        elements.recoveryPanel.hidden = !available;
+        elements.recoveryList.replaceChildren();
+        if (!available) {
+            elements.recoveryState.textContent = snapshot?.status === 'active'
+                ? 'Active in another tab.'
+                : '';
+            return;
+        }
+        elements.recoveryState.textContent = `${candidates.length} explicit ${
+            candidates.length === 1 ? 'action is' : 'actions are'
+        } available.`;
+        candidates.forEach((candidate, index) => {
+            const item = text(document, 'article', '', 'recovery-item');
+            const kind = candidate.kind === 'provider_sync'
+                ? 'provider sync'
+                : 'local import';
+            item.append(text(
+                document,
+                'p',
+                `Operation ${index + 1} · ${kind} · ${candidate.jobStatus ?? 'acquiring'}`
+            ));
+            const actions = text(document, 'div', '', 'recovery-actions');
+            for (const action of ['recover', 'abandon']) {
+                if (candidate[action] !== true) continue;
+                const label = action === 'recover' ? 'Recover' : 'Abandon';
+                const button = text(
+                    document,
+                    'button',
+                    label,
+                    action === 'recover' ? 'button button--primary' : 'button button--danger'
+                );
+                button.type = 'button';
+                button.addEventListener('click', async () => {
+                    const confirmAction = document.defaultView?.confirm;
+                    if (typeof confirmAction !== 'function' || !confirmAction(
+                        `${label} operation ${index + 1}? Committed items will remain.`
+                    )) return;
+                    actions.querySelectorAll('button').forEach(control => {
+                        control.disabled = true;
+                    });
+                    try {
+                        await recoveryFacade[action](candidate.token);
+                        renderRecoveryState();
+                        await refreshPublicReads();
+                    } catch (error) {
+                        elements.alert.textContent = safeCopy(safeCode(error));
+                        await recoveryFacade.refresh().catch(() => {});
+                        renderRecoveryState();
+                    }
+                });
+                actions.append(button);
+            }
+            item.append(actions);
+            elements.recoveryList.append(item);
+        });
+    }
+
+    async function observeRecoveryState() {
+        if (!recoveryInitialized || closed) return;
+        await recoveryFacade.refresh().catch(() => {});
+        renderRecoveryState();
     }
 
     function renderConnectionSnapshot(snapshot = connectionSnapshot) {
@@ -887,7 +976,7 @@ export function createSourceManagerPage({
         try {
             const pending = before.actions.cancel
                 ? syncFacade.cancel()
-                : syncFacade.syncLatest();
+                : recoveryFacade.runProviderSync(() => syncFacade.syncLatest());
             renderConnectionSnapshot();
             await pending;
             await connectionFacade.refresh();
@@ -1268,7 +1357,7 @@ export function createSourceManagerPage({
         elements.fileInput.value = '';
     }
 
-    async function startImport() {
+    async function runSelectedImport() {
         if (!selection || selection.acceptedCount === 0 || importActive) return;
         const currentSelection = selection;
         importActive = true;
@@ -1358,6 +1447,7 @@ export function createSourceManagerPage({
             outcome = 'failed';
             setSourceStatus(activeSource, 'error');
             showError(error);
+            throw error;
         } finally {
             terminalCounts.notStarted = Math.max(
                 terminalCounts.notStarted,
@@ -1369,6 +1459,16 @@ export function createSourceManagerPage({
             elements.close.disabled = false;
             elements.closeIcon.disabled = false;
             elements.cancelImport.disabled = false;
+        }
+    }
+
+    async function startImport() {
+        if (!selection || selection.acceptedCount === 0 || importActive) return;
+        try {
+            await recoveryFacade.runLocalImport(runSelectedImport);
+        } catch (error) {
+            if (!elements.dialogError.hidden) return;
+            showError(error);
         }
     }
 
@@ -1512,6 +1612,13 @@ export function createSourceManagerPage({
             await importFacade.initialize();
             if (closed) return PAGE_CLOSED;
             if (sessionMode === SOURCE_MANAGER_SESSION_MODE.REAL) {
+                await recoveryFacade?.initialize();
+                if (closed) return PAGE_CLOSED;
+                recoveryInitialized = true;
+                renderRecoveryState();
+                document.addEventListener('visibilitychange', observeRecoveryState);
+                document.defaultView?.addEventListener('pageshow', observeRecoveryState);
+                document.defaultView?.addEventListener('online', observeRecoveryState);
                 await syncFacade?.initialize();
                 if (closed) return PAGE_CLOSED;
                 syncInitialized = true;
@@ -1528,8 +1635,12 @@ export function createSourceManagerPage({
     async function close() {
         closed = true;
         if (sessionMode === SOURCE_MANAGER_SESSION_MODE.REAL) {
+            document.removeEventListener('visibilitychange', observeRecoveryState);
+            document.defaultView?.removeEventListener('pageshow', observeRecoveryState);
+            document.defaultView?.removeEventListener('online', observeRecoveryState);
             await syncFacade?.close();
             await connectionFacade?.close();
+            await recoveryFacade?.close();
         }
         await importFacade.close();
         return Object.freeze({ status: 'closed' });

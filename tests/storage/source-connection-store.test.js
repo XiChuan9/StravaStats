@@ -269,7 +269,7 @@ test('missing and malformed persisted records fail without leaking record detail
     );
     await store.close();
 
-    const request = indexedDB.open('strava-stats-v2', 5);
+    const request = indexedDB.open('strava-stats-v2', 6);
     const database = await new Promise((resolve, reject) => {
         request.onerror = () => reject(request.error);
         request.onsuccess = () => resolve(request.result);
@@ -305,7 +305,7 @@ test('an unexpected persisted key poisons the strict single-slot boundary', asyn
     await initialized.initialize();
     await initialized.close();
 
-    const request = indexedDB.open('strava-stats-v2', 5);
+    const request = indexedDB.open('strava-stats-v2', 6);
     const database = await new Promise((resolve, reject) => {
         request.onerror = () => reject(request.error);
         request.onsuccess = () => resolve(request.result);

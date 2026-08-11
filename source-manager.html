@@ -96,6 +96,18 @@
             </div>
         </section>
 
+        <section id="source-operation-recovery" class="recovery-section" aria-labelledby="source-operation-recovery-title" hidden>
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Explicit action only</p>
+                    <h2 id="source-operation-recovery-title">Interrupted Source Manager operation</h2>
+                </div>
+                <p id="source-operation-recovery-state" class="recovery-state" role="status"></p>
+            </div>
+            <p>No operation resumes automatically. Recover schedules only preserved pending bytes; Abandon keeps every committed item.</p>
+            <div id="source-operation-recovery-list" class="recovery-list"></div>
+        </section>
+
         <section class="library-section" aria-labelledby="preview-title">
             <div class="section-heading">
                 <div>

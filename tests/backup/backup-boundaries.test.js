@@ -262,8 +262,8 @@ test('exact-current compatibility rejects a fully rehashed future-version archiv
         webcrypto
     );
     const manifest = decodeCanonicalJson(entries[0].bytes);
-    manifest.indexedDbVersion = 6;
-    manifest.schemaId = 'strava-stats-v2@6';
+    manifest.indexedDbVersion = 7;
+    manifest.schemaId = 'strava-stats-v2@7';
     const incompatible = await createDeterministicZip(entries.map((entry, index) => ({
         path: entry.path,
         bytes: index === 0 ? encodeCanonicalJson(manifest) : entry.bytes
@@ -309,7 +309,7 @@ test('a fully container-rehashed manifest payload hash mismatch has its exact sa
     );
 });
 
-test('format 2 rejects a credential-dependent connection state before target creation', async () => {
+test('format 3 rejects a credential-dependent connection state before target creation', async () => {
     const { archive } = await emptyArchive();
     const entries = await parseDeterministicZip(
         new Uint8Array(await archive.blob.arrayBuffer()),

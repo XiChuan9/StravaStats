@@ -10,6 +10,16 @@ import {
     canCancelImportJob,
     isTerminalImportItem
 } from './state-machine.js';
+
+const RECOVERY_HANDLES = new WeakMap();
+
+/** Internal Source Manager recovery entry; intentionally not re-exported by Import index. */
+export function recoverImportServiceJob(service, jobId) {
+    const recover = RECOVERY_HANDLES.get(service);
+    return recover
+        ? recover(jobId)
+        : Promise.reject(importError(IMPORT_ERROR_CODE.INVALID_REQUEST));
+}
 import {
     denseArraySnapshot,
     findDataMethod,
@@ -67,13 +77,14 @@ function normalizeOptions(options) {
     const workerClose = findDataMethod(values.worker, 'close');
     const digest = findDataMethod(values.crypto?.subtle, 'digest');
     if (!process || !workerClose || !digest) return null;
-    return Object.freeze({
+    const service = Object.freeze({
         store: Object.freeze(store),
         process: input => process.call(values.worker, input),
         workerClose: () => workerClose.call(values.worker),
         digest: input => digest.call(values.crypto.subtle, 'SHA-256', input),
         createId: values.createId
     });
+    return service;
 }
 
 async function snapshotArtifacts(value, isCancelled) {
@@ -363,7 +374,12 @@ export function createImportService(options) {
         }
     }
 
-    async function run(jobId, suppliedArtifacts = null, startingStatus = J.QUEUED) {
+    async function run(
+        jobId,
+        suppliedArtifacts = null,
+        startingStatus = J.QUEUED,
+        recoveryOnly = false
+    ) {
         let jobStatus = startingStatus;
         let items = [...await dependencies.store.listImportItems(jobId)];
         let artifacts = suppliedArtifacts;
@@ -372,9 +388,14 @@ export function createImportService(options) {
             jobStatus = J.VALIDATING;
             const loaded = [];
             for (let item of items) {
-                if (isTerminalImportItem(item.status) && item.retryable !== true) {
+                if (isTerminalImportItem(item.status) && (
+                    recoveryOnly || item.retryable !== true
+                )) {
                     loaded[item.ordinal] = null;
                     continue;
+                }
+                if (recoveryOnly && item.status !== I.RETRYING) {
+                    throw importError(IMPORT_ERROR_CODE.RETRY_NOT_ALLOWED);
                 }
                 if (item.status !== I.RETRYING) {
                     item = await transitionItem(item, I.RETRYING);
@@ -650,7 +671,7 @@ export function createImportService(options) {
         return publicReport(job, await dependencies.store.listImportItems(jobId));
     }
 
-    async function importArtifacts(value) {
+    async function importArtifacts(value, sourceOperationLink = null) {
         if (closed) throw importError(IMPORT_ERROR_CODE.STORAGE_UNAVAILABLE);
         const artifacts = await snapshotArtifacts(value, () => closed);
         if (closed) throw importError(IMPORT_ERROR_CODE.IMPORT_CANCELLED);
@@ -661,7 +682,11 @@ export function createImportService(options) {
         if (new Set([jobId, ...itemIds]).size !== itemIds.length + 1) {
             throw importError(IMPORT_ERROR_CODE.INVALID_REQUEST);
         }
-        await dependencies.store.createImportJob(jobId, itemIds);
+        await dependencies.store.createImportJob(
+            jobId,
+            itemIds,
+            sourceOperationLink
+        );
         const completion = run(jobId, artifacts).finally(() => active.delete(jobId));
         active.set(jobId, completion);
         return Object.freeze({ jobId, completion });
@@ -713,7 +738,25 @@ export function createImportService(options) {
         return Object.freeze({ jobId, completion });
     }
 
-    return Object.freeze({
+    async function recoverJob(jobId) {
+        if (closed) throw importError(IMPORT_ERROR_CODE.STORAGE_UNAVAILABLE);
+        const job = await dependencies.store.getImportJob(jobId);
+        if (!job || job.status !== J.RETRYING || active.has(jobId)) {
+            throw importError(
+                job ? IMPORT_ERROR_CODE.RETRY_NOT_ALLOWED : IMPORT_ERROR_CODE.NOT_FOUND
+            );
+        }
+        const items = await dependencies.store.listImportItems(jobId);
+        if (!items.some(item => item.status === I.RETRYING)) {
+            throw importError(IMPORT_ERROR_CODE.RETRY_NOT_ALLOWED);
+        }
+        const completion = run(jobId, null, J.RETRYING, true)
+            .finally(() => active.delete(jobId));
+        active.set(jobId, completion);
+        return Object.freeze({ jobId, completion });
+    }
+
+    const publicService = Object.freeze({
         async initialize() {
             if (closed) throw importError(IMPORT_ERROR_CODE.STORAGE_UNAVAILABLE);
             await dependencies.store.initialize();
@@ -741,4 +784,6 @@ export function createImportService(options) {
             return Object.freeze({ status: 'closed' });
         }
     });
+    RECOVERY_HANDLES.set(publicService, recoverJob);
+    return publicService;
 }

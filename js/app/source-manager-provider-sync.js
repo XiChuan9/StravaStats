@@ -5,6 +5,7 @@ const OPTION_FIELDS = Object.freeze([
     'createMapper',
     'createArtifacts',
     'importFacade',
+    'beginHistoryCommit',
     'now',
     'AbortControllerImpl'
 ]);
@@ -168,6 +169,7 @@ function dependenciesFrom(value) {
         || !importArtifacts
         || !cancelJob
         || !waitForJob
+        || typeof options.beginHistoryCommit !== 'function'
         || typeof options.now !== 'function'
         || typeof options.AbortControllerImpl !== 'function'
     ) return null;
@@ -181,6 +183,7 @@ function dependenciesFrom(value) {
         importArtifacts,
         cancelJob,
         waitForJob,
+        beginHistoryCommit: options.beginHistoryCommit,
         now: options.now,
         AbortControllerImpl: options.AbortControllerImpl
     });
@@ -601,7 +604,10 @@ export function createSourceManagerProviderSyncController(options) {
 
                 let job;
                 try {
-                    job = await dependencies.importArtifacts(artifacts);
+                    job = await dependencies.importArtifacts(artifacts, Object.freeze({
+                        sourceConnectionRevision: connection.revision,
+                        acquiredAt
+                    }));
                 } catch {
                     return terminal({ status: 'error', code: 'IMPORT_FAILED' });
                 }
@@ -662,6 +668,7 @@ export function createSourceManagerProviderSyncController(options) {
                 successCommitStarted = true;
                 setSnapshot({ status: 'syncing', cancelAvailable: false });
                 try {
+                    await dependencies.beginHistoryCommit();
                     await dependencies.transitionConnection(transitionInput(
                         connection,
                         'connected',
@@ -728,6 +735,49 @@ export function createSourceManagerProviderSyncController(options) {
         return currentSnapshot;
     }
 
+    async function advanceRecoveredHistory(value) {
+        const input = exactRecord(value, [
+            'sourceConnectionRevision', 'acquiredAt', 'report'
+        ]);
+        const report = input ? safeReport(input.report) : null;
+        if (
+            closed
+            || !initialized
+            || active !== null
+            || !input
+            || !Number.isSafeInteger(input.sourceConnectionRevision)
+            || input.sourceConnectionRevision < 1
+            || !strictUtc(input.acquiredAt)
+            || !successfulReport(report)
+        ) return false;
+        let authority;
+        let connection;
+        try {
+            authority = exactAuthority(await dependencies.readAuthority());
+            connection = exactConnection(await dependencies.getConnection('strava'));
+        } catch {
+            return false;
+        }
+        if (
+            !authority
+            || !connection
+            || connection.status !== 'connected'
+            || connection.subjectId !== authority.subjectId
+            || connection.revision !== input.sourceConnectionRevision
+            || (connection.lastSyncAt !== null && input.acquiredAt <= connection.lastSyncAt)
+        ) return false;
+        try {
+            const advanced = exactConnection(await dependencies.transitionConnection(
+                transitionInput(connection, 'connected', input.acquiredAt, null)
+            ));
+            return advanced !== null
+                && advanced.revision === connection.revision + 1
+                && advanced.lastSyncAt === input.acquiredAt;
+        } catch {
+            return false;
+        }
+    }
+
     return Object.freeze({
         initialize() {
             if (closed) return Promise.reject(CLOSED_ERROR);
@@ -741,6 +791,7 @@ export function createSourceManagerProviderSyncController(options) {
         },
         syncLatest,
         cancel,
+        advanceRecoveredHistory,
         async awaitInactive() {
             if (active) await active;
             return currentSnapshot;

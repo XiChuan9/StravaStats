@@ -16,6 +16,10 @@ import {
 import { V2_MIGRATION_REGISTRY } from '../storage/migrations.js';
 import { normalizeSourceConnectionRecord } from '../storage/source-connection-store.js';
 import {
+    createIdleSourceOperationRecord,
+    normalizeSourceOperationRecord
+} from '../storage/source-operation-store.js';
+import {
     STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE,
     stravaProviderArtifactDecoder
 } from '../import/strava-provider-artifact.js';
@@ -51,7 +55,8 @@ export const BACKUP_ERROR_CODE = Object.freeze({
     TARGET_SETTINGS_CONFLICT: 'TARGET_SETTINGS_CONFLICT',
     RESTORE_ABORTED: 'RESTORE_ABORTED',
     QUOTA_EXCEEDED: 'QUOTA_EXCEEDED',
-    SETTINGS_PENDING: 'SETTINGS_PENDING'
+    SETTINGS_PENDING: 'SETTINGS_PENDING',
+    ACTIVE_SOURCE_OPERATION: 'ACTIVE_SOURCE_OPERATION'
 });
 
 export class BackupError extends Error {
@@ -79,8 +84,13 @@ const STORE_NAMES = Object.freeze(V2_SCHEMA.stores.map(store => store.name));
 const LEGACY_STORE_NAMES = Object.freeze(
     V2_PHYSICAL_SCHEMA_BY_VERSION[4].stores.map(store => store.name)
 );
+const FORMAT_2_STORE_NAMES = Object.freeze(
+    V2_PHYSICAL_SCHEMA_BY_VERSION[5].stores.map(store => store.name)
+);
 const USER_STORE_NAMES = Object.freeze(STORE_NAMES.filter(name => (
-    name !== V2_STORE_NAME.METADATA && name !== V2_STORE_NAME.MIGRATIONS
+    name !== V2_STORE_NAME.METADATA
+    && name !== V2_STORE_NAME.MIGRATIONS
+    && name !== V2_STORE_NAME.SOURCE_OPERATIONS
 )));
 
 const SETTINGS_KEYS = Object.freeze([
@@ -122,6 +132,15 @@ const FORMAT_2_PAYLOADS = Object.freeze([
     ...FORMAT_1_PAYLOADS.slice(2)
 ]);
 
+const FORMAT_3_PAYLOADS = Object.freeze([
+    ...FORMAT_2_PAYLOADS.slice(0, 3),
+    Object.freeze({
+        path: 'operations/source-manager.jsonl',
+        store: V2_STORE_NAME.SOURCE_OPERATIONS
+    }),
+    ...FORMAT_2_PAYLOADS.slice(3)
+]);
+
 const BACKUP_PROFILES = Object.freeze({
     1: Object.freeze({
         backupFormatVersion: 1,
@@ -135,12 +154,22 @@ const BACKUP_PROFILES = Object.freeze({
     }),
     2: Object.freeze({
         backupFormatVersion: 2,
+        indexedDbVersion: 5,
+        schemaId: 'strava-stats-v2@5',
+        schema: V2_PHYSICAL_SCHEMA_BY_VERSION[5],
+        storeNames: FORMAT_2_STORE_NAMES,
+        payloads: FORMAT_2_PAYLOADS,
+        entryPaths: BACKUP_ENTRY_PATHS_BY_FORMAT[2],
+        migrationRegistry: Object.freeze(V2_MIGRATION_REGISTRY.slice(0, 5))
+    }),
+    3: Object.freeze({
+        backupFormatVersion: 3,
         indexedDbVersion: V2_DATABASE_VERSION,
         schemaId: V2_SCHEMA_ID,
         schema: V2_SCHEMA,
         storeNames: STORE_NAMES,
-        payloads: FORMAT_2_PAYLOADS,
-        entryPaths: BACKUP_ENTRY_PATHS_BY_FORMAT[2],
+        payloads: FORMAT_3_PAYLOADS,
+        entryPaths: BACKUP_ENTRY_PATHS_BY_FORMAT[3],
         migrationRegistry: V2_MIGRATION_REGISTRY
     })
 });
@@ -526,7 +555,7 @@ function openExisting(dependencies, operation) {
     });
 }
 
-function validMetadata(record, profile = BACKUP_PROFILES[2]) {
+function validMetadata(record, profile = BACKUP_PROFILES[3]) {
     const fields = [
         'key', 'databaseName', 'schemaId', 'indexedDbVersion',
         'canonicalSchemaVersion', 'createdAt', 'createdByApplicationVersion'
@@ -569,7 +598,7 @@ function validMigration(record, expected) {
         && value.retryCount === 0;
 }
 
-function validSystem(records, profile = BACKUP_PROFILES[2]) {
+function validSystem(records, profile = BACKUP_PROFILES[3]) {
     return records[V2_STORE_NAME.METADATA].length === 1
         && validMetadata(records[V2_STORE_NAME.METADATA][0], profile)
         && records[V2_STORE_NAME.MIGRATIONS].length === profile.migrationRegistry.length
@@ -597,7 +626,7 @@ function validRawArtifact(record, profile) {
     ) return false;
     if (value.mediaType === STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE) {
         if (
-            profile.backupFormatVersion !== 2
+            profile.backupFormatVersion < 2
             || value.acquiredVia !== 'provider-artifact'
         ) return false;
         try {
@@ -780,8 +809,9 @@ function canonicalStoreKeys(records, descriptor) {
     return true;
 }
 
-function validateRecords(records, operation = 'validate', profile = BACKUP_PROFILES[2], {
-    portableConnections = false
+function validateRecords(records, operation = 'validate', profile = BACKUP_PROFILES[3], {
+    portableConnections = false,
+    portableOperation = false
 } = {}) {
     if (!validSystem(records, profile) || !validCanonicalGraph(records)) {
         throw backupError(BACKUP_ERROR_CODE.BACKUP_DATA_INVALID, operation);
@@ -789,7 +819,7 @@ function validateRecords(records, operation = 'validate', profile = BACKUP_PROFI
     if (!profile.schema.stores.every(descriptor => (
         canonicalStoreKeys(records[descriptor.name], descriptor)
     ))) throw backupError(BACKUP_ERROR_CODE.BACKUP_DATA_INVALID, operation);
-    if (profile.backupFormatVersion === 2) {
+    if (profile.backupFormatVersion >= 2) {
         const connections = records[V2_STORE_NAME.SOURCE_CONNECTIONS];
         if (!Array.isArray(connections) || !connections.every(record => {
             const normalized = normalizeSourceConnectionRecord(record);
@@ -799,13 +829,23 @@ function validateRecords(records, operation = 'validate', profile = BACKUP_PROFI
                     || normalized.status === 'disconnected');
         })) throw backupError(BACKUP_ERROR_CODE.BACKUP_DATA_INVALID, operation);
     }
+    if (profile.backupFormatVersion === 3) {
+        const operations = records[V2_STORE_NAME.SOURCE_OPERATIONS];
+        if (!Array.isArray(operations) || operations.length !== 1) {
+            throw backupError(BACKUP_ERROR_CODE.BACKUP_DATA_INVALID, operation);
+        }
+        const normalized = normalizeSourceOperationRecord(operations[0]);
+        if (!normalized || (portableOperation && normalized.status !== 'idle')) {
+            throw backupError(BACKUP_ERROR_CODE.BACKUP_DATA_INVALID, operation);
+        }
+    }
     if (!records[V2_STORE_NAME.RAW_ARTIFACTS].every(record => (
         validRawArtifact(record, profile)
     ))) {
         throw backupError(BACKUP_ERROR_CODE.BACKUP_DATA_INVALID, operation);
     }
     if (
-        profile.backupFormatVersion === 2
+        profile.backupFormatVersion >= 2
         && records[V2_STORE_NAME.RAW_ARTIFACTS].some(record => (
             record.mediaType === STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE
         ))
@@ -932,6 +972,17 @@ function portableConnection(record) {
     });
 }
 
+function portableSourceOperation(record, operation) {
+    const normalized = normalizeSourceOperationRecord(record);
+    if (!normalized) {
+        throw backupError(BACKUP_ERROR_CODE.BACKUP_DATA_INVALID, operation);
+    }
+    if (normalized.status === 'active') {
+        throw backupError(BACKUP_ERROR_CODE.ACTIVE_SOURCE_OPERATION, operation);
+    }
+    return normalized;
+}
+
 function portableRecords(records, operation) {
     const output = Object.create(null);
     for (const name of STORE_NAMES) output[name] = records[name];
@@ -940,6 +991,8 @@ function portableRecords(records, operation) {
     if (output[V2_STORE_NAME.SOURCE_CONNECTIONS].some(record => record === null)) {
         throw backupError(BACKUP_ERROR_CODE.BACKUP_DATA_INVALID, operation);
     }
+    output[V2_STORE_NAME.SOURCE_OPERATIONS] = records[V2_STORE_NAME.SOURCE_OPERATIONS]
+        .map(record => portableSourceOperation(record, operation));
     return output;
 }
 
@@ -968,10 +1021,11 @@ async function exportSnapshot(dependencies, signal) {
         if (!validSystem(records)) {
             throw backupError(BACKUP_ERROR_CODE.BACKUP_SCHEMA_INCOMPATIBLE, operation);
         }
-        validateRecords(records, operation, BACKUP_PROFILES[2]);
+        validateRecords(records, operation, BACKUP_PROFILES[3]);
         const projectedRecords = portableRecords(records, operation);
-        validateRecords(projectedRecords, operation, BACKUP_PROFILES[2], {
-            portableConnections: true
+        validateRecords(projectedRecords, operation, BACKUP_PROFILES[3], {
+            portableConnections: true,
+            portableOperation: true
         });
         const settingsAfter = await readSettings(dependencies, operation);
         if (!exactTagged(settingsBefore, settingsAfter)) {
@@ -980,7 +1034,7 @@ async function exportSnapshot(dependencies, signal) {
         const payloadEntries = [];
         const files = [];
         const hashes = [];
-        for (const payload of FORMAT_2_PAYLOADS) {
+        for (const payload of FORMAT_3_PAYLOADS) {
             checkCancelled(signal, operation);
             const values = payload.synthetic
                 ? []
@@ -1003,7 +1057,7 @@ async function exportSnapshot(dependencies, signal) {
         }
         const createdAt = timestamp(dependencies, operation);
         const manifest = {
-            backupFormatVersion: 2,
+            backupFormatVersion: 3,
             databaseName: V2_DATABASE_NAME,
             indexedDbVersion: V2_DATABASE_VERSION,
             schemaId: V2_SCHEMA_ID,
@@ -1019,7 +1073,7 @@ async function exportSnapshot(dependencies, signal) {
         };
         const manifestBytes = encodeCanonicalJson(manifest);
         const entries = [
-            { path: BACKUP_ENTRY_PATHS_BY_FORMAT[2][0], bytes: manifestBytes },
+            { path: BACKUP_ENTRY_PATHS_BY_FORMAT[3][0], bytes: manifestBytes },
             ...payloadEntries
         ];
         const archive = await createDeterministicZip(entries, dependencies.crypto);
@@ -1137,7 +1191,7 @@ async function validateBytes(dependencies, file, signal, operation) {
         hash.sha256 !== entries[index + 1].sha256
     ))) throw backupError(BACKUP_ERROR_CODE.BACKUP_HASH_MISMATCH, operation);
     let providerArtifactArchive = false;
-    if (profile.backupFormatVersion === 2) {
+    if (profile.backupFormatVersion >= 2) {
         const rawIndex = profile.payloads.findIndex(payload => (
             payload.store === V2_STORE_NAME.RAW_ARTIFACTS
         ));
@@ -1186,7 +1240,8 @@ async function validateBytes(dependencies, file, signal, operation) {
         }
     });
     validateRecords(records, operation, profile, {
-        portableConnections: profile.backupFormatVersion === 2
+        portableConnections: profile.backupFormatVersion >= 2,
+        portableOperation: profile.backupFormatVersion === 3
     });
     for (const artifact of records[V2_STORE_NAME.RAW_ARTIFACTS]) {
         const digest = await sha256(
@@ -1230,20 +1285,29 @@ async function validateOnly(dependencies, file, signal) {
 }
 
 function recordsForCurrentRestore(snapshot) {
-    if (snapshot.profile.backupFormatVersion === 2) return snapshot.records;
+    if (snapshot.profile.backupFormatVersion === 3) return snapshot.records;
     const records = Object.create(null);
-    for (const name of LEGACY_STORE_NAMES) records[name] = snapshot.records[name];
-    records[V2_STORE_NAME.SOURCE_CONNECTIONS] = [];
+    for (const name of snapshot.profile.storeNames) records[name] = snapshot.records[name];
+    if (snapshot.profile.backupFormatVersion === 1) {
+        records[V2_STORE_NAME.SOURCE_CONNECTIONS] = [];
+    }
+    records[V2_STORE_NAME.SOURCE_OPERATIONS] = [createIdleSourceOperationRecord()];
     const priorMetadata = snapshot.records[V2_STORE_NAME.METADATA][0];
     records[V2_STORE_NAME.METADATA] = [{
         ...priorMetadata,
         schemaId: V2_SCHEMA_ID,
         indexedDbVersion: V2_DATABASE_VERSION
     }];
-    const migration = V2_MIGRATION_REGISTRY[4];
     records[V2_STORE_NAME.MIGRATIONS] = [
-        ...snapshot.records[V2_STORE_NAME.MIGRATIONS],
-        {
+        ...snapshot.records[V2_STORE_NAME.MIGRATIONS]
+    ];
+    for (
+        let index = snapshot.profile.migrationRegistry.length;
+        index < V2_MIGRATION_REGISTRY.length;
+        index += 1
+    ) {
+        const migration = V2_MIGRATION_REGISTRY[index];
+        records[V2_STORE_NAME.MIGRATIONS].push({
             id: migration.id,
             fromVersion: migration.fromVersion,
             toVersion: migration.toVersion,
@@ -1251,14 +1315,21 @@ function recordsForCurrentRestore(snapshot) {
             startedAt: snapshot.manifest.createdAt,
             completedAt: snapshot.manifest.createdAt,
             applicationVersion: snapshot.manifest.applicationVersion,
-            inputSummary: { storeCount: LEGACY_STORE_NAMES.length },
-            outputSummary: { storeCount: STORE_NAMES.length },
+            inputSummary: {
+                storeCount: V2_PHYSICAL_SCHEMA_BY_VERSION[migration.fromVersion]
+                    .stores.length
+            },
+            outputSummary: {
+                storeCount: V2_PHYSICAL_SCHEMA_BY_VERSION[migration.toVersion]
+                    .stores.length
+            },
             errorCode: null,
             retryCount: 0
-        }
-    ];
-    validateRecords(records, 'restore', BACKUP_PROFILES[2], {
-        portableConnections: true
+        });
+    }
+    validateRecords(records, 'restore', BACKUP_PROFILES[3], {
+        portableConnections: true,
+        portableOperation: true
     });
     return records;
 }
@@ -1284,6 +1355,7 @@ function writeSnapshotToTransaction(transaction, records, putSystem) {
             if (putSystem && (
                 storeName === V2_STORE_NAME.METADATA
                 || storeName === V2_STORE_NAME.MIGRATIONS
+                || storeName === V2_STORE_NAME.SOURCE_OPERATIONS
             )) store.put(record);
             else store.add(record);
         }
@@ -1328,7 +1400,11 @@ function restoreExisting(database, records) {
                     return;
                 }
                 const exactEmpty = validSystem(current)
-                    && USER_STORE_NAMES.every(name => current[name].length === 0);
+                    && USER_STORE_NAMES.every(name => current[name].length === 0)
+                    && current[V2_STORE_NAME.SOURCE_OPERATIONS].length === 1
+                    && normalizeSourceOperationRecord(
+                        current[V2_STORE_NAME.SOURCE_OPERATIONS][0]
+                    )?.status === 'idle';
                 if (!exactEmpty) {
                     decision = 'conflict';
                     try { transaction.abort(); } catch { /* terminal */ }

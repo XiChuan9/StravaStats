@@ -29,9 +29,10 @@ gate, deleting data, editing a test result, or describing unrun work as passed.
   Strava ZIP.
 - Real-mode Sources supports explicit connect, disconnect, and `Sync latest 25`. Sync reads exactly
   one provider page, uses at most two activity workers, and never starts automatically.
-- Provider Sync has no second page, fetch-all, retry, background polling, webhook, durable resume,
-  or cross-tab owner/lease recovery. Reload or closing the page cancels only the active foreground
-  controller; C4 owns durable coordination and recovery.
+- Provider Sync has no second page, fetch-all, automatic retry, background polling, webhook, or
+  automatic resume. Real local import and provider Sync share one same-origin Web Lock and durable
+  90-second V6 lease; stale linked work and restored orphans require explicit Recover or Abandon.
+  This does not coordinate other profiles, browsers, devices, origins, or storage buckets.
 - Non-auth detail or stream failures degrade that optional enrichment to unavailable warnings.
   Authentication failures require reconnect, rate limiting requires a later explicit press, and a
   stale SourceConnection history CAS can leave imported items committed without advancing
@@ -59,7 +60,9 @@ field-selection and reversible-merge workflow is future work.
 ### Backup and Diagnostics
 
 - V2 backup is exact-current, whole-buffer, limited to 256 MiB, and restores only to absent or
-  exact empty V4. It is not a general merge/import or cross-version conversion format.
+  exact empty V6. Current export is format 3/V6; frozen format 1/V4 and format 2/V5 archives are
+  accepted only through the additive profiles described in the Backup Guide. It is not a general
+  merge/import or cross-version conversion format.
 - Diagnostics Storage Estimate is coarse, rounded, origin-wide, and not exact app bytes, free disk
   space, or a persistence guarantee.
 - Diagnostics records are bounded to the current tab/session and are not a durable audit log.

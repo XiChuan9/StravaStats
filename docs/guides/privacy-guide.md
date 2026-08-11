@@ -21,15 +21,16 @@ they do not look like a person's name.
 
 ## Where data lives
 
-- Canonical activities, Import records, and optional SourceConnection metadata: IndexedDB
-  `strava-stats-v2` V5.
+- Canonical activities, Import records, optional SourceConnection metadata, and the privacy-minimal
+  Source Manager operation row: IndexedDB `strava-stats-v2` V6.
 - Preserved Legacy data: separate `strava-dashboard-cache` and established Legacy localStorage.
 - Approved durable UI/analysis settings: localStorage; shared Legacy-compatible user settings from
   the explicit allowlist are included in V2 backup.
 - Recent Diagnostics errors and import performance: bounded sessionStorage with in-memory fallback.
 - Provider Tokens: Legacy auth storage, outside V2 SourceConnection, backup, and Diagnostics.
 
-A V5 SourceConnection can retain the normalized provider subject as private local metadata. A
+A V6 library can retain the normalized provider subject in its V5 SourceConnection record as
+private local metadata. A
 disconnected tombstone retains that identity and historical `lastSyncAt`; it is separate from Token
 revocation and from deleting any local library. C2 does not read, write, exchange, refresh, or revoke
 credentials. The Sources page provides no delete-local-data action.
@@ -48,7 +49,7 @@ unknown response fields do not cross into the browser. Those five fields form So
 authority. A Legacy three-field Token remains usable only by V1 and requires explicit reconnect in
 Source Manager.
 
-Before a Token is stored, its subject must exactly match both any immutable V5 SourceConnection
+Before a Token is stored, its subject must exactly match both any immutable SourceConnection
 subject—including one restored from Backup—and the existing Legacy identity guard. A mismatch
 stores nothing and changes neither Token nor SourceConnection. Source Manager authorization and
 callback values must never be included in screenshots or test evidence.
@@ -84,7 +85,7 @@ keeps Import items already committed; a stale history CAS never rolls them back.
 | Property | Diagnostics export | V2 backup |
 | --- | --- | --- |
 | Purpose | Privacy-safe support snapshot | Complete private library recovery |
-| Contents | Fixed codes, safe aggregates, rounded origin estimate | All V5 records, portable connection metadata, raw artifacts, Streams, import/review state, approved settings |
+| Contents | Fixed codes, safe aggregates, rounded origin estimate | All V6 records, portable connection/idle-operation metadata, raw artifacts, Streams, import/review state, approved settings |
 | Size bound | 256 KiB | 256 MiB exact preflight |
 | Safe to publish | Review first; designed to exclude raw private data | No — always private athlete data |
 | Restore capable | No | Yes, exact-current absent/empty target only |
@@ -104,8 +105,9 @@ Restore adds missing shared Legacy-compatible user settings additively after the
 transaction; an existing different value produces `TARGET_SETTINGS_CONFLICT` before database
 mutation. Those restored settings may affect the UI after an explicit Legacy rollback.
 
-The backup does not include Legacy activity or provider cache payloads. Format 2 includes the
-private SourceConnection subject and a credential-safe portable state, but excludes Token/
+The backup does not include Legacy activity or provider cache payloads. Format 3 includes the
+private SourceConnection subject, a credential-safe portable connection state, and one redacted
+idle Source Manager operation row, but excludes live owner/operation IDs, job links, Token/
 Authorization material, scopes, provider responses/error text, Cache Storage, Service Worker state,
 and session Diagnostics. Connected/error status is restored as `reconnect_required`; the archive
 never implies that authorization was backed up. Read the [Backup Guide](./backup-guide.md) before

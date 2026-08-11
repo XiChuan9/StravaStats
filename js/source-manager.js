@@ -74,6 +74,8 @@ if (navigation.status === 'blocked') {
             origin: location.origin,
             navigate: url => location.assign(url),
             now: Date.now,
+            locks: navigator.locks,
+            isOnline: () => navigator.onLine === true,
             setTimeoutImpl: setTimeout.bind(globalThis),
             clearTimeoutImpl: clearTimeout.bind(globalThis),
             AbortControllerImpl: AbortController

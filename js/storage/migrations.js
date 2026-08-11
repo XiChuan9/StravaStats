@@ -11,6 +11,7 @@ import {
     V2_METADATA_KEY,
     V2_SCHEMA_ID,
     V2_SOURCE_CONNECTION_MIGRATION_ID,
+    V2_SOURCE_OPERATION_MIGRATION_ID,
     V2_STORE_NAME
 } from './constants.js';
 import { storageError } from './errors.js';
@@ -44,6 +45,11 @@ export const V2_MIGRATION_REGISTRY = Object.freeze([
         id: V2_SOURCE_CONNECTION_MIGRATION_ID,
         fromVersion: 4,
         toVersion: 5
+    }),
+    Object.freeze({
+        id: V2_SOURCE_OPERATION_MIGRATION_ID,
+        fromVersion: 5,
+        toVersion: 6
     })
 ]);
 
@@ -51,6 +57,7 @@ const V1_SCHEMA_ID = 'strava-stats-v2@1';
 const V2_SCHEMA_ID_AT_VERSION_2 = 'strava-stats-v2@2';
 const V2_SCHEMA_ID_AT_VERSION_3 = 'strava-stats-v2@3';
 const V2_SCHEMA_ID_AT_VERSION_4 = 'strava-stats-v2@4';
+const V2_SCHEMA_ID_AT_VERSION_5 = 'strava-stats-v2@5';
 
 const DATA_MIGRATION_DEFINITION_FIELDS = Object.freeze([
     'id',
@@ -579,6 +586,121 @@ function applySourceConnectionMigration(database, transaction, {
     });
 }
 
+function sourceOperationIdleRecord() {
+    return {
+        id: 'source-operation:manager',
+        status: 'idle',
+        kind: null,
+        phase: null,
+        ownerId: null,
+        operationId: null,
+        jobId: null,
+        sourceConnectionRevision: null,
+        acquiredAt: null,
+        startedAt: null,
+        heartbeatAt: null,
+        leaseExpiresAt: null,
+        revision: 0,
+        lastAction: null,
+        lastActionKind: null,
+        lastActionAt: null,
+        lastResultCode: null
+    };
+}
+
+function validPriorMetadataForSourceOperation(metadata, startingVersion) {
+    if (
+        metadata.schemaId === V2_SCHEMA_ID_AT_VERSION_5
+        && metadata.indexedDbVersion === 5
+    ) return true;
+    if (startingVersion >= 5) return false;
+    return (
+        metadata.schemaId === V2_SCHEMA_ID_AT_VERSION_4
+        && metadata.indexedDbVersion === 4
+    ) || (
+        startingVersion < 4
+        && shouldAcceptPriorMetadata(metadata, startingVersion)
+    );
+}
+
+function applySourceOperationMigration(database, transaction, {
+    applicationVersion,
+    timestamp,
+    startingVersion
+}) {
+    const priorSchema = V2_PHYSICAL_SCHEMA_BY_VERSION[5];
+    const schema = V2_PHYSICAL_SCHEMA_BY_VERSION[6];
+    assertExactPhysicalSchema(database, transaction, priorSchema);
+    const addedStores = schema.stores.filter(descriptor => (
+        !database.objectStoreNames.contains(descriptor.name)
+    ));
+    if (
+        addedStores.length !== 1
+        || addedStores[0].name !== V2_STORE_NAME.SOURCE_OPERATIONS
+    ) {
+        throw storageError(
+            STORAGE_ERROR_CODE.MIGRATION_FAILED,
+            STORAGE_OPERATION.INITIALIZE
+        );
+    }
+    const operationStore = createStore(database, addedStores[0]);
+    operationStore.add(sourceOperationIdleRecord());
+    assertExactPhysicalSchema(database, transaction, schema);
+
+    const metadataStore = transaction.objectStore(V2_STORE_NAME.METADATA);
+    const metadataRequest = metadataStore.get(V2_METADATA_KEY);
+    metadataRequest.onsuccess = () => {
+        try {
+            const metadata = ownDataValues(metadataRequest.result, [
+                'key',
+                'databaseName',
+                'schemaId',
+                'indexedDbVersion',
+                'canonicalSchemaVersion',
+                'createdAt',
+                'createdByApplicationVersion'
+            ]);
+            if (
+                !metadata
+                || metadata.key !== V2_METADATA_KEY
+                || metadata.databaseName !== V2_DATABASE_NAME
+                || !validPriorMetadataForSourceOperation(metadata, startingVersion)
+                || metadata.canonicalSchemaVersion !== V2_CANONICAL_SCHEMA_VERSION
+                || !isStrictUtcInstant(metadata.createdAt)
+                || typeof metadata.createdByApplicationVersion !== 'string'
+                || metadata.createdByApplicationVersion.length === 0
+            ) {
+                throw new TypeError('invalid prior metadata');
+            }
+            metadataStore.put({
+                ...metadata,
+                schemaId: V2_SCHEMA_ID,
+                indexedDbVersion: V2_DATABASE_VERSION
+            });
+        } catch {
+            try {
+                transaction.abort();
+            } catch {
+                // The versionchange terminal event remains authoritative.
+            }
+        }
+    };
+
+    transaction.objectStore(V2_STORE_NAME.MIGRATIONS).put({
+        id: V2_SOURCE_OPERATION_MIGRATION_ID,
+        fromVersion: 5,
+        toVersion: 6,
+        status: 'completed',
+        startedAt: timestamp,
+        completedAt: timestamp,
+        applicationVersion,
+        inputSummary: { storeCount: priorSchema.stores.length },
+        outputSummary: { storeCount: schema.stores.length },
+        errorCode: null,
+        retryCount: 0
+    });
+}
+
 function shouldAcceptPriorMetadata(metadata, startingVersion) {
     if (
         metadata.schemaId === V2_SCHEMA_ID_AT_VERSION_3
@@ -652,6 +774,12 @@ export function applyStructuralMigrations(database, transaction, {
             });
         } else if (migration.id === V2_SOURCE_CONNECTION_MIGRATION_ID) {
             applySourceConnectionMigration(database, transaction, {
+                applicationVersion,
+                timestamp,
+                startingVersion: oldVersion
+            });
+        } else if (migration.id === V2_SOURCE_OPERATION_MIGRATION_ID) {
+            applySourceOperationMigration(database, transaction, {
                 applicationVersion,
                 timestamp,
                 startingVersion: oldVersion
