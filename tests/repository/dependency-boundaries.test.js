@@ -160,14 +160,14 @@ test('public import performs zero token, storage, network, or DOM side effects',
     }
 });
 
-test('approved Connector implementation matches the frozen PR-04B B1 hash', async () => {
+test('approved Connector implementation matches the frozen C1.1 hash', async () => {
     // PR-04B B1 approved the Connector and test changes for the type= fix.
-    // Later PRs may extend public Repository literals and their exact tests
-    // without weakening the frozen Connector implementation boundary.
+    // C1.1 explicitly approved the five-field authority-preserving refresh extension
+    // and replaced its unused Source Manager test path with this hash-accounting path.
     const expected = new Map([
         [
             'js/connectors/strava/strava-api-connector.js',
-            'ea3810a190451cf9bdff9f4f2bdcc3a81a8591c4ec385b14dd07de6324061ba8'
+            '4cade926af731b0cf359fb6bef81bfaabff8d5288533739a7c03a60303bb78b8'
         ]
     ]);
     for (const [relative, hash] of expected) {

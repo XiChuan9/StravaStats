@@ -13,6 +13,99 @@ const CLEAN_REAL = Object.freeze({
     replaceState() {}
 });
 
+const SUBJECT = '424242';
+const OTHER_SUBJECT = '525252';
+
+function connectionRecord(overrides = {}) {
+    return Object.freeze({
+        id: 'source-connection:strava',
+        provider: 'strava',
+        subjectId: SUBJECT,
+        status: 'connected',
+        lastSyncAt: null,
+        errorCode: null,
+        revision: 1,
+        ...overrides
+    });
+}
+
+function controllerHarness({
+    record = null,
+    authority = { status: 'absent', subjectId: null },
+    callback = null,
+    callbackToken = null,
+    acceptStatus = 'success',
+    disconnectStatus = 'success',
+    syncBoundaryFailure = false,
+    createFailure = false,
+    transitionFailure = false
+} = {}) {
+    const calls = {
+        begin: 0, process: [], accept: [], expire: 0, disconnect: 0,
+        syncBoundary: 0, order: [], create: [], transition: [], close: 0
+    };
+    let current = record;
+    const authorization = Object.freeze({
+        async beginAuthorization() { calls.begin += 1; return { status: 'redirecting' }; },
+        async processCallback(value) {
+            calls.process.push(value);
+            return { status: 'authorized', token: callbackToken };
+        },
+        async revoke() { return true; },
+        async close() { return { status: 'closed' }; }
+    });
+    const authLifecycle = Object.freeze({
+        inspectTokenAuthority() { return authority; },
+        async acceptOAuthTokenResponse(value) {
+            calls.accept.push(value);
+            return { status: acceptStatus, firstLogin: false };
+        },
+        expireToken() { calls.expire += 1; return { status: 'token-expired' }; },
+        async disconnect() {
+            calls.disconnect += 1;
+            calls.order.push('disconnect');
+            return { status: disconnectStatus };
+        }
+    });
+    const connectionStore = Object.freeze({
+        async initialize() { return { status: 'ready' }; },
+        async getConnection() { return current; },
+        async createConnection(value) {
+            calls.create.push(value);
+            if (createFailure) throw new Error('synthetic-create-failure');
+            current = connectionRecord(value);
+            return current;
+        },
+        async transitionConnection(value) {
+            calls.transition.push(value);
+            if (transitionFailure) throw new Error('synthetic-transition-failure');
+            current = connectionRecord({
+                ...current,
+                status: value.status,
+                lastSyncAt: value.lastSyncAt,
+                errorCode: value.errorCode,
+                revision: current.revision + 1
+            });
+            return current;
+        },
+        async close() { calls.close += 1; return { status: 'closed' }; }
+    });
+    return {
+        calls,
+        controller: createSourceManagerConnectionController({
+            authorization,
+            authLifecycle,
+            connectionStore,
+            callback,
+            async awaitInactiveSyncBoundary() {
+                calls.syncBoundary += 1;
+                calls.order.push('sync-boundary');
+                if (syncBoundaryFailure) throw new Error('synthetic-sync-boundary-failure');
+            }
+        })
+    };
+}
+
 function navigation(overrides = {}) {
     const calls = [];
     const input = {
@@ -39,7 +132,7 @@ function assertDeepFrozen(value) {
     }
 }
 
-test('connection controller has the exact fail-closed surface and ignores hostile arguments', () => {
+test('connection controller has the exact fail-closed surface and ignores hostile arguments', async () => {
     let traps = 0;
     const hostile = new Proxy({}, {
         get() { traps += 1; throw new Error('private getter'); },
@@ -49,6 +142,7 @@ test('connection controller has the exact fail-closed surface and ignores hostil
 
     assert.equal(traps, 0);
     assert.deepEqual(Object.keys(controller), [
+        'initialize',
         'getConnectionSnapshot',
         'beginConnect',
         'disconnect',
@@ -56,12 +150,16 @@ test('connection controller has the exact fail-closed surface and ignores hostil
     ]);
     assert.equal(Object.isFrozen(controller), true);
 
+    assert.deepEqual(await controller.initialize(), {
+        status: 'error',
+        code: 'CONNECTION_INITIALIZATION_FAILED'
+    });
     const snapshot = controller.getConnectionSnapshot();
     assert.deepEqual(snapshot, {
         schemaVersion: 1,
-        status: 'authorization_unavailable',
-        code: 'AUTHORIZATION_UNAVAILABLE',
-        actions: { connect: false, disconnect: false }
+        status: 'error',
+        code: 'CONNECTION_INITIALIZATION_FAILED',
+        actions: { connect: false, reconnect: false, sync: false, disconnect: false }
     });
     assert.strictEqual(controller.getConnectionSnapshot(), snapshot);
     assertDeepFrozen(snapshot);
@@ -70,7 +168,7 @@ test('connection controller has the exact fail-closed surface and ignores hostil
 test('connection actions reject with exact safe objects before and after idempotent close', async () => {
     const controller = createSourceManagerConnectionController();
     const unavailable = error => {
-        assert.deepEqual(error, { code: 'AUTHORIZATION_UNAVAILABLE' });
+        assert.deepEqual(error, { code: 'CONNECTION_INITIALIZATION_FAILED' });
         assert.deepEqual(Object.keys(error), ['code']);
         assert.equal(Object.isFrozen(error), true);
         return true;
@@ -78,13 +176,17 @@ test('connection actions reject with exact safe objects before and after idempot
     await assert.rejects(controller.beginConnect(), unavailable);
     await assert.rejects(controller.disconnect(), unavailable);
 
-    const snapshot = controller.getConnectionSnapshot();
     const firstClose = await controller.close();
     const secondClose = await controller.close();
     assert.deepEqual(firstClose, { status: 'closed' });
     assert.strictEqual(firstClose, secondClose);
     assert.equal(Object.isFrozen(firstClose), true);
-    assert.strictEqual(controller.getConnectionSnapshot(), snapshot);
+    assert.deepEqual(controller.getConnectionSnapshot(), {
+        schemaVersion: 1,
+        status: 'closed',
+        code: null,
+        actions: { connect: false, reconnect: false, sync: false, disconnect: false }
+    });
 
     const closed = error => {
         assert.deepEqual(error, { code: 'CONNECTION_CLOSED' });
@@ -94,6 +196,114 @@ test('connection actions reject with exact safe objects before and after idempot
     };
     await assert.rejects(controller.beginConnect(), closed);
     await assert.rejects(controller.disconnect(), closed);
+});
+
+test('legacy Token initializes reconnect-required and explicit reconnect enters authorizing', async () => {
+    const { controller, calls } = controllerHarness({
+        record: connectionRecord({ status: 'disconnected' }),
+        authority: { status: 'legacy', subjectId: null }
+    });
+    await controller.initialize();
+    assert.deepEqual(controller.getConnectionSnapshot(), {
+        schemaVersion: 1,
+        status: 'reconnect_required',
+        code: 'AUTHORIZATION_REQUIRED',
+        actions: { connect: false, reconnect: true, sync: false, disconnect: false }
+    });
+    await controller.beginConnect();
+    assert.equal(calls.begin, 1);
+    assert.equal(controller.getConnectionSnapshot().status, 'authorizing');
+});
+
+test('restored C2 subject mismatch stores nothing and never mutates connection', async () => {
+    const token = Object.freeze({
+        access_token: 'synthetic-access',
+        refresh_token: 'synthetic-refresh',
+        expires_at: 2_100_000_000,
+        subject_id: OTHER_SUBJECT,
+        granted_scopes: Object.freeze(['read', 'activity:read_all'])
+    });
+    const { controller, calls } = controllerHarness({
+        record: connectionRecord({ status: 'disconnected', revision: 7 }),
+        callback: Object.freeze({
+            kind: 'code', code: 'synthetic-code', state: 'synthetic-state',
+            grantedScopes: Object.freeze(['read', 'activity:read_all'])
+        }),
+        callbackToken: token
+    });
+    const result = await controller.initialize();
+    assert.deepEqual(result, { status: 'error', code: 'IDENTITY_MISMATCH' });
+    assert.equal(calls.process.length, 1);
+    assert.deepEqual(calls.accept, []);
+    assert.deepEqual(calls.create, []);
+    assert.deepEqual(calls.transition, []);
+    assert.equal(calls.expire, 0);
+});
+
+test('Token write precedes C2 create and is rolled back when C2 fails', async () => {
+    const token = Object.freeze({
+        access_token: 'synthetic-access', refresh_token: 'synthetic-refresh',
+        expires_at: 2_100_000_000, subject_id: SUBJECT,
+        granted_scopes: Object.freeze(['read', 'activity:read_all'])
+    });
+    const { controller, calls } = controllerHarness({
+        callback: Object.freeze({
+            kind: 'code', code: 'synthetic-code', state: 'synthetic-state',
+            grantedScopes: Object.freeze(['read', 'activity:read_all'])
+        }),
+        callbackToken: token,
+        createFailure: true
+    });
+    assert.deepEqual(await controller.initialize(), {
+        status: 'error', code: 'CONNECTION_UPDATE_FAILED'
+    });
+    assert.equal(calls.accept.length, 1);
+    assert.equal(calls.create.length, 1);
+    assert.equal(calls.expire, 1);
+});
+
+test('exact callback creates C2 and disconnect CASes only status/history after Token removal', async () => {
+    const token = Object.freeze({
+        access_token: 'synthetic-access', refresh_token: 'synthetic-refresh',
+        expires_at: 2_100_000_000, subject_id: SUBJECT,
+        granted_scopes: Object.freeze(['read', 'activity:read_all'])
+    });
+    const { controller, calls } = controllerHarness({
+        callback: Object.freeze({
+            kind: 'code', code: 'synthetic-code', state: 'synthetic-state',
+            grantedScopes: Object.freeze(['read', 'activity:read_all'])
+        }),
+        callbackToken: token,
+        disconnectStatus: 'revocation-unconfirmed'
+    });
+    assert.deepEqual(await controller.initialize(), { status: 'connected' });
+    assert.equal(controller.getConnectionSnapshot().status, 'connected');
+    assert.deepEqual(calls.create[0], connectionRecord());
+    assert.deepEqual(await controller.disconnect(), { status: 'disconnected' });
+    assert.equal(calls.syncBoundary, 1);
+    assert.equal(calls.disconnect, 1);
+    assert.deepEqual(calls.order, ['sync-boundary', 'disconnect']);
+    assert.deepEqual(calls.transition[0], {
+        id: 'source-connection:strava', expectedRevision: 1,
+        status: 'disconnected', lastSyncAt: null,
+        errorCode: 'REVOCATION_UNCONFIRMED'
+    });
+    assert.equal(controller.getConnectionSnapshot().status, 'disconnected');
+});
+
+test('disconnect fails before revoke, Token removal, or C2 CAS when the sync boundary is not inactive', async () => {
+    const { controller, calls } = controllerHarness({
+        record: connectionRecord(),
+        authority: { status: 'authority', subjectId: SUBJECT },
+        syncBoundaryFailure: true
+    });
+    assert.deepEqual(await controller.initialize(), { status: 'connected' });
+    assert.deepEqual(await controller.disconnect(), {
+        status: 'error', code: 'CONNECTION_UPDATE_FAILED'
+    });
+    assert.equal(calls.syncBoundary, 1);
+    assert.equal(calls.disconnect, 0);
+    assert.deepEqual(calls.transition, []);
 });
 
 test('canonical Source Manager navigation performs zero history writes', () => {
@@ -110,7 +320,7 @@ test('canonical Source Manager navigation performs zero history writes', () => {
     }
 });
 
-test('OAuth-shaped material is scrubbed once and preserves one exact explicit mode', () => {
+test('noncanonical and cross-mode OAuth material is scrubbed once and blocked', () => {
     const canary = 'synthetic-private-callback-canary';
     for (const mode of ['real', 'demo']) {
         const { input, calls } = navigation({
@@ -118,10 +328,56 @@ test('OAuth-shaped material is scrubbed once and preserves one exact explicit mo
             hash: `#scope=${canary}`
         });
         const result = sanitizeSourceManagerNavigation(input);
-        assert.deepEqual(result, { status: 'sanitized', sessionMode: mode });
+        assert.deepEqual(result, {
+            status: 'blocked',
+            sessionMode: null,
+            code: 'NAVIGATION_SANITIZATION_FAILED'
+        });
         assert.deepEqual(calls, [[null, '', `/source-manager.html?mode=${mode}`]]);
         assert.doesNotMatch(JSON.stringify({ result, calls }), new RegExp(canary));
     }
+});
+
+test('exact Real callback is captured only in memory after the synchronous scrub', () => {
+    const state = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq';
+    const { input, calls } = navigation({
+        search: `?mode=real&code=synthetic-code&state=${state}&scope=read%2Cactivity%3Aread_all`
+    });
+    const result = sanitizeSourceManagerNavigation(input);
+    assert.deepEqual(calls, [[null, '', '/source-manager.html?mode=real']]);
+    assert.deepEqual(result, {
+        status: 'sanitized',
+        sessionMode: 'real',
+        callback: {
+            kind: 'code',
+            code: 'synthetic-code',
+            state,
+            grantedScopes: ['read', 'activity:read_all']
+        }
+    });
+    assertDeepFrozen(result);
+});
+
+test('exact access_denied callback is detached and duplicate callback keys block', () => {
+    const state = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq';
+    const denied = navigation({
+        search: `?error=access_denied&state=${state}&mode=real`
+    });
+    assert.deepEqual(sanitizeSourceManagerNavigation(denied.input), {
+        status: 'sanitized',
+        sessionMode: 'real',
+        callback: { kind: 'denied', state }
+    });
+    assert.deepEqual(denied.calls, [[null, '', '/source-manager.html?mode=real']]);
+
+    const duplicate = navigation({
+        search: `?mode=real&code=one&code=two&state=${state}&scope=read%2Cactivity%3Aread_all`
+    });
+    assert.deepEqual(sanitizeSourceManagerNavigation(duplicate.input), {
+        status: 'blocked', sessionMode: null,
+        code: 'NAVIGATION_SANITIZATION_FAILED'
+    });
+    assert.equal(duplicate.calls.length, 1);
 });
 
 test('untrusted navigation without one valid mode scrubs once and remains blocked', () => {

@@ -54,7 +54,22 @@ const PREFLIGHT_COPY = Object.freeze({
     REVIEW_STALE: 'This review item changed. Refresh the review queue.',
     REVIEW_DECISION_FAILED: 'The review decision could not be recorded.',
     INVALID_SESSION_MODE: 'The requested Source Manager session mode is invalid.',
-    AUTHORIZATION_UNAVAILABLE: 'Connection controller staged; authorization remains unavailable until connection identity and provider import are ready.',
+    AUTHORIZATION_INVALID_REQUEST: 'The authorization response could not be accepted.',
+    AUTHORIZATION_STATE_UNAVAILABLE: 'The authorization session is no longer available. Reconnect explicitly.',
+    AUTHORIZATION_STATE_INVALID: 'The authorization session did not match. Reconnect explicitly.',
+    AUTHORIZATION_STATE_EXPIRED: 'The authorization session expired. Reconnect explicitly.',
+    AUTHORIZATION_ACCESS_DENIED: 'Strava authorization was cancelled.',
+    AUTHORIZATION_CONFIG_FAILED: 'Authorization configuration is unavailable.',
+    AUTHORIZATION_EXCHANGE_FAILED: 'Authorization could not be completed.',
+    AUTHORIZATION_TOKEN_INVALID: 'The authorization response was incomplete.',
+    IDENTITY_MISMATCH: 'This Strava account does not match the local library.',
+    IDENTITY_UNCONFIRMED: 'The Strava account identity could not be confirmed.',
+    TOKEN_WRITE_FAILED: 'Authorization could not be stored locally.',
+    TOKEN_REMOVAL_FAILED: 'Local authorization could not be removed.',
+    CONNECTION_INITIALIZATION_FAILED: 'The connection record could not be opened.',
+    CONNECTION_UPDATE_FAILED: 'The connection record could not be updated.',
+    CONNECTION_ACTION_UNAVAILABLE: 'That connection action is not available.',
+    REVOCATION_UNCONFIRMED: 'Disconnected locally. Provider revocation was not confirmed.',
     IMPORT_FAILED: 'The import could not be completed.'
 });
 
@@ -596,8 +611,10 @@ function validConnectionSnapshot(value) {
         if (actionsPrototype !== Object.prototype && actionsPrototype !== null) return false;
         const actionKeys = Reflect.ownKeys(actions);
         if (
-            actionKeys.length !== 2
+            actionKeys.length !== 4
             || !actionKeys.includes('connect')
+            || !actionKeys.includes('reconnect')
+            || !actionKeys.includes('sync')
             || !actionKeys.includes('disconnect')
         ) return false;
         const action = key => {
@@ -606,11 +623,18 @@ function validConnectionSnapshot(value) {
                 ? descriptor.value
                 : undefined;
         };
+        const status = read('status');
+        const code = read('code');
         return read('schemaVersion') === 1
-            && read('status') === 'authorization_unavailable'
-            && read('code') === 'AUTHORIZATION_UNAVAILABLE'
-            && action('connect') === false
-            && action('disconnect') === false;
+            && [
+                'unconfigured', 'authorizing', 'callback_processing',
+                'connected', 'reconnect_required', 'error',
+                'disconnecting', 'disconnected', 'closed'
+            ].includes(status)
+            && (code === null || (typeof code === 'string' && SAFE_UI_CODES.has(code)))
+            && ['connect', 'reconnect', 'sync', 'disconnect'].every(
+                key => typeof action(key) === 'boolean'
+            );
     } catch {
         return false;
     }
@@ -628,6 +652,12 @@ export function createSourceManagerPage({
         blockingCopy: document.getElementById('blocking-error-copy'),
         apiCopy: document.getElementById('source-api-copy'),
         apiConnect: document.getElementById('source-api-connect'),
+        apiSync: document.getElementById('source-api-sync'),
+        apiDisconnect: document.getElementById('source-api-disconnect'),
+        disconnectDialog: document.getElementById('disconnect-dialog'),
+        disconnectDialogTitle: document.getElementById('disconnect-dialog-title'),
+        disconnectCancel: document.getElementById('disconnect-cancel'),
+        disconnectConfirm: document.getElementById('disconnect-confirm'),
         firstRun: document.getElementById('first-run'),
         sessionLabel: document.getElementById('session-label'),
         previewTotal: document.getElementById('preview-total'),
@@ -679,23 +709,82 @@ export function createSourceManagerPage({
         if (!card || !badge) return;
         const labels = {
             not_configured: 'Not configured', available: 'Available',
-            authorization_unavailable: 'Authorization unavailable',
+            unconfigured: 'Not connected', authorizing: 'Authorization in progress',
+            callback_processing: 'Authorization in progress', connected: 'Connected locally',
+            reconnect_required: 'Reconnect required', disconnecting: 'Disconnecting',
+            disconnected: 'Disconnected', closed: 'Disconnected',
             importing: 'Importing', success: 'Success', error: 'Error'
         };
         card.dataset.status = status;
-        badge.textContent = labels[status] || 'Error';
+        badge.textContent = status === 'error' && source === 'api'
+            ? 'Connection error'
+            : labels[status] || 'Error';
     }
 
     function renderConnectionSnapshot(snapshot) {
         if (!validConnectionSnapshot(snapshot)) {
-            showBlockingError(Object.freeze({ code: 'AUTHORIZATION_UNAVAILABLE' }));
+            showBlockingError(Object.freeze({ code: 'CONNECTION_INITIALIZATION_FAILED' }));
             return false;
         }
-        setSourceStatus('api', 'authorization_unavailable');
-        elements.apiCopy.textContent = PREFLIGHT_COPY.AUTHORIZATION_UNAVAILABLE;
-        elements.apiConnect.textContent = 'Connect unavailable';
-        elements.apiConnect.disabled = true;
+        setSourceStatus('api', snapshot.status);
+        const copy = {
+            unconfigured: 'Connect only after confirming that this is the Strava account for this local library.',
+            authorizing: 'Continue authorization in this tab.',
+            callback_processing: 'Completing authorization locally.',
+            connected: 'Authorization is stored locally and is not automatically checked.',
+            reconnect_required: 'Reconnect explicitly to restore exact local authorization.',
+            error: snapshot.code === null
+                ? 'The connection could not be used.'
+                : safeCopy(snapshot.code),
+            disconnecting: 'Removing local authorization and requesting provider revocation.',
+            disconnected: snapshot.code === 'REVOCATION_UNCONFIRMED'
+                ? 'Disconnected locally. Provider revocation was not confirmed.'
+                : 'Disconnected locally. Local data was preserved.',
+            closed: 'Connection controls are closed.'
+        };
+        elements.apiCopy.textContent = copy[snapshot.status];
+        elements.apiConnect.textContent = snapshot.actions.reconnect ? 'Reconnect' : 'Connect';
+        elements.apiConnect.disabled = !snapshot.actions.connect && !snapshot.actions.reconnect;
+        elements.apiConnect.hidden = !snapshot.actions.connect && !snapshot.actions.reconnect;
+        elements.apiSync.disabled = true;
+        elements.apiSync.hidden = snapshot.status !== 'connected' && snapshot.status !== 'error';
+        elements.apiDisconnect.disabled = !snapshot.actions.disconnect;
+        elements.apiDisconnect.hidden = !snapshot.actions.disconnect;
         return true;
+    }
+
+    async function beginConnection() {
+        try {
+            const pending = connectionFacade.beginConnect();
+            renderConnectionSnapshot(connectionFacade.getConnectionSnapshot());
+            await pending;
+            renderConnectionSnapshot(connectionFacade.getConnectionSnapshot());
+        } catch (error) {
+            renderConnectionSnapshot(connectionFacade.getConnectionSnapshot());
+            elements.alert.textContent = safeCopy(safeCode(error));
+            recordDiagnosticError({
+                page: 'source-manager', category: 'connection',
+                code: 'SOURCE_MANAGER_OPERATION_FAILED'
+            });
+        }
+    }
+
+    async function confirmDisconnect() {
+        elements.disconnectConfirm.disabled = true;
+        elements.disconnectCancel.disabled = true;
+        elements.disconnectDialog.close();
+        try {
+            const pending = connectionFacade.disconnect();
+            renderConnectionSnapshot(connectionFacade.getConnectionSnapshot());
+            await pending;
+            renderConnectionSnapshot(connectionFacade.getConnectionSnapshot());
+        } catch (error) {
+            renderConnectionSnapshot(connectionFacade.getConnectionSnapshot());
+            elements.alert.textContent = safeCopy(safeCode(error));
+        } finally {
+            elements.disconnectConfirm.disabled = false;
+            elements.disconnectCancel.disabled = false;
+        }
     }
 
     function showError(error) {
@@ -1147,6 +1236,23 @@ export function createSourceManagerPage({
     }
 
     function bind() {
+        if (sessionMode === SOURCE_MANAGER_SESSION_MODE.REAL) {
+            elements.apiConnect.addEventListener('click', beginConnection);
+            elements.apiDisconnect.addEventListener('click', () => {
+                elements.disconnectDialog.showModal();
+                queueMicrotask(() => elements.disconnectDialogTitle.focus());
+            });
+            elements.disconnectCancel.addEventListener('click', () => {
+                elements.disconnectDialog.close();
+                elements.apiDisconnect.focus();
+            });
+            elements.disconnectConfirm.addEventListener('click', confirmDisconnect);
+            elements.disconnectDialog.addEventListener('cancel', event => {
+                event.preventDefault();
+                elements.disconnectDialog.close();
+                elements.apiDisconnect.focus();
+            });
+        }
         document.querySelectorAll('[data-open-import]').forEach(button => {
             button.addEventListener('click', openDialog);
             if (sessionMode !== SOURCE_MANAGER_SESSION_MODE.REAL) button.disabled = true;
@@ -1229,6 +1335,15 @@ export function createSourceManagerPage({
                 // The page exposes only the fixed unavailable state.
             }
             renderConnectionSnapshot(snapshot);
+        } else {
+            setSourceStatus('api', 'unconfigured');
+            elements.apiCopy.textContent = 'Demo — no provider connection';
+            elements.apiConnect.hidden = true;
+            elements.apiConnect.disabled = true;
+            elements.apiSync.hidden = true;
+            elements.apiSync.disabled = true;
+            elements.apiDisconnect.hidden = true;
+            elements.apiDisconnect.disabled = true;
         }
         try {
             await importFacade.initialize();

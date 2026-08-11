@@ -50,13 +50,29 @@ if (navigation.status === 'blocked') {
         application?.close().catch(() => {});
     }, { once: true });
 
+    const liveAuthorization = navigation.sessionMode === 'real'
+        ? {
+            callback: navigation.callback ?? null,
+            localStorage,
+            sessionStorage,
+            fetchImpl: fetch.bind(globalThis),
+            origin: location.origin,
+            navigate: url => location.assign(url),
+            now: Date.now,
+            setTimeoutImpl: setTimeout.bind(globalThis),
+            clearTimeoutImpl: clearTimeout.bind(globalThis),
+            AbortControllerImpl: AbortController
+        }
+        : {};
+
     startSourceManager({
         document,
         sessionMode: navigation.sessionMode,
         indexedDB,
         IDBKeyRange,
         crypto,
-        Worker
+        Worker,
+        ...liveAuthorization
     }).then(async result => {
         application = result;
         if (pageHidden) await application.close();

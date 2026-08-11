@@ -5,6 +5,7 @@ import test from 'node:test';
 
 import * as sharedApi from '../../api/_shared.js';
 import authHandler from '../../api/strava-auth.js';
+import revokeHandler from '../../api/strava-revoke.js';
 import activitiesHandler from '../../api/strava-activities.js';
 import activityHandler from '../../api/strava-activity.js';
 import athleteHandler from '../../api/strava-athlete.js';
@@ -20,6 +21,9 @@ const EXPECTED_EVENTS = Object.freeze({
     TOKEN_REFRESH_FAILED: 'server_api.token_refresh_failed',
     AUTH_NETWORK_FAILED: 'server_api.auth_network_failed',
     AUTH_PROVIDER_REJECTED: 'server_api.auth_provider_rejected',
+    AUTH_RESPONSE_INVALID: 'server_api.auth_response_invalid',
+    REVOKE_NETWORK_FAILED: 'server_api.revoke_network_failed',
+    REVOKE_PROVIDER_REJECTED: 'server_api.revoke_provider_rejected',
     ACTIVITIES_FAILED: 'server_api.activities_failed',
     ACTIVITY_FAILED: 'server_api.activity_failed',
     ATHLETE_FAILED: 'server_api.athlete_failed',
@@ -246,6 +250,7 @@ test('server/API production sources use only the shared closed logger and fixed 
     const apiFiles = [
         'api/_shared.js',
         'api/strava-auth.js',
+        'api/strava-revoke.js',
         'api/strava-activities.js',
         'api/strava-activity.js',
         'api/strava-athlete.js',
@@ -269,6 +274,173 @@ test('server/API production sources use only the shared closed logger and fixed 
     const localSource = await readFile(LOCAL_SERVER_URL, 'utf8');
     assert.equal(localSource.includes('console.error'), false, 'safe local logger boundary');
     assert.equal(/\.\s*(?:message|stack|cause)\b/.test(localSource), false, 'safe local raw error guard');
+});
+
+function jsonProviderResponse(body, status = 200) {
+    const serialized = JSON.stringify(body);
+    return {
+        ok: status >= 200 && status < 300,
+        status,
+        headers: {
+            get(name) {
+                if (String(name).toLowerCase() === 'content-type') return 'application/json';
+                if (String(name).toLowerCase() === 'content-length') {
+                    return String(Buffer.byteLength(serialized));
+                }
+                return null;
+            }
+        },
+        async text() { return serialized; }
+    };
+}
+
+function sourceManagerAuthRequest(body) {
+    return {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body
+    };
+}
+
+test('Source Manager exchange is exact, bounded, reduced, timed, and no-store', async () => {
+    let upstream;
+    await withCapturedRuntime(async (...args) => {
+        upstream = args;
+        return jsonProviderResponse({
+            access_token: 'synthetic-access',
+            refresh_token: 'synthetic-refresh',
+            expires_at: 2_100_000_000,
+            athlete: {
+                id: 424242,
+                firstname: 'private-profile-canary'
+            },
+            unknown: 'private-upstream-canary'
+        });
+    }, async logs => {
+        const response = createResponse();
+        await authHandler(sourceManagerAuthRequest({
+            code: 'synthetic-code',
+            granted_scopes: ['read', 'activity:read_all']
+        }), response);
+        assert.equal(response.statusCode, 200);
+        assert.deepEqual(response.body, {
+            access_token: 'synthetic-access',
+            refresh_token: 'synthetic-refresh',
+            expires_at: 2_100_000_000,
+            subject_id: '424242',
+            granted_scopes: ['read', 'activity:read_all']
+        });
+        assert.equal(response.headers['Cache-Control'], 'no-store');
+        assert.equal(response.headers.Pragma, 'no-cache');
+        assert.equal(response.headers['Referrer-Policy'], 'no-referrer');
+        assertClosedLogs(logs, []);
+    });
+    assert.equal(upstream[0], 'https://www.strava.com/oauth/token');
+    assert.equal(upstream[1].method, 'POST');
+    assert.equal(upstream[1].body instanceof URLSearchParams, true);
+    assert.equal(upstream[1].body.get('client_secret'), 'synthetic-client-value');
+    assert.equal(upstream[1].body.get('code'), 'synthetic-code');
+    assert.equal(upstream[1].signal instanceof AbortSignal, true);
+});
+
+test('legacy code-only exchange stays reduced and cannot invent five-field authority', async () => {
+    await withCapturedRuntime(async () => jsonProviderResponse({
+        access_token: 'synthetic-access',
+        refresh_token: 'synthetic-refresh',
+        expires_at: 2_100_000_000,
+        athlete: { id: '424242' }
+    }), async logs => {
+        const response = createResponse();
+        await authHandler(sourceManagerAuthRequest({ code: 'synthetic-code' }), response);
+        assert.deepEqual(response.body, {
+            access_token: 'synthetic-access',
+            refresh_token: 'synthetic-refresh',
+            expires_at: 2_100_000_000,
+            subject_id: '424242'
+        });
+        assert.equal(Object.hasOwn(response.body, 'granted_scopes'), false);
+        assertClosedLogs(logs, []);
+    });
+});
+
+test('auth rejects extra keys, bad scopes, content type, and oversized code before upstream work', async () => {
+    const requests = [
+        sourceManagerAuthRequest({ code: 'code', extra: true }),
+        sourceManagerAuthRequest({ code: 'code', granted_scopes: ['read'] }),
+        { ...sourceManagerAuthRequest({ code: 'code' }), headers: { 'content-type': 'text/plain' } },
+        sourceManagerAuthRequest({ code: 'x'.repeat(513) })
+    ];
+    for (const request of requests) {
+        await withCapturedRuntime(async () => {
+            assert.fail('upstream fetch must not run');
+        }, async logs => {
+            const response = createResponse();
+            await authHandler(request, response);
+            assert.equal(response.statusCode, 400);
+            assertExactBody(response, { error: 'AUTH_REQUEST_INVALID' });
+            assert.equal(response.headers['Cache-Control'], 'no-store');
+            assertClosedLogs(logs, []);
+        });
+    }
+});
+
+test('malformed auth provider payload is fixed, redacted, and closed', async () => {
+    await withCapturedRuntime(async () => jsonProviderResponse({
+        access_token: 'synthetic-access',
+        refresh_token: 'synthetic-refresh',
+        expires_at: 2_100_000_000,
+        athlete: { id: 'private-invalid-subject' }
+    }), async logs => {
+        const response = createResponse();
+        await authHandler(sourceManagerAuthRequest({
+            code: 'synthetic-code',
+            granted_scopes: ['read', 'activity:read_all']
+        }), response);
+        assert.equal(response.statusCode, 502);
+        assertExactBody(response, { error: 'AUTH_RESPONSE_INVALID' });
+        assertClosedLogs(logs, [EXPECTED_EVENTS.AUTH_RESPONSE_INVALID]);
+        assert.doesNotMatch(JSON.stringify({ body: response.body, logs }), /private-invalid-subject/);
+    });
+});
+
+test('server revoke uses refresh token only upstream with Basic auth and a reduced response', async () => {
+    let upstream;
+    await withCapturedRuntime(async (...args) => {
+        upstream = args;
+        return { ok: true, status: 200 };
+    }, async logs => {
+        const response = createResponse();
+        await revokeHandler(sourceManagerAuthRequest({
+            refresh_token: 'synthetic-refresh'
+        }), response);
+        assert.equal(response.statusCode, 200);
+        assertExactBody(response, { revoked: true });
+        assert.equal(response.headers['Cache-Control'], 'no-store');
+        assertClosedLogs(logs, []);
+    });
+    assert.equal(upstream[0], 'https://www.strava.com/oauth/revoke');
+    assert.equal(upstream[1].method, 'POST');
+    assert.equal(
+        upstream[1].headers.Authorization,
+        `Basic ${Buffer.from('synthetic-client-id:synthetic-client-value').toString('base64')}`
+    );
+    assert.equal(upstream[1].headers['Content-Type'], 'application/x-www-form-urlencoded');
+    assert.equal(upstream[1].body, 'token=synthetic-refresh');
+    assert.equal(upstream[1].signal instanceof AbortSignal, true);
+    assert.doesNotMatch(JSON.stringify(upstream[1].headers), /synthetic-refresh/);
+});
+
+test('server revoke failures are fixed and never reflect refresh token or provider details', async () => {
+    await withCapturedRuntime(async () => ({ ok: false, status: 503 }), async logs => {
+        const response = createResponse();
+        await revokeHandler(sourceManagerAuthRequest({
+            refresh_token: 'synthetic-private-refresh'
+        }), response);
+        assert.equal(response.statusCode, 502);
+        assertExactBody(response, { error: 'REVOCATION_UNCONFIRMED' });
+        assertClosedLogs(logs, [EXPECTED_EVENTS.REVOKE_PROVIDER_REJECTED]);
+        assert.doesNotMatch(JSON.stringify({ body: response.body, logs }), /synthetic-private-refresh/);
+    });
 });
 
 test('all ordinary provider failures preserve statuses with fixed logs and response bodies', async t => {
@@ -300,12 +472,13 @@ test('token exchange failures use fixed events and fixed response bodies', async
             },
             async logs => {
                 const response = createResponse();
-                await invokeWithoutRawRejection(authHandler, {
-                    method: 'POST',
-                    body: { code: 'synthetic-code' }
-                }, response);
+                await invokeWithoutRawRejection(
+                    authHandler,
+                    sourceManagerAuthRequest({ code: 'synthetic-code' }),
+                    response
+                );
                 assert.equal(response.statusCode, 502, 'safe auth network status');
-                assertExactBody(response, { error: 'Cannot reach Strava' });
+                assertExactBody(response, { error: 'AUTH_NETWORK_FAILED' });
                 assertClosedLogs(logs, [EXPECTED_EVENTS.AUTH_NETWORK_FAILED]);
             }
         );
@@ -316,12 +489,13 @@ test('token exchange failures use fixed events and fixed response bodies', async
             async () => providerFailure(400),
             async logs => {
                 const response = createResponse();
-                await invokeWithoutRawRejection(authHandler, {
-                    method: 'POST',
-                    body: { code: 'synthetic-code' }
-                }, response);
-                assert.equal(response.statusCode, 400, 'safe auth provider status');
-                assertExactBody(response, { error: 'Strava auth failed' });
+                await invokeWithoutRawRejection(
+                    authHandler,
+                    sourceManagerAuthRequest({ code: 'synthetic-code' }),
+                    response
+                );
+                assert.equal(response.statusCode, 502, 'safe auth provider status');
+                assertExactBody(response, { error: 'AUTH_PROVIDER_REJECTED' });
                 assertClosedLogs(logs, [EXPECTED_EVENTS.AUTH_PROVIDER_REJECTED]);
             }
         );
@@ -330,10 +504,17 @@ test('token exchange failures use fixed events and fixed response bodies', async
 
 test('token exchange rejects absent and accessor-backed request bodies before side effects', async t => {
     const cases = [
-        Object.freeze({ name: 'absent body', request: { method: 'POST' }, getReads: () => 0 }),
+        Object.freeze({
+            name: 'absent body',
+            request: sourceManagerAuthRequest(undefined),
+            getReads: () => 0
+        }),
         (() => {
             let reads = 0;
-            const request = { method: 'POST' };
+            const request = {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' }
+            };
             Object.defineProperty(request, 'body', {
                 enumerable: true,
                 get() {
@@ -353,7 +534,11 @@ test('token exchange rejects absent and accessor-backed request bodies before si
                     throw new Error('synthetic-code-marker');
                 }
             });
-            return Object.freeze({ name: 'code accessor', request: { method: 'POST', body }, getReads: () => reads });
+            return Object.freeze({
+                name: 'code accessor',
+                request: sourceManagerAuthRequest(body),
+                getReads: () => reads
+            });
         })()
     ];
 
@@ -371,7 +556,7 @@ test('token exchange rejects absent and accessor-backed request bodies before si
                     assert.equal(scenario.getReads(), 0, 'safe request accessor count');
                     assert.equal(fetchCalls, 0, 'safe preflight fetch count');
                     assert.equal(response.statusCode, 400, 'safe missing code status');
-                    assertExactBody(response, { error: 'Authorization code is required' });
+                    assertExactBody(response, { error: 'AUTH_REQUEST_INVALID' });
                     assertClosedLogs(logs, []);
                 }
             );
@@ -399,7 +584,7 @@ test('token exchange rejects Proxy request shapes without executing traps', asyn
             });
             const request = target === 'request'
                 ? hostile
-                : { method: 'POST', body: hostile };
+                : sourceManagerAuthRequest(hostile);
             let fetchCalls = 0;
 
             await withCapturedRuntime(
@@ -451,7 +636,13 @@ test('token refresh failure does not read the provider body and emits only close
 
 test('hostile thrown values are never inspected, coerced, logged, or returned', async t => {
     const scenarios = [
-        Object.freeze({ name: 'auth', handler: authHandler, request: { method: 'POST', body: { code: 'synthetic-code' } }, status: 502, event: EXPECTED_EVENTS.AUTH_NETWORK_FAILED }),
+        Object.freeze({
+            name: 'auth',
+            handler: authHandler,
+            request: sourceManagerAuthRequest({ code: 'synthetic-code' }),
+            status: 502,
+            event: EXPECTED_EVENTS.AUTH_NETWORK_FAILED
+        }),
         ...HANDLERS.map(scenario => Object.freeze({
             name: scenario.name,
             handler: scenario.handler,
@@ -487,7 +678,7 @@ test('hostile thrown values are never inspected, coerced, logged, or returned', 
                     assert.equal(traps, 0, 'safe hostile trap count');
                     assert.equal(response.statusCode, scenario.status, 'safe hostile status');
                     assertExactBody(response, {
-                        error: scenario.name === 'auth' ? 'Cannot reach Strava' : 'Internal Server Error'
+                        error: scenario.name === 'auth' ? 'AUTH_NETWORK_FAILED' : 'Internal Server Error'
                     });
                     assertClosedLogs(logs, [scenario.event]);
                 }
@@ -526,37 +717,44 @@ test('ordinary successes emit no server error event', async t => {
 
     await t.test('auth', async () => {
         await withCapturedRuntime(
-            async () => providerSuccess({ synthetic: true }),
+            async () => jsonProviderResponse({
+                access_token: 'synthetic-access',
+                refresh_token: 'synthetic-refresh',
+                expires_at: 4_102_444_800,
+                athlete: { id: 424242 }
+            }),
             async logs => {
                 const response = createResponse();
-                await invokeWithoutRawRejection(authHandler, {
-                    method: 'POST',
-                    body: { code: 'synthetic-code' }
-                }, response);
+                await invokeWithoutRawRejection(
+                    authHandler,
+                    sourceManagerAuthRequest({ code: 'synthetic-code' }),
+                    response
+                );
                 assert.equal(response.statusCode, 200, 'safe auth success status');
+                assertExactBody(response, {
+                    access_token: 'synthetic-access',
+                    refresh_token: 'synthetic-refresh',
+                    expires_at: 4_102_444_800,
+                    subject_id: '424242'
+                });
                 assertClosedLogs(logs, []);
             }
         );
     });
 
-    await t.test('auth preserves the existing empty success fallback', async () => {
+    await t.test('auth fails closed on a malformed provider success body', async () => {
         await withCapturedRuntime(
-            async () => ({
-                ok: true,
-                status: 200,
-                async json() {
-                    throw new Error('synthetic-json-marker');
-                }
-            }),
+            async () => jsonProviderResponse({ synthetic: true }),
             async logs => {
                 const response = createResponse();
-                await invokeWithoutRawRejection(authHandler, {
-                    method: 'POST',
-                    body: { code: 'synthetic-code' }
-                }, response);
-                assert.equal(response.statusCode, 200, 'safe auth fallback status');
-                assertExactBody(response, {});
-                assertClosedLogs(logs, []);
+                await invokeWithoutRawRejection(
+                    authHandler,
+                    sourceManagerAuthRequest({ code: 'synthetic-code' }),
+                    response
+                );
+                assert.equal(response.statusCode, 502, 'safe auth invalid response status');
+                assertExactBody(response, { error: 'AUTH_RESPONSE_INVALID' });
+                assertClosedLogs(logs, [EXPECTED_EVENTS.AUTH_RESPONSE_INVALID]);
             }
         );
     });

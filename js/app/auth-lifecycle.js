@@ -9,6 +9,7 @@ import {
 
 const TOKEN_KEY = 'strava_tokens';
 const ATHLETE_KEY = LEGACY_LOCAL_STORAGE_KEYS.athlete;
+const REQUIRED_SCOPES = Object.freeze(['read', 'activity:read_all']);
 
 const LOCAL_LIBRARY_KEYS = Object.freeze([
     LEGACY_LOCAL_STORAGE_KEYS.activities,
@@ -80,12 +81,58 @@ function readStoredTokens(storage) {
         ) {
             return { status: 'invalid', accessToken: null };
         }
+        const authority = exactTokenAuthority(parsed);
         return {
             status: 'valid',
-            accessToken: parsed.access_token
+            accessToken: parsed.access_token,
+            revocationToken: authority === null
+                ? parsed.access_token
+                : parsed.refresh_token,
+            authority
         };
     } catch {
-        return { status: 'read-error', accessToken: null };
+        return {
+            status: 'read-error',
+            accessToken: null,
+            revocationToken: null,
+            authority: null
+        };
+    }
+}
+
+function exactScopes(value) {
+    try {
+        return Array.isArray(value)
+            && Object.getPrototypeOf(value) === Array.prototype
+            && Reflect.ownKeys(value).length === 3
+            && value.length === 2
+            && value[0] === REQUIRED_SCOPES[0]
+            && value[1] === REQUIRED_SCOPES[1];
+    } catch {
+        return false;
+    }
+}
+
+function exactTokenAuthority(value) {
+    try {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+        const keys = Reflect.ownKeys(value);
+        const exact = [
+            'access_token', 'refresh_token', 'expires_at',
+            'subject_id', 'granted_scopes'
+        ];
+        if (
+            keys.length !== exact.length
+            || keys.some(key => typeof key !== 'string' || !exact.includes(key))
+            || typeof value.refresh_token !== 'string'
+            || value.refresh_token.trim().length === 0
+            || !Number.isFinite(value.expires_at)
+            || normalizeIdentity(value.subject_id) === null
+            || !exactScopes(value.granted_scopes)
+        ) return null;
+        return Object.freeze({ subjectId: normalizeIdentity(value.subject_id) });
+    } catch {
+        return null;
     }
 }
 
@@ -98,7 +145,13 @@ function tokenRecordFromExchange(exchangeResponse) {
     ) {
         return null;
     }
-    return {
+    const subjectId = normalizeIdentity(exchangeResponse.subject_id)
+        || normalizeIdentity(exchangeResponse?.athlete?.id);
+    const hasScopes = Object.hasOwn(exchangeResponse, 'granted_scopes');
+    if (hasScopes && (subjectId === null || !exactScopes(exchangeResponse.granted_scopes))) {
+        return null;
+    }
+    const record = {
         access_token: exchangeResponse.access_token,
         refresh_token: typeof exchangeResponse.refresh_token === 'string'
             ? exchangeResponse.refresh_token
@@ -107,6 +160,16 @@ function tokenRecordFromExchange(exchangeResponse) {
             ? exchangeResponse.expires_at
             : null
     };
+    if (hasScopes) {
+        if (
+            record.refresh_token === null
+            || record.refresh_token.trim().length === 0
+            || record.expires_at === null
+        ) return null;
+        record.subject_id = subjectId;
+        record.granted_scopes = [...REQUIRED_SCOPES];
+    }
+    return { record, subjectId };
 }
 
 function inspectLocalStorageLibrary(storage) {
@@ -475,7 +538,7 @@ export function createAuthLifecycle({
                 revocationConfirmed = false;
             } else {
                 try {
-                    const result = await revokeAccessToken(tokenRead.accessToken);
+                    const result = await revokeAccessToken(tokenRead.revocationToken);
                     revocationConfirmed = result !== false && result?.ok !== false;
                 } catch {
                     revocationConfirmed = false;
@@ -516,9 +579,25 @@ export function createAuthLifecycle({
         );
     }
 
+    function inspectTokenAuthority() {
+        const tokenRead = readStoredTokens(storage);
+        if (tokenRead.status === 'absent') {
+            return lifecycleResult('absent', { subjectId: null });
+        }
+        if (tokenRead.status !== 'valid') {
+            return lifecycleResult('invalid', { subjectId: null });
+        }
+        if (tokenRead.authority === null) {
+            return lifecycleResult('legacy', { subjectId: null });
+        }
+        return lifecycleResult('authority', {
+            subjectId: tokenRead.authority.subjectId
+        });
+    }
+
     async function acceptOAuthTokenResponse(exchangeResponse) {
-        const tokenRecord = tokenRecordFromExchange(exchangeResponse);
-        if (!tokenRecord) {
+        const candidate = tokenRecordFromExchange(exchangeResponse);
+        if (!candidate) {
             return lifecycleResult(AUTH_LIFECYCLE_STATUS.UNAUTHENTICATED);
         }
 
@@ -528,7 +607,7 @@ export function createAuthLifecycle({
         }
 
         if (library.present) {
-            const newAthleteId = normalizeIdentity(exchangeResponse?.athlete?.id);
+            const newAthleteId = candidate.subjectId;
             if (!library.athleteId || !newAthleteId) {
                 return lifecycleResult(AUTH_LIFECYCLE_STATUS.IDENTITY_UNCONFIRMED);
             }
@@ -538,7 +617,7 @@ export function createAuthLifecycle({
         }
 
         try {
-            storage.setItem(TOKEN_KEY, JSON.stringify(tokenRecord));
+            storage.setItem(TOKEN_KEY, JSON.stringify(candidate.record));
         } catch {
             return lifecycleResult(AUTH_LIFECYCLE_STATUS.TOKEN_WRITE_FAILED);
         }
@@ -553,6 +632,7 @@ export function createAuthLifecycle({
         acceptOAuthTokenResponse,
         disconnect,
         expireToken,
-        handleAuthFailure
+        handleAuthFailure,
+        inspectTokenAuthority
     });
 }

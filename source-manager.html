@@ -20,7 +20,7 @@
             <div>
                 <p class="eyebrow">Local-first library</p>
                 <h1 id="source-manager-title">Sources</h1>
-                <p class="page-intro">Import activity summaries locally. Nothing on this page connects to a provider.</p>
+                <p class="page-intro">Import activity summaries locally or explicitly authorize Strava for this browser.</p>
             </div>
         </header>
 
@@ -68,17 +68,19 @@
                     <p class="source-note">Archive activity files remain opaque in this milestone.</p>
                 </article>
 
-                <article class="source-card" data-source-card="api" data-status="authorization_unavailable" aria-labelledby="source-api-title">
+                <article class="source-card" data-source-card="api" data-status="unconfigured" aria-labelledby="source-api-title">
                     <div class="source-card__heading">
                         <span class="source-icon" aria-hidden="true">SA</span>
-                        <span class="status-badge" data-source-status="api">Authorization unavailable</span>
+                        <span class="status-badge" data-source-status="api">Not connected</span>
                     </div>
                     <h3 id="source-api-title">Strava API</h3>
-                    <p id="source-api-copy">Connection controller staged; authorization remains unavailable until connection identity and provider import are ready.</p>
+                    <p id="source-api-copy">Connect only after confirming that this is the Strava account for this local library.</p>
                     <div class="button-row">
-                        <button type="button" class="button" id="source-api-connect" disabled>Connect unavailable</button>
+                        <button type="button" class="button button--primary" id="source-api-connect">Connect</button>
+                        <button type="button" class="button" id="source-api-sync" disabled hidden>Sync</button>
+                        <button type="button" class="button button--danger" id="source-api-disconnect" disabled hidden>Disconnect</button>
                     </div>
-                    <p class="source-note">Disconnecting and deleting local data are separate actions. Deletion is unavailable here.</p>
+                    <p class="source-note">Authorization is stored locally and Sync is never automatic. Disconnecting and deleting local data are separate actions.</p>
                 </article>
 
                 <article class="source-card" data-source-card="demo" data-status="not_configured" aria-labelledby="source-demo-title">
@@ -139,6 +141,22 @@
             </div>
         </section>
     </main>
+
+    <dialog id="disconnect-dialog" class="import-dialog" aria-labelledby="disconnect-dialog-title" aria-describedby="disconnect-dialog-description">
+        <form method="dialog" class="dialog-shell">
+            <header class="dialog-header">
+                <div>
+                    <p class="eyebrow">Local authorization</p>
+                    <h2 id="disconnect-dialog-title" tabindex="-1">Disconnect Strava?</h2>
+                </div>
+            </header>
+            <p id="disconnect-dialog-description">This also removes the origin-shared Legacy credential. All Legacy, V2, imported, source, backup, and settings data is preserved. Provider revocation may be unconfirmed while offline.</p>
+            <div class="dialog-actions">
+                <button type="button" class="button" id="disconnect-cancel">Keep connected</button>
+                <button type="button" class="button button--danger" id="disconnect-confirm">Disconnect</button>
+            </div>
+        </form>
+    </dialog>
 
     <dialog id="import-dialog" class="import-dialog" aria-labelledby="import-dialog-title" aria-describedby="import-dialog-description">
         <form method="dialog" class="dialog-shell">

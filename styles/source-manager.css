@@ -136,6 +136,13 @@ h3 { margin-bottom: 8px; }
 }
 
 [data-status="available"] .status-badge { background: #dbeafe; color: var(--info); }
+[data-status="unconfigured"] .status-badge,
+[data-status="disconnected"] .status-badge { background: #e2e8f0; color: #334155; }
+[data-status="authorizing"] .status-badge,
+[data-status="callback_processing"] .status-badge,
+[data-status="disconnecting"] .status-badge { background: #fef3c7; color: var(--warning); }
+[data-status="connected"] .status-badge { background: #dcfce7; color: var(--success); }
+[data-status="reconnect_required"] .status-badge { background: #ffedd5; color: var(--brand-dark); }
 [data-status="importing"] .status-badge { background: #fef3c7; color: var(--warning); }
 [data-status="success"] .status-badge { background: #dcfce7; color: var(--success); }
 [data-status="error"] .status-badge { background: #fee2e2; color: var(--danger); }

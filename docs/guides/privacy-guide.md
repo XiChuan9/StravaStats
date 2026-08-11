@@ -32,7 +32,31 @@ they do not look like a person's name.
 A V5 SourceConnection can retain the normalized provider subject as private local metadata. A
 disconnected tombstone retains that identity and historical `lastSyncAt`; it is separate from Token
 revocation and from deleting any local library. C2 does not read, write, exchange, refresh, or revoke
-credentials. The current Sources page provides no delete-local-data action.
+credentials. The Sources page provides no delete-local-data action.
+
+## Source Manager authorization
+
+Real-mode Source Manager authorization is explicit and same-tab. Before any Diagnostics, storage,
+DOM, or exchange work, the callback query and fragment are synchronously replaced by the exact
+mode-only Source Manager URL. The session state is 32 random bytes encoded as base64url, single-use,
+and expires after ten minutes. Only the ordered scopes `read,activity:read_all` are accepted.
+
+The browser fetches the public client ID and sends authorization codes only to same-origin API
+routes. The client secret stays server-side. The exchange response is reduced to access token,
+refresh token, expiry, normalized subject, and the exact ordered scopes; provider profile and
+unknown response fields do not cross into the browser. Those five fields form Source Manager
+authority. A Legacy three-field Token remains usable only by V1 and requires explicit reconnect in
+Source Manager.
+
+Before a Token is stored, its subject must exactly match both any immutable V5 SourceConnection
+subject—including one restored from Backup—and the existing Legacy identity guard. A mismatch
+stores nothing and changes neither Token nor SourceConnection. Source Manager authorization and
+callback values must never be included in screenshots or test evidence.
+
+Disconnect sends only the refresh token to the same-origin revoke route, then removes the local
+origin-shared Token even if provider revocation cannot be confirmed. It preserves all Legacy, V2,
+import, source, backup, and settings data. Provider revocation does not mean local-data deletion,
+and offline revocation may remain unconfirmed.
 
 ## Diagnostics is not a backup
 

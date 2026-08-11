@@ -73,6 +73,12 @@ const TOKEN_KEYS = Object.freeze([
     'refresh_token',
     'expires_at'
 ]);
+const AUTHORITY_TOKEN_KEYS = Object.freeze([
+    ...TOKEN_KEYS,
+    'subject_id',
+    'granted_scopes'
+]);
+const REQUIRED_SCOPES = Object.freeze(['read', 'activity:read_all']);
 
 function invalidErrorDetails() {
     return {
@@ -367,7 +373,34 @@ function normalizeStreamTypes(options, operation) {
     return normalized;
 }
 
-function validateToken(value) {
+function exactAuthority(value) {
+    try {
+        const subject = Object.getOwnPropertyDescriptor(value, 'subject_id');
+        const scopes = Object.getOwnPropertyDescriptor(value, 'granted_scopes');
+        if (
+            !subject?.enumerable
+            || !Object.hasOwn(subject, 'value')
+            || typeof subject.value !== 'string'
+            || !/^[1-9]\d*$/.test(subject.value)
+            || !scopes?.enumerable
+            || !Object.hasOwn(scopes, 'value')
+            || !Array.isArray(scopes.value)
+            || Object.getPrototypeOf(scopes.value) !== Array.prototype
+            || Reflect.ownKeys(scopes.value).length !== 3
+            || scopes.value.length !== 2
+            || scopes.value[0] !== REQUIRED_SCOPES[0]
+            || scopes.value[1] !== REQUIRED_SCOPES[1]
+        ) return null;
+        return Object.freeze({
+            subject_id: subject.value,
+            granted_scopes: Object.freeze([...REQUIRED_SCOPES])
+        });
+    } catch {
+        return null;
+    }
+}
+
+function validateToken(value, { exactStoredShape = false } = {}) {
     try {
         if (
             value === null
@@ -378,6 +411,16 @@ function validateToken(value) {
             return null;
         }
 
+        const keys = Reflect.ownKeys(value);
+        const hasSubject = keys.includes('subject_id');
+        const hasScopes = keys.includes('granted_scopes');
+        if (exactStoredShape) {
+            const expected = hasSubject || hasScopes ? AUTHORITY_TOKEN_KEYS : TOKEN_KEYS;
+            if (
+                keys.length !== expected.length
+                || keys.some(key => typeof key !== 'string' || !expected.includes(key))
+            ) return null;
+        }
         const validated = {};
         for (const key of TOKEN_KEYS) {
             const descriptor = Object.getOwnPropertyDescriptor(value, key);
@@ -396,6 +439,12 @@ function validateToken(value) {
             || !Number.isFinite(validated.expires_at)
         ) {
             return null;
+        }
+        if (hasSubject || hasScopes) {
+            const authority = exactAuthority(value);
+            if (authority === null) return null;
+            validated.subject_id = authority.subject_id;
+            validated.granted_scopes = [...authority.granted_scopes];
         }
         return validated;
     } catch {
@@ -748,7 +797,8 @@ export class StravaApiConnector {
                 operation
             );
         }
-        if (validateToken(parsedToken) === null) {
+        const validatedToken = validateToken(parsedToken, { exactStoredShape: true });
+        if (validatedToken === null) {
             throw connectorError(
                 STRAVA_CONNECTOR_ERROR_CODE.TOKEN_INVALID,
                 operation
@@ -770,10 +820,18 @@ export class StravaApiConnector {
                 operation
             );
         }
-        return `Bearer ${encoded}`;
+        return Object.freeze({
+            header: `Bearer ${encoded}`,
+            authority: Object.hasOwn(validatedToken, 'subject_id')
+                ? Object.freeze({
+                    subject_id: validatedToken.subject_id,
+                    granted_scopes: Object.freeze([...validatedToken.granted_scopes])
+                })
+                : null
+        });
     }
 
-    #persistRefreshedToken(tokens, operation, hasTokens) {
+    #persistRefreshedToken(tokens, operation, hasTokens, authority) {
         if (!hasTokens || tokens === null) {
             return;
         }
@@ -783,6 +841,27 @@ export class StravaApiConnector {
                 STRAVA_CONNECTOR_ERROR_CODE.INVALID_ENVELOPE,
                 operation
             );
+        }
+        const refreshedHasAuthority = Object.hasOwn(validated, 'subject_id');
+        if (authority !== null) {
+            if (
+                refreshedHasAuthority
+                && (
+                    validated.subject_id !== authority.subject_id
+                    || validated.granted_scopes[0] !== authority.granted_scopes[0]
+                    || validated.granted_scopes[1] !== authority.granted_scopes[1]
+                )
+            ) {
+                throw connectorError(
+                    STRAVA_CONNECTOR_ERROR_CODE.INVALID_ENVELOPE,
+                    operation
+                );
+            }
+            validated.subject_id = authority.subject_id;
+            validated.granted_scopes = [...authority.granted_scopes];
+        } else if (refreshedHasAuthority) {
+            delete validated.subject_id;
+            delete validated.granted_scopes;
         }
 
         let serialized;
@@ -817,7 +896,7 @@ export class StravaApiConnector {
             response = await this.#fetchImpl(url, {
                 method: 'GET',
                 headers: {
-                    Authorization: authorization
+                    Authorization: authorization.header
                 }
             });
         } catch {
@@ -850,7 +929,8 @@ export class StravaApiConnector {
         this.#persistRefreshedToken(
             envelope.tokens,
             operation,
-            envelope.hasTokens
+            envelope.hasTokens,
+            authorization.authority
         );
         return envelope.data;
     }

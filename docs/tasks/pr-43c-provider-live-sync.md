@@ -185,18 +185,18 @@ api/strava-auth.js
 api/strava-revoke.js
 tests/source-manager/source-manager-authorization.test.js
 tests/source-manager/source-manager-connection.test.js
-tests/source-manager/source-manager.test.js
 tests/source-manager/source-manager-boundaries.test.js
 tests/source-manager/source-manager-browser-smoke.html
 tests/legacy/auth-lifecycle.test.js
 tests/repository/strava-api-connector.test.js
+tests/repository/dependency-boundaries.test.js
 tests/privacy/server-api-logging.test.js
 tests/privacy/privacy-guard.test.js
 docs/guides/privacy-guide.md
 ```
 
-There is no twenty-fourth path and no substitution. A listed path may remain unused if current-tree
-audit or implementation proves it unnecessary.
+There is no twenty-fourth path and no further substitution. A listed path may remain unused if
+current-tree audit or implementation proves it unnecessary.
 
 Explicitly excluded paths and behaviors include `api/config.js`, root `index.html` or main behavior,
 local-development routing, CSP expansion, schema/storage/migrations, Backup, Import, Repository,
@@ -383,6 +383,18 @@ This authorizes complete failure-first implementation of the frozen C1.1 contrac
 stop condition, evidence gate, independent review, Closure, and Ready-only condition in this brief.
 It does not authorize merge, auto-merge, cleanup, deployment, release, C3c, C4, real/private
 provider evidence, changes to `integration/v2`, or changes outside the exact 23-path maximum.
+
+## A3 owner path-replacement decision
+
+The control tower relayed the owner material decision verbatim:
+
+> 批准 C1.1 路径替换：以 tests/repository/dependency-boundaries.test.js 替换 tests/source-manager/source-manager.test.js，累计硬上限仍为 23；新路径仅可更新 Connector 冻结 SHA-256 及对应批准说明。
+
+This removes `tests/source-manager/source-manager.test.js` from the cumulative allowlist and adds
+`tests/repository/dependency-boundaries.test.js`. The cumulative hard maximum remains exactly 23
+paths. In the replacement path, only the Connector frozen SHA-256 and its corresponding explicit
+approval/accounting comment or assertion may change. No other behavior or path expansion is
+authorized.
 
 ## A2 local publication evidence
 

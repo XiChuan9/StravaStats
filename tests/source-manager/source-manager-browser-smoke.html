@@ -7,7 +7,7 @@
         content="default-src 'self'; script-src 'self' 'nonce-pr10-source-manager'; style-src 'unsafe-inline'; connect-src 'self'; frame-src 'self'; img-src data:; worker-src 'self'; object-src 'none'; base-uri 'none'"
     >
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>PR-20 Source Manager duplicate review browser smoke</title>
+    <title>C1.1 Source Manager authorization browser smoke</title>
     <link rel="icon" href="data:,">
     <style>
         body { margin: 2rem; font-family: system-ui, sans-serif; }
@@ -19,7 +19,7 @@
 </head>
 <body data-status="running">
     <main>
-        <h1>PR-20 Source Manager duplicate review browser smoke</h1>
+        <h1>C1.1 Source Manager authorization browser smoke</h1>
         <p id="state" data-testid="state">running</p>
         <pre id="summary" data-testid="summary">{"status":"running"}</pre>
         <button type="button" id="offline-continue" data-testid="offline-continue" hidden>
@@ -37,6 +37,8 @@
 
         const V2_NAME = 'strava-stats-v2';
         const SENTINEL_NAME = 'synthetic-pr10-legacy-like-sentinel';
+        const AUTHORIZATION_STATE_KEY = 'source_manager_authorization_state';
+        const AUTHORIZATION_STATE = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq';
         const state = document.getElementById('state');
         const summary = document.getElementById('summary');
         const offlineContinue = document.getElementById('offline-continue');
@@ -125,6 +127,28 @@
             const version = database.version;
             database.close();
             return { version, stores, indexes, counts };
+        }
+
+        async function sourceConnectionSnapshot() {
+            const database = await request(indexedDB.open(V2_NAME));
+            const tx = database.transaction('sourceConnections', 'readonly');
+            const value = await request(
+                tx.objectStore('sourceConnections').get('source-connection:strava')
+            );
+            await transaction(tx);
+            database.close();
+            return value ?? null;
+        }
+
+        function prepareAuthorizationState(storage) {
+            const createdAt = Date.now();
+            storage.setItem(AUTHORIZATION_STATE_KEY, JSON.stringify({
+                schemaVersion: 1,
+                state: AUTHORIZATION_STATE,
+                createdAt,
+                expiresAt: createdAt + 600_000,
+                returnPath: '/source-manager.html?mode=real'
+            }));
         }
 
         async function databaseContainsText(name, text) {
@@ -255,6 +279,19 @@
             return frame;
         }
 
+        async function createAuthorizationFrame(search, title) {
+            const frame = document.createElement('iframe');
+            frame.title = title;
+            frames.append(frame);
+            prepareAuthorizationState(frame.contentWindow.sessionStorage);
+            frame.src = `../../source-manager.html${search}`;
+            await new Promise((resolve, reject) => {
+                frame.onload = resolve;
+                frame.onerror = reject;
+            });
+            return frame;
+        }
+
         async function proveNoReferrer(frame) {
             const probe = frame.contentDocument.createElement('iframe');
             probe.title = 'synthetic referrer policy probe';
@@ -340,8 +377,8 @@
             assert(originUnavailable, 'OFFLINE_ORIGIN_UNREACHABLE');
             const apiCard = realFrame.contentDocument.querySelector('[data-source-card="api"]');
             const apiButton = realFrame.contentDocument.getElementById('source-api-connect');
-            assert(apiCard.dataset.status === 'authorization_unavailable', 'OFFLINE_CONNECTION_REMAINS_UNAVAILABLE');
-            assert(apiButton.disabled, 'OFFLINE_NO_ACTION_ENABLED');
+            assert(apiCard.dataset.status === 'unconfigured', 'OFFLINE_LOCAL_STATE_UNCHANGED');
+            assert(!apiButton.disabled && apiButton.textContent === 'Connect', 'OFFLINE_EXPLICIT_CONNECT_REMAINS_AVAILABLE');
             offlineContinue.hidden = true;
         }
 
@@ -423,6 +460,8 @@
 
         let realFrame;
         let demoFrame;
+        let authorizedFrame;
+        let mismatchFrame;
         const navigationFrames = [];
         try {
             await auditServedProductionSources();
@@ -434,18 +473,14 @@
             assert(realDoc.getElementById('preview-total').textContent === '0 activities', 'EMPTY_PREVIEW');
             const apiCard = realDoc.querySelector('[data-source-card="api"]');
             const apiButton = realDoc.getElementById('source-api-connect');
-            assert(apiCard.dataset.status === 'authorization_unavailable', 'REAL_AUTHORIZATION_UNAVAILABLE');
-            assert(apiCard.querySelector('[data-source-status="api"]').textContent === 'Authorization unavailable', 'REAL_AUTHORIZATION_BADGE');
-            assert(apiCard.querySelectorAll('button').length === 1, 'ONE_CONNECTION_ACTION');
-            assert(apiButton.disabled && apiButton.textContent === 'Connect unavailable', 'CONNECT_UNAVAILABLE_DISABLED');
-            assert(
-                Array.from(apiCard.querySelectorAll('button')).every(
-                    button => !/Disconnect|Sync/.test(button.textContent)
-                ),
-                'NO_DISCONNECT_OR_SYNC_ACTION'
-            );
+            assert(apiCard.dataset.status === 'unconfigured', 'REAL_NOT_CONNECTED');
+            assert(apiCard.querySelector('[data-source-status="api"]').textContent === 'Not connected', 'REAL_NOT_CONNECTED_BADGE');
+            assert(apiCard.querySelectorAll('button').length === 3, 'THREE_STAGED_CONNECTION_ACTIONS');
+            assert(!apiButton.disabled && apiButton.textContent === 'Connect', 'CONNECT_ENABLED');
+            assert(realDoc.getElementById('source-api-sync').disabled, 'SYNC_INERT');
+            assert(realDoc.getElementById('source-api-disconnect').disabled, 'DISCONNECT_DISABLED_WHILE_UNCONFIGURED');
             apiButton.focus();
-            assert(realDoc.activeElement !== apiButton, 'DISABLED_ACTION_NOT_FOCUSABLE');
+            assert(realDoc.activeElement === apiButton, 'CONNECT_KEYBOARD_FOCUSABLE');
             realFrame.style.border = '0';
             realFrame.style.width = '320px';
             await new Promise(resolve => requestAnimationFrame(resolve));
@@ -630,6 +665,85 @@
             );
             collectResources(realFrame);
 
+            state.textContent = 'verifying synthetic same-origin authorization';
+            const libraryBeforeAuthorization = await v2Snapshot();
+            authorizedFrame = await createAuthorizationFrame(
+                `?mode=real&code=synthetic-authorize&state=${AUTHORIZATION_STATE}&scope=read%2Cactivity%3Aread_all`,
+                'synthetic authorized Source Manager'
+            );
+            const authorizationStatus = await waitFor(() => {
+                const value = authorizedFrame.contentDocument
+                    .querySelector('[data-source-card="api"]')?.dataset.status;
+                return value === 'connected' || value === 'error' ? value : null;
+            }, 'AUTHORIZATION_CONNECTED_TIMEOUT');
+            assert(authorizationStatus === 'connected', 'AUTHORIZATION_CONNECTED');
+            assert(authorizedFrame.contentWindow.location.search === '?mode=real', 'CALLBACK_QUERY_SCRUBBED');
+            assert(authorizedFrame.contentWindow.location.hash === '', 'CALLBACK_FRAGMENT_SCRUBBED');
+            assert(authorizedFrame.contentWindow.sessionStorage.getItem(AUTHORIZATION_STATE_KEY) === null, 'AUTHORIZATION_STATE_CONSUMED');
+            const storedAuthority = JSON.parse(localStorage.getItem('strava_tokens'));
+            assert(
+                JSON.stringify(Object.keys(storedAuthority))
+                    === JSON.stringify(['access_token', 'refresh_token', 'expires_at', 'subject_id', 'granted_scopes']),
+                'TOKEN_EXACT_FIVE_FIELDS'
+            );
+            assert(
+                JSON.stringify(storedAuthority.granted_scopes)
+                    === JSON.stringify(['read', 'activity:read_all']),
+                'TOKEN_EXACT_ORDERED_SCOPES'
+            );
+            const connectedRecord = await sourceConnectionSnapshot();
+            assert(connectedRecord?.status === 'connected', 'C2_CONNECTED');
+            assert(connectedRecord?.subjectId === '424242', 'C2_SYNTHETIC_SUBJECT');
+
+            const tokenBeforeMismatch = localStorage.getItem('strava_tokens');
+            const connectionBeforeMismatch = JSON.stringify(connectedRecord);
+            mismatchFrame = await createAuthorizationFrame(
+                `?mode=real&code=synthetic-mismatch&state=${AUTHORIZATION_STATE}&scope=read%2Cactivity%3Aread_all`,
+                'synthetic mismatched Source Manager'
+            );
+            await waitFor(
+                () => mismatchFrame.contentDocument.querySelector('[data-source-card="api"]')?.dataset.status === 'error',
+                'MISMATCH_FAILURE_TIMEOUT'
+            );
+            assert(
+                mismatchFrame.contentDocument.getElementById('source-api-copy').textContent
+                    === 'This Strava account does not match the local library.',
+                'MISMATCH_FIXED_COPY'
+            );
+            assert(localStorage.getItem('strava_tokens') === tokenBeforeMismatch, 'MISMATCH_TOKEN_UNCHANGED');
+            assert(JSON.stringify(await sourceConnectionSnapshot()) === connectionBeforeMismatch, 'MISMATCH_C2_UNCHANGED');
+            assert(mismatchFrame.contentWindow.sessionStorage.getItem(AUTHORIZATION_STATE_KEY) === null, 'MISMATCH_STATE_CONSUMED');
+
+            const authorizedDocument = authorizedFrame.contentDocument;
+            authorizedDocument.getElementById('source-api-disconnect').click();
+            await waitFor(
+                () => authorizedDocument.getElementById('disconnect-dialog').open,
+                'DISCONNECT_CONFIRMATION_TIMEOUT'
+            );
+            assert(
+                authorizedDocument.getElementById('disconnect-dialog-description').textContent.includes('All Legacy, V2, imported, source, backup, and settings data is preserved.'),
+                'DISCONNECT_PRESERVATION_COPY'
+            );
+            authorizedDocument.getElementById('disconnect-confirm').click();
+            await waitFor(
+                () => authorizedDocument.querySelector('[data-source-card="api"]')?.dataset.status === 'disconnected',
+                'DISCONNECT_COMPLETION_TIMEOUT'
+            );
+            assert(localStorage.getItem('strava_tokens') === null, 'DISCONNECT_TOKEN_REMOVED');
+            const disconnectedRecord = await sourceConnectionSnapshot();
+            assert(disconnectedRecord.subjectId === '424242', 'DISCONNECT_SUBJECT_PRESERVED');
+            assert(disconnectedRecord.status === 'disconnected', 'DISCONNECT_C2_STATUS');
+            assert(disconnectedRecord.errorCode === 'REVOCATION_UNCONFIRMED', 'DISCONNECT_REVOKE_UNCONFIRMED');
+            assert(disconnectedRecord.lastSyncAt === connectedRecord.lastSyncAt, 'DISCONNECT_HISTORY_PRESERVED');
+            const libraryAfterDisconnect = await v2Snapshot();
+            for (const [storeName, count] of Object.entries(libraryBeforeAuthorization.counts)) {
+                if (storeName !== 'sourceConnections') {
+                    assert(libraryAfterDisconnect.counts[storeName] === count, `DISCONNECT_PRESERVES_${storeName}`);
+                }
+            }
+            collectResources(authorizedFrame);
+            collectResources(mismatchFrame);
+
             demoFrame = await createFrame('demo');
             const demoDoc = demoFrame.contentDocument;
             assert(demoDoc.querySelectorAll('[data-source-card]').length === 4, 'DEMO_FOUR_SOURCE_CARDS');
@@ -637,7 +751,9 @@
             assert(demoDoc.querySelector('[data-open-import="local"]').disabled, 'DEMO_IMPORT_DISABLED');
             assert(demoDoc.querySelector('[data-source-card="demo"]').dataset.status === 'available', 'DEMO_AVAILABLE_STATE');
             assert(demoDoc.getElementById('duplicate-review-state').textContent.includes('unavailable in Demo mode'), 'DEMO_REVIEW_DISABLED');
-            assert(demoDoc.querySelector('[data-source-card="api"]').dataset.status === 'authorization_unavailable', 'DEMO_AUTHORIZATION_UNAVAILABLE');
+            assert(demoDoc.querySelector('[data-source-card="api"]').dataset.status === 'unconfigured', 'DEMO_NO_PROVIDER_CONNECTION');
+            assert(demoDoc.getElementById('source-api-copy').textContent === 'Demo — no provider connection', 'DEMO_FIXED_CONNECTION_COPY');
+            assert(Array.from(demoDoc.querySelectorAll('[data-source-card="api"] button')).every(button => button.hidden), 'DEMO_NO_LIVE_ACTION');
             collectResources(demoFrame);
 
             const v2BeforeNavigation = await v2Snapshot();
@@ -646,8 +762,8 @@
             const sessionStorageBeforeNavigation = webStorageSnapshot(sessionStorage);
             const canary = 'synthetic-pr41-callback-canary';
             const callbackFrame = await createNavigationFrame(
-                `?code=${canary}&state=${canary}&mode=demo#scope=${canary}`,
-                'sanitized callback Source Manager'
+                `?mode=demo#${canary}`,
+                'sanitized fragment Source Manager'
             );
             navigationFrames.push(callbackFrame);
             await waitFor(
@@ -660,11 +776,15 @@
             assert(!webStorageSnapshot(callbackFrame.contentWindow.sessionStorage).includes(canary), 'CALLBACK_CANARY_NOT_IN_SESSION_STORAGE');
             assert(!webStorageSnapshot(callbackFrame.contentWindow.localStorage).includes(canary), 'CALLBACK_CANARY_NOT_IN_LOCAL_STORAGE');
             assert(callbackFrame.contentDocument.querySelector('meta[name="referrer"]')?.content === 'no-referrer', 'NO_REFERRER_POLICY_ACTIVE');
-            assert(callbackFrame.contentDocument.querySelector('[data-source-card="api"]').dataset.status === 'authorization_unavailable', 'CALLBACK_STAYS_UNAVAILABLE');
+            assert(callbackFrame.contentDocument.querySelector('[data-source-card="api"]').dataset.status === 'unconfigured', 'DEMO_FRAGMENT_NO_CONNECTION');
             await proveNoReferrer(callbackFrame);
             collectResources(callbackFrame);
 
-            for (const search of [`?code=${canary}`, '?mode=invalid']) {
+            for (const search of [
+                `?mode=demo&code=${canary}&state=${AUTHORIZATION_STATE}&scope=read%2Cactivity%3Aread_all`,
+                `?code=${canary}`,
+                '?mode=invalid'
+            ]) {
                 const blockedFrame = await createNavigationFrame(search, 'blocked Source Manager');
                 navigationFrames.push(blockedFrame);
                 await waitFor(
@@ -672,7 +792,8 @@
                     'BLOCKED_NAVIGATION_TIMEOUT'
                 );
                 assert(blockedFrame.contentWindow.location.pathname === '/source-manager.html', 'BLOCKED_CANONICAL_PATH');
-                assert(blockedFrame.contentWindow.location.search === '', 'BLOCKED_QUERY_REMOVED');
+                const expectedSearch = search.startsWith('?mode=demo&') ? '?mode=demo' : '';
+                assert(blockedFrame.contentWindow.location.search === expectedSearch, 'BLOCKED_QUERY_REMOVED');
                 assert(blockedFrame.contentWindow.location.hash === '', 'BLOCKED_FRAGMENT_REMOVED');
                 assert(blockedFrame.contentDocument.getElementById('blocking-error-code').textContent === 'NAVIGATION_SANITIZATION_FAILED', 'BLOCKED_FIXED_CODE');
                 assert(blockedFrame.contentDocument.getElementById('blocking-error-copy').textContent === 'The Source Manager navigation could not be accepted safely.', 'BLOCKED_FIXED_COPY');
@@ -692,9 +813,9 @@
             assert(webStorageSnapshot(localStorage) === localStorageBeforeNavigation, 'NAVIGATION_NO_LOCAL_STORAGE_MUTATION');
             assert(webStorageSnapshot(sessionStorage) === sessionStorageBeforeNavigation, 'NAVIGATION_NO_SESSION_STORAGE_MUTATION');
             assert(sentinelBefore === sentinelAfter, 'LEGACY_SENTINEL_UNCHANGED');
-            assert(v2.version === 4, 'V2_VERSION_4');
-            assert(v2.stores.length === 13, 'V2_THIRTEEN_STORES');
-            assert(Object.values(v2.indexes).reduce((sum, list) => sum + list.length, 0) === 13, 'V2_THIRTEEN_INDEXES');
+            assert(v2.version === 5, 'V2_VERSION_5');
+            assert(v2.stores.length === 14, 'V2_FOURTEEN_STORES');
+            assert(Object.values(v2.indexes).reduce((sum, list) => sum + list.length, 0) === 14, 'V2_FOURTEEN_INDEXES');
             assert(v2.counts.activities === 7, 'CANONICAL_ACTIVITY_COUNT');
             assert(v2.counts.mergeCandidates >= 2, 'CANDIDATE_AUDIT_RETAINED');
             assert(v2.counts.mergeDecisions >= 2, 'DECISION_AUDIT_RETAINED');
@@ -705,10 +826,18 @@
             const cacheNames = await caches.keys();
             assert(registrations.length === 0, 'NO_SERVICE_WORKERS');
             assert(cacheNames.length === 0, 'NO_CACHE_STORAGE');
-            assert(Object.values(metrics).every(value => value === 0), 'ZERO_UNSAFE_BROWSER_METRICS');
+            assert(metrics.authorization === 0, 'ZERO_AUTHORIZATION_LITERAL_LEAKS');
+            assert(metrics.externalHttp === 0, 'ZERO_EXTERNAL_HTTP');
+            assert(metrics.provider === 0, 'ZERO_REAL_PROVIDER_REQUESTS');
+            assert(metrics.telemetry === 0, 'ZERO_TELEMETRY');
+            assert(metrics.xhr === 0, 'ZERO_XHR');
+            assert(metrics.webSocket === 0, 'ZERO_WEBSOCKET');
+            assert(metrics.fetch >= 2 && metrics.fetch <= 3, 'BOUNDED_SYNTHETIC_SAME_ORIGIN_AUTH_REQUESTS');
 
             realFrame.remove();
             demoFrame.remove();
+            authorizedFrame.remove();
+            mismatchFrame.remove();
             navigationFrames.forEach(frame => frame.remove());
             await new Promise(resolve => setTimeout(resolve, 100));
             const result = {
@@ -717,6 +846,7 @@
                 metrics,
                 externalDriverRequired: [
                     'origin stopped before synthetic offline continuation',
+                    'disposable server returns only synthetic auth/revoke responses',
                     'all console output contains no callback canary',
                     'startup console warnings and errors',
                     'uncaught exceptions and unhandled rejections'
@@ -734,6 +864,8 @@
         } catch (error) {
             realFrame?.remove();
             demoFrame?.remove();
+            authorizedFrame?.remove();
+            mismatchFrame?.remove();
             navigationFrames.forEach(frame => frame.remove());
             document.body.dataset.status = 'failed';
             state.textContent = 'failed';
