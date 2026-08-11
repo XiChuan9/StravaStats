@@ -856,6 +856,7 @@ export function createSourceManagerPage({
             closed: 'Connection controls are closed.'
         };
         const terminalCopy = syncValid && !syncActive
+            && (snapshot.status === 'connected' || snapshot.status === 'error')
             ? syncCompletionCopy(syncSnapshot)
             : null;
         elements.apiCopy.textContent = syncActive

@@ -7,7 +7,7 @@
         content="default-src 'self'; script-src 'self' 'nonce-pr10-source-manager'; style-src 'unsafe-inline'; connect-src 'self'; frame-src 'self'; img-src data:; worker-src 'self'; object-src 'none'; base-uri 'none'"
     >
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>C1.1 Source Manager authorization browser smoke</title>
+    <title>C3c Source Manager provider Sync browser smoke</title>
     <link rel="icon" href="data:,">
     <style>
         body { margin: 2rem; font-family: system-ui, sans-serif; }
@@ -19,7 +19,7 @@
 </head>
 <body data-status="running">
     <main>
-        <h1>C1.1 Source Manager authorization browser smoke</h1>
+        <h1>C3c Source Manager provider Sync browser smoke</h1>
         <p id="state" data-testid="state">running</p>
         <pre id="summary" data-testid="summary">{"status":"running"}</pre>
         <button type="button" id="offline-continue" data-testid="offline-continue" hidden>
@@ -666,7 +666,6 @@
             collectResources(realFrame);
 
             state.textContent = 'verifying synthetic same-origin authorization';
-            const libraryBeforeAuthorization = await v2Snapshot();
             authorizedFrame = await createAuthorizationFrame(
                 `?mode=real&code=synthetic-authorize&state=${AUTHORIZATION_STATE}&scope=read%2Cactivity%3Aread_all`,
                 'synthetic authorized Source Manager'
@@ -695,8 +694,48 @@
             assert(connectedRecord?.status === 'connected', 'C2_CONNECTED');
             assert(connectedRecord?.subjectId === '424242', 'C2_SYNTHETIC_SUBJECT');
 
+            state.textContent = 'verifying explicit synthetic provider Sync';
+            const authorizedDocument = authorizedFrame.contentDocument;
+            const syncButton = authorizedDocument.getElementById('source-api-sync');
+            assert(!syncButton.hidden, 'SYNC_ACTION_VISIBLE');
+            assert(!syncButton.disabled, 'SYNC_ACTION_ENABLED');
+            assert(syncButton.textContent === 'Sync latest 25', 'SYNC_ACTION_EXACT_LABEL');
+            const reportsBeforeSync = authorizedDocument.querySelectorAll('.report-card').length;
+            syncButton.click();
+            assert(
+                authorizedDocument.querySelector('[data-source-card="api"]')?.dataset.status
+                    === 'syncing',
+                'SYNCING_STATE_VISIBLE'
+            );
+            assert(syncButton.textContent === 'Cancel sync', 'SYNC_CANCEL_EXACT_LABEL');
+            assert(authorizedDocument.getElementById('source-api-disconnect').disabled, 'SYNC_DISCONNECT_DISABLED');
+            await waitFor(
+                () => authorizedDocument.getElementById('source-api-copy').textContent
+                    .includes('Provider Sync finished:'),
+                'SYNC_COMPLETION_TIMEOUT',
+                30_000
+            );
+            await waitFor(
+                () => authorizedDocument.querySelectorAll('.report-card').length
+                    === reportsBeforeSync + 1,
+                'SYNC_REPORT_TIMEOUT',
+                30_000
+            );
+            const syncedRecord = await sourceConnectionSnapshot();
+            assert(syncedRecord.subjectId === connectedRecord.subjectId, 'SYNC_SUBJECT_PRESERVED');
+            assert(syncedRecord.status === 'connected', 'SYNC_C2_CONNECTED');
+            assert(syncedRecord.revision === connectedRecord.revision + 1, 'SYNC_C2_SINGLE_SUCCESS_CAS');
+            assert(
+                typeof syncedRecord.lastSyncAt === 'string'
+                    && syncedRecord.lastSyncAt > (connectedRecord.lastSyncAt ?? ''),
+                'SYNC_LAST_SYNC_ADVANCED'
+            );
+            assert(syncButton.textContent === 'Sync latest 25', 'SYNC_ACTION_RESTORED');
+            assert(!authorizedDocument.body.textContent.includes('950000000000000001'), 'SYNC_ACTIVITY_ID_NOT_IN_DOM');
+            const libraryBeforeDisconnect = await v2Snapshot();
+
             const tokenBeforeMismatch = localStorage.getItem('strava_tokens');
-            const connectionBeforeMismatch = JSON.stringify(connectedRecord);
+            const connectionBeforeMismatch = JSON.stringify(syncedRecord);
             mismatchFrame = await createAuthorizationFrame(
                 `?mode=real&code=synthetic-mismatch&state=${AUTHORIZATION_STATE}&scope=read%2Cactivity%3Aread_all`,
                 'synthetic mismatched Source Manager'
@@ -714,7 +753,6 @@
             assert(JSON.stringify(await sourceConnectionSnapshot()) === connectionBeforeMismatch, 'MISMATCH_C2_UNCHANGED');
             assert(mismatchFrame.contentWindow.sessionStorage.getItem(AUTHORIZATION_STATE_KEY) === null, 'MISMATCH_STATE_CONSUMED');
 
-            const authorizedDocument = authorizedFrame.contentDocument;
             authorizedDocument.getElementById('source-api-disconnect').click();
             await waitFor(
                 () => authorizedDocument.getElementById('disconnect-dialog').open,
@@ -734,9 +772,10 @@
             assert(disconnectedRecord.subjectId === '424242', 'DISCONNECT_SUBJECT_PRESERVED');
             assert(disconnectedRecord.status === 'disconnected', 'DISCONNECT_C2_STATUS');
             assert(disconnectedRecord.errorCode === 'REVOCATION_UNCONFIRMED', 'DISCONNECT_REVOKE_UNCONFIRMED');
-            assert(disconnectedRecord.lastSyncAt === connectedRecord.lastSyncAt, 'DISCONNECT_HISTORY_PRESERVED');
+            assert(disconnectedRecord.lastSyncAt === syncedRecord.lastSyncAt, 'DISCONNECT_HISTORY_PRESERVED');
+            assert(authorizedDocument.getElementById('source-api-copy').textContent.startsWith('Disconnected locally.'), 'DISCONNECT_COPY_RESTORED');
             const libraryAfterDisconnect = await v2Snapshot();
-            for (const [storeName, count] of Object.entries(libraryBeforeAuthorization.counts)) {
+            for (const [storeName, count] of Object.entries(libraryBeforeDisconnect.counts)) {
                 if (storeName !== 'sourceConnections') {
                     assert(libraryAfterDisconnect.counts[storeName] === count, `DISCONNECT_PRESERVES_${storeName}`);
                 }
@@ -816,7 +855,7 @@
             assert(v2.version === 5, 'V2_VERSION_5');
             assert(v2.stores.length === 14, 'V2_FOURTEEN_STORES');
             assert(Object.values(v2.indexes).reduce((sum, list) => sum + list.length, 0) === 14, 'V2_FOURTEEN_INDEXES');
-            assert(v2.counts.activities === 7, 'CANONICAL_ACTIVITY_COUNT');
+            assert(v2.counts.activities === 8, 'CANONICAL_ACTIVITY_COUNT');
             assert(v2.counts.mergeCandidates >= 2, 'CANDIDATE_AUDIT_RETAINED');
             assert(v2.counts.mergeDecisions >= 2, 'DECISION_AUDIT_RETAINED');
 
@@ -832,7 +871,7 @@
             assert(metrics.telemetry === 0, 'ZERO_TELEMETRY');
             assert(metrics.xhr === 0, 'ZERO_XHR');
             assert(metrics.webSocket === 0, 'ZERO_WEBSOCKET');
-            assert(metrics.fetch >= 2 && metrics.fetch <= 3, 'BOUNDED_SYNTHETIC_SAME_ORIGIN_AUTH_REQUESTS');
+            assert(metrics.fetch >= 5 && metrics.fetch <= 6, 'BOUNDED_SYNTHETIC_SAME_ORIGIN_REQUESTS');
 
             realFrame.remove();
             demoFrame.remove();
@@ -846,7 +885,8 @@
                 metrics,
                 externalDriverRequired: [
                     'origin stopped before synthetic offline continuation',
-                    'disposable server returns only synthetic auth/revoke responses',
+                    'all API routes intercepted before frame navigation or import',
+                    'disposable server returns only synthetic auth/revoke/provider Sync responses',
                     'all console output contains no callback canary',
                     'startup console warnings and errors',
                     'uncaught exceptions and unhandled rejections'
