@@ -282,12 +282,22 @@ export function createSourceManagerConnectionController(options) {
     );
 
     function setSnapshot(status, code = null, authority = localAuthority) {
+        if (closed && status !== 'closed') return currentSnapshot;
         currentSnapshot = snapshot(status, code, authority);
         return currentSnapshot;
     }
 
     function result(status, code) {
         return Object.freeze(code === undefined ? { status } : { status, code });
+    }
+
+    function rollbackAcceptedToken() {
+        let status = 'token-removal-failed';
+        try {
+            status = dataProperty(dependencies.authLifecycle.expireToken(), 'status');
+        } catch {}
+        localAuthority = false;
+        return status;
     }
 
     function deriveSnapshot() {
@@ -319,10 +329,12 @@ export function createSourceManagerConnectionController(options) {
         try {
             authorized = await dependencies.authorization.processCallback(dependencies.callback);
         } catch (error) {
+            if (closed) return CONNECTION_CLOSED;
             const code = safeErrorCode(error);
             setSnapshot('error', code, false);
             return result('error', code);
         }
+        if (closed) return CONNECTION_CLOSED;
         const token = dataProperty(authorized, 'token');
         const subjectId = subjectFromToken(token);
         if (subjectId === null) {
@@ -336,12 +348,20 @@ export function createSourceManagerConnectionController(options) {
 
         let accepted;
         try {
-            accepted = await dependencies.authLifecycle.acceptOAuthTokenResponse(token);
+            accepted = await dependencies.authLifecycle.acceptOAuthTokenResponse(
+                token,
+                () => !closed
+            );
         } catch {
+            if (closed) return CONNECTION_CLOSED;
             setSnapshot('error', 'IDENTITY_UNCONFIRMED', false);
             return result('error', 'IDENTITY_UNCONFIRMED');
         }
         const acceptance = dataProperty(accepted, 'status');
+        if (closed) {
+            if (acceptance === 'success') rollbackAcceptedToken();
+            return CONNECTION_CLOSED;
+        }
         if (acceptance !== 'success') {
             const code = acceptance === 'identity-mismatch'
                 ? 'IDENTITY_MISMATCH'
@@ -369,19 +389,17 @@ export function createSourceManagerConnectionController(options) {
                 );
             }
         } catch {
-            let rollbackStatus = 'token-removal-failed';
-            try {
-                rollbackStatus = dataProperty(
-                    dependencies.authLifecycle.expireToken(),
-                    'status'
-                );
-            } catch {}
-            localAuthority = false;
+            const rollbackStatus = rollbackAcceptedToken();
+            if (closed) return CONNECTION_CLOSED;
             const code = rollbackStatus === 'token-removal-failed'
                 ? 'TOKEN_REMOVAL_FAILED'
                 : 'CONNECTION_UPDATE_FAILED';
             setSnapshot('error', code, false);
             return result('error', code);
+        }
+        if (closed) {
+            rollbackAcceptedToken();
+            return CONNECTION_CLOSED;
         }
         localAuthority = true;
         setSnapshot('connected', null, true);
@@ -399,12 +417,15 @@ export function createSourceManagerConnectionController(options) {
         initializing = (async () => {
             try {
                 await dependencies.connectionStore.initialize();
+                if (closed) return CONNECTION_CLOSED;
                 current = await dependencies.connectionStore.getConnection('strava');
             } catch {
+                if (closed) return CONNECTION_CLOSED;
                 initialized = true;
                 setSnapshot('error', 'CONNECTION_INITIALIZATION_FAILED', false);
                 return result('error', 'CONNECTION_INITIALIZATION_FAILED');
             }
+            if (closed) return CONNECTION_CLOSED;
             initialized = true;
             if (dependencies.callback !== null && dependencies.callback !== undefined) {
                 return processCallback();
@@ -428,8 +449,10 @@ export function createSourceManagerConnectionController(options) {
         setSnapshot('authorizing');
         try {
             await dependencies.authorization.beginAuthorization();
+            if (closed) return CONNECTION_CLOSED;
             return result('authorizing');
         } catch (error) {
+            if (closed) return CONNECTION_CLOSED;
             const code = safeErrorCode(error);
             setSnapshot('error', code, localAuthority);
             throw fixedError(code);
@@ -446,15 +469,18 @@ export function createSourceManagerConnectionController(options) {
         try {
             await Reflect.apply(dependencies.awaitInactiveSyncBoundary, null, []);
         } catch {
+            if (closed) return CONNECTION_CLOSED;
             setSnapshot('error', 'CONNECTION_UPDATE_FAILED', localAuthority);
             return result('error', 'CONNECTION_UPDATE_FAILED');
         }
+        if (closed) return CONNECTION_CLOSED;
         let disconnected;
         try {
             disconnected = await dependencies.authLifecycle.disconnect();
         } catch {
             disconnected = Object.freeze({ status: 'token-removal-failed' });
         }
+        if (closed) return CONNECTION_CLOSED;
         const status = dataProperty(disconnected, 'status');
         if (status === 'token-removal-failed') {
             setSnapshot('error', 'TOKEN_REMOVAL_FAILED', true);
@@ -469,9 +495,11 @@ export function createSourceManagerConnectionController(options) {
                 transitionInput(current, 'disconnected', errorCode)
             );
         } catch {
+            if (closed) return CONNECTION_CLOSED;
             setSnapshot('error', 'CONNECTION_UPDATE_FAILED', false);
             return result('error', 'CONNECTION_UPDATE_FAILED');
         }
+        if (closed) return CONNECTION_CLOSED;
         setSnapshot('disconnected', errorCode, false);
         return result('disconnected');
     }

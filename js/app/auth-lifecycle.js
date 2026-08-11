@@ -624,7 +624,10 @@ export function createAuthLifecycle({
         });
     }
 
-    async function acceptOAuthTokenResponse(exchangeResponse) {
+    async function acceptOAuthTokenResponse(exchangeResponse, commitGuard = null) {
+        if (commitGuard !== null && typeof commitGuard !== 'function') {
+            return lifecycleResult(AUTH_LIFECYCLE_STATUS.UNAUTHENTICATED);
+        }
         const candidate = tokenRecordFromExchange(exchangeResponse);
         if (!candidate) {
             return lifecycleResult(AUTH_LIFECYCLE_STATUS.UNAUTHENTICATED);
@@ -642,6 +645,16 @@ export function createAuthLifecycle({
             }
             if (library.athleteId !== newAthleteId) {
                 return lifecycleResult(AUTH_LIFECYCLE_STATUS.IDENTITY_MISMATCH);
+            }
+        }
+
+        if (commitGuard !== null) {
+            let commitAllowed = false;
+            try {
+                commitAllowed = Reflect.apply(commitGuard, null, []) === true;
+            } catch {}
+            if (!commitAllowed) {
+                return lifecycleResult(AUTH_LIFECYCLE_STATUS.UNAUTHENTICATED);
             }
         }
 

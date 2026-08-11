@@ -639,6 +639,24 @@ test('Source Manager OAuth stores exact five-field authority after the Legacy gu
     });
 });
 
+test('Source Manager OAuth commit guard blocks a late Token write', async () => {
+    const storage = new MemoryStorage(syntheticLibrary());
+    const before = storage.snapshot();
+    let guardCalls = 0;
+    const result = await lifecycle(storage).acceptOAuthTokenResponse(
+        sourceManagerOAuthResponse(),
+        () => {
+            guardCalls += 1;
+            return false;
+        }
+    );
+
+    assert.equal(result.status, AUTH_LIFECYCLE_STATUS.UNAUTHENTICATED);
+    assert.equal(guardCalls, 1);
+    assert.deepEqual(storage.snapshot(), before);
+    assert.equal(storage.setCalls, 0);
+});
+
 test('Source Manager subject mismatch preserves the prior Token byte-for-byte', async () => {
     const storage = new MemoryStorage(syntheticLibrary());
     const before = storage.snapshot();

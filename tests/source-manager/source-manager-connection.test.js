@@ -37,6 +37,7 @@ function controllerHarness({
     acceptStatus = 'success',
     disconnectStatus = 'success',
     expireStatus = 'token-expired',
+    acceptGate = null,
     syncBoundaryFailure = false,
     createFailure = false,
     transitionFailure = false
@@ -59,6 +60,7 @@ function controllerHarness({
         inspectTokenAuthority() { return authority; },
         async acceptOAuthTokenResponse(value) {
             calls.accept.push(value);
+            if (acceptGate) await acceptGate;
             return { status: acceptStatus, firstLogin: false };
         },
         expireToken() { calls.expire += 1; return { status: expireStatus }; },
@@ -234,6 +236,38 @@ test('exact reconnect restores authority without an illegal connected-to-connect
     assert.equal(calls.accept.length, 1);
     assert.deepEqual(calls.transition, []);
     assert.equal(calls.expire, 0);
+});
+
+test('close is terminal while callback Token acceptance is pending', async () => {
+    let releaseAccept;
+    const acceptGate = new Promise(resolve => { releaseAccept = resolve; });
+    const token = Object.freeze({
+        access_token: 'synthetic-access', refresh_token: 'synthetic-refresh',
+        expires_at: 2_100_000_000, subject_id: SUBJECT,
+        granted_scopes: Object.freeze(['read', 'activity:read_all'])
+    });
+    const { controller, calls } = controllerHarness({
+        callback: Object.freeze({
+            kind: 'code', code: 'synthetic-code', state: 'synthetic-state',
+            grantedScopes: Object.freeze(['read', 'activity:read_all'])
+        }),
+        callbackToken: token,
+        acceptGate
+    });
+    const pending = controller.initialize();
+    while (calls.accept.length === 0) await Promise.resolve();
+    assert.deepEqual(await controller.close(), { status: 'closed' });
+    releaseAccept();
+    assert.deepEqual(await pending, { status: 'closed' });
+    assert.equal(calls.expire, 1);
+    assert.deepEqual(calls.create, []);
+    assert.deepEqual(calls.transition, []);
+    assert.deepEqual(controller.getConnectionSnapshot(), {
+        schemaVersion: 1,
+        status: 'closed',
+        code: null,
+        actions: { connect: false, reconnect: false, sync: false, disconnect: false }
+    });
 });
 
 test('restored C2 subject mismatch stores nothing and never mutates connection', async () => {
