@@ -393,7 +393,9 @@ export function createSourceManagerAuthorization(options) {
         } catch {
             throw authorizationError(SOURCE_MANAGER_AUTHORIZATION_ERROR_CODE.STATE_UNAVAILABLE);
         }
-        removeState();
+        if (!removeState()) {
+            throw authorizationError(SOURCE_MANAGER_AUTHORIZATION_ERROR_CODE.STATE_UNAVAILABLE);
+        }
         if (raw === null) {
             throw authorizationError(SOURCE_MANAGER_AUTHORIZATION_ERROR_CODE.STATE_UNAVAILABLE);
         }

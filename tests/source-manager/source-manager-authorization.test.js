@@ -14,6 +14,7 @@ class MemoryStorage {
     constructor(values = {}) {
         this.values = new Map(Object.entries(values));
         this.operations = [];
+        this.failRemove = false;
     }
     getItem(key) {
         this.operations.push(['get', key]);
@@ -25,6 +26,7 @@ class MemoryStorage {
     }
     removeItem(key) {
         this.operations.push(['remove', key]);
+        if (this.failRemove) throw new Error('SyntheticStateRemovalFailure');
         this.values.delete(key);
     }
 }
@@ -208,6 +210,25 @@ test('callback consumes state before exchange and returns only exact five-field 
             signal: calls.fetch[0][1].signal
         }
     ]]);
+});
+
+test('callback blocks before exchange when single-use state deletion fails', async () => {
+    const state = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq';
+    const storage = new MemoryStorage({ [STATE_KEY]: storedState(new MemoryStorage()) });
+    storage.failRemove = true;
+    const { authorization, calls } = harness({ storage });
+
+    await assert.rejects(authorization.processCallback({
+        kind: 'code',
+        code: 'synthetic-code',
+        state,
+        grantedScopes: [...SCOPES]
+    }), error => {
+        assert.deepEqual(error, { code: 'AUTHORIZATION_STATE_UNAVAILABLE' });
+        return true;
+    });
+    assert.equal(calls.fetch.length, 0);
+    assert.equal(storage.values.has(STATE_KEY), true);
 });
 
 test('mismatch, replay, expiry, reduced scope, and malformed state fail before exchange', async () => {
