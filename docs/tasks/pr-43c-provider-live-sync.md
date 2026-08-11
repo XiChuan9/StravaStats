@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | M30 / narrow C3c live provider sync orchestration |
-| Status | A1 Task-Brief-only activation; A2 readiness audit authorized; A3 implementation not authorized |
+| Status | A2 readiness package frozen; awaiting explicit C3c A3 implementation authorization |
 | Base branch | `integration/v2` |
 | Exact base | `integration/v2@df5a27430ff07da05051e9d38d7fe3acf52519ff` |
 | Exact base tree | `6b89d83a7e6f797e7568b7cb9cbf0446bac9ee1a` |
@@ -13,7 +13,7 @@
 | Owner decision | `D-C3c.R-A + D-C3c A` |
 | Completed prerequisites | C1.1 PR #53, C2 SourceConnection/Backup, C3a mapper, C3b artifact builder/import |
 | Control tower | `019fa697-6cbf-70f1-a120-bf31ecc9e2ba` |
-| Current authority | A0, Task-Brief-only A1, and short Task-Brief-only A2 audit |
+| Current authority | Task-Brief-only A0-A2; no product or test implementation |
 
 ## Goal
 
@@ -54,8 +54,7 @@ calls, real account/private evidence, Ready, merge, cleanup, deployment, release
 - Retain the merged C2 Backup subject solely for exact restored-subject reconnect. A mismatch fails
   closed and never overwrites the immutable subject, Token, or SourceConnection.
 - Only an exact five-field local Token and the exact C2 connected snapshot are C3c authority. A
-  missing, legacy, reduced, mismatched, expired, or otherwise invalid authority fails before provider
-  I/O.
+  missing, legacy, reduced, mismatched, or otherwise invalid authority fails before provider I/O.
 - Activity and provider IDs remain opaque positive-decimal strings. They are never numericized and
   never enter a browser URL.
 - Provider data may reach persistence only through the bounded reader, merged C3a mapper, merged C3b
@@ -90,9 +89,9 @@ calls, real account/private evidence, Ready, merge, cleanup, deployment, release
   `granted_scopes: ['read', 'activity:read_all']`.
 - Require the exact C2 Strava slot to be connected with the same immutable positive-decimal subject.
   The Token subject, C2 subject, and mapper session subject must be identical strings.
-- A missing Token, legacy three-field Token, reduced/extra/reordered scopes, expired authority,
-  missing/malformed C2 row, non-connected status, or subject mismatch fails before provider, mapper,
-  artifact, Import, or persistence work.
+- A missing Token, legacy three-field Token, non-positive/non-integer expiry,
+  reduced/extra/reordered scopes, missing/malformed C2 row, non-connected status, or subject mismatch
+  fails before provider, mapper, artifact, Import, or persistence work.
 - The restored C2 subject is retained only for an exact reconnect already owned by merged C1.1. C3c
   never creates, replaces, repairs, or rebinds that identity.
 
@@ -159,8 +158,9 @@ calls, real account/private evidence, Ready, merge, cleanup, deployment, release
    ID only inside the controller and use only existing cancel, wait, report, and close boundaries.
 6. Advance `lastSyncAt` only after a terminal public ImportReport has total at least one, zero failed,
    zero cancelled, every item outcome in `completed`, `review_required`, or
-   `skipped_exact_duplicate`, and accepted equal to total. Either completed job status is eligible
-   only when that entire predicate holds.
+   `skipped_exact_duplicate`, and
+   `completed + reviewRequired + skippedExactDuplicate === total`. Either completed job status is
+   eligible only when that entire predicate holds.
 7. The success CAS uses the original revision and the shared `acquiredAt`, which must be strictly
    later than the stored value. There is no reread, retry, synthesized timestamp, or connection
    revival. A stale CAS or post-import write failure never rolls back or hides imported data.
@@ -287,6 +287,137 @@ Do not reopen broad authorization or C1.1 decisions. Record findings and any cor
 file, publish a second Task-Brief-only commit, run the exact repository gates, read back remote
 depth-one and exact-head CI, and return an explicit C3c A3 implementation authorization package to
 the control tower. Implementation does not follow automatically.
+
+### A1 publication readback
+
+- First commit `e0badf1b753e4371cac2bf756d94af52c50343b2` has exact parent
+  `df5a27430ff07da05051e9d38d7fe3acf52519ff` and changes only this Task Brief.
+- The branch was pushed normally. The authenticated GitHub App created open Draft PR #54 against
+  exact `integration/v2`, with one commit, one changed file, the requested title/body, Draft true,
+  merged false, and no reviewer/team request.
+- Connected-app compare readback reports the branch exactly one commit ahead, zero behind, with the
+  merge base equal to the authorized base and only this Task Brief in the diff.
+- No label, assignment, Ready transition, merge, cleanup, deployment, release, C4, or other PR
+  mutation was made.
+
+## A2 current-tree collision and readiness findings
+
+The audit used exact A1 head `e0badf1b753e4371cac2bf756d94af52c50343b2` and the merged C1.1/C2/
+C3a/C3b code. Historical PR #52 Package A was used only as decision provenance. The audit did not
+reopen authorization/revoke behavior, C4 ownership, or any excluded implementation surface.
+
+### R1 — merged C1.1 already contains the UI, lifecycle, and cancellation composition seams
+
+- `js/source-manager.js` remains the synchronous sanitizer and pagehide barrier. It arms pagehide
+  before asynchronous composition, requests startup close, and awaits a late application close. C3c
+  needs no edit to this excluded root entry.
+- `js/app/source-manager-connection.js` already carries the inert `sync` action bit and the injected
+  `awaitInactiveSyncBoundary` used before Disconnect. `source-manager.html` already contains one
+  disabled/hidden Sync button, and the page consumes only the injected facade. The listed connection,
+  page, HTML, CSS, and composition files can add `syncing`/`cancelling`, start/cancel methods, and the
+  terminal Disconnect barrier without changing C1.1 authorization or revoke modules.
+- Real composition creates the Import facade and connection store in `js/app/source-manager.js`;
+  Demo constructs neither a connection controller nor any live capability. The same listed
+  composition root can inject Import, mapper, artifact, reader, Token, clock, and C2 seams only in
+  Real mode.
+- One current ordering collision is contained: the page initializes the connection before the Import
+  facade and can render connection actions while Import initialization is still pending. C3c must
+  keep Sync disabled until its injected Import/sync controller is ready. The listed app/page/provider-
+  sync files are sufficient; no root, Import, Worker, or public API edit is required.
+
+### R2 — exact Token and C2 authority can be shared without changing C1.1 or Storage
+
+- Merged `auth-lifecycle.js` validates exactly the five Token fields and ordered scopes, but its
+  deliberately narrow `inspectTokenAuthority()` exposes only status and subject. C3c therefore must
+  not expand that C1.1 API. The new dedicated connector can snapshot and exact-validate the injected
+  `strava_tokens` value, keep the credential only in its same-origin authorization boundary, and
+  expose only a detached subject/scope authority to the orchestrator.
+- `createSourceConnectionStore` is already exported by the frozen Storage index. Its `getConnection`
+  and `transitionConnection` methods provide the exact immutable identity, connected/error recovery,
+  connected-to-connected monotonic `lastSyncAt`, reconnect-required, and stale-revision CAS behavior.
+  The existing store instance can be shared by injection from the listed composition root.
+- The public connection UI snapshot intentionally contains no subject or revision. Provider sync
+  must use the injected Token snapshot and exact C2 record, not DOM state. Subject equality is checked
+  before constructing/calling the reader. No schema, SourceConnection store/index, Backup, Legacy
+  connector, or auth-lifecycle change is required.
+- Merged C2 Backup still retains only the immutable restored subject and projects credential-
+  dependent state to reconnect-required. C3c neither reads Backup directly nor writes/rebinds the
+  subject, so `D-C3c.R-A` remains contained.
+
+### R3 — merged C3a and C3b accept the bounded reader output directly
+
+- `createStravaImportMapper` is a side-effect-free direct export from
+  `js/connectors/strava/strava-import-mapper.js`. It requires the exact session/C2 authority, accepts
+  the exact ordered `{ summary, detail, streams }` array, preserves opaque IDs and input order, and
+  freezes the existing ceilings of 100 activities, two later-orchestrator activity operations,
+  200,000 stream points, and 10,000 laps.
+- `createStravaProviderArtifacts` is a side-effect-free direct export from
+  `js/import/strava-provider-artifact.js`. It accepts 1..100 ordered bundles, permits the ten mapped
+  value series plus the time offsets, and freezes 32 MiB per artifact/job, 200,000 points, and 10,000
+  laps. The C3c 25-activity/32-MiB bounds fit without editing C3a or C3b.
+- The listed composition/provider-sync modules may import and inject those already merged factories
+  directly. They do not need a new public Import export, Worker registry/protocol change, Repository,
+  schema, migration, or persistence path.
+
+### R4 — the existing Import facade and public report are sufficient after one literal correction
+
+- The Real Import facade already exposes `importArtifacts`, `cancelJob`, `getReport`, `waitForJob`,
+  and `close` over the single existing ImportService. The provider-sync controller can receive only
+  those injected methods, submit the complete descriptor array once, and keep the active job ID
+  controller-local. Page close already awaits connection close before Import close, which lets C3c
+  abort acquisition and request active-job cancellation before the Import barrier drains.
+- The public report has exact totals `total`, `completed`, `reviewRequired`,
+  `skippedExactDuplicate`, `failed`, and `cancelled`; it has no separate `accepted` field. The frozen
+  predicate is therefore recorded literally as
+  `completed + reviewRequired + skippedExactDuplicate === total`, together with total at least one,
+  failed/cancelled zero, every item in the three accepted outcomes, and either completed job status.
+  This is a Task-Brief clarification, not an Import API or behavior change.
+- Existing cancellation keeps completed work, and `waitForJob` yields the terminal public report.
+  Empty acquisition creates no job. Quota, cancellation, nonaccepted items, stale C2 CAS, pagehide,
+  close, and write failure can all leave committed items intact while withholding `lastSyncAt`.
+
+### R5 — the dedicated route fits current CSP, Service Worker, and privacy boundaries
+
+- Source Manager CSP already permits same-origin connections only. The Service Worker accepts only
+  allowlisted static GET requests and bypasses POST, sensitive authorization headers, query/hash,
+  and unlisted paths, so `/api/strava-sync` is network-only without a CSP or Service Worker edit.
+- Platform `api/*.js` discovery supplies the deployed route. The excluded local-development server
+  has no claim to support C3c and requires no routing/configuration change; deterministic server tests
+  can invoke the handler directly as existing C1.1 tests do.
+- The Legacy routes and `_shared.js` helper are broader, URL-ID based, and do not enforce the frozen
+  per-operation timeout/byte/reduction contract. C3c must leave them untouched and implement the
+  exact POST operation validation, provider paths, status mapping, timeouts, response reduction, and
+  fixed no-store responses wholly inside the new listed route and connector.
+- The listed privacy tests can extend the existing no-raw-log, same-origin, no-cache, no-DOM-secret,
+  and synthetic-only evidence gates. No shared logger expansion is required; the new route must not
+  emit raw input/provider values.
+
+### R6 — the exact 19-path maximum is collision-free
+
+- The literal block parses to exactly 19 paths and 19 unique paths in the delegated order. Fourteen
+  paths already exist and the only five new paths are
+  `js/app/source-manager-provider-sync.js`,
+  `js/connectors/strava/strava-sync-connector.js`, `api/strava-sync.js`,
+  `tests/source-manager/source-manager-provider-sync.test.js`, and
+  `tests/connectors/strava-sync-connector.test.js`.
+- Every identified production edit is already listed. The sanitizer/root bootstrap, C1.1
+  authorization/revoke/auth lifecycle, C2 store/index/Backup, C3a, C3b, ImportService/public index,
+  Worker, Repository, Service Worker, CSP, routing, and dependency files remain read-only boundaries.
+- No twentieth path, public/schema/dependency/Worker/Service Worker/CSP expansion, server routing or
+  configuration change, different identity/Token semantics, unbounded provider behavior, or C4
+  ownership requirement was found. Every stop condition remains mandatory if later implementation
+  evidence proves otherwise.
+
+## A2 local scope evidence
+
+- The A2 working diff changes only this Task Brief. The literal maximum audit reports 19 paths and
+  19 unique paths, with fourteen existing and the exact five expected new paths.
+- The full A1 docs-only head passed syntax for 274 files, privacy, 1826/1826 tests, and
+  `git diff --check`. The exact A2 gates are run again on the final Task-Brief-only content before
+  publication and reported to the control tower rather than inferred here.
+- No OAuth, Token, provider, account, private fixture, user browser/profile, server handler,
+  application/test implementation, Storage, Import, Backup, Repository, Worker, Service Worker,
+  migration, deployment, release, or integration-worktree action was performed.
 
 ## Explicit C3c A3 authorization package
 
