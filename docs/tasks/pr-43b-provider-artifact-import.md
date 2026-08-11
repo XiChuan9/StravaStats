@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | M27 / C3b provider artifact to existing ImportService integration |
-| Status | A2 material package frozen; owner provenance decision and implementation approval pending |
+| Status | C3b-P1 implemented and independently closed; exact-head publication/CI verification pending |
 | Base branch | `integration/v2` |
 | Exact base | `integration/v2@e28a047c21ad4bd6f92fdfe368f94593e6c9f80a` |
 | Exact base tree | `a9a92bf7ce7cae98711cb5ab5a06619168923eb4` |
@@ -19,9 +19,9 @@
 
 ## Goal
 
-Produce a findings-first, materially complete owner decision package for C3b. The selected direction
-uses a deterministic, versioned provider artifact to carry C3a `ImportedActivityBundle` values into
-the existing public `ImportService` pipeline. It must not create a parallel persistence path.
+Implement the owner-approved C3b-P1 package: a deterministic, versioned provider artifact carries
+C3a `ImportedActivityBundle` values into the existing public `ImportService` pipeline without a
+parallel persistence path.
 
 This first commit creates only this Task Brief. A2 is read-only except for updates to this same file.
 No decoder, registry, Import, Storage, schema, public API, Worker, provider, auth, UI, dependency, or
@@ -625,7 +625,7 @@ independent review returns no findings
 Task-Brief-only Closure is published
 remote depth-1 head equals local exact head
 exact-head GitHub CI succeeds
-PR remains OPEN/Draft and control tower receives the package
+PR remains OPEN; Ready transition occurs only under the later standing owner authorization
 ```
 
 No completion gate authorizes Ready, merge, cleanup, deployment, release, C3c, C4, live provider,
@@ -740,6 +740,89 @@ The Task-Brief-only A2 working tree passed `npm ci`, syntax for 269 files, priva
 1764/1764, and `git diff --check`. No implementation or browser evidence was run or claimed in A2.
 The remote depth-1 head and exact-head CI are verified after this package is committed and pushed;
 their exact identifiers are returned directly to the control tower rather than predicted here.
+
+## Final Review Closure
+
+The exact owner response `批准 C3b-P1 及完整合同和精确 16 路径上限` authorized the frozen P1
+contract and literal cumulative sixteen-path ceiling. The later standing authorization also permits
+the PR body update and Draft-to-Ready transition after every closure gate; it does not authorize
+merge, cleanup, deployment, release, C3c, C4, or live/private evidence.
+
+### Implementation and failure-first record
+
+- Implementation commit `0818587eeff8840be444f3a74628cbf83d2c2e35` added the direct internal
+  canonical builder/decoder, the narrow ImportService/Worker/Import Store integration, truthful
+  `provider-artifact` RawArtifact acquisition, format-2 Backup validation, and focused privacy and
+  boundary evidence. It added no public aggregate export or parallel write path.
+- The first provider-artifact focused run failed as required with `ERR_MODULE_NOT_FOUND` for the
+  absent direct module. Later smallest witnesses distinguished one incorrect expected report status
+  (`completed` versus the mapper's truthful `completed_with_warnings`) from the real pre-existing
+  Backup codec incompatibility at tagged number `-0.001`; the repair stayed inside approved
+  `backup-service.js` by using an exact-reencoding, provider-archive-gated decoder fallback. Ordinary
+  archives retain the existing decoder.
+- Review-repair commit `9932564` followed two new failing witnesses: a hostile over-limit provider
+  descriptor proved content cloning occurred before the 100-artifact ceiling (`true !== false`), and
+  a rehashed format-2 archive with `ActivitySource.rawArtifactId = null` produced `Missing expected
+  rejection`. Count/mixed-media validation now precedes content cloning, and committed provider raw
+  records require a matching source/raw/activity link.
+- Review-repair commit `4a88c1d` followed a third failing witness: a fully rehashed archive with a
+  mismatched stored `externalId` again produced `Missing expected rejection`. Backup now derives the
+  expected source from decoder-validated artifact content and requires the preserved provider,
+  external ID, acquisition method, device ID, import time, raw/activity links, and either the
+  original deterministic source ID or existing `exact-source:<artifact-id>:0` resolver ID. A
+  positive generated exact-link archive remains valid.
+
+### Independent review closure
+
+- The first independent findings-first review of `0818587` found the two material issues above:
+  incomplete committed Backup provenance linkage and provider count enforcement after content
+  cloning. Both repairs stayed within four already approved paths.
+- A genuinely fresh re-review of `9932564` cleared the count repair and found the remaining
+  content/source mismatch in Backup provenance. The second repair stayed within the two approved
+  Backup paths.
+- A third genuinely fresh read-only review of exact code head `4a88c1d` returned **NO FINDINGS**.
+  It found no parallel persistence, public/schema/dependency/Worker-protocol/Service Worker/server/
+  provider/auth expansion, or path collision. Its residual notes were test granularity only: it did
+  not independently rerun repository-wide/browser gates, and the one strict provenance predicate is
+  not separately mutated once per compared field. The local gates below independently cover the
+  complete code head and the predicate has both negative mismatch and positive generated-link
+  evidence.
+
+### Exact-head local and browser evidence
+
+- Focused artifact/Import/Worker/Backup/boundary/privacy suites pass **62/62** after all repairs.
+- On exact reviewed code head `4a88c1d`, `npm ci` passed; syntax passed for **271 files**; privacy
+  passed; full `npm test` passed **1782/1782**; and `git diff --check` passed.
+- The exact base-to-code-head diff uses twelve paths, all literal members of the approved cumulative
+  sixteen. Four listed paths remain unused; there is no substitution or seventeenth path.
+- An actual-served disposable in-app browser run against exact code head `4a88c1d` and fresh loopback
+  origins `127.0.0.1:43201`/`:43202` passed: one completed import, one exact duplicate skip, one
+  pending-artifact reselection completion, malformed/future/101 preflight with no job, cancellation,
+  quota reporting, unchanged connection revision/last-sync, deterministic validated/restored Backup
+  2, negative zero, and opaque ID preservation. Source and target counters were all zero for
+  fetch/XHR/WebSocket/Web Storage, console warning/error, uncaught/unhandled failure, Cache Storage,
+  Service Worker, and external requests. The server log contained only loopback `GET` requests for
+  the disposable harness and repository modules.
+- One diagnostic rerun on previously used ports returned the fixed temp-harness marker
+  `source-import`; it was stale IndexedDB origin state from the earlier pass. No tracked code was
+  changed. Switching only the disposable untracked harness to fresh origins produced the passing
+  exact-head record above, after which the browser context and server were closed.
+
+### Impact and publication handoff
+
+- Migration/schema impact remains none: no store, index, physical/Canonical version, migration,
+  backfill, repair, overwrite, delete, or cleanup. Legacy/default behavior is unchanged.
+- New records are additive through ImportService. Exact links do not overwrite Canonical payloads;
+  cancellation/quota/retry retain the existing per-item atomicity and reporting semantics.
+- Provider artifacts contain the accepted reduced Canonical bundle plus fixed connection slot, but
+  no subject, scope, Token, header, provider response, or credential. Errors/reports stay fixed and
+  redacted; all evidence is deterministic synthetic data.
+- Rollback remains code/caller disable or revert while retaining all V5 records and private format-2
+  Backups. No downgrade or record deletion is authorized.
+- This closure changes only this Task Brief. After its commit, the same local gates are rerun on the
+  closure head, the branch is pushed normally, true remote depth-1 equality and exact-head GitHub CI
+  are verified, the safe PR body is updated, and PR #51 may transition Draft to Ready under the
+  standing authorization. Merge remains a separate owner decision.
 
 ## Stop condition
 
