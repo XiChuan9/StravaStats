@@ -7,6 +7,7 @@ import { stravaArchiveRowDecoder } from './strava-zip.js';
 import { fitDecoder } from '../decoders/fit/decoder.js';
 import { tcxDecoder } from '../decoders/tcx/decoder.js';
 import { gpxDecoder } from '../decoders/gpx/decoder.js';
+import { stravaProviderArtifactDecoder } from './strava-provider-artifact.js';
 
 const registry = createDecoderRegistry([
     syntheticJsonDecoder,
@@ -14,7 +15,8 @@ const registry = createDecoderRegistry([
     stravaArchiveRowDecoder,
     fitDecoder,
     tcxDecoder,
-    gpxDecoder
+    gpxDecoder,
+    stravaProviderArtifactDecoder
 ]);
 const INPUT_FIELDS = Object.freeze(['mediaType', 'content', 'rawArtifactId']);
 

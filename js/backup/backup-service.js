@@ -16,6 +16,10 @@ import {
 import { V2_MIGRATION_REGISTRY } from '../storage/migrations.js';
 import { normalizeSourceConnectionRecord } from '../storage/source-connection-store.js';
 import {
+    STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE,
+    stravaProviderArtifactDecoder
+} from '../import/strava-provider-artifact.js';
+import {
     validDuplicateReviewCandidate,
     validDuplicateReviewDecision
 } from '../storage/duplicate-review.js';
@@ -176,7 +180,8 @@ const RAW_MEDIA_TYPES = new Set([
     'application/vnd.stravastats.strava-archive-row+json',
     'application/vnd.ant.fit;base64',
     'application/vnd.garmin.tcx+xml',
-    'application/gpx+xml'
+    'application/gpx+xml',
+    STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE
 ]);
 
 function backupError(code, operation, retryable = false) {
@@ -191,6 +196,80 @@ function sameArray(left, right) {
 function codeUnitCompare(left, right) {
     if (left === right) return 0;
     return left < right ? -1 : 1;
+}
+
+function exactArray(value, length) {
+    if (!Array.isArray(value) || value.length !== length) return false;
+    const keys = Reflect.ownKeys(value);
+    return keys.length === length + 1
+        && keys.every((key, index) => (
+            index === length ? key === 'length' : key === String(index)
+        ));
+}
+
+function decodeProviderTaggedNode(node) {
+    if (!Array.isArray(node) || node.length < 1 || typeof node[0] !== 'string') {
+        throw new TypeError();
+    }
+    if (node[0] === 'n' && exactArray(node, 1)) return null;
+    if (node[0] === 'b' && exactArray(node, 2) && typeof node[1] === 'boolean') {
+        return node[1];
+    }
+    if (node[0] === 's' && exactArray(node, 2) && typeof node[1] === 'string') {
+        return node[1];
+    }
+    if (node[0] === 'd' && exactArray(node, 2) && typeof node[1] === 'string') {
+        if (node[1] === '-0') return -0;
+        if (!/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:e[+-]?\d+)?$/i.test(node[1])) {
+            throw new TypeError();
+        }
+        const number = Number(node[1]);
+        if (!Number.isFinite(number) || String(number) !== node[1]) throw new TypeError();
+        return number;
+    }
+    if (node[0] === 'a' && exactArray(node, 2) && Array.isArray(node[1])) {
+        return node[1].map(decodeProviderTaggedNode);
+    }
+    if (node[0] === 'o' && exactArray(node, 2) && Array.isArray(node[1])) {
+        const result = {};
+        let previous = null;
+        for (const pair of node[1]) {
+            if (
+                !exactArray(pair, 2)
+                || typeof pair[0] !== 'string'
+                || (previous !== null && codeUnitCompare(previous, pair[0]) >= 0)
+            ) throw new TypeError();
+            previous = pair[0];
+            Object.defineProperty(result, pair[0], {
+                value: decodeProviderTaggedNode(pair[1]),
+                enumerable: true,
+                configurable: true,
+                writable: true
+            });
+        }
+        return result;
+    }
+    throw new TypeError();
+}
+
+function decodeProviderJsonLines(bytes) {
+    let text;
+    try {
+        text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch {
+        throw new TypeError();
+    }
+    if (text.length === 0) return [];
+    if (!text.endsWith('\n') || text.includes('\r')) throw new TypeError();
+    const lines = text.slice(0, -1).split('\n');
+    if (lines.some(line => line.length === 0)) throw new TypeError();
+    const records = lines.map(line => decodeProviderTaggedNode(JSON.parse(line)));
+    const canonical = encodeJsonLines(records);
+    if (
+        canonical.byteLength !== bytes.byteLength
+        || canonical.some((value, index) => value !== bytes[index])
+    ) throw new TypeError();
+    return records;
 }
 
 function ownValues(value, fields, allowSubset = false) {
@@ -499,7 +578,7 @@ function validSystem(records, profile = BACKUP_PROFILES[2]) {
         ));
 }
 
-function validRawArtifact(record) {
+function validRawArtifact(record, profile) {
     const fields = [
         'id', 'sha256', 'mediaType', 'byteLength', 'content', 'acquiredVia',
         'importedAt', 'state', 'activityId'
@@ -514,11 +593,55 @@ function validRawArtifact(record) {
         || value.byteLength <= 0
         || typeof value.content !== 'string'
         || new TextEncoder().encode(value.content).byteLength !== value.byteLength
-        || value.acquiredVia !== 'local-file'
         || !strictUtc(value.importedAt)
     ) return false;
+    if (value.mediaType === STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE) {
+        if (
+            profile.backupFormatVersion !== 2
+            || value.acquiredVia !== 'provider-artifact'
+        ) return false;
+        try {
+            stravaProviderArtifactDecoder.decode({
+                mediaType: value.mediaType,
+                content: value.content
+            });
+        } catch {
+            return false;
+        }
+    } else if (value.acquiredVia !== 'local-file') return false;
     return (value.state === 'pending' && value.activityId === null)
         || (value.state === 'committed' && opaque(value.activityId));
+}
+
+function validProviderArtifactLink(artifact, sources) {
+    if (
+        artifact.mediaType !== STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE
+        || artifact.state === 'pending'
+    ) return true;
+    let expectedSource;
+    try {
+        const bundle = stravaProviderArtifactDecoder.decode({
+            mediaType: artifact.mediaType,
+            content: artifact.content
+        });
+        expectedSource = bundle.sources[0];
+    } catch {
+        return false;
+    }
+    const acceptedIds = new Set([
+        expectedSource.id,
+        `exact-source:${artifact.id}:0`
+    ]);
+    return sources.some(source => (
+        acceptedIds.has(source.id)
+        && source.rawArtifactId === artifact.id
+        && source.activityId === artifact.activityId
+        && source.provider === expectedSource.provider
+        && source.externalId === expectedSource.externalId
+        && source.acquisitionMethod === expectedSource.acquisitionMethod
+        && source.deviceId === expectedSource.deviceId
+        && source.importedAt === expectedSource.importedAt
+    ));
 }
 
 function validJob(record) {
@@ -676,9 +799,20 @@ function validateRecords(records, operation = 'validate', profile = BACKUP_PROFI
                     || normalized.status === 'disconnected');
         })) throw backupError(BACKUP_ERROR_CODE.BACKUP_DATA_INVALID, operation);
     }
-    if (!records[V2_STORE_NAME.RAW_ARTIFACTS].every(validRawArtifact)) {
+    if (!records[V2_STORE_NAME.RAW_ARTIFACTS].every(record => (
+        validRawArtifact(record, profile)
+    ))) {
         throw backupError(BACKUP_ERROR_CODE.BACKUP_DATA_INVALID, operation);
     }
+    if (
+        profile.backupFormatVersion === 2
+        && records[V2_STORE_NAME.RAW_ARTIFACTS].some(record => (
+            record.mediaType === STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE
+        ))
+        && !records[V2_STORE_NAME.SOURCE_CONNECTIONS].some(record => (
+            record.id === 'source-connection:strava'
+        ))
+    ) throw backupError(BACKUP_ERROR_CODE.BACKUP_REFERENCE_INVALID, operation);
     if (!records[V2_STORE_NAME.IMPORT_JOBS].every(validJob)
         || !records[V2_STORE_NAME.IMPORT_ITEMS].every(validItem)
         || !records[V2_STORE_NAME.MERGE_CANDIDATES].every(validDuplicateReviewCandidate)
@@ -719,6 +853,12 @@ function validateRecords(records, operation = 'validate', profile = BACKUP_PROFI
                 : decisions.length === 1
                     && decisions[0].decision === candidate.status;
         });
+    const providerLinksValid = records[V2_STORE_NAME.RAW_ARTIFACTS].every(artifact => (
+        validProviderArtifactLink(
+            artifact,
+            records[V2_STORE_NAME.ACTIVITY_SOURCES]
+        )
+    ));
     const referencesValid = records[V2_STORE_NAME.ACTIVITY_SOURCES].every(record => (
         (record.rawArtifactId === undefined || record.rawArtifactId === null
             || artifactIds.has(record.rawArtifactId))
@@ -737,7 +877,7 @@ function validateRecords(records, operation = 'validate', profile = BACKUP_PROFI
     )) && records[V2_STORE_NAME.MERGE_DECISIONS].every(record => (
         candidateIds.has(record.candidateId)
     ));
-    if (!referencesValid || !importLogsValid || !reviewAuditValid) {
+    if (!referencesValid || !providerLinksValid || !importLogsValid || !reviewAuditValid) {
         throw backupError(BACKUP_ERROR_CODE.BACKUP_REFERENCE_INVALID, operation);
     }
 }
@@ -996,14 +1136,33 @@ async function validateBytes(dependencies, file, signal, operation) {
     if (manifest.hashes.some((hash, index) => (
         hash.sha256 !== entries[index + 1].sha256
     ))) throw backupError(BACKUP_ERROR_CODE.BACKUP_HASH_MISMATCH, operation);
+    let providerArtifactArchive = false;
+    if (profile.backupFormatVersion === 2) {
+        const rawIndex = profile.payloads.findIndex(payload => (
+            payload.store === V2_STORE_NAME.RAW_ARTIFACTS
+        ));
+        try {
+            providerArtifactArchive = decodeJsonLines(entries[rawIndex + 1].bytes)
+                .some(record => record?.mediaType === STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE);
+        } catch (error) {
+            throw mapCodecError(error, operation);
+        }
+    }
     const records = Object.create(null);
     let settings = null;
     for (let index = 0; index < profile.payloads.length; index += 1) {
         checkCancelled(signal, operation);
         const payload = profile.payloads[index];
         let decoded;
-        try { decoded = decodeJsonLines(entries[index + 1].bytes); } catch (error) {
-            throw mapCodecError(error, operation);
+        try {
+            decoded = decodeJsonLines(entries[index + 1].bytes);
+        } catch (error) {
+            if (!providerArtifactArchive) throw mapCodecError(error, operation);
+            try {
+                decoded = decodeProviderJsonLines(entries[index + 1].bytes);
+            } catch {
+                throw mapCodecError(error, operation);
+            }
         }
         if (decoded.length !== manifest.files[index].recordCount) {
             throw backupError(BACKUP_ERROR_CODE.BACKUP_DATA_INVALID, operation);

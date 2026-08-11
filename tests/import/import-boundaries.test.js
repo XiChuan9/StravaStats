@@ -31,7 +31,7 @@ test('production Import Core has no provider, network, DOM, logging, or destruct
         'activities-csv-decoder.js', 'activities-preview.js', 'csv-tokenizer.js',
         'decoder-registry.js', 'errors.js', 'import-service.js',
         'index.js', 'normalizer.js', 'safe-data.js', 'state-machine.js',
-        'strava-zip.js', 'synthetic-import-worker.js',
+        'strava-provider-artifact.js', 'strava-zip.js', 'synthetic-import-worker.js',
         'synthetic-json-decoder.js', 'worker-client.js', 'zip-inspector.js'
     ];
     const source = (await Promise.all(files.map(file => readFile(
@@ -68,6 +68,49 @@ test('C3a mapper stays outside Import Core, Worker, and provider I/O boundaries'
     const publicImport = await import(`${importIndex.href}?c3a=${Date.now()}`);
     assert.equal(Object.hasOwn(publicImport, 'createStravaImportMapper'), false);
     assert.equal(Object.hasOwn(publicImport, 'mapActivities'), false);
+});
+
+test('C3b freezes the direct internal seam, approval, and exact sixteen-path ceiling', async () => {
+    const direct = await import(
+        `../../js/import/strava-provider-artifact.js?boundary=${Date.now()}`
+    );
+    const publicImport = await import(`${importIndex.href}?c3b=${Date.now()}`);
+    assert.equal(Object.hasOwn(publicImport, 'createStravaProviderArtifacts'), false);
+    assert.equal(Object.hasOwn(publicImport, 'STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE'), false);
+    assert.deepEqual(Object.keys(direct).sort(), [
+        'STRAVA_PROVIDER_ARTIFACT_ERROR_CODE',
+        'STRAVA_PROVIDER_ARTIFACT_LIMITS',
+        'STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE',
+        'StravaProviderArtifactError',
+        'createStravaProviderArtifacts',
+        'stravaProviderArtifactDecoder'
+    ]);
+    const brief = await readFile(new URL(
+        '../../docs/tasks/pr-43b-provider-artifact-import.md',
+        import.meta.url
+    ), 'utf8');
+    const paths = [
+        'docs/tasks/pr-43b-provider-artifact-import.md',
+        'js/import/AGENTS.md',
+        'js/import/strava-provider-artifact.js',
+        'js/import/import-service.js',
+        'js/import/synthetic-import-worker.js',
+        'js/storage/import-store.js',
+        'js/backup/backup-service.js',
+        'tests/import/strava-provider-artifact.test.js',
+        'tests/import/import-core.test.js',
+        'tests/import/import-worker.test.js',
+        'tests/import/decoder-registry-wiring.test.js',
+        'tests/import/exact-identity-import.test.js',
+        'tests/import/import-boundaries.test.js',
+        'tests/backup/backup-service.test.js',
+        'tests/backup/backup-boundaries.test.js',
+        'tests/privacy/privacy-guard.test.js'
+    ];
+    assert.equal(new Set(paths).size, 16);
+    for (const path of paths) assert.equal(brief.includes(path), true, path);
+    assert.match(brief, /批准 C3b-P1 及完整合同和精确 16 路径上限/);
+    assert.match(brief, /No seventeenth path is authorized/);
 });
 
 test('PR-09 keeps the literal 18-path allowlist and fixed archive boundaries', async () => {

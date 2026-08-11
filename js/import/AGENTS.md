@@ -8,6 +8,10 @@ These rules extend the repository root instructions for `js/import/`.
   `activities.csv` profile, and the strict synthetic Strava ZIP profile frozen
   in `docs/tasks/pr-09-strava-zip.md`. Do not add another locale, a general ZIP
   API, FIT/TCX/GPX/XML decoding, a provider, or network behavior here.
+- Owner-approved C3b-P1 adds one narrow exception: the deterministic, versioned
+  Strava provider artifact may encode an already accepted C3a bundle and enter
+  the existing ImportService pipeline. It adds no provider request, Token,
+  controller, public export, or parallel persistence path.
 - CSV parsing is bounded and inert: never evaluate formulas, follow links,
   execute markup, guess units/locales, or depend on host locale/timezone.
 - Every Canonical write must pass `validateImportedActivityBundle` and use the

@@ -18,6 +18,17 @@ import {
     expandStravaZipArtifact
 } from '../../js/import/strava-zip.js';
 import { syntheticStravaZipArtifact } from '../fixtures/synthetic/strava/archive-fixture.js';
+import {
+    STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE,
+    createStravaProviderArtifacts
+} from '../../js/import/strava-provider-artifact.js';
+import { createStravaImportMapper } from '../../js/connectors/strava/strava-import-mapper.js';
+import {
+    SYNTHETIC_ACQUIRED_AT,
+    SYNTHETIC_CONNECTION,
+    SYNTHETIC_RICH_ACTIVITY,
+    SYNTHETIC_SESSION
+} from '../fixtures/synthetic/strava/api-import-fixture.js';
 
 const fixtureUrl = new URL(
     '../fixtures/synthetic/canonical/import-run-summary.json',
@@ -120,6 +131,45 @@ test('inline Worker selects only archive-generated row children and reuses CSV d
     )));
     assert.equal(result.decoded.streams.series.length, 0);
     worker.close();
+});
+
+test('inline Worker registers only canonical C3b provider artifact bytes', async () => {
+    const mapper = createStravaImportMapper({
+        session: structuredClone(SYNTHETIC_SESSION),
+        connection: structuredClone(SYNTHETIC_CONNECTION)
+    });
+    const bundles = mapper.mapActivities({
+        cancelled: false,
+        acquiredAt: SYNTHETIC_ACQUIRED_AT,
+        activities: [structuredClone(SYNTHETIC_RICH_ACTIVITY)]
+    });
+    const [descriptor] = createStravaProviderArtifacts({
+        connection: structuredClone(SYNTHETIC_CONNECTION),
+        bundles
+    });
+    const worker = createInlineImportWorker();
+    try {
+        const result = await worker.process({
+            ...descriptor,
+            rawArtifactId: 'raw:synthetic-provider'
+        });
+        assert.equal(result.ok, true);
+        assert.equal(result.decoded.activity.id, 'strava-api:910000000000000001');
+        assert.equal(Object.is(result.decoded.activity.elevationGainMeters, -0), true);
+        const malformed = await worker.process({
+            mediaType: STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE,
+            content: ` ${descriptor.content}`,
+            rawArtifactId: 'raw:private-canary'
+        });
+        assert.deepEqual(malformed, {
+            ok: false,
+            code: IMPORT_ERROR_CODE.FILE_CORRUPTED,
+            retryable: false
+        });
+        assert.doesNotMatch(JSON.stringify(malformed), /private-canary|910000000000000001/);
+    } finally {
+        worker.close();
+    }
 });
 
 test('browser worker client maps raw error events to one stable crash', async () => {

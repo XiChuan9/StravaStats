@@ -25,6 +25,11 @@ import {
     expandStravaZipArtifact
 } from './strava-zip.js';
 import {
+    STRAVA_PROVIDER_ARTIFACT_LIMITS,
+    STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE,
+    stravaProviderArtifactDecoder
+} from './strava-provider-artifact.js';
+import {
     observeImportCancellation,
     recordImportPerformanceOperation,
     trackImportWorkerRequest
@@ -36,6 +41,7 @@ const ACCEPTED_MEDIA_TYPES = Object.freeze([
     SYNTHETIC_JSON_MEDIA_TYPE,
     ACTIVITIES_CSV_MEDIA_TYPE,
     STRAVA_ARCHIVE_ROW_MEDIA_TYPE,
+    STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE,
     'application/vnd.ant.fit;base64',
     'application/vnd.garmin.tcx+xml',
     'application/gpx+xml'
@@ -76,6 +82,20 @@ async function snapshotArtifacts(value, isCancelled) {
         throw importError(IMPORT_ERROR_CODE.INVALID_REQUEST);
     }
     try {
+        let providerCount = 0;
+        for (const item of values) {
+            const artifact = ownDataValues(item, ARTIFACT_FIELDS);
+            if (!artifact) throw new TypeError();
+            if (artifact.mediaType === STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE) {
+                providerCount += 1;
+                if (
+                    providerCount > STRAVA_PROVIDER_ARTIFACT_LIMITS.maxArtifactsPerJob
+                ) throw importError(IMPORT_ERROR_CODE.INVALID_REQUEST);
+            }
+        }
+        if (providerCount > 0 && providerCount !== values.length) {
+            throw importError(IMPORT_ERROR_CODE.INVALID_REQUEST);
+        }
         const artifacts = [];
         for (const item of values) {
             const artifact = ownDataValues(item, ARTIFACT_FIELDS);
@@ -106,6 +126,26 @@ async function snapshotArtifacts(value, isCancelled) {
                     mediaType: artifact.mediaType,
                     content: artifact.content
                 }));
+            }
+        }
+        if (providerCount > 0) {
+            let totalBytes = 0;
+            for (const artifact of artifacts) {
+                if (typeof artifact.content !== 'string') {
+                    throw importError(IMPORT_ERROR_CODE.INVALID_REQUEST);
+                }
+                const byteLength = new TextEncoder().encode(artifact.content).byteLength;
+                totalBytes += byteLength;
+                if (
+                    byteLength > STRAVA_PROVIDER_ARTIFACT_LIMITS.maxBytesPerArtifact
+                    || totalBytes > STRAVA_PROVIDER_ARTIFACT_LIMITS.maxBytesPerJob
+                ) throw importError(IMPORT_ERROR_CODE.INVALID_REQUEST);
+            }
+            for (const artifact of artifacts) {
+                if (isCancelled()) {
+                    throw importError(IMPORT_ERROR_CODE.IMPORT_CANCELLED);
+                }
+                stravaProviderArtifactDecoder.decode(artifact);
             }
         }
         return Object.freeze(artifacts);
