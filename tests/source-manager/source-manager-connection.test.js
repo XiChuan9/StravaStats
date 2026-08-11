@@ -354,7 +354,8 @@ test('noncanonical and cross-mode OAuth material is scrubbed once and blocked', 
         assert.deepEqual(result, {
             status: 'blocked',
             sessionMode: null,
-            code: 'NAVIGATION_SANITIZATION_FAILED'
+            code: 'NAVIGATION_SANITIZATION_FAILED',
+            discardAuthorizationState: true
         });
         assert.deepEqual(calls, [[null, '', `/source-manager.html?mode=${mode}`]]);
         assert.doesNotMatch(JSON.stringify({ result, calls }), new RegExp(canary));
@@ -398,7 +399,8 @@ test('exact access_denied callback is detached and duplicate callback keys block
     });
     assert.deepEqual(sanitizeSourceManagerNavigation(duplicate.input), {
         status: 'blocked', sessionMode: null,
-        code: 'NAVIGATION_SANITIZATION_FAILED'
+        code: 'NAVIGATION_SANITIZATION_FAILED',
+        discardAuthorizationState: true
     });
     assert.equal(duplicate.calls.length, 1);
 });
@@ -419,7 +421,8 @@ test('untrusted navigation without one valid mode scrubs once and remains blocke
         assert.deepEqual(result, {
             status: 'blocked',
             sessionMode: null,
-            code: 'NAVIGATION_SANITIZATION_FAILED'
+            code: 'NAVIGATION_SANITIZATION_FAILED',
+            discardAuthorizationState: true
         });
         assertDeepFrozen(result);
         assert.deepEqual(calls, [[null, '', '/source-manager.html']]);
@@ -438,7 +441,8 @@ test('a fragment is always removed and can preserve only an explicit canonical m
     assert.deepEqual(sanitizeSourceManagerNavigation(blocked.input), {
         status: 'blocked',
         sessionMode: null,
-        code: 'NAVIGATION_SANITIZATION_FAILED'
+        code: 'NAVIGATION_SANITIZATION_FAILED',
+        discardAuthorizationState: true
     });
     assert.deepEqual(blocked.calls, [[null, '', '/source-manager.html']]);
 });

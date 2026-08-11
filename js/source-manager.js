@@ -1,5 +1,7 @@
 import { startSourceManager } from './app/source-manager.js';
 import { sanitizeSourceManagerNavigation } from './app/source-manager-connection.js';
+import { discardSourceManagerAuthorizationState } from
+    './app/source-manager-authorization.js';
 import { configureImportPerformance } from './diagnostics/import-performance.js';
 import {
     installGlobalDiagnosticsListeners,
@@ -23,6 +25,13 @@ let application = null;
 let pageHidden = false;
 
 if (navigation.status === 'blocked') {
+    if (navigation.discardAuthorizationState === true) {
+        try {
+            discardSourceManagerAuthorizationState(sessionStorage);
+        } catch {
+            // The navigation remains blocked when state storage is unavailable.
+        }
+    }
     const panel = document.getElementById('blocking-error');
     const code = document.getElementById('blocking-error-code');
     const copy = document.getElementById('blocking-error-copy');

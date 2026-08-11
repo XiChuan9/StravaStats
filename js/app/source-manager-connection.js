@@ -16,6 +16,12 @@ const NAVIGATION_BLOCKED = Object.freeze({
     sessionMode: null,
     code: 'NAVIGATION_SANITIZATION_FAILED'
 });
+const SCRUBBED_NAVIGATION_BLOCKED = Object.freeze({
+    status: 'blocked',
+    sessionMode: null,
+    code: 'NAVIGATION_SANITIZATION_FAILED',
+    discardAuthorizationState: true
+});
 const CLEAN_REAL = Object.freeze({ status: 'clean', sessionMode: 'real' });
 const CLEAN_DEMO = Object.freeze({ status: 'clean', sessionMode: 'demo' });
 const SANITIZED_REAL = Object.freeze({ status: 'sanitized', sessionMode: 'real' });
@@ -250,7 +256,7 @@ export function sanitizeSourceManagerNavigation(value) {
         ? '/source-manager.html'
         : `/source-manager.html?mode=${preservedMode}`;
     if (!scrub(input.replaceState, path)) return NAVIGATION_BLOCKED;
-    if (callback === undefined) return NAVIGATION_BLOCKED;
+    if (callback === undefined) return SCRUBBED_NAVIGATION_BLOCKED;
     if (callback !== null) {
         return Object.freeze({
             status: 'sanitized',
@@ -260,7 +266,7 @@ export function sanitizeSourceManagerNavigation(value) {
     }
     if (preservedMode === 'real') return SANITIZED_REAL;
     if (preservedMode === 'demo') return SANITIZED_DEMO;
-    return NAVIGATION_BLOCKED;
+    return SCRUBBED_NAVIGATION_BLOCKED;
 }
 
 export function createSourceManagerConnectionController(options) {

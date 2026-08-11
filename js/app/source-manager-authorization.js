@@ -89,6 +89,17 @@ function dataMethod(value, name) {
     }
 }
 
+export function discardSourceManagerAuthorizationState(sessionStorage) {
+    const removeItem = dataMethod(sessionStorage, 'removeItem');
+    if (!removeItem) return false;
+    try {
+        Reflect.apply(removeItem, sessionStorage, [STATE_KEY]);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 function validOrigin(value) {
     if (typeof value !== 'string' || value.length === 0 || value.length > 512) return false;
     try {

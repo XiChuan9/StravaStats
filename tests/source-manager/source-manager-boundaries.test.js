@@ -141,6 +141,8 @@ test('page consumer does not select storage/provider/auth or disclose raw inputs
     assert.doesNotMatch(page, /console\.|innerHTML|insertAdjacentHTML|outerHTML/);
     assert.doesNotMatch(page, /error\.(message|stack|cause)|file\.name[^,;\n]*textContent/);
     assert.match(page, /SAFE_UI_CODES\.has\(descriptor\.value\)/);
+    assert.match(page, /AUTHORIZATION_REQUIRED: 'Reconnect explicitly to restore exact local authorization\.'/);
+    assert.match(page, /CONNECTION_ERROR: 'The connection could not be used\.'/);
     assert.match(page, /label: `CSV file \$\{ordinal \+ 1\}`/);
     assert.match(page, /label: `ZIP file \$\{ordinal \+ 1\}`/);
     assert.match(page, /label: `FIT file \$\{ordinal \+ 1\}`/);
@@ -204,9 +206,9 @@ test('C1-A3 sanitizer is the first bootstrap operation and the controller remain
 test('blocked bootstrap executes sanitization before every application capability', async () => {
     const protectedNames = [
         'fetch', 'Worker', 'indexedDB', 'IDBKeyRange', 'crypto',
-        'localStorage', 'sessionStorage', 'performance', 'addEventListener'
+        'localStorage', 'performance', 'addEventListener'
     ];
-    const globalNames = [...protectedNames, 'document', 'location', 'history'];
+    const globalNames = [...protectedNames, 'sessionStorage', 'document', 'location', 'history'];
     let importIndex = 0;
 
     for (const historyThrows of [false, true]) {
@@ -227,6 +229,15 @@ test('blocked bootstrap executes sanitization before every application capabilit
                     }
                 });
             }
+            Object.defineProperty(globalThis, 'sessionStorage', {
+                configurable: true,
+                get() {
+                    touched.push('sessionStorage');
+                    return Object.freeze({
+                        removeItem(key) { order.push(['storage', key]); }
+                    });
+                }
+            });
             Object.defineProperty(globalThis, 'location', {
                 configurable: true,
                 value: Object.freeze({
@@ -257,10 +268,18 @@ test('blocked bootstrap executes sanitization before every application capabilit
 
             importIndex += 1;
             await import(`../../js/source-manager.js?blocked-bootstrap=${importIndex}-${Date.now()}`);
-            assert.deepEqual(touched, []);
+            assert.deepEqual(touched, historyThrows ? [] : ['sessionStorage']);
             assert.equal(order[0][0], 'history');
             assert.deepEqual(order[0].slice(1), [null, '', '/source-manager.html']);
             assert.equal(order.filter(entry => entry[0] === 'history').length, 1);
+            if (historyThrows) {
+                assert.equal(order.some(entry => entry[0] === 'storage'), false);
+            } else {
+                assert.deepEqual(order[1], [
+                    'storage', 'source_manager_authorization_state'
+                ]);
+                assert.ok(order.findIndex(entry => entry[0] === 'dom') > 1);
+            }
             assert.equal(nodes.get('blocking-error-code').textContent, 'NAVIGATION_SANITIZATION_FAILED');
             assert.equal(
                 nodes.get('blocking-error-copy').textContent,
