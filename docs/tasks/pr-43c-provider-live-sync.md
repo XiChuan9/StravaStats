@@ -411,3 +411,76 @@ authorized.
   implementation action was performed.
 - Remote depth-one and exact-head CI are publication-time readbacks and are reported to the control
   tower after the pushed A2 commit; they are not inferred in this file.
+
+## C1.1 Final Review Closure
+
+The authorized C1.1 implementation is closed locally on implementation head
+`3f93c39945002eba769327fc401b285b5e1d091a`. The implementation series after exact A2 head
+`f77574212a28a21fa60eb977770965e5311122f0` is:
+
+- `ac368b7` — record the verbatim A3 authorization;
+- `272d638` — implement Source Manager authorization, the reduced server exchange/revoke boundary,
+  five-field Token authority, immutable-subject acceptance, best-effort disconnect, and UI/tests;
+- `5537fc4`, `d3918d0`, `b059246`, `63cbecf`, and `6ac45d4` — repair V1 Token compatibility,
+  rollback, bounded upstream reads, exact expiry/state handling, callback replay prevention, safe UI
+  codes, immutable C2 transitions, exact revoke success, and terminal close behavior;
+- `5d851f9`, `25a2eaf`, `50d6b50`, and `3f93c39` — close asynchronous authorization races,
+  serialize Disconnect/close, require provider-returned scope evidence, and make pagehide terminal
+  even while Source Manager composition is pending.
+
+### Closed contract and scope
+
+- The cumulative diff from A2 contains exactly the corrected 23-path allowlist and no 24th path.
+  `tests/repository/dependency-boundaries.test.js` replaces
+  `tests/source-manager/source-manager.test.js`; its delta is limited to the approved Connector
+  SHA-256 plus the corresponding accounting comment/test title.
+- The Connector frozen SHA-256 is
+  `b45b9c52d87980aa78dae5b48bffdd9deb484f569e03293cdd65368f44bc8d4c`.
+- Source Manager accepts only exact ordered `read,activity:read_all` scope evidence and an exact
+  positive immutable subject. Exact restored-subject reconnect is retained. A subject mismatch
+  stores nothing and does not mutate subject, Token, or SourceConnection.
+- The five-field Token is the only C1.1 authority. The three-field Token remains V1-only. Disconnect
+  waits for the inactive-sync boundary, attempts server revoke once, removes local Token even when
+  revoke is unconfirmed, preserves Legacy/V2/import/source/backup/settings data, and CASes only the
+  permitted C2 status/history.
+- No C3c acquisition, C4 lease/recovery, schema/migration, Backup/Import/Repository reinterpretation,
+  Worker/Service Worker, dependency/package/lock, CSP/server-routing expansion, root application
+  behavior reinterpretation, deployment, release, or cleanup is included.
+
+### Failure-first independent review closure
+
+Independent findings-first passes were commissioned on successive clean heads. Every actionable
+finding was reproduced or bounded with a failing regression first, repaired inside the corrected
+23-path maximum, and re-reviewed on a later head. The closed findings covered:
+
+- V1 logout compatibility, C2 rollback failure, upstream response-body timeout, and invalid local
+  expiry acceptance;
+- mandatory OAuth state deletion and consumption of blocked malformed/reduced callbacks;
+- Reconnect/error UI snapshot validation, refresh-expiry preservation, C2 connected-state CAS, and
+  exact revoke success validation;
+- authorization/Token/C2 writes after close, late navigation after close, Disconnect/close
+  serialization, provider-returned scope evidence, and pagehide during pending composition.
+
+One proposed revoke-protocol finding was rejected against the current official Strava contract:
+the documented June 2026 boundary is Basic-auth `POST /oauth/revoke`, accepts an access or refresh
+token, and succeeds only with an empty HTTP 200 response. No provider request was made to establish
+that documentation fact. A final fresh independent review of exact head `3f93c39` returned exactly
+`No actionable findings.` and independently confirmed the corrected 23/23 path set and clean tree.
+
+### Final local, browser, and privacy evidence
+
+- `npm ci` completed successfully.
+- `npm run check:syntax` passed for 274 files; `npm run check:privacy` passed.
+- The final focused C1.1 selection passed 252/252; the final full suite passed 1826/1826.
+- `git diff --check` passed, and the A2-to-head path audit reports exactly 23 allowed paths.
+- An actually served disposable synthetic-browser run passed exact authorization, synchronous
+  callback scrub/canary removal, five-field Token and ordered scopes, C2 connection, mismatch
+  zero-mutation, data-preserving unconfirmed-revoke Disconnect, Demo isolation, invalid navigation,
+  Service Worker query/cache restoration, offline-origin reload, and V2 store/index checks.
+- The browser run recorded zero external/provider/telemetry requests, zero XHR/WebSocket traffic,
+  two expected same-origin fetches, and zero console warnings/errors. It used no user Chrome/profile,
+  real OAuth, external provider request, account, token, activity, location, or private fixture.
+
+This is the Task-Brief-only Final Review Closure. Remote depth-one equality, exact-head CI, the safe
+PR-body evidence update, and the Ready transition remain publication-time gates. Ready is not merge
+authorization; merge, auto-merge, cleanup, deployment, release, C3c, and C4 remain prohibited.
