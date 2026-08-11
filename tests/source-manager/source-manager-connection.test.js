@@ -38,6 +38,7 @@ function controllerHarness({
     disconnectStatus = 'success',
     expireStatus = 'token-expired',
     acceptGate = null,
+    disconnectGate = null,
     syncBoundaryFailure = false,
     createFailure = false,
     transitionFailure = false
@@ -67,6 +68,7 @@ function controllerHarness({
         async disconnect() {
             calls.disconnect += 1;
             calls.order.push('disconnect');
+            if (disconnectGate) await disconnectGate;
             return { status: disconnectStatus };
         }
     });
@@ -381,6 +383,40 @@ test('disconnect fails before revoke, Token removal, or C2 CAS when the sync bou
     assert.equal(calls.syncBoundary, 1);
     assert.equal(calls.disconnect, 0);
     assert.deepEqual(calls.transition, []);
+});
+
+test('close waits for the mandatory post-removal disconnected C2 CAS', async () => {
+    let releaseDisconnect;
+    const disconnectGate = new Promise(resolve => { releaseDisconnect = resolve; });
+    const { controller, calls } = controllerHarness({
+        record: connectionRecord(),
+        authority: { status: 'authority', subjectId: SUBJECT },
+        disconnectGate
+    });
+    assert.deepEqual(await controller.initialize(), { status: 'connected' });
+    const pendingDisconnect = controller.disconnect();
+    while (calls.disconnect === 0) await Promise.resolve();
+    let closeSettled = false;
+    const pendingClose = controller.close().then(value => {
+        closeSettled = true;
+        return value;
+    });
+    await Promise.resolve();
+    assert.equal(closeSettled, false);
+    releaseDisconnect();
+    assert.deepEqual(await pendingDisconnect, { status: 'closed' });
+    assert.deepEqual(await pendingClose, { status: 'closed' });
+    assert.equal(calls.expire, 0);
+    assert.deepEqual(calls.transition, [{
+        id: 'source-connection:strava', expectedRevision: 1,
+        status: 'disconnected', lastSyncAt: null, errorCode: null
+    }]);
+    assert.deepEqual(controller.getConnectionSnapshot(), {
+        schemaVersion: 1,
+        status: 'closed',
+        code: null,
+        actions: { connect: false, reconnect: false, sync: false, disconnect: false }
+    });
 });
 
 test('canonical Source Manager navigation performs zero history writes', () => {

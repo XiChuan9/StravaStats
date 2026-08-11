@@ -274,6 +274,7 @@ export function createSourceManagerConnectionController(options) {
     let closed = false;
     let initialized = false;
     let initializing = null;
+    let disconnecting = null;
     let current = null;
     let localAuthority = false;
     let currentSnapshot = snapshot(
@@ -470,41 +471,48 @@ export function createSourceManagerConnectionController(options) {
         }
         setSnapshot('disconnecting');
         try {
-            await Reflect.apply(dependencies.awaitInactiveSyncBoundary, null, []);
-        } catch {
-            if (closed) return CONNECTION_CLOSED;
-            setSnapshot('error', 'CONNECTION_UPDATE_FAILED', localAuthority);
-            return result('error', 'CONNECTION_UPDATE_FAILED');
+            disconnecting = (async () => {
+                try {
+                    await Reflect.apply(dependencies.awaitInactiveSyncBoundary, null, []);
+                } catch {
+                    if (closed) return CONNECTION_CLOSED;
+                    setSnapshot('error', 'CONNECTION_UPDATE_FAILED', localAuthority);
+                    return result('error', 'CONNECTION_UPDATE_FAILED');
+                }
+                if (closed) return CONNECTION_CLOSED;
+                let disconnected;
+                try {
+                    disconnected = await dependencies.authLifecycle.disconnect();
+                } catch {
+                    disconnected = Object.freeze({ status: 'token-removal-failed' });
+                }
+                const status = dataProperty(disconnected, 'status');
+                if (status === 'token-removal-failed') {
+                    if (closed) return CONNECTION_CLOSED;
+                    setSnapshot('error', 'TOKEN_REMOVAL_FAILED', true);
+                    return result('error', 'TOKEN_REMOVAL_FAILED');
+                }
+                const errorCode = status === 'revocation-unconfirmed'
+                    ? 'REVOCATION_UNCONFIRMED'
+                    : null;
+                localAuthority = false;
+                try {
+                    current = await dependencies.connectionStore.transitionConnection(
+                        transitionInput(current, 'disconnected', errorCode)
+                    );
+                } catch {
+                    if (closed) return CONNECTION_CLOSED;
+                    setSnapshot('error', 'CONNECTION_UPDATE_FAILED', false);
+                    return result('error', 'CONNECTION_UPDATE_FAILED');
+                }
+                if (closed) return CONNECTION_CLOSED;
+                setSnapshot('disconnected', errorCode, false);
+                return result('disconnected');
+            })();
+            return await disconnecting;
+        } finally {
+            disconnecting = null;
         }
-        if (closed) return CONNECTION_CLOSED;
-        let disconnected;
-        try {
-            disconnected = await dependencies.authLifecycle.disconnect();
-        } catch {
-            disconnected = Object.freeze({ status: 'token-removal-failed' });
-        }
-        if (closed) return CONNECTION_CLOSED;
-        const status = dataProperty(disconnected, 'status');
-        if (status === 'token-removal-failed') {
-            setSnapshot('error', 'TOKEN_REMOVAL_FAILED', true);
-            return result('error', 'TOKEN_REMOVAL_FAILED');
-        }
-        const errorCode = status === 'revocation-unconfirmed'
-            ? 'REVOCATION_UNCONFIRMED'
-            : null;
-        localAuthority = false;
-        try {
-            current = await dependencies.connectionStore.transitionConnection(
-                transitionInput(current, 'disconnected', errorCode)
-            );
-        } catch {
-            if (closed) return CONNECTION_CLOSED;
-            setSnapshot('error', 'CONNECTION_UPDATE_FAILED', false);
-            return result('error', 'CONNECTION_UPDATE_FAILED');
-        }
-        if (closed) return CONNECTION_CLOSED;
-        setSnapshot('disconnected', errorCode, false);
-        return result('disconnected');
     }
 
     return Object.freeze({
@@ -519,10 +527,12 @@ export function createSourceManagerConnectionController(options) {
             closed = true;
             setSnapshot('closed');
             if (dependencies) {
+                const pendingDisconnect = disconnecting;
                 await Promise.allSettled([
                     dependencies.authorization.close(),
-                    dependencies.connectionStore.close()
+                    pendingDisconnect
                 ]);
+                await Promise.allSettled([dependencies.connectionStore.close()]);
             }
             return CONNECTION_CLOSED;
         }
