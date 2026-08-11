@@ -24,10 +24,22 @@ import {
     createInlineImportWorker
 } from '../../js/import/index.js';
 import {
+    STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE,
+    createStravaProviderArtifacts,
+    stravaProviderArtifactDecoder
+} from '../../js/import/strava-provider-artifact.js';
+import { createStravaImportMapper } from '../../js/connectors/strava/strava-import-mapper.js';
+import {
     createCanonicalStore,
     createImportStore,
     createSourceConnectionStore
 } from '../../js/storage/index.js';
+import {
+    SYNTHETIC_ACQUIRED_AT,
+    SYNTHETIC_CONNECTION,
+    SYNTHETIC_RICH_ACTIVITY,
+    SYNTHETIC_SESSION
+} from '../fixtures/synthetic/strava/api-import-fixture.js';
 
 const FIXED_TIME = Date.parse('2026-08-07T01:02:03.004Z');
 
@@ -149,6 +161,41 @@ async function createConnection(indexedDB, status = 'connected') {
     return record;
 }
 
+async function providerLibrary(indexedDB) {
+    await createConnection(indexedDB);
+    const mapper = createStravaImportMapper({
+        session: structuredClone(SYNTHETIC_SESSION),
+        connection: structuredClone(SYNTHETIC_CONNECTION)
+    });
+    const bundles = mapper.mapActivities({
+        cancelled: false,
+        acquiredAt: SYNTHETIC_ACQUIRED_AT,
+        activities: [structuredClone(SYNTHETIC_RICH_ACTIVITY)]
+    });
+    const descriptors = createStravaProviderArtifacts({
+        connection: structuredClone(SYNTHETIC_CONNECTION),
+        bundles
+    });
+    let sequence = 0;
+    const importStore = createImportStore({
+        indexedDB,
+        IDBKeyRange,
+        now: () => FIXED_TIME,
+        applicationVersion: 'backup-provider-test@1'
+    });
+    const imports = createImportService({
+        importStore,
+        worker: createInlineImportWorker(),
+        crypto: webcrypto,
+        createId: kind => `provider-backup:${kind}:${++sequence}`
+    });
+    await imports.initialize();
+    const run = await imports.importArtifacts(descriptors);
+    const report = await imports.waitForJob(run.jobId);
+    assert.equal(report.totals.completed, 1);
+    await imports.close();
+}
+
 function hex(bytes) {
     return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
 }
@@ -186,7 +233,8 @@ async function legacyFormat1Archive(format2Blob) {
     for (const payload of payloads) {
         const file = manifest.files.find(candidate => candidate.path === payload.path);
         file.byteLength = payload.bytes.byteLength;
-        file.recordCount = decodeJsonLines(payload.bytes).length;
+        if (payload.path === 'system/metadata.jsonl') file.recordCount = 1;
+        if (payload.path === 'system/migrations.jsonl') file.recordCount = 4;
         const hash = manifest.hashes.find(candidate => candidate.path === payload.path);
         hash.sha256 = hex(await sha256(payload.bytes, webcrypto));
     }
@@ -222,6 +270,35 @@ async function archiveWithNonExactMigrationTiming(blob) {
     file.recordCount = migrations.length;
     manifest.hashes.find(entry => entry.path === migrationPayload.path).sha256 =
         hex(await sha256(migrationPayload.bytes, webcrypto));
+    return new Blob([await createDeterministicZip([
+        { path: 'manifest.json', bytes: encodeCanonicalJson(manifest) },
+        ...payloads
+    ], webcrypto)], { type: 'application/zip' });
+}
+
+async function mutateArchivePayload(blob, path, mutate, storeName = null) {
+    const parsed = await parseDeterministicZip(
+        new Uint8Array(await blob.arrayBuffer()),
+        webcrypto
+    );
+    const manifest = decodeCanonicalJson(parsed[0].bytes);
+    const payloads = parsed.slice(1).map(entry => ({
+        path: entry.path,
+        bytes: entry.bytes
+    }));
+    const payload = payloads.find(entry => entry.path === path);
+    const records = decodeJsonLines(payload.bytes);
+    mutate(records);
+    payload.bytes = encodeJsonLines(records);
+    const file = manifest.files.find(entry => entry.path === path);
+    file.recordCount = records.length;
+    file.byteLength = payload.bytes.byteLength;
+    manifest.hashes.find(entry => entry.path === path).sha256 = hex(
+        await sha256(payload.bytes, webcrypto)
+    );
+    if (storeName) {
+        manifest.stores.find(entry => entry.name === storeName).recordCount = records.length;
+    }
     return new Blob([await createDeterministicZip([
         { path: 'manifest.json', bytes: encodeCanonicalJson(manifest) },
         ...payloads
@@ -340,6 +417,132 @@ test('format 2 exports portable reconnect state and restores it without credenti
         await connections.close();
         assert.equal((await target.restoreBackup(archive.blob)).status, 'already_restored');
     }
+});
+
+test('format 2 validates and restores provider artifacts with the exact portable provenance chain', async () => {
+    const sourceFactory = new IDBFactory();
+    await providerLibrary(sourceFactory);
+    const source = service(sourceFactory);
+    const archive = await source.exportLibrary();
+    const entries = await parseDeterministicZip(
+        new Uint8Array(await archive.blob.arrayBuffer()),
+        webcrypto
+    );
+    const [raw] = decodeJsonLines(
+        entries.find(entry => entry.path === 'raw/artifacts.jsonl').bytes
+    );
+    assert.equal(raw.mediaType, STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE);
+    assert.equal(raw.acquiredVia, 'provider-artifact');
+    assert.equal(new TextEncoder().encode(raw.content).byteLength, raw.byteLength);
+    assert.equal(
+        stravaProviderArtifactDecoder.decode({
+            mediaType: raw.mediaType,
+            content: raw.content
+        }).activity.id,
+        'strava-api:910000000000000001'
+    );
+    const [portableConnection] = decodeJsonLines(
+        entries.find(entry => entry.path === 'connections.jsonl').bytes
+    );
+    assert.equal(portableConnection.id, 'source-connection:strava');
+    assert.equal(portableConnection.status, 'reconnect_required');
+    assert.equal(portableConnection.errorCode, 'AUTHORIZATION_REQUIRED');
+    assert.equal((await source.validateBackup(archive.blob)).status, 'validated');
+
+    const targetFactory = new IDBFactory();
+    const target = service(targetFactory);
+    assert.equal((await target.restoreBackup(archive.blob)).status, 'restored');
+    assert.equal((await target.restoreBackup(archive.blob)).status, 'already_restored');
+    const restoredImports = createImportStore({
+        indexedDB: targetFactory,
+        IDBKeyRange,
+        now: () => FIXED_TIME,
+        applicationVersion: 'backup-provider-readback@1'
+    });
+    await restoredImports.initialize();
+    const [job] = await restoredImports.listImportJobs();
+    const [item] = await restoredImports.listImportItems(job.id);
+    const restoredRaw = await restoredImports.getRawArtifact(item.artifactId);
+    assert.equal(restoredRaw.mediaType, STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE);
+    assert.equal(restoredRaw.acquiredVia, 'provider-artifact');
+    await restoredImports.close();
+});
+
+test('format 1 and malformed format-2 provider provenance fail before target mutation', async () => {
+    const sourceFactory = new IDBFactory();
+    await providerLibrary(sourceFactory);
+    const archive = (await service(sourceFactory).exportLibrary()).blob;
+    const legacy = await legacyFormat1Archive(archive);
+    const wrongPair = await mutateArchivePayload(
+        archive,
+        'raw/artifacts.jsonl',
+        records => { records[0].acquiredVia = 'local-file'; }
+    );
+    const malformed = await mutateArchivePayload(
+        archive,
+        'raw/artifacts.jsonl',
+        records => {
+            records[0].content = ` ${records[0].content}`;
+            records[0].byteLength = new TextEncoder().encode(records[0].content).byteLength;
+        }
+    );
+    const missingConnection = await mutateArchivePayload(
+        archive,
+        'connections.jsonl',
+        records => { records.splice(0); },
+        'sourceConnections'
+    );
+    const brokenRawReference = await mutateArchivePayload(
+        archive,
+        'sources.jsonl',
+        records => { records[0].rawArtifactId = 'raw:missing-provider-artifact'; }
+    );
+    for (const invalid of [
+        legacy,
+        wrongPair,
+        malformed,
+        missingConnection,
+        brokenRawReference
+    ]) {
+        const targetFactory = new IDBFactory();
+        const target = service(targetFactory);
+        await assert.rejects(
+            target.restoreBackup(invalid),
+            error => [
+                BACKUP_ERROR_CODE.BACKUP_DATA_INVALID,
+                BACKUP_ERROR_CODE.BACKUP_REFERENCE_INVALID
+            ].includes(error.code)
+        );
+        await assert.rejects(
+            target.exportLibrary(),
+            error => error.code === BACKUP_ERROR_CODE.BACKUP_UNAVAILABLE
+        );
+    }
+
+    const mismatchedSha = '0'.repeat(64);
+    const mismatchedId = `raw:${mismatchedSha}`;
+    let digestMismatch = await mutateArchivePayload(
+        archive,
+        'raw/artifacts.jsonl',
+        records => {
+            records[0].sha256 = mismatchedSha;
+            records[0].id = mismatchedId;
+        }
+    );
+    digestMismatch = await mutateArchivePayload(
+        digestMismatch,
+        'sources.jsonl',
+        records => { records[0].rawArtifactId = mismatchedId; }
+    );
+    digestMismatch = await mutateArchivePayload(
+        digestMismatch,
+        'imports/items.jsonl',
+        records => { records[0].artifactId = mismatchedId; }
+    );
+    await assert.rejects(
+        service(new IDBFactory()).validateBackup(digestMismatch),
+        error => error.code === BACKUP_ERROR_CODE.BACKUP_HASH_MISMATCH
+    );
 });
 
 test('format 1 V4 archive restores one-way into V5 with no inferred connection', async () => {

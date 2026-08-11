@@ -12,6 +12,13 @@ const FIXTURE = new URL(
     '../fixtures/synthetic/strava/api-import-fixture.js',
     import.meta.url
 );
+const C3B_FILES = Object.freeze([
+    '../../js/import/strava-provider-artifact.js',
+    '../../js/import/import-service.js',
+    '../../js/import/synthetic-import-worker.js',
+    '../../js/storage/import-store.js',
+    '../../js/backup/backup-service.js'
+]);
 
 test('C3a production mapper contains no credential, storage, provider route, or logging seam', async () => {
     const source = await readFile(MAPPER, 'utf8');
@@ -48,4 +55,24 @@ test('C3a mapper drops provider profile, route, gear, device, and name fields', 
     }
     assert.match(source, /PRIVATE_FIELDS_DROPPED/);
     assert.doesNotMatch(source, /summary_polyline|serial_number|device_serial|route_url/);
+});
+
+test('C3b provider artifact path has no credential, network, logging, or private-fixture seam', async () => {
+    const sources = await Promise.all(C3B_FILES.map(async relative => ({
+        relative,
+        source: await readFile(new URL(relative, import.meta.url), 'utf8')
+    })));
+    for (const { relative, source } of sources) {
+        assert.doesNotMatch(
+            source,
+            /access_token|refresh_token|client_secret|Bearer\s|https?:\/\/|strava\.com|tests\/fixtures\/private/i,
+            relative
+        );
+        assert.doesNotMatch(
+            source,
+            /console\.|fetch\s*\(|XMLHttpRequest|WebSocket|localStorage|sessionStorage/,
+            relative
+        );
+        assert.equal(findContentViolation(relative, source), null, relative);
+    }
 });

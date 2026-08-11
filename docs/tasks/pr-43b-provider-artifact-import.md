@@ -15,6 +15,7 @@
 | Completed prerequisite | C3a / merged PR #50 at the exact base |
 | Pull request | [Draft PR #51](https://github.com/XiChuan9/StravaStats/pull/51), open against `integration/v2` |
 | Control tower | `019fa697-6cbf-70f1-a120-bf31ecc9e2ba` |
+| Owner approval | `批准 C3b-P1 及完整合同和精确 16 路径上限` |
 
 ## Goal
 
@@ -389,6 +390,13 @@ Architecture risk: **low**; P0 completion risk: **high**.
 
 The rest of this package applies only if the owner selects P1 and separately approves its exact
 sixteen-path hard maximum.
+
+### Owner implementation authorization
+
+The owner selected C3b-P1 and approved the complete frozen contract plus the exact cumulative
+sixteen-path hard maximum with the exact response quoted in Metadata. This authorizes implementation
+only inside the listed paths. It does not authorize a substitution, seventeenth path, Ready before
+all closure gates, merge, cleanup, deployment, release, C3c, C4, or live/private evidence.
 
 ### Exact format, encoding, and bounds
 

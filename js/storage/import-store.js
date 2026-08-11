@@ -47,8 +47,11 @@ const IMPORT_MEDIA_TYPES = Object.freeze([
     'application/vnd.stravastats.strava-archive-row+json',
     'application/vnd.ant.fit;base64',
     'application/vnd.garmin.tcx+xml',
-    'application/gpx+xml'
+    'application/gpx+xml',
+    'application/vnd.stravastats.strava-provider-artifact+json;version=1'
 ]);
+const STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE =
+    'application/vnd.stravastats.strava-provider-artifact+json;version=1';
 const TRANSITION_FIELDS = Object.freeze([
     'errorCode',
     'retryable',
@@ -481,7 +484,11 @@ function validStoredArtifact(value) {
         && typeof artifact.content === 'string'
         && artifact.content.length > 0
         && exactUtf8ByteLength(artifact.content, artifact.byteLength)
-        && artifact.acquiredVia === 'local-file'
+        && artifact.acquiredVia === (
+            artifact.mediaType === STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE
+                ? 'provider-artifact'
+                : 'local-file'
+        )
         && strictUtc(artifact.importedAt)
         && (
             (artifact.state === 'pending' && artifact.activityId === null)
@@ -1163,7 +1170,9 @@ export function createImportStore(options) {
         }
         const candidate = {
             ...cloneJsonSafe(artifactInput),
-            acquiredVia: 'local-file',
+            acquiredVia: artifactInput.mediaType === STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE
+                ? 'provider-artifact'
+                : 'local-file',
             importedAt: timestamp(
                 dependencies.now,
                 STORAGE_OPERATION.STORE_RAW_ARTIFACT
