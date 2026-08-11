@@ -343,6 +343,39 @@ test('Source Manager exchange is exact, bounded, reduced, timed, and no-store', 
     assert.equal(upstream[1].signal instanceof AbortSignal, true);
 });
 
+test('Source Manager exchange keeps the upstream timeout active through body consumption', async () => {
+    const originalClearTimeout = globalThis.clearTimeout;
+    let bodyConsumed = false;
+    let clearedAfterBody = null;
+    globalThis.clearTimeout = timer => {
+        clearedAfterBody = bodyConsumed;
+        return originalClearTimeout(timer);
+    };
+    try {
+        await withCapturedRuntime(async () => {
+            const response = jsonProviderResponse({
+                access_token: 'synthetic-access',
+                refresh_token: 'synthetic-refresh',
+                expires_at: 2_100_000_000,
+                athlete: { id: 424242 }
+            });
+            const read = response.text;
+            response.text = async () => {
+                bodyConsumed = true;
+                return read();
+            };
+            return response;
+        }, async () => {
+            const response = createResponse();
+            await authHandler(sourceManagerAuthRequest({ code: 'synthetic-code' }), response);
+            assert.equal(response.statusCode, 200);
+        });
+    } finally {
+        globalThis.clearTimeout = originalClearTimeout;
+    }
+    assert.equal(clearedAfterBody, true);
+});
+
 test('legacy code-only exchange stays reduced and cannot invent five-field authority', async () => {
     await withCapturedRuntime(async () => jsonProviderResponse({
         access_token: 'synthetic-access',

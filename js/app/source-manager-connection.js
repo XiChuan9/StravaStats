@@ -361,10 +361,19 @@ export function createSourceManagerConnectionController(options) {
                     transitionInput(current, 'connected', null)
                 );
         } catch {
-            try { dependencies.authLifecycle.expireToken(); } catch {}
+            let rollbackStatus = 'token-removal-failed';
+            try {
+                rollbackStatus = dataProperty(
+                    dependencies.authLifecycle.expireToken(),
+                    'status'
+                );
+            } catch {}
             localAuthority = false;
-            setSnapshot('error', 'CONNECTION_UPDATE_FAILED', false);
-            return result('error', 'CONNECTION_UPDATE_FAILED');
+            const code = rollbackStatus === 'token-removal-failed'
+                ? 'TOKEN_REMOVAL_FAILED'
+                : 'CONNECTION_UPDATE_FAILED';
+            setSnapshot('error', code, false);
+            return result('error', code);
         }
         localAuthority = true;
         setSnapshot('connected', null, true);

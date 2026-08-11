@@ -167,7 +167,7 @@ test('approved Connector implementation matches the frozen C1.1 hash', async () 
     const expected = new Map([
         [
             'js/connectors/strava/strava-api-connector.js',
-            '4cade926af731b0cf359fb6bef81bfaabff8d5288533739a7c03a60303bb78b8'
+            '221ed23e6fe38cedc5c3d0c586a99bf9686ba4d963505b264ca6a6c9a6433380'
         ]
     ]);
     for (const [relative, hash] of expected) {

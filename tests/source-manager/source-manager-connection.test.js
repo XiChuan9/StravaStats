@@ -36,6 +36,7 @@ function controllerHarness({
     callbackToken = null,
     acceptStatus = 'success',
     disconnectStatus = 'success',
+    expireStatus = 'token-expired',
     syncBoundaryFailure = false,
     createFailure = false,
     transitionFailure = false
@@ -60,7 +61,7 @@ function controllerHarness({
             calls.accept.push(value);
             return { status: acceptStatus, firstLogin: false };
         },
-        expireToken() { calls.expire += 1; return { status: 'token-expired' }; },
+        expireToken() { calls.expire += 1; return { status: expireStatus }; },
         async disconnect() {
             calls.disconnect += 1;
             calls.order.push('disconnect');
@@ -260,6 +261,28 @@ test('Token write precedes C2 create and is rolled back when C2 fails', async ()
     assert.equal(calls.accept.length, 1);
     assert.equal(calls.create.length, 1);
     assert.equal(calls.expire, 1);
+});
+
+test('failed Token rollback after C2 failure is surfaced and never treated as local authority', async () => {
+    const token = Object.freeze({
+        access_token: 'synthetic-access', refresh_token: 'synthetic-refresh',
+        expires_at: 2_100_000_000, subject_id: SUBJECT,
+        granted_scopes: Object.freeze(['read', 'activity:read_all'])
+    });
+    const { controller, calls } = controllerHarness({
+        callback: Object.freeze({
+            kind: 'code', code: 'synthetic-code', state: 'synthetic-state',
+            grantedScopes: Object.freeze(['read', 'activity:read_all'])
+        }),
+        callbackToken: token,
+        createFailure: true,
+        expireStatus: 'token-removal-failed'
+    });
+    assert.deepEqual(await controller.initialize(), {
+        status: 'error', code: 'TOKEN_REMOVAL_FAILED'
+    });
+    assert.equal(calls.expire, 1);
+    assert.equal(controller.getConnectionSnapshot().actions.disconnect, false);
 });
 
 test('exact callback creates C2 and disconnect CASes only status/history after Token removal', async () => {

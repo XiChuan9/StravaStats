@@ -144,6 +144,7 @@ function realConnectionFacade(dependencies) {
         inspectIndexedDb: () => inspectLegacyIndexedDbPresence({
             indexedDB: dependencies.indexedDB
         }),
+        revokeTokenKind: 'refresh',
         revokeAccessToken: refreshToken => authorization.revoke(refreshToken)
     });
     return createSourceManagerConnectionController({

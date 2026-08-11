@@ -552,7 +552,15 @@ const malformedTokens = [
     { access_token: '', refresh_token: 'r', expires_at: 1 },
     { access_token: 'a', refresh_token: '', expires_at: 1 },
     { access_token: 'a', refresh_token: 'r', expires_at: Infinity },
-    { access_token: 'a', refresh_token: 'r', expires_at: '1' }
+    { access_token: 'a', refresh_token: 'r', expires_at: '1' },
+    {
+        access_token: 'a', refresh_token: 'r', expires_at: -1,
+        subject_id: '424242', granted_scopes: ['read', 'activity:read_all']
+    },
+    {
+        access_token: 'a', refresh_token: 'r', expires_at: 1.5,
+        subject_id: '424242', granted_scopes: ['read', 'activity:read_all']
+    }
 ];
 
 for (const malformedToken of malformedTokens) {

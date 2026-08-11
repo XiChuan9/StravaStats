@@ -442,7 +442,11 @@ function validateToken(value, { exactStoredShape = false } = {}) {
         }
         if (hasSubject || hasScopes) {
             const authority = exactAuthority(value);
-            if (authority === null) return null;
+            if (
+                authority === null
+                || !Number.isSafeInteger(validated.expires_at)
+                || validated.expires_at <= 0
+            ) return null;
             validated.subject_id = authority.subject_id;
             validated.granted_scopes = [...authority.granted_scopes];
         }

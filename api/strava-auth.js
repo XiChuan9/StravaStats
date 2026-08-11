@@ -203,34 +203,36 @@ export default async function handler(req, res) {
     const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
     let response;
     try {
-        response = await fetch('https://www.strava.com/oauth/token', {
-            method: 'POST',
-            body: params,
-            signal: controller.signal
-        });
-    } catch {
-        logServerEvent(SERVER_API_EVENT.AUTH_NETWORK_FAILED);
-        return res.status(502).json({ error: 'AUTH_NETWORK_FAILED' });
+        try {
+            response = await fetch('https://www.strava.com/oauth/token', {
+                method: 'POST',
+                body: params,
+                signal: controller.signal
+            });
+        } catch {
+            logServerEvent(SERVER_API_EVENT.AUTH_NETWORK_FAILED);
+            return res.status(502).json({ error: 'AUTH_NETWORK_FAILED' });
+        }
+
+        if (!response || response.ok !== true || response.status < 200 || response.status >= 300) {
+            logServerEvent(SERVER_API_EVENT.AUTH_PROVIDER_REJECTED);
+            return res.status(502).json({ error: 'AUTH_PROVIDER_REJECTED' });
+        }
+
+        let data;
+        try {
+            data = await readProviderJson(response);
+        } catch {
+            logServerEvent(SERVER_API_EVENT.AUTH_RESPONSE_INVALID);
+            return res.status(502).json({ error: 'AUTH_RESPONSE_INVALID' });
+        }
+        const reduced = normalizeProviderToken(data, request.grantedScopes);
+        if (!reduced) {
+            logServerEvent(SERVER_API_EVENT.AUTH_RESPONSE_INVALID);
+            return res.status(502).json({ error: 'AUTH_RESPONSE_INVALID' });
+        }
+        return res.status(200).json(reduced);
     } finally {
         clearTimeout(timeout);
     }
-
-    if (!response || response.ok !== true || response.status < 200 || response.status >= 300) {
-        logServerEvent(SERVER_API_EVENT.AUTH_PROVIDER_REJECTED);
-        return res.status(502).json({ error: 'AUTH_PROVIDER_REJECTED' });
-    }
-
-    let data;
-    try {
-        data = await readProviderJson(response);
-    } catch {
-        logServerEvent(SERVER_API_EVENT.AUTH_RESPONSE_INVALID);
-        return res.status(502).json({ error: 'AUTH_RESPONSE_INVALID' });
-    }
-    const reduced = normalizeProviderToken(data, request.grantedScopes);
-    if (!reduced) {
-        logServerEvent(SERVER_API_EVENT.AUTH_RESPONSE_INVALID);
-        return res.status(502).json({ error: 'AUTH_RESPONSE_INVALID' });
-    }
-    return res.status(200).json(reduced);
 }

@@ -82,12 +82,19 @@ function readStoredTokens(storage) {
             return { status: 'invalid', accessToken: null };
         }
         const authority = exactTokenAuthority(parsed);
+        if (
+            authority === null
+            && (Object.hasOwn(parsed, 'subject_id') || Object.hasOwn(parsed, 'granted_scopes'))
+        ) {
+            return { status: 'invalid', accessToken: null };
+        }
         return {
             status: 'valid',
             accessToken: parsed.access_token,
-            revocationToken: authority === null
-                ? parsed.access_token
-                : parsed.refresh_token,
+            refreshToken: typeof parsed.refresh_token === 'string'
+                ? parsed.refresh_token
+                : null,
+            expiresAt: parsed.expires_at,
             authority
         };
     } catch {
@@ -126,7 +133,8 @@ function exactTokenAuthority(value) {
             || keys.some(key => typeof key !== 'string' || !exact.includes(key))
             || typeof value.refresh_token !== 'string'
             || value.refresh_token.trim().length === 0
-            || !Number.isFinite(value.expires_at)
+            || !Number.isSafeInteger(value.expires_at)
+            || value.expires_at <= 0
             || normalizeIdentity(value.subject_id) === null
             || !exactScopes(value.granted_scopes)
         ) return null;
@@ -164,7 +172,8 @@ function tokenRecordFromExchange(exchangeResponse) {
         if (
             record.refresh_token === null
             || record.refresh_token.trim().length === 0
-            || record.expires_at === null
+            || !Number.isSafeInteger(record.expires_at)
+            || record.expires_at <= 0
         ) return null;
         record.subject_id = subjectId;
         record.granted_scopes = [...REQUIRED_SCOPES];
@@ -471,6 +480,7 @@ export async function inspectLegacyIndexedDbPresence({
 export function createAuthLifecycle({
     storage = globalThis.localStorage,
     revokeAccessToken,
+    revokeTokenKind = 'access',
     inspectIndexedDb = null
 } = {}) {
     if (
@@ -480,6 +490,9 @@ export function createAuthLifecycle({
         || typeof storage.removeItem !== 'function'
     ) {
         throw new TypeError('A storage dependency is required.');
+    }
+    if (revokeTokenKind !== 'access' && revokeTokenKind !== 'refresh') {
+        throw new TypeError('A supported revoke token kind is required.');
     }
 
     async function inspectLibraryIdentity() {
@@ -538,7 +551,10 @@ export function createAuthLifecycle({
                 revocationConfirmed = false;
             } else {
                 try {
-                    const result = await revokeAccessToken(tokenRead.revocationToken);
+                    const token = revokeTokenKind === 'refresh' && tokenRead.authority !== null
+                        ? tokenRead.refreshToken
+                        : tokenRead.accessToken;
+                    const result = await revokeAccessToken(token);
                     revocationConfirmed = result !== false && result?.ok !== false;
                 } catch {
                     revocationConfirmed = false;
@@ -563,6 +579,19 @@ export function createAuthLifecycle({
         try {
             storage.removeItem(TOKEN_KEY);
         } catch {
+            const tokenRead = readStoredTokens(storage);
+            if (tokenRead.status === 'valid' && tokenRead.authority !== null) {
+                try {
+                    storage.setItem(TOKEN_KEY, JSON.stringify({
+                        access_token: tokenRead.accessToken,
+                        refresh_token: tokenRead.refreshToken,
+                        expires_at: tokenRead.expiresAt
+                    }));
+                    if (readStoredTokens(storage).authority === null) {
+                        return lifecycleResult(AUTH_LIFECYCLE_STATUS.TOKEN_EXPIRED);
+                    }
+                } catch {}
+            }
             return lifecycleResult(AUTH_LIFECYCLE_STATUS.TOKEN_REMOVAL_FAILED);
         }
         return lifecycleResult(AUTH_LIFECYCLE_STATUS.TOKEN_EXPIRED);

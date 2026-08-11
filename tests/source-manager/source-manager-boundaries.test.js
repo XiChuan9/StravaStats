@@ -162,6 +162,7 @@ test('composition root uses only existing public Import/V2 boundaries and keeps 
     assert.match(app, /createSourceManagerAuthorization/);
     assert.match(app, /createAuthLifecycle/);
     assert.match(app, /createSourceConnectionStore/);
+    assert.match(app, /revokeTokenKind: 'refresh'/);
     assert.match(app, /revokeAccessToken: refreshToken => authorization\.revoke\(refreshToken\)/);
     assert.match(app, /mode === SOURCE_MANAGER_SESSION_MODE\.DEMO\s*\? demoFacade\(\)/);
     assert.match(app, /createSourceManagerConnectionController\(\{/);
