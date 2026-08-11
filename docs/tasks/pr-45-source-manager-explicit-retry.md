@@ -12,7 +12,7 @@
 | Feature branch | `codex/v2/source-manager-retry` |
 | Product decision | Retain the PRD requirement and implement isolated explicit user Retry |
 | Audit authority | PR #56 final audit Task Brief at `33db355c7e3e7a27ba40d726594750dd99535b5d` |
-| Pull request | Pending Draft publication |
+| Pull request | [#57](https://github.com/XiChuan9/StravaStats/pull/57), OPEN/Draft |
 
 ## Authority and sequence
 
@@ -58,6 +58,13 @@ git diff --check             PASS
 GitHub CLI 2.96.0 is installed, but its configured GitHub credential is invalid. No user browser or
 profile may be used to repair authentication. Draft publication must use an available repository
 connector or stop as blocked.
+
+The Task-Brief-only first commit is
+`121ce2d9e726f274ea3f57d355990b1ba4e1deb5`. Its exact diff is this one new path. The GitHub
+repository connector created [Draft PR #57](https://github.com/XiChuan9/StravaStats/pull/57) with
+base `integration/v2@1669d1636188184232d76b3c05305496d26ff313` and initial head
+`121ce2d9e726f274ea3f57d355990b1ba4e1deb5`. Readback reported OPEN, Draft, unmerged, one commit,
+one changed file, and no requested reviewers. PR #56 and historical PR #31 were not modified.
 
 ## Audit-frozen Option-A behavior
 
@@ -213,5 +220,7 @@ Stop before implementation, Ready, or any broader mutation if:
 
 ## Completion evidence
 
-Pending. This first-commit Task Brief records exact-base verification and the pre-implementation
-material decision blocker. No production or test behavior has changed.
+The Task-Brief-only first commit and OPEN/Draft PR #57 record exact-base verification and the
+pre-implementation material decision blocker. No production or test behavior has changed. The PR
+must remain Draft and implementation must remain absent until the minimum material decision package
+is supplied.
