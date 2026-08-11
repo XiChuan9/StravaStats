@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | M29 / C1.1 Source Manager authorization |
-| Status | A1 Task Brief published; implementation remains separately gated |
+| Status | A2 collision/readiness package frozen; awaiting explicit A3 implementation authorization |
 | Base branch | `integration/v2` |
 | Exact base | `integration/v2@43455a6c9f513cca57d661a1aef179bb588897ae` |
 | Exact base tree | `14f60e943fea98a3d35d1c116f04493c8b523154` |
@@ -70,9 +70,15 @@ Ready, merge, cleanup, deployment, release, or C3c/C4 work.
   `connected`, `reconnect_required`, `error`, `disconnecting`, `disconnected`, and `closed`.
 - C3c may later add only ephemeral `syncing` and `cancelling`; neither becomes a C2/V5 durable
   value. Until C3c exists, C1.1 contains no provider sync implementation.
-- `unconfigured` and `disconnected` offer `Connect Strava`; `reconnect_required` offers
-  `Reconnect Strava`; `connected` offers `Disconnect Strava`. C1.1 does not activate Sync.
-- `authorizing`, `callback_processing`, `disconnecting`, and `closed` offer no competing action.
+- The complete staged action lattice remains the exact PR #52 Package A contract:
+  `unconfigured`/`disconnected` offer Connect, `reconnect_required` offers Reconnect, `connected`
+  offers Sync and Disconnect, `error` offers explicit Sync again only with exact local authority plus
+  Disconnect, `authorizing`/`callback_processing`/`disconnecting`/`closed` offer no competing
+  action, and future `syncing` offers only Cancel Sync while Disconnect remains disabled until
+  terminal cancellation.
+- C1.1 activates only Connect, Reconnect, callback processing, and Disconnect. It may expose the
+  later Sync action position/state without an active handler, but no Sync, Cancel Sync, provider
+  acquisition, or import work exists until narrow C3c is separately authorized and merged.
 - Connect and Reconnect are same-tab full-page redirects, Real mode only, after explicit consent
   copy. There is no popup, iframe, silent authorization, startup authorization, reload
   authorization, or automatic sync.
@@ -237,6 +243,15 @@ feat(v2): activate Source Manager authorization
 The PR remains open and Draft. No reviewer, label, assignment, Ready transition, merge, cleanup,
 deployment, release, or real/private evidence is part of A1.
 
+### A1 publication readback
+
+- First commit `b32c52b0bc1f157d660cb2b5741735ac32e983d5` has exact parent
+  `43455a6c9f513cca57d661a1aef179bb588897ae` and changes only this Task Brief.
+- The branch was pushed normally. The GitHub connector created open Draft PR #53 against exact
+  `integration/v2`, with one commit, one changed file, 250 additions, the requested title/body,
+  Draft true, and merged false.
+- No reviewer, team, label, assignment, Ready transition, merge, or other PR mutation was made.
+
 ## A2 readiness-audit contract
 
 After A1 publication, perform only a short read-only audit of the current integration tree needed to
@@ -248,3 +263,127 @@ Record findings and any Task Brief correction only in this file, publish a secon
 commit, run the exact repository gates, read back remote depth one and exact-head CI, and return the
 explicit A3 implementation authorization package to the control tower. Implementation does not
 follow automatically.
+
+## A2 current-tree collision and readiness findings
+
+The audit used the exact A1/current-integration code. Historical PR #52 material was used only as
+decision provenance. It did not reopen C3c provider acquisition, C4 ownership, or any excluded
+surface.
+
+### R1 — the existing callback scrub and composition seams are sufficient
+
+- `js/source-manager.js` already invokes `sanitizeSourceManagerNavigation()` synchronously before
+  Diagnostics, sessionStorage, DOM, Worker, IndexedDB, Crypto, or application composition. A scrub
+  failure blocks before every application capability.
+- `js/app/source-manager-connection.js` already recognizes only the exact Source Manager path and
+  OAuth-shaped `code`, `state`, `error`, and `scope` query keys, scrubs once with `replaceState`, and
+  rejects untrusted/cross-mode navigation. It currently discards those values and exposes only the
+  frozen unavailable snapshot.
+- C1.1 can evolve that included module to produce a detached, bounded in-memory callback capsule and
+  pass it through the included bootstrap/composition paths after the scrub. No root entry, routing,
+  CSP, session handoff, or new public module is required.
+
+### R2 — existing Source Manager UI seams contain the activation
+
+- Real composition already owns a separate connection facade; Demo passes `null` and constructs no
+  connection controller. The page consumes only the injected facade and contains no provider,
+  Token, storage, or server-route selection.
+- The Strava card already has a fixed copy/status/action region and the page close path awaits the
+  connection facade before closing Import. The included HTML, CSS, page, composition, and tests can
+  represent the frozen states/actions without changing root navigation or Import APIs.
+- C1.1 must keep Sync inert as described above. There is no C3a/C3b/Import call, provider acquisition,
+  or active-import cancellation reinterpretation on this head.
+
+### R3 — C2 already supplies the exact immutable identity and CAS boundary
+
+- The public existing `createSourceConnectionStore` factory is already exported by
+  `js/storage/index.js`; Source Manager can import it through its included composition root without
+  changing Storage exports or implementation.
+- The one fixed Strava slot validates the normalized positive-decimal `subjectId`, exact durable
+  states, immutable ID/provider/subject, nullable historical `lastSyncAt`, exact error pairing, and
+  integer revision. Its existing create and transition methods already provide the required atomic
+  create/CAS behavior and stale-revision failure.
+- Merged C2 Backup format 2 already preserves the exact subject and projects credential-dependent
+  operational states to `reconnect_required` without Token material. Therefore exact restored-
+  subject reconnect can be checked with a read; mismatch needs zero C2 or Backup mutation and cannot
+  be repaired or rebound by C1.1.
+- No schema, migration, storage, Backup, Repository, or C4 path is required.
+
+### R4 — the shared Legacy Token collision is contained by the listed compatibility paths
+
+- Current `js/app/auth-lifecycle.js` writes and disconnects a three-field V1 Token and already owns
+  the Legacy identity guard and fixed no-delete results. Current `StravaApiConnector` consumes the
+  same origin-shared Token and can otherwise downgrade refreshed metadata to three fields.
+- Both implementation files and their exact regression tests are included. They can accept the
+  five-field record, preserve subject/scopes across V1 refresh writes, retain three-field V1 use,
+  and reject three-field C1.1/C3c authority without changing `js/app/auth.js` or Legacy data.
+- Existing root V1 posts the exact `{ code }` request and must remain operational. The auth route may
+  distinguish that bounded legacy request from the new exact Source Manager callback request. A
+  reduced legacy response with no exact granted-scope evidence may create only a three-field V1
+  Token; it must never invent scopes or upgrade itself to five-field authority. The Source Manager
+  response must contain exact subject and ordered scopes and pass both Legacy and C2 guards.
+- Root V1 direct logout remains a preserved Legacy path. Source Manager Disconnect independently
+  uses the new same-origin revoke route and removes the origin-shared Token; neither path deletes
+  local data.
+
+### R5 — the server, CSP, and Service Worker boundaries need no expansion
+
+- `api/strava-auth.js` already owns confidential exchange and `api/_shared.js` already owns the
+  closed fixed server-event logger. Both require hardening but no new dependency or public browser
+  secret. The new revoke handler is the only new server file.
+- Platform `/api/*.js` discovery supplies the deployed route without a routing-table change. The
+  excluded local-development server need not route or claim support for C1.1.
+- Source Manager CSP already permits only same-origin `connect-src 'self'`; both browser calls fit
+  it. The Service Worker already bypasses same-origin API/private/dynamic requests and does not need
+  a cache or lifecycle change.
+- The included privacy/server tests can freeze method, header, body, timeout, response, logging, and
+  no-store behavior without adding a server-routing, CSP, Worker, or Service Worker path.
+
+### R6 — the literal maximum is exact and collision-free
+
+- The hard-maximum block parses to exactly 23 paths and 23 unique paths, in the delegated order.
+- At the A1/current-integration head, 19 non-Task-Brief paths already exist. The only new
+  implementation/test paths are `js/app/source-manager-authorization.js`, `api/strava-revoke.js`,
+  and `tests/source-manager/source-manager-authorization.test.js`; this Task Brief is the remaining
+  path.
+- Every direct production edit identified by the call graph is already listed. Existing public
+  Storage exports, Backup subject projection, root auth caller, platform routing, Service Worker,
+  CSP, and dependency files are read-only consumers or fixed boundaries and require no change.
+- No 24th path, public/schema/dependency/Service Worker/Worker/CSP/server-routing expansion,
+  provider-supported PKCE requirement, or different subject/Token contract was found. The frozen
+  stop conditions remain mandatory if implementation evidence later proves otherwise.
+
+## Explicit C1.1 A3 authorization package
+
+The control tower may relay implementation authority only in a new explicit instruction that names
+all of the following:
+
+```text
+C1.1 A3 authorized on open Draft PR #53 from exact A2 head.
+Implement only the frozen Source Manager authorization and server revoke contract in
+docs/tasks/pr-43c-provider-live-sync.md, with the exact cumulative 23-path hard maximum.
+Retain the merged C2 Backup subject only for exact restored-subject reconnect.
+Any subject mismatch stores nothing and never mutates subject, Token, or SourceConnection.
+Stop on any 24th path, excluded-boundary expansion, provider-supported PKCE requirement,
+or materially different identity/Token behavior.
+Run the exact local and exact-head CI gates; keep the PR open and Draft.
+No C3c, C4, real/private provider evidence, Ready, merge, cleanup, deploy, or release.
+```
+
+Until that explicit authorization is relayed, no production or test implementation is authorized.
+
+## A2 local publication evidence
+
+- The A2 working diff changes only this Task Brief. The literal allowlist audit reports exactly 23
+  paths and 23 unique paths, with the three expected new implementation/test paths and no
+  substitution.
+- `npm ci` completed; `npm run check:syntax` passed for 271 files; `npm run check:privacy` passed;
+  and `git diff --check` passed.
+- The first A2 full-suite run passed 1781/1782; only the existing deterministic stream performance
+  gate missed by 0.266 ms (`p95 25.266 ms` against `25 ms`). The immediate clean full-suite rerun
+  passed 1782/1782 in 24.4 seconds. No product/test change or performance workaround was made.
+- No OAuth, Token, provider, account, private fixture, user browser/profile, migration, Storage,
+  Backup, Import, Repository, Worker, Service Worker, server implementation, or application/test
+  implementation action was performed.
+- Remote depth-one and exact-head CI are publication-time readbacks and are reported to the control
+  tower after the pushed A2 commit; they are not inferred in this file.
