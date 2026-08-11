@@ -94,7 +94,7 @@ test('same-origin page has four source cards and complete accessible import cont
     assert.match(apiCard, />Authorization in progress</);
     assert.match(apiCard, /Completing authorization locally/);
     assert.match(apiCard, /<button[^>]+id="source-api-connect"[^>]+disabled hidden>Connect<\/button>/);
-    assert.match(apiCard, /id="source-api-sync" disabled hidden>Sync<\/button>/);
+    assert.match(apiCard, /id="source-api-sync" disabled hidden>Sync latest 25<\/button>/);
     assert.match(apiCard, /id="source-api-disconnect" disabled hidden>Disconnect<\/button>/);
     assert.equal((apiCard.match(/<button/g) || []).length, 3);
     assert.match(html, /origin-shared Legacy credential/);

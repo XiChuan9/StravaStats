@@ -463,6 +463,20 @@ export function createSourceManagerConnectionController(options) {
         }
     }
 
+    async function refresh() {
+        if (closed) throw CLOSED_ERROR;
+        if (!dependencies || !initialized) throw INITIALIZATION_ERROR;
+        if (disconnecting !== null) throw fixedError('CONNECTION_ACTION_UNAVAILABLE');
+        try {
+            current = await dependencies.connectionStore.getConnection('strava');
+        } catch {
+            setSnapshot('error', 'CONNECTION_UPDATE_FAILED', false);
+            return result('error', 'CONNECTION_UPDATE_FAILED');
+        }
+        deriveSnapshot();
+        return result(currentSnapshot.status, currentSnapshot.code ?? undefined);
+    }
+
     async function disconnect() {
         if (closed) throw CLOSED_ERROR;
         if (!dependencies || !initialized) throw INITIALIZATION_ERROR;
@@ -480,6 +494,16 @@ export function createSourceManagerConnectionController(options) {
                     return result('error', 'CONNECTION_UPDATE_FAILED');
                 }
                 if (closed) return CONNECTION_CLOSED;
+                try {
+                    current = await dependencies.connectionStore.getConnection('strava');
+                    deriveSnapshot();
+                } catch {
+                    setSnapshot('error', 'CONNECTION_UPDATE_FAILED', false);
+                    return result('error', 'CONNECTION_UPDATE_FAILED');
+                }
+                if (!currentSnapshot.actions.disconnect || current === null) {
+                    return result('error', 'CONNECTION_ACTION_UNAVAILABLE');
+                }
                 let disconnected;
                 try {
                     disconnected = await dependencies.authLifecycle.disconnect();
@@ -521,6 +545,7 @@ export function createSourceManagerConnectionController(options) {
             return currentSnapshot;
         },
         beginConnect,
+        refresh,
         disconnect,
         async close() {
             if (closed) return CONNECTION_CLOSED;

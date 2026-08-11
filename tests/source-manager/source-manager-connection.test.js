@@ -48,6 +48,7 @@ function controllerHarness({
         syncBoundary: 0, order: [], create: [], transition: [], close: 0
     };
     let current = record;
+    let currentAuthority = authority;
     const authorization = Object.freeze({
         async beginAuthorization() { calls.begin += 1; return { status: 'redirecting' }; },
         async processCallback(value) {
@@ -58,10 +59,13 @@ function controllerHarness({
         async close() { return { status: 'closed' }; }
     });
     const authLifecycle = Object.freeze({
-        inspectTokenAuthority() { return authority; },
+        inspectTokenAuthority() { return currentAuthority; },
         async acceptOAuthTokenResponse(value) {
             calls.accept.push(value);
             if (acceptGate) await acceptGate;
+            if (acceptStatus === 'success') {
+                currentAuthority = { status: 'authority', subjectId: value.subject_id };
+            }
             return { status: acceptStatus, firstLogin: false };
         },
         expireToken() { calls.expire += 1; return { status: expireStatus }; },
@@ -97,6 +101,7 @@ function controllerHarness({
     });
     return {
         calls,
+        setRecord(value) { current = value; },
         controller: createSourceManagerConnectionController({
             authorization,
             authLifecycle,
@@ -150,6 +155,7 @@ test('connection controller has the exact fail-closed surface and ignores hostil
         'initialize',
         'getConnectionSnapshot',
         'beginConnect',
+        'refresh',
         'disconnect',
         'close'
     ]);
@@ -179,6 +185,7 @@ test('connection actions reject with exact safe objects before and after idempot
         return true;
     };
     await assert.rejects(controller.beginConnect(), unavailable);
+    await assert.rejects(controller.refresh(), unavailable);
     await assert.rejects(controller.disconnect(), unavailable);
 
     const firstClose = await controller.close();
@@ -200,7 +207,29 @@ test('connection actions reject with exact safe objects before and after idempot
         return true;
     };
     await assert.rejects(controller.beginConnect(), closed);
+    await assert.rejects(controller.refresh(), closed);
     await assert.rejects(controller.disconnect(), closed);
+});
+
+test('refresh observes only the current exact C2 row after provider-sync transitions', async () => {
+    const harness = controllerHarness({
+        record: connectionRecord(),
+        authority: { status: 'authority', subjectId: SUBJECT }
+    });
+    await harness.controller.initialize();
+
+    harness.setRecord(connectionRecord({
+        status: 'reconnect_required',
+        errorCode: 'AUTHORIZATION_REQUIRED',
+        revision: 2
+    }));
+    assert.deepEqual(await harness.controller.refresh(), {
+        status: 'reconnect_required',
+        code: 'AUTHORIZATION_REQUIRED'
+    });
+    assert.deepEqual(harness.controller.getConnectionSnapshot().actions, {
+        connect: false, reconnect: true, sync: false, disconnect: false
+    });
 });
 
 test('legacy Token initializes reconnect-required and explicit reconnect enters authorizing', async () => {
@@ -383,6 +412,27 @@ test('disconnect fails before revoke, Token removal, or C2 CAS when the sync bou
     assert.equal(calls.syncBoundary, 1);
     assert.equal(calls.disconnect, 0);
     assert.deepEqual(calls.transition, []);
+});
+
+test('disconnect rereads the post-sync C2 revision after the inactive boundary', async () => {
+    const harness = controllerHarness({
+        record: connectionRecord({ revision: 4, lastSyncAt: null }),
+        authority: { status: 'authority', subjectId: SUBJECT }
+    });
+    await harness.controller.initialize();
+    harness.setRecord(connectionRecord({
+        revision: 5,
+        lastSyncAt: '2026-08-11T01:02:03.004Z'
+    }));
+
+    assert.deepEqual(await harness.controller.disconnect(), { status: 'disconnected' });
+    assert.deepEqual(harness.calls.transition, [{
+        id: 'source-connection:strava',
+        expectedRevision: 5,
+        status: 'disconnected',
+        lastSyncAt: '2026-08-11T01:02:03.004Z',
+        errorCode: null
+    }]);
 });
 
 test('close waits for the mandatory post-removal disconnected C2 CAS', async () => {
