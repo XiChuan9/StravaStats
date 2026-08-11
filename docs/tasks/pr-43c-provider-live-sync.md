@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | M30 / narrow C3c live provider sync orchestration |
-| Status | A2 readiness package frozen; awaiting explicit C3c A3 implementation authorization |
+| Status | A3 implementation authorized from exact A2 head |
 | Base branch | `integration/v2` |
 | Exact base | `integration/v2@df5a27430ff07da05051e9d38d7fe3acf52519ff` |
 | Exact base tree | `6b89d83a7e6f797e7568b7cb9cbf0446bac9ee1a` |
@@ -13,7 +13,7 @@
 | Owner decision | `D-C3c.R-A + D-C3c A` |
 | Completed prerequisites | C1.1 PR #53, C2 SourceConnection/Backup, C3a mapper, C3b artifact builder/import |
 | Control tower | `019fa697-6cbf-70f1-a120-bf31ecc9e2ba` |
-| Current authority | Task-Brief-only A0-A2; no product or test implementation |
+| Current authority | Complete frozen narrow C3c implementation and verification within the exact 19-path maximum |
 
 ## Goal
 
@@ -437,5 +437,17 @@ Run the exact local and exact-head CI gates; keep the PR open and Draft.
 No real/private provider evidence, Ready, merge, cleanup, deploy, or release.
 ```
 
-Until that explicit authorization is relayed from the exact A2 head, no production or test
-implementation is authorized.
+The required authorization was subsequently relayed from the exact A2 head and is recorded below.
+
+## A3 implementation authorization
+
+The control tower relayed the owner's authorization verbatim from exact A2 head
+`d980965a5ff4fe5980322db1ffbd31340f0d7218`:
+
+> “批准 C3c A3 实施及精确 19 路径上限。”
+
+This authorizes the complete frozen narrow C3c contract in this Task Brief, subject to the exact
+cumulative 19-path maximum and every stop condition above. It does not authorize Ready until all
+required implementation, local, served-browser, privacy, independent-review, remote-depth, and
+exact-head CI gates pass. Ready is not merge authorization. Merge, auto-merge, cleanup, deployment,
+release, C4, PR #52 mutation, and any `integration/v2` mutation remain prohibited.
