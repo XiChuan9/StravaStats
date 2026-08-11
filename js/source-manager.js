@@ -54,8 +54,14 @@ if (navigation.status === 'blocked') {
         now: () => performance.now()
     });
 
+    let requestStartupClose;
+    const startupCloseRequested = new Promise(resolve => {
+        requestStartupClose = resolve;
+    });
+
     addEventListener('pagehide', () => {
         pageHidden = true;
+        requestStartupClose();
         application?.close().catch(() => {});
     }, { once: true });
 
@@ -81,10 +87,11 @@ if (navigation.status === 'blocked') {
         IDBKeyRange,
         crypto,
         Worker,
+        startupCloseRequested,
         ...liveAuthorization
     }).then(async result => {
         application = result;
-        if (pageHidden) await application.close();
+        if (pageHidden && application.status !== 'closed') await application.close();
     }).catch(() => {
         recordDiagnosticError({
             page: 'source-manager',

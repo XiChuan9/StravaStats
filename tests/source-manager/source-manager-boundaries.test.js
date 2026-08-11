@@ -173,7 +173,7 @@ test('composition root uses only existing public Import/V2 boundaries and keeps 
     assert.match(app, /connectionFacade/);
     assert.doesNotMatch(app, /if \(connectionFacade\) await connectionFacade\.initialize\(\)/);
     assert.doesNotMatch(app, /location\?\.search|URLSearchParams/);
-    assert.match(app, /await page\.initialize\(\);[\s\S]*await page\.close\(\)\.catch\(\(\) => \{\}\);/);
+    assert.match(app, /const initialization = page\.initialize\(\);[\s\S]*await page\.close\(\);[\s\S]*await page\.close\(\)\.catch\(\(\) => \{\}\);/);
 });
 
 test('C1-A3 sanitizer is the first bootstrap operation and the controller remains app-local', async () => {
@@ -212,11 +212,17 @@ test('C1-A3 sanitizer is the first bootstrap operation and the controller remain
     );
     assert.doesNotMatch(connection, /fetch\s*\(|XMLHttpRequest|WebSocket|localStorage|sessionStorage|indexedDB|\/api\/|strava\.com|Bearer|access_token|refresh_token/);
     assert.match(root, /let pageHidden = false;/);
+    assert.match(root, /const startupCloseRequested = new Promise/);
     assert.ok(
         root.indexOf("addEventListener('pagehide'") < root.indexOf('startSourceManager({'),
         'pagehide lifecycle is armed before asynchronous initialization'
     );
-    assert.match(root, /if \(pageHidden\) await application\.close\(\);/);
+    assert.match(root, /pageHidden = true;\s*requestStartupClose\(\);\s*application\?\.close/);
+    assert.match(root, /startupCloseRequested,/);
+    assert.match(root, /if \(pageHidden && application\.status !== 'closed'\)/);
+    assert.match(app, /Promise\.race\(\[\s*initialization\.then/);
+    assert.match(app, /startupCloseRequested\.then\(\(\) => 'close'\)/);
+    assert.match(app, /await page\.close\(\);\s*await Promise\.allSettled\(\[initialization\]\)/);
     assert.match(serviceWorker, /url\.search !== '' \|\| url\.hash !== ''\) \{\s*return null;/);
     assert.match(serviceWorker, /const requestInfo = inspectCacheableRequest\(request\);\s*if \(!requestInfo\) return;\s*event\.respondWith/);
 });

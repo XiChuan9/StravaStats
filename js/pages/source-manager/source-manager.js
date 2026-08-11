@@ -31,6 +31,8 @@ export const SOURCE_MANAGER_SESSION_MODE = Object.freeze({
     DEMO: 'demo'
 });
 
+const PAGE_CLOSED = Object.freeze({ status: 'closed' });
+
 export const SOURCE_MANAGER_LIMITS = Object.freeze({
     maxFiles: 1_000,
     maxOrdinaryFilesPerJob: 25,
@@ -1324,6 +1326,7 @@ export function createSourceManagerPage({
     }
 
     async function initialize() {
+        if (closed) return PAGE_CLOSED;
         bind();
         elements.sessionLabel.textContent = sessionMode === SOURCE_MANAGER_SESSION_MODE.DEMO
             ? 'Demo presentation session' : 'Real local library';
@@ -1338,6 +1341,7 @@ export function createSourceManagerPage({
                     renderConnectionSnapshot(immediateSnapshot);
                 }
                 await connectionInitialization;
+                if (closed) return PAGE_CLOSED;
                 snapshot = connectionFacade?.getConnectionSnapshot();
             } catch {
                 // The page exposes only the fixed unavailable state.
@@ -1353,10 +1357,13 @@ export function createSourceManagerPage({
             elements.apiDisconnect.hidden = true;
             elements.apiDisconnect.disabled = true;
         }
+        if (closed) return PAGE_CLOSED;
         try {
             await importFacade.initialize();
+            if (closed) return PAGE_CLOSED;
             await refreshPublicReads();
         } catch (error) {
+            if (closed) return PAGE_CLOSED;
             showBlockingError(error);
         }
         return Object.freeze({ status: 'ready' });

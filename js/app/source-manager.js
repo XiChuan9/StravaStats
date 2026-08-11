@@ -183,8 +183,20 @@ export async function startSourceManager(dependencies) {
         importFacade,
         connectionFacade
     });
+    const startupCloseRequested = dependencies.startupCloseRequested instanceof Promise
+        ? dependencies.startupCloseRequested
+        : new Promise(() => {});
+    const initialization = page.initialize();
     try {
-        await page.initialize();
+        const outcome = await Promise.race([
+            initialization.then(() => 'initialized'),
+            startupCloseRequested.then(() => 'close')
+        ]);
+        if (outcome === 'close') {
+            await page.close();
+            await Promise.allSettled([initialization]);
+            return Object.freeze({ status: 'closed', close: page.close });
+        }
     } catch (error) {
         await page.close().catch(() => {});
         throw error;
