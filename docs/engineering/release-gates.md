@@ -71,6 +71,11 @@ Deterministic evidence cannot promote these environmental rows:
 | R3 public Git history | CLOSED BY DISPOSITION | XiChuan9 accepted no-rewrite risk; current-tree removal and guard remain mandatory; this is not erasure |
 | Version / tag / artifact / release owner | BLOCKED | Route and owner are selected, but package remains `1.0.0` and no V2 artifact, tag, GitHub Release or deployment is authorized |
 
+The Privacy Guide's pre-M34 sentence that calls the R3 decision `BLOCKED` is superseded for release
+status only by this Accepted roadmap and the recorded owner disposition. Its operational privacy,
+incident-handling and no-rewrite safety rules remain current. The five-path M34 limit does not
+authorize editing that sixth path.
+
 ## 4. Canonical remaining gate inventory
 
 Only the rows below genuinely remain. Closed deterministic rows and owner decisions are not
@@ -155,7 +160,8 @@ separately unauthorized.
 M34 canonical roadmap merge
 → separately authorized G2/G3/G5/G6 private evidence tasks
 → G7 XiChuan9 parity sign-off
-→ G8 real-hardware budget before waiver expiry
+→ while the G8 waiver is active, schedule its real-hardware follow-up without blocking later gates
+→ after 2026-11-12, G8 evidence or a new explicit disposition is required before proceeding
 → G9 PRD browser/platform/accessibility matrix
 → post-M34 G10 planning Task Brief and separately authorized staging rehearsal
 → separately authorized G13 versioned candidate build and bundle/manifest
@@ -164,10 +170,12 @@ M34 canonical roadmap merge
 → XiChuan9 final production approval
 ```
 
-Beta/RC naming never erases a row. RC requires G2/G3/G5-G10 plus the G13 candidate-building phase,
-G12 verification of that exact candidate and the G13 RC publication approval; production requires
-every remaining row. Data loss, Legacy destruction, private data in Git/logs, inability to roll back,
-exact duplicate creation, Disconnect deletion and unauthorized external egress remain non-waivable.
+Beta/RC naming never erases a row. RC requires G2/G3/G5-G7/G9/G10 plus the G13 candidate-building
+phase, G12 verification of that exact candidate and the G13 RC publication approval. G8 additionally
+blocks RC after waiver expiry unless its evidence or a new explicit disposition exists. Production
+requires every non-waived remaining row; G8 likewise becomes mandatory after expiry. Data loss,
+Legacy destruction, private data in Git/logs, inability to roll back, exact duplicate creation,
+Disconnect deletion and unauthorized external egress remain non-waivable.
 
 ## 7. Pull request and integration gates
 

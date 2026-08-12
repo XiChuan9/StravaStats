@@ -282,8 +282,9 @@ These five paths are the cumulative hard maximum. A sixth path requires a new ow
 - Version change, bundle build/publication, SHA-256 manifest, tag and GitHub Release remain separate
   future authorizations.
 
-The shortest honest Alpha path is therefore M34 closure, an exact release-head verification/current
-P0/P1 inventory, and a separately authorized version/artifact task. It must continue to disclose G2
+The shortest honest Alpha path is therefore M34 closure, then a separately authorized G13 versioned
+Alpha candidate build, G12 verification/current P0/P1 inventory on that exact candidate and bundle,
+and a separately authorized G13 publication/tag/Release approval. It must continue to disclose G2
 and G3 as RC blockers and cannot claim real-data, public deployment or cross-platform evidence.
 
 ### 3. Private-evidence protocol definition

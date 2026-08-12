@@ -378,6 +378,10 @@ test('M34 freezes the exact five-path implementation scope and no sixth path', a
     assert.deepEqual(match[1].split('\n'), FINAL_ROADMAP_ALLOWLIST);
     assert.match(approval, /five paths are the cumulative hard maximum/i);
     assert.match(approval, /sixth path requires a new owner decision/i);
+    assert.match(
+        approval,
+        /G13[\s\S]{0,100}(?:versioned Alpha candidate|candidate build)[\s\S]{0,160}G12[\s\S]{0,160}G13[\s\S]{0,120}(?:publication|tag|Release)/i
+    );
 });
 
 test('canonical roadmap binds the exact postmerge baseline and deterministic P0/P1 closure', async () => {
@@ -453,7 +457,8 @@ test('complete v2 path freezes owner dispositions without claiming unrun evidenc
     assert.match(full, /XiChuan9/);
     assert.match(full, /real\/private evidence[\s\S]{0,80}NOT RUN/i);
     assert.match(full, /production deployment[\s\S]{0,80}(?:BLOCKED|not authorized)/i);
-    assert.match(full, /RC requires G2\/G3\/G5-G10[\s\S]{0,100}G12[\s\S]{0,100}G13/i);
+    assert.match(full, /RC requires G2\/G3\/G5-G7\/G9\/G10[\s\S]{0,180}G8[\s\S]{0,120}(?:after|expiry)/i);
+    assert.match(full, /production[\s\S]{0,100}G8[\s\S]{0,120}(?:after|expiry)/i);
     assert.match(
         full,
         /G13[\s\S]{0,100}(?:versioned candidate|candidate build)[\s\S]{0,160}G12[\s\S]{0,160}G13[\s\S]{0,120}(?:publication|tag|Release)/i
@@ -468,6 +473,10 @@ test('documentation index and limitations point to the canonical roadmap', async
     assert.match(index, /Current authoritative roadmap[\s\S]{0,120}release-gates\.md/i);
     assert.doesNotMatch(index, /Current evidence ledger[\s\S]{0,120}PR-24/i);
     assert.match(index, /PR-24[\s\S]{0,120}(?:historical|point-in-time)/i);
+    assert.match(
+        index,
+        /privacy guide[\s\S]{0,180}(?:pre-M34|pre-decision)[\s\S]{0,120}R3[\s\S]{0,180}superseded[\s\S]{0,120}release-gates\.md/i
+    );
     assert.match(limitations, /authoritative[\s\S]{0,120}release-gates\.md/i);
     assert.match(limitations, /PR #57[\s\S]{0,120}(?:closed|PASS deterministic)/i);
     assert.match(limitations, /PR #58[\s\S]{0,120}(?:closed|PASS deterministic)/i);

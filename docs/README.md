@@ -28,6 +28,10 @@ not automatically current release evidence.
 - [Repository changelog](../CHANGELOG.md) — merged V2 work grouped by milestone, with no invented
   tag, publication date, or deployment.
 
+The Privacy Guide's pre-M34 R3 `BLOCKED` status sentence is superseded for release status only by
+the Accepted [release-gates.md](./engineering/release-gates.md) roadmap. Its operational privacy and
+incident-handling rules remain current; M34's five-path limit does not authorize editing that guide.
+
 The exact current tree includes deterministic R3-R11 privacy/network hardening, D3 Service Worker
 code lifecycle, C1-C4 Source Manager authorization/identity/provider/recovery contracts, and
 explicit Retry for eligible failed local imports. These are bounded code/test facts, not evidence
