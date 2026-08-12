@@ -140,6 +140,37 @@ Task-Brief-only. Every other path—including `package.json`, `package-lock.json
 data/cache/settings surfaces—is prohibited. A fourth path or a requirement to change any prohibited
 surface requires a new owner decision and an immediate stop.
 
+## A3 failure-first implementation evidence
+
+The frozen scope commit is `71600ff2572d1d613b394c97e21f2d4079274123`. Only after it was pushed
+to Draft PR #60 did implementation edit the other two allowed paths.
+
+The first focused run after adding the M35 documentation-contract assertions failed exactly five of
+24 tests. The pre-repair roadmap still named the pre-PR-59 integration baseline and contained no
+closed G1 acceptance section, so the failures covered the intended baseline, distribution/support,
+payload/manifest, candidate/browser and privacy/rollback/status contracts. No pre-existing test
+failed.
+
+The repair then:
+
+- advances the authoritative baseline to exact PR #59 squash-merge commit `4375d699...`, tree
+  `b076c4f...`, 1,919/1,919 and integration CI run `31578877301` / job `94057153726`;
+- records G1 as `CLOSED BY DISPOSITION` only for the bounded scope decision;
+- defines current Chrome at future candidate freeze, exact version evidence and retest-on-stable-
+  change, while explicitly excluding every non-Alpha platform and retaining G9 `BLOCKED`;
+- freezes the source-copy payload rule, exclusions, two metadata files, exact SHA-256 manifest
+  grammar, exact commit/tree provenance and two-checkout byte reproducibility;
+- freezes later G12 repository/artifact gates and a synthetic-only disposable Chrome matrix on a
+  loopback static no-API server with zero provider/external/private access and no worker/PWA claim;
+- defines out-of-band withdrawal that never clears Legacy, V2, Cache Storage, settings or user
+  libraries; and
+- preserves the literal remaining states: G2/G5/G6/G12 `NOT RUN`, G3/G8 `PARTIAL`, and
+  G7/G9/G10/G13 `BLOCKED`.
+
+The repaired focused result is 24/24. The implementation changed only the frozen three-path
+allowlist. It did not run an Alpha browser matrix or G12 because no G13 versioned candidate or
+artifact exists; those actions remain separately unauthorized.
+
 ## Required Alpha acceptance contract
 
 The final documentation and contract tests must bind all of the following without creating an

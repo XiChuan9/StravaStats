@@ -32,6 +32,12 @@ const FINAL_ROADMAP_ALLOWLIST = Object.freeze([
     'tests/docs/release-docs.test.js'
 ]);
 
+const ALPHA_CONTRACT_ALLOWLIST = Object.freeze([
+    'docs/tasks/pr-48-alpha-contract.md',
+    'docs/engineering/release-gates.md',
+    'tests/docs/release-docs.test.js'
+]);
+
 const REMAINING_GATE_ROWS = Object.freeze([
     ['G2', 'C', 'NOT RUN', 'RC / production'],
     ['G3', 'B + C', 'PARTIAL', 'RC / production'],
@@ -384,15 +390,124 @@ test('M34 freezes the exact five-path implementation scope and no sixth path', a
     );
 });
 
+test('M35 freezes the exact three-path docs and test scope', async () => {
+    const brief = await source('docs/tasks/pr-48-alpha-contract.md');
+    const match = /### Frozen literal cumulative allowlist[\s\S]*?```text\n([\s\S]*?)\n```/.exec(brief);
+    assert.notEqual(match, null);
+    assert.deepEqual(match[1].split('\n'), ALPHA_CONTRACT_ALLOWLIST);
+    assert.match(brief, /three-path literal cumulative hard maximum/i);
+    assert.match(brief, /package\.json[\s\S]{0,120}package-lock\.json/);
+    assert.match(brief, /workflow[\s\S]{0,120}Service Worker[\s\S]{0,120}deployment/i);
+    assert.match(brief, /fourth path[\s\S]{0,100}(?:new owner decision|immediate stop)/i);
+});
+
 test('canonical roadmap binds the exact postmerge baseline and deterministic P0/P1 closure', async () => {
     const gates = await source('docs/engineering/release-gates.md');
-    assert.match(gates, /f7f18392dc28e1f1d6ed10c1d8cc0aa297ab7628/);
-    assert.doesNotMatch(gates, /integration\/v2@eb0b6695b5dbf618877ff794dbc76935babeb793/);
-    assert.match(gates, /1,913\/1,913/);
-    assert.match(gates, /31569312683[\s\S]{0,80}94027710807/);
+    assert.match(gates, /4375d699fb1fc1142d399c158b9ad0c4e7e730dc/);
+    assert.match(gates, /b076c4f80cd1d6de7719cebe26e327d18a1f4734/);
+    assert.doesNotMatch(gates, /integration\/v2@f7f18392dc28e1f1d6ed10c1d8cc0aa297ab7628/);
+    assert.match(gates, /1,919\/1,919/);
+    assert.match(gates, /31578877301[\s\S]{0,80}94057153726/);
     assert.match(gates, /PR #57[\s\S]{0,100}(?:PASS deterministic|closed deterministically)/i);
     assert.match(gates, /PR #58[\s\S]{0,100}(?:PASS deterministic|closed deterministically)/i);
+    assert.match(gates, /PR #59[\s\S]{0,120}(?:PASS deterministic|closed deterministically|Accepted roadmap)/i);
     assert.match(gates, /no unresolved deterministic P0\/P1/i);
+});
+
+test('G1 Alpha contract freezes local distribution, support and honest status', async () => {
+    const gates = await source('docs/engineering/release-gates.md');
+    const contract = gates.split('## 4.1 Closed G1 Alpha acceptance contract')[1]
+        ?.split('## 5.')[0];
+    assert.notEqual(contract, undefined);
+    assert.match(contract, /G1[\s\S]{0,120}CLOSED BY DISPOSITION/i);
+    assert.match(contract, /v2\.0\.0-alpha\.1/);
+    assert.match(contract, /owner-provided[\s\S]{0,120}local[\s\S]{0,120}non-production/i);
+    assert.match(contract, /public(?:ly)? hosted|public web Alpha/i);
+    assert.match(contract, /XiChuan9/);
+    assert.match(contract, /latest stable Google Chrome[\s\S]{0,180}candidate(?:-head)? freeze/i);
+    assert.match(contract, /exact full Chrome version[\s\S]{0,120}exact macOS version/i);
+    assert.match(contract, /stable Chrome changes[\s\S]{0,120}(?:retest|rerun)/i);
+    for (const unsupported of [
+        /Chrome (?:Beta|Dev|Canary)/i,
+        /Chromium/i,
+        /Safari/i,
+        /Firefox/i,
+        /Windows/i,
+        /Linux/i,
+        /iOS/i,
+        /Android/i,
+        /PWA/i,
+        /screen[- ]reader/i
+    ]) assert.match(contract, unsupported);
+    assert.match(contract, /G9[\s\S]{0,100}BLOCKED/i);
+});
+
+test('G1 Alpha contract freezes exact payload, manifest and reproducibility', async () => {
+    const gates = await source('docs/engineering/release-gates.md');
+    const contract = gates.split('## 4.1 Closed G1 Alpha acceptance contract')[1]
+        ?.split('## 5.')[0];
+    assert.notEqual(contract, undefined);
+    for (const required of [
+        'classifyBike.js', 'classifyRun.js', 'diagnostics.html', 'icon-sport.svg',
+        'index.html', 'manifest.json', 'source-manager.html', 'storage-backup.html',
+        'sw.js', 'js/vendor/THIRD_PARTY_NOTICES.md', 'media/bg-bike.jpg',
+        'media/bg-run.jpg', 'media/bg-swim.jpg'
+    ]) assert.match(contract, new RegExp(required.replaceAll('.', '\\.')));
+    assert.match(contract, /tracked regular[\s\S]{0,120}`html\/`[\s\S]{0,80}`\.html`/i);
+    assert.match(contract, /tracked regular[\s\S]{0,120}`js\/`[\s\S]{0,80}`\.js`/i);
+    assert.match(contract, /tracked regular[\s\S]{0,120}`styles\/`[\s\S]{0,80}`\.css`/i);
+    for (const excluded of [
+        /`api\/`/, /`docs\/`/, /`tests\/`/, /`scripts\/`/, /`\.github\/`/,
+        /package\.json/, /package-lock\.json/, /vercel\.json/, /\.env/, /AGENTS\.md/
+    ]) assert.match(contract, excluded);
+    assert.match(contract, /PROVENANCE\.json/);
+    assert.match(contract, /SHA256SUMS/);
+    assert.match(contract, /64 lowercase hexadecimal[\s\S]{0,100}two ASCII spaces[\s\S]{0,100}POSIX-relative path/i);
+    assert.match(contract, /lexicographic[\s\S]{0,100}terminal newline/i);
+    assert.match(contract, /exact candidate commit[\s\S]{0,120}exact candidate tree/i);
+    assert.match(contract, /SOURCE_DATE_EPOCH|sourceDateEpoch/);
+    assert.match(contract, /two (?:fresh|independent)[\s\S]{0,120}depth-one checkouts[\s\S]{0,180}byte-identical/i);
+    assert.match(contract, /no symlink/i);
+});
+
+test('G1 Alpha contract freezes candidate gates and disposable Chrome matrix', async () => {
+    const gates = await source('docs/engineering/release-gates.md');
+    const contract = gates.split('## 4.1 Closed G1 Alpha acceptance contract')[1]
+        ?.split('## 5.')[0];
+    assert.notEqual(contract, undefined);
+    for (const command of [
+        'npm ci', 'npm run check:syntax', 'npm run check:privacy', 'npm test',
+        'npm audit', 'git diff --check'
+    ]) assert.match(contract, new RegExp(command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.match(contract, /true remote depth-one checkout/i);
+    assert.match(contract, /exact-head CI/i);
+    assert.match(contract, /current P0\/P1 inventory/i);
+    assert.match(contract, /static-only[\s\S]{0,100}loopback[\s\S]{0,120}no[- ]API/i);
+    assert.match(contract, /fresh disposable Chrome profile/i);
+    assert.match(contract, /first-run[\s\S]{0,100}Demo/i);
+    assert.match(contract, /FIT[\s\S]{0,40}TCX[\s\S]{0,40}GPX[\s\S]{0,40}CSV[\s\S]{0,40}ZIP/i);
+    assert.match(contract, /Backup[\s\S]{0,100}Restore/i);
+    assert.match(contract, /Legacy[\s\S]{0,120}rollback/i);
+    assert.match(contract, /zero[\s\S]{0,120}`\/api`[\s\S]{0,180}(?:Strava|Weather|AI|map|telemetry)/i);
+    assert.match(contract, /`enable-sw=1`[\s\S]{0,120}prohibited/i);
+    assert.match(contract, /no[\s\S]{0,80}(?:offline|PWA|Service Worker)[\s\S]{0,80}claim/i);
+});
+
+test('G1 Alpha contract preserves privacy, rollback and remaining non-PASS gates', async () => {
+    const gates = await source('docs/engineering/release-gates.md');
+    const contract = gates.split('## 4.1 Closed G1 Alpha acceptance contract')[1]
+        ?.split('## 5.')[0];
+    assert.notEqual(contract, undefined);
+    assert.match(contract, /synthetic-only/i);
+    assert.match(contract, /no (?:real )?Token[\s\S]{0,120}provider credential[\s\S]{0,120}private/i);
+    assert.match(contract, /withdraw[\s\S]{0,160}(?:stop sharing|remove|replace)[\s\S]{0,160}artifact/i);
+    assert.match(contract, /never[\s\S]{0,120}(?:clear|delete)[\s\S]{0,180}Legacy[\s\S]{0,80}V2[\s\S]{0,80}(?:Cache Storage|cache)[\s\S]{0,80}settings/i);
+    assert.match(contract, /G2[\s\S]{0,80}NOT RUN[\s\S]{0,120}G3[\s\S]{0,80}PARTIAL/i);
+    for (const gate of ['G5', 'G6', 'G7', 'G8', 'G9', 'G10', 'G12', 'G13']) {
+        assert.match(contract, new RegExp(`${gate}[\\s\\S]{0,100}(?:NOT RUN|PARTIAL|BLOCKED)`));
+    }
+    assert.match(contract, /G13[\s\S]{0,180}separate authorization/i);
+    assert.doesNotMatch(contract, /real (?:Legacy|parity)[^\n]*PASS/i);
 });
 
 test('canonical roadmap has the exact remaining A-F gate rows and no external PASS', async () => {
