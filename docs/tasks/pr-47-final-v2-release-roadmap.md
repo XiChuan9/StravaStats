@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | M34 / FINAL-ROADMAP |
-| Status | Awaiting decision after findings-first audit |
+| Status | Approved for implementation |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/final-roadmap` |
 | Worktree | `/Users/wangchuanliang/.codex/worktrees/345f/StravaStats` |
@@ -81,7 +81,7 @@ limitations, merged Task Briefs, exact code/tests, and current GitHub state:
 | E | Destructive/public-history incident action or explicit no-rewrite disposition required |
 | F | Final version, tag, artifact, or release-owner approval required |
 
-## Investigation gate and provisional path ceiling
+## Investigation gate and approved path ceiling
 
 A2 is read-only. No release copy or test may change until this Task Brief records a findings-first
 evidence/collision matrix and freezes a literal minimal allowlist. The only candidate paths are:
@@ -93,8 +93,9 @@ docs/guides/known-limitations.md
 tests/docs/release-docs.test.js
 ```
 
-The final allowlist may remove candidate paths but may not add a fifth path without stopping for
-owner approval. The first commit is restricted further to this Task Brief only.
+The investigation was authorized to narrow this candidate list or stop for a fifth path. The owner
+has now approved the exact cumulative five-path allowlist recorded below. The first commit remained
+restricted to this Task Brief only.
 
 ## A2 findings-first completion audit
 
@@ -160,10 +161,10 @@ docs/README.md
 tests/docs/release-docs.test.js
 ```
 
-Because the initial brief prohibited a fifth path without approval, this five-path scope is a
-request, not authorization. No implementation or failure-first test edit has begun.
+The owner approved this exact cumulative five-path scope. No sixth path is authorized. No
+implementation or failure-first test edit had begun when the approval was recorded.
 
-## Canonical remaining-gate inventory proposed by the audit
+## Pre-approval remaining-gate inventory from the audit
 
 The table below is the proposed unique inventory. A gate remains non-`PASS` until its exact evidence
 exists. Stage means the earliest release stage it blocks under the current gate wording; decisions
@@ -248,6 +249,123 @@ deferred item keeps its dependent stage blocked.
 None of these choices authorizes the follow-on real-data test, deployment, history action, version
 bump, tag, Release, artifact publication, production rollout, merge, or cleanup. Each is a separate
 bounded task and authority gate.
+
+## Owner approval and frozen implementation contract — 2026-08-12
+
+Owner XiChuan9 approved the complete recommended default package. This approval resolves the eight
+questions above only as stated here and authorizes failure-first documentation implementation
+inside the exact five-path allowlist. It does not authorize any real/private evidence access,
+artifact build/publication, version bump, tag, GitHub Release, deployment, Service Worker or cache/
+data mutation, history rewrite, merge, cleanup, or change to `main`, `maintenance/v1`, or
+`integration/v2`.
+
+### 1. Exact cumulative allowlist
+
+```text
+docs/tasks/pr-47-final-v2-release-roadmap.md
+docs/engineering/release-gates.md
+docs/guides/known-limitations.md
+docs/README.md
+tests/docs/release-docs.test.js
+```
+
+These five paths are the cumulative hard maximum. A sixth path requires a new owner decision.
+
+### 2. Alpha contract
+
+- The Alpha target is a limited local, non-production `v2.0.0-alpha.1` static Web bundle.
+- The supported Alpha surface is current macOS Chrome only.
+- Alpha evidence is explicitly synthetic-only.
+- G2 real Legacy rescue and G3 real parity are deferred to RC. They are neither waived nor `PASS`.
+- A public web Alpha is not authorized.
+- Release owner is XiChuan9.
+- Version change, bundle build/publication, SHA-256 manifest, tag and GitHub Release remain separate
+  future authorizations.
+
+The shortest honest Alpha path is therefore M34 closure, an exact release-head verification/current
+P0/P1 inventory, and a separately authorized version/artifact task. It must continue to disclose G2
+and G3 as RC blockers and cannot claim real-data, public deployment or cross-platform evidence.
+
+### 3. Private-evidence protocol definition
+
+The G4 protocol definition is approved; execution is not:
+
+- custodian and sign-off owner: XiChuan9;
+- raw Tokens, accounts, private activities/files and browser profiles never enter Git;
+- use only a separately authorized disposable profile and isolated target;
+- eventual source mix: real Legacy cache, one bounded provider Sync/Disconnect, FIT, TCX, GPX,
+  CSV, ZIP, and format-3 Backup/Restore;
+- publish only permitted redacted aggregate counts, statuses and hashes;
+- zero unresolved P0 discrepancies; and
+- every non-P0 parity difference must be explicitly explained and signed off by XiChuan9.
+
+This records an evidence protocol only. G2, G3 and G5-G7 remain non-`PASS` and no real/private
+evidence may be accessed under this task.
+
+### 4. Performance disposition
+
+XiChuan9 approves a time-bounded waiver through **2026-11-12** for absolute 10,000-activity and
+1,000-FIT thresholds. The existing functional/resource hard limits and 5,000-activity/200,000-point
+hard evidence remain unchanged. Large libraries or batches may be slower or encounter memory/quota
+limits earlier. Mitigations remain bounded imports/chunks, cancellation, explicit Retry/Recover/
+Abandon, and no release performance overclaim. A representative real-hardware budget task must
+complete before expiry. The waiver does not weaken data, privacy or correctness gates.
+
+### 5. Browser and platform disposition
+
+Full `v2.0.0` requires the PRD browser/platform matrix as written; no permanent narrowing is
+approved. Current macOS Chrome is permitted only for the limited synthetic Alpha. Safari, Firefox,
+Windows, iOS/PWA/mobile and core keyboard/screen-reader evidence remain RC and production blockers.
+Any later time-bounded waiver requires a separate owner, expiry and approval.
+
+### 6. R3 public-history disposition
+
+Privacy/security owner XiChuan9 approves explicit **no-rewrite risk acceptance** for the R3 public-
+history identity exposure. Current-tree removal and the regression guard remain mandatory. No
+credential exposure was found. This is an owner disposition, not erasure: do not rewrite history,
+force-push, delete refs/tags/Releases/PR artifacts, repeat exposed values, or notify externally
+under this authorization.
+
+The E-class decision is closed by disposition. Historical exposure remains a disclosed accepted
+risk; no claim may say it was removed from public history.
+
+### 7. Deployment, Service Worker and rollback disposition
+
+The target future rehearsal is a non-production Vercel preview/staging environment, owned by
+XiChuan9. After M34 merges, authority extends only to creating a planning/rehearsal Task Brief. That
+future plan must require two Service Worker generations/tabs, waiting/drain, mixed-version,
+cold-offline, owned-cache eviction, failed deploy/install, rollback trigger/time objective and
+preserved Legacy/V2 counts.
+
+No public Alpha, production deployment, Service Worker rollout, cache/data mutation, planning Task
+Brief, or rehearsal execution is authorized now. G10 remains `BLOCKED` for RC/production.
+
+### 8. Version, artifact and release disposition
+
+The approved route is Alpha → Beta → RC → `v2.0.0`. The artifact type is a static Web bundle with a
+SHA-256 manifest. Tag/GitHub Release owner and final production approver are XiChuan9. Actual version
+bump, artifact build/publication, tag, GitHub Release, deployment, release and rollback remain
+separately unauthorized. G13 therefore remains `BLOCKED` until a future exact-object approval.
+
+### Frozen post-decision gate interpretation
+
+- G1's Alpha contract decision is closed, but the Alpha artifact/version action remains F-class
+  `BLOCKED` and separately unauthorized.
+- G2 and G3 are `NOT RUN`/`PARTIAL` and block RC/production, not the limited synthetic Alpha.
+- G4 protocol definition is closed; every real/private execution remains C-class `NOT RUN`.
+- G5-G7 remain C-class RC/production blockers.
+- G8 has a B-class waiver through 2026-11-12; it is not a performance `PASS` and requires the named
+  follow-up before expiry.
+- G9 remains a B/C RC/production blocker; only the limited Alpha is macOS Chrome-only.
+- G10 remains D-class `BLOCKED`; only a later planning Task Brief is approved after M34 merge.
+- G11 is closed by E-class explicit no-rewrite disposition, not by erasure.
+- G12 remains A-class work on each future release head.
+- G13 route/ownership is selected, while every version/artifact/tag/Release/deployment action stays
+  F-class `BLOCKED` pending separate authorization.
+
+Implementation may now add the failure-first assertions, repair the three approved documentation
+surfaces, run the full gates and reviews, and write a Task-Brief-only Closure. Draft-to-Ready is
+authorized only after true remote depth-one and exact-head CI succeed. Ready is not merge authority.
 
 ## Audit verification record
 
