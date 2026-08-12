@@ -5,9 +5,10 @@ source-neutral Canonical activity library in the browser, imports common activit
 and keeps the existing Dashboard, sport views, activity details, Run Plus, and NSM consumers behind
 a Repository boundary.
 
-> **Release status:** this repository contains an integrated V2 release candidate, not a production
-> release. The package metadata is still `1.0.0`; no `v2.0.0-*` tag, GitHub Release, production
-> deployment, or release-owner approval is implied by merged PRs, passing CI, or a Ready PR.
+> **Release status:** this repository contains an integrated V2 code candidate. It is not a production
+> release and does not claim an Alpha, Beta, or Release Candidate milestone. The package metadata
+> is still `1.0.0`; no `v2.0.0-*` tag, GitHub Release, production deployment, or release-owner
+> approval is implied by merged PRs, passing CI, or a Ready PR.
 
 ## Start locally
 
@@ -66,8 +67,11 @@ Open Sources at `/source-manager.html?mode=real` in a served application. It sup
 
 Files are preflighted, decoded, normalized, matched, and written locally. Import progress,
 cancellation, per-item outcomes, and the persisted Import Log come from the real Import boundary.
-The Strava API card currently says `Connect later`, and Demo seed import is unavailable; do not
-treat those cards as current V2 ingestion paths.
+Real Sources supports explicit Connect/Reconnect, `Sync latest 25`, Disconnect, and stale-operation
+Recover/Abandon. An eligible failed local import can expose an explicit, single-use Retry from its
+retained pending bytes; it shares the Source Manager lock/lease and never starts automatically.
+Connect, Sync, recovery, and Retry remain user actions. Demo constructs none of these capabilities
+and Demo seed import remains unavailable.
 
 ### Exact identity and Duplicate Review
 
@@ -114,16 +118,22 @@ deleting local activity data.
 
 Local import files are processed in the browser and are not uploaded by the Import pipeline. The
 repository privacy guard rejects private fixture paths and sports files outside the synthetic
-fixture tree. Reviewed V2 Import, Backup/Restore, and Diagnostics boundaries use safe codes rather
-than raw causes, IDs, filenames, routes, GPS, heart-rate, power, or payloads; this guarantee does not
-cover inherited provider/API paths.
+fixture tree. Reviewed V2 Import, Backup/Restore, and Diagnostics boundaries use safe codes.
+Source Manager and server/client logging responsibility paths likewise use safe codes or fixed
+redacted events rather than raw causes, IDs, filenames, routes, GPS, heart-rate, power, provider
+responses, or payloads. This is deterministic current-tree evidence, not real-account or
+private-library verification.
 
-That local-first statement does **not** mean the complete application is fully offline. Production
-runtime telemetry is disabled and visualization libraries are exact-version-pinned, integrity
-checked, and served same-origin; the visualization runtime makes no third-party CDN request and
-has no CDN fallback. Some Legacy features still use provider,
-weather, map, or explicitly user-authorized AI services. Review the
-[Privacy Guide](./docs/guides/privacy-guide.md) and
+That local-first statement does **not** mean the complete application is fully offline. In the
+current V2 Source Manager, explicit Connect/Reconnect navigates to provider authorization. The
+callback exchange, explicit Disconnect revocation, and explicit `Sync latest 25` use separate
+bounded same-origin routes that perform the corresponding provider I/O. Local import and local
+Canonical browsing do not call the provider. Legacy provider paths remain separate. Weather, map,
+and AI each have separate explicit consent boundaries and distinct external destinations.
+
+Production runtime telemetry is disabled and visualization libraries are exact-version-pinned,
+integrity checked, and served same-origin; the visualization runtime makes no third-party CDN
+request and has no CDN fallback. Review the [Privacy Guide](./docs/guides/privacy-guide.md) and
 [Known Limitations](./docs/guides/known-limitations.md) before production use.
 
 External base-map tiles are denied by default. A Real map with validated local geometry offers the
@@ -153,8 +163,10 @@ evidence.
 - [Privacy Guide](./docs/guides/privacy-guide.md)
 - [Troubleshooting](./docs/guides/troubleshooting.md)
 - [Release gates](./docs/engineering/release-gates.md)
-- [PR-24 evidence ledger](./docs/tasks/pr-24-release-documentation.md)
+- [PR-24 historical ledger and current-tree supplement](./docs/tasks/pr-24-release-documentation.md)
 
-The PR-24 ledger is the current evidence/status record. `PASS` there means a specific gate has
-accepted code, test, CI, Task Brief, or served synthetic evidence. It does not mean the product was
-released. Ready is not merge or release authorization.
+The original PR-24 ledger is a historical V4-era evidence snapshot. Its additive superseding
+current-tree ledger records the exact post-R3-R11/D3/C1-C4/Retry status. `PASS` means only that a
+specific bounded row has accepted current code, deterministic tests, CI, Task Brief, or qualified
+served synthetic evidence. It does not mean the product was released. Ready is not merge or
+release authorization.

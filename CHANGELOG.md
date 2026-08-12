@@ -3,11 +3,13 @@
 This file records merged repository changes. It does not claim a package publication, Git tag,
 GitHub Release, deployment, or production release.
 
-## Unreleased — V2 integration candidate
+## Unreleased — V2 code candidate
 
-Exact documented baseline: `integration/v2@61d7b032305fd8f12d71544315f06d553213801d`.
+Exact documented baseline: `integration/v2@eb0b6695b5dbf618877ff794dbc76935babeb793`.
 The package remains `1.0.0`. The planned names `v2.0.0-alpha.1`, `v2.0.0-beta.1`,
 `v2.0.0-rc.1`, and `v2.0.0` are release stages, not existing tags or artifacts.
+This is not an Alpha, Beta, Release Candidate, or production release. There is no V2 tag, GitHub
+Release, artifact, deployment, or release-owner approval.
 
 ### Repository safety, contracts, and migration foundations
 
@@ -68,8 +70,30 @@ The package remains `1.0.0`. The planned names `v2.0.0-alpha.1`, `v2.0.0-beta.1`
   performance gates.
 - [PR-23](./docs/tasks/pr-23-default-canonical.md) made Canonical the default Real Repository mode,
   added empty-Canonical First-run behavior, and retained explicit Legacy/Shadow rollback.
-- PR-24 documents the integrated release candidate and its remaining release blockers. It does not
+- PR-24 documents the then-integrated code candidate and its remaining release blockers. It does not
   publish, tag, deploy, or approve V2.
+
+### Release hardening after PR-24
+
+- R3-R11 removed the identified current-tree identity, redacted reviewed server/client logging,
+  added explicit consent and bounded egress for weather, AI Coach and maps, constrained the Service
+  Worker to approved static assets, made the Legacy presence probe non-destructive, disabled runtime
+  telemetry and replaced third-party visualization CDN loading with pinned same-origin assets.
+  R3 current-tree closure does not resolve the separate public Git history incident.
+- D3 added the deterministic waiting/drained-client Service Worker code lifecycle and immutable
+  current cache contract. Production-like update, mixed-version, cold-offline, deployment and
+  combined rollback evidence remains unrun.
+- C1-C4 added explicit Source Manager authorization, durable source identity and format 3/V6 Backup
+  portability, bounded provider mapping/import and `Sync latest 25`, plus one shared lock and
+  durable recovery lease with explicit Recover/Abandon.
+- PR #57 added explicit Retry for eligible failed local imports from exact retained pending bytes.
+  Retry is user-triggered, single-use, shares the C4 lock/lease, preserves committed items, performs
+  no provider acquisition, and never starts automatically.
+
+These merged code/test changes do not close authorized real account/private-library/Disconnect/
+parity evidence; Safari, Firefox, Windows, iOS/PWA, mobile or broad accessibility evidence; the R3
+public Git history decision; production-like Service Worker/deployment/rollback rehearsal;
+performance budgets or waiver; version/tag/artifact; or release-owner approval.
 
 ## Preserved V1 baseline
 

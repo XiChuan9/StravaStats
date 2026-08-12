@@ -5,7 +5,7 @@
 | Status | Proposed |
 | Owner | XiChuan9 |
 | Created | 2026-07-28 |
-| Last updated | 2026-07-28 |
+| Last updated | 2026-08-12 |
 | Related plan | [V2 Development Plan](./v2-development-plan.md) |
 
 ## 1. 目的
@@ -26,7 +26,7 @@ Release Gate 是阻断条件，不是建议清单。功能“看起来可用”�
 
 ## 2. 当前能力声明
 
-PR-00 建立以下最低自动能力：
+PR-00 建立了以下最低自动能力，当前 integration 继续执行：
 
 ```text
 npm ci
@@ -35,10 +35,33 @@ npm run check:privacy
 npm test
 ```
 
-GitHub Actions 在 Node 24 LTS 上执行相同检查。当前单元测试只覆盖
-Feature Flag、Service Worker 开发策略和确定性 Demo。E2E、Repository、
-Storage、Import、Decoder、安全和性能测试仍为 `Not implemented`，不得
-因为最低 CI 通过而声称这些 Gate 已完成。
+GitHub Actions 在 Node 24 LTS 上执行相同检查。当前确定性测试覆盖 Feature Flag、
+Repository、Storage V6、Import、CSV/ZIP/FIT/TCX/GPX Decoder、Backup format 3、
+Source Manager Connect/Disconnect/Sync/Recover/Abandon/Retry、Repository consumers、
+Service Worker policy/lifecycle、隐私边界和已冻结的性能样本。测试数会随独立任务变化，
+因此以 exact-head CI 和
+[PR-24 current-tree supplement](../tasks/pr-24-release-documentation.md#superseding-current-tree-ledger)
+记录的精确基线为准。
+
+这些自动证据不替代真实账户/私人资料库、Safari/Firefox/Windows/iOS/PWA、生产式
+Service Worker/部署/联合回滚、公共 Git 历史处置、性能预算豁免、版本/制品或发布负责人
+批准。没有执行的环境 Gate 仍为 `PARTIAL`、`BLOCKED` 或 `NOT RUN`。
+
+### 2.1 当前外部与环境门禁
+
+以下结果直接约束当前 `integration/v2@eb0b6695b5dbf618877ff794dbc76935babeb793`。
+确定性代码/测试通过不能把这些行提升为 `PASS`：
+
+| Evidence class | Result | Missing evidence or decision |
+| --- | --- | --- |
+| Real account / private library | NOT RUN | 授权的真实 OAuth、Disconnect、Legacy/V2 私人资料库、真实导入、Backup 恢复与 parity/Shadow 复核 |
+| Browser / platform | BLOCKED | Safari、Firefox、Windows、iOS/PWA、mobile、广泛 accessibility 矩阵或有时限豁免 |
+| Production Service Worker / deployment / combined rollback | BLOCKED | 生产式 mixed-version、cold-offline、cache eviction、部署失败和完整回滚演练及授权 |
+| R3 public Git history | BLOCKED | Privacy/security owner 的 incident disposition；当前树移除不等于公共历史闭合 |
+| Version / tag / artifact / release owner | BLOCKED | Package 仍为 `1.0.0`；没有 V2 tag、GitHub Release、artifact、deployment 或 release-owner approval |
+
+性能也保持 `PARTIAL`：5,000 activities 与 200,000 points 的确定性证据已通过，
+10,000 activities 与 1,000 FIT throughput 仍只有记录性结果，没有批准的绝对预算或豁免。
 
 ## 3. PR Gate
 
@@ -60,7 +83,8 @@ Storage、Import、Decoder、安全和性能测试仍为 `Not implemented`，不
 - [ ] 人工验收项目已列出；
 - [ ] 未执行的验证被明确报告，没有伪装成 Pass。
 
-纯文档 PR 在 `npm test` 尚不存在时，可以按当前仓库能力执行 syntax 和 diff 检查，但必须在 PR 中说明测试基础尚未建立。
+纯文档 PR 也必须执行 `npm ci`、syntax、privacy、完整 `npm test`、专项文档测试、
+`git diff --check` 和 literal changed-path gate；未执行项必须明确报告。
 
 ## 4. Integration Gate
 

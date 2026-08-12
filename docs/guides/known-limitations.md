@@ -9,14 +9,14 @@ The authoritative item-level status is the [PR-24 release-gate ledger](../tasks/
 | Blocker | Current evidence | Required before production release |
 | --- | --- | --- |
 | No V2 release artifact | Package metadata remains `1.0.0`; there is no `v2.0.0-*` tag, GitHub Release, production deployment, or release-owner approval | Version/release decision, authorized tag/artifact/deployment, exact release evidence, owner approval |
-| Production Service Worker lifecycle | Local policy is tested; existing `sw.js` keeps fixed cache `strava-dashboard-v1`; production update, mixed-version, cold-offline, eviction, and rollback are not run | Rehearsed production-like worker/cache/deployment matrix without deleting user data |
-| External privacy baseline | R11 disables runtime telemetry and serves exact-version-pinned visualization libraries same-origin; weather, map tiles, AI Coach, and Legacy provider features retain their separate affirmative controls or inherited boundaries; PR-01 also records unresolved same-origin Service Worker API-cache risk | Close the remaining external-feature and cache boundaries without weakening R6/R7/R8/R9 contracts |
-| Inherited logging and weather location egress | Inherited raw console and server/API logging can expose activity/provider values, while weather can still send exact activity dates and coordinates to an external service; R8 now denies map tiles until a per-map coarse OSM grant | Treat remaining logging/weather behavior as a production privacy release blocker; obtain release-owner privacy sign-off |
+| Production Service Worker lifecycle | R9 admits only approved same-origin static assets; API/private/dynamic requests never enter cache handling. D3 has deterministic evidence for the waiting/drained lifecycle with current cache `stravastats-static-v2-000001`; `strava-dashboard-v1` is recognized as the preserved legacy cache, not treated as the current cache or blindly deleted. Production update, mixed-version, cold-offline, eviction, deployment, and rollback are not run | Rehearsed production-like worker/cache/deployment matrix without deleting user data |
+| Public Git-history incident disposition | R3 removed the tracked identity from the current tree and the privacy guard passes, but current-tree removal does not decide treatment of the public Git history | Privacy/security owner disposition; this docs task authorizes no history rewrite or value repetition |
 | Real account and private-library evidence | Auth lifecycle and imports pass deterministic synthetic tests; real OAuth, disconnect, private Legacy/V2 libraries, and real FIT/TCX/GPX/ZIP were not run | Private, authorized evidence outside Git with redacted public summary |
 | Cross-browser support | Actual-served evidence is disposable Chromium/Chrome; Safari, Firefox, Windows, iOS/PWA, mobile, and broad assistive-technology matrices are not verified | Release matrix for supported browsers/platforms or an approved, time-bounded waiver |
 | Real parity and Shadow review | Projection and redacted Shadow reports pass synthetic tests; no real-library Legacy/Canonical parity or Shadow difference sign-off exists | Private parity review with owner decision and zero unresolved P0 discrepancy |
 | Full rollback rehearsal | Explicit Legacy/Shadow behavior is tested, but production deployment, Service Worker, backup, disconnect, and final rollback drill are not run together | Recorded end-to-end rollback exercise with owners and preserved data counts |
-| Defect closure | No release-wide P0/P1 inventory and sign-off was provided | Release-owner defect audit showing zero unresolved P0/P1 issues |
+| Performance budget/waiver | 5,000 activities and 200,000 points pass in disclosed synthetic environments; 10,000 activities and 1,000 FIT throughput remain record-only without an approved absolute budget or waiver | Approve thresholds or a time-bounded waiver, then record the retained environment and owner |
+| Defect closure | M22 completed a release-wide inventory and PR #57 closed the retained P0 explicit-Retry gap. P1-DOCS remains open until this reconciliation receives fresh no-findings review, Closure, and exact-head CI | Close this docs package, re-run the current-tree inventory, and obtain release-owner sign-off |
 
 These blockers are outside PR-24's docs-only authority. They must not be “fixed” by weakening a
 gate, deleting data, editing a test result, or describing unrun work as passed.
@@ -33,6 +33,10 @@ gate, deleting data, editing a test result, or describing unrun work as passed.
   automatic resume. Real local import and provider Sync share one same-origin Web Lock and durable
   90-second V6 lease; stale linked work and restored orphans require explicit Recover or Abandon.
   This does not coordinate other profiles, browsers, devices, origins, or storage buckets.
+- “No automatic retry” above applies to provider acquisition. Separately, an eligible failed local
+  import can expose an explicit single-use Retry from retained pending bytes. Retry uses the same
+  lock/lease, never starts automatically, preserves committed items, and is unavailable without the
+  exact retained bytes.
 - Non-auth detail or stream failures degrade that optional enrichment to unavailable warnings.
   Authentication failures require reconnect, rate limiting requires a later explicit press, and a
   stale SourceConnection history CAS can leave imported items committed without advancing
@@ -66,6 +70,21 @@ field-selection and reversible-merge workflow is future work.
 - Diagnostics Storage Estimate is coarse, rounded, origin-wide, and not exact app bytes, free disk
   space, or a persistence guarantee.
 - Diagnostics records are bounded to the current tab/session and are not a durable audit log.
+
+### Legacy presence probe residual
+
+The R10 Legacy presence probe is non-destructive and never calls `deleteDatabase`. Under accepted
+Option B, the narrow race in which another context deletes the V1 database while the inspection
+open is later aborted can leave an empty V1 database shell. That shell has zero object stores and
+zero user records; existing Legacy and V2 data are never cleared or overwritten.
+
+### Consented weather egress
+
+Weather starts denied and makes no request during ordinary startup. After the user explicitly
+chooses `Allow for this tab`, one request may send one approximate start coordinate rounded to two decimals
+and the exact local calendar date to Open-Meteo. Consent is tab-scoped and revocable.
+This is an accepted R6 external boundary, not local-only behavior; no real-account or production
+external-service evidence was run for release.
 
 ### External map tiles
 

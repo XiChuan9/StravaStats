@@ -11,6 +11,11 @@
 | Draft PR title | `docs(v2): complete release candidate documentation` |
 | Control tower | `019fa697-6cbf-70f1-a120-bf31ecc9e2ba` |
 
+> **Historical snapshot notice:** PR-24's original A0-A2 evidence, counts, SHAs, V4/format-1 facts,
+> review and Closure below describe its exact 2026-08-07 execution and are not rewritten. The
+> additive [superseding current-tree ledger](#superseding-current-tree-ledger) records the current
+> post-R3-R11/D3/C1-C4/explicit-Retry tree. Historical facts are not current release claims.
+
 ## Goal
 
 Produce the release-candidate documentation required by the V2 development plan: README,
@@ -501,3 +506,94 @@ cleanup.
 - **Release:** PR-24 may document release readiness but cannot declare `v2.0.0-alpha.1`,
   `v2.0.0-beta.1`, `v2.0.0-rc.1`, or `v2.0.0` published without an actual tag, artifact,
   deployment, required gate evidence, and release-owner approval.
+
+## Superseding current-tree ledger
+
+This additive ledger supersedes only PR-24's current-state interpretation. It preserves every
+historical SHA, test count and then-accurate finding above. The reconciliation baseline is:
+
+```text
+integration commit      eb0b6695b5dbf618877ff794dbc76935babeb793
+integration tree        6cdee026ec61604e016c20204e722816264a9f0c
+PR #57 source head      70b81c9341803e470b3ddc6eea43b2ba34e40bbb
+integration CI          run 31552831032 / job 93978992223 SUCCESS
+npm ci                  PASS; 0 vulnerabilities reported
+syntax                  PASS; 283 files
+privacy                 PASS
+full test               PASS; 1,912/1,912
+diff/worktree/divergence PASS; clean; 0/0
+```
+
+`PASS` below is bounded to cited current source, deterministic tests, or qualified disposable
+synthetic Chromium evidence. It never promotes unrun private, browser, production, history, or
+release-owner work. `PARTIAL`, `BLOCKED`, and `NOT RUN` remain non-pass states.
+
+### Current hardening reconciliation
+
+| Item | Status | Current evidence and retained boundary |
+| --- | --- | --- |
+| R1/R2 DOM and opaque IDs | PASS | Native-DOM/encoded-navigation and hostile-data tests pass |
+| R3 current tree | PASS | Identified tracked identity removed; privacy guard passes |
+| R3 public Git history | BLOCKED | Separate privacy/security owner incident disposition absent; no rewrite authorized |
+| R4/R5 logging | PASS | Reviewed production server/client responsibility paths emit fixed/redacted events |
+| R6 weather | PASS deterministic | Explicit tab consent; one start coordinate rounded to two decimals plus exact local calendar date; real external evidence NOT RUN |
+| R7 AI Coach | PASS deterministic | Per-request Google Gemini disclosure/preview and bounded aggregate payload; Demo zero I/O |
+| R8 map | PASS deterministic | Per-map memory-only coarse OpenStreetMap consent; tile request remains external |
+| R9 Service Worker cache boundary | PASS deterministic | Static-only admission; API/private/dynamic/query/credential/external requests bypass |
+| R10 Legacy probe | PASS with accepted residual | Non-destructive; Option B can leave only an empty V1 database shell with zero stores/user records in its narrow race |
+| R11 telemetry/CDN | PASS deterministic | Runtime telemetry disabled; pinned visualization assets same-origin with integrity and no CDN fallback |
+| D3 Service Worker code lifecycle | PASS deterministic | Immutable current cache, waiting/drained-client lifecycle and owned-cache rules pass; production-like evidence NOT RUN |
+| C1 authorization | PASS deterministic | Same-tab explicit OAuth shell and callback scrub pass |
+| C2 identity/Backup | PASS deterministic | V6 SourceConnection and credential-free format-3 portability pass |
+| C3 provider pipeline/Sync | PASS deterministic | Bounded mapper/artifact import and explicit `Sync latest 25` pass; real provider NOT RUN |
+| C4 recovery lease | PASS deterministic | Shared lock, durable 90-second lease, explicit Recover/Abandon and no automatic resume pass |
+| Explicit failed-import Retry | PASS deterministic | Eligible retained-byte Retry is explicit, single-use, lock/lease bounded and preserves committed items; provider acquisition still has no automatic retry |
+| P1-DOCS reconciliation | PARTIAL | Current copy/test implementation is under PR-46; closes only after independent no-findings review, Closure and exact-head CI |
+
+### Current Alpha and Beta gates
+
+| Gate | Status | Evidence and boundary |
+| --- | --- | --- |
+| Baseline tag, `maintenance/v1`, accepted Canonical contracts | PASS | Refs remain; ADR-0001 through ADR-0006 stay Accepted |
+| Repository convergence, V2 isolation, Shadow, Legacy flag | PASS | Current Repository/Storage/consumer/feature-flag suites |
+| Legacy Cache export/restore | PARTIAL | Deterministic rescue passes; real Legacy cache drill NOT RUN |
+| Parity Report | PARTIAL | Synthetic redacted report passes; private-library review NOT RUN |
+| JSON/CSV/ZIP/FIT/TCX/GPX import matrix | PASS deterministic | Current decoder/import suites and accepted served synthetic evidence |
+| Exact duplicate and batch isolation | PASS deterministic | Replay/per-item failure/cancellation/transaction suites |
+| Token-free local startup and consumer degradation | PASS deterministic | Canonical bootstrap/summary/detail/Run Plus/NSM suites |
+| Source Manager/Import Report | PASS deterministic | Connect/Disconnect/Sync/Recover/Abandon/Retry current suites; real provider NOT RUN |
+
+### Current Release Candidate gates
+
+| Gate | Status | Evidence and boundary |
+| --- | --- | --- |
+| Import and Exact Identity regressions | PASS deterministic | Current full matrix |
+| Full Backup/new-environment restore | PARTIAL | V6 format 3 plus additive formats 1/2 pass synthetic tests/browser evidence; private real library NOT RUN |
+| Fuzzy duplicate safety | PASS deterministic | Candidate never auto-merges; decisions preserve both records |
+| Local consumer regressions | PASS deterministic | Summary/detail/Run Plus/NSM current suites |
+| Legacy/Canonical parity and Shadow review | PARTIAL | Synthetic evidence only; private owner sign-off absent |
+| Service Worker update/old-cache eviction | PARTIAL | R9/D3 deterministic lifecycle passes; native production mixed-version/cold-offline/rollback NOT RUN |
+| Performance budgets | PARTIAL | 5,000 activities/200,000 points pass; 10,000 activities/1,000 FIT record-only with no approved threshold/waiver |
+| Migration/deployment/full rollback rehearsal | BLOCKED | Combined production-like rehearsal NOT RUN |
+| Zero unresolved P0/P1 defects | PARTIAL | P0 Retry closed; P1-DOCS remains until PR-46 fresh review/Closure/CI; environmental P1 rows remain incomplete |
+
+### Current Production gates
+
+| Gate | Status | Evidence and boundary |
+| --- | --- | --- |
+| Start without Token; Canonical fallback to Legacy | PASS deterministic | Current bootstrap/flag/Repository suites |
+| Real Disconnect preserves both libraries | PARTIAL | Deterministic auth lifecycle passes; real account NOT RUN |
+| Real Legacy/private-library recovery and imports | PARTIAL | Synthetic contracts pass; authorized private evidence NOT RUN |
+| Exact integration CI | PASS | Run/job above; PR-46 exact-head CI remains pending |
+| Backup, duplicate and local consumers | PASS deterministic | Current bounded suites; private/cross-browser evidence excluded |
+| Real parity/Shadow discrepancies | BLOCKED | Representative private-library review and tolerances absent |
+| Current-tree privacy controls | PASS deterministic | Privacy guard plus R3 current tree and R4-R11 source/tests; real/private evidence excluded |
+| Public Git-history incident | BLOCKED | R3 history disposition absent |
+| Supported browser/platform matrix | BLOCKED | Safari, Firefox, Windows, iOS/PWA, mobile and broad accessibility not verified; no waiver |
+| Production Service Worker/deployment/rollback | BLOCKED | Production-like combined rehearsal and authority absent |
+| Migration/Backup/Privacy/Troubleshooting docs | PARTIAL | Durable guides exist; current reconciliation PR-46 review/Closure/CI pending |
+| Version/tag/artifact/deployment/release-owner approval | BLOCKED | Package remains `1.0.0`; no V2 tag, GitHub Release, deployment or owner approval |
+
+This supplement authorizes no product, schema, API, package, version, workflow, Service Worker,
+data/cache, history, deployment, tag, Release, merge, or cleanup action. Ready remains a review
+state only.
