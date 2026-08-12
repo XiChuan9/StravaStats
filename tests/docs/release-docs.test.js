@@ -200,18 +200,72 @@ test('backup and privacy guides disclose shared Legacy-compatible settings truth
     assert.match(backup, /TARGET_SETTINGS_CONFLICT/);
 });
 
-test('release blockers disclose inherited raw console and server logging', async () => {
-    const [limitations, privacy, brief] = await Promise.all([
+test('current release prose rejects superseded blockers and preserves external gates', async () => {
+    const [readme, gates, limitations, privacy, brief] = await Promise.all([
+        source('README.md'),
+        source('docs/engineering/release-gates.md'),
         source('docs/guides/known-limitations.md'),
         source('docs/guides/privacy-guide.md'),
         source('docs/tasks/pr-24-release-documentation.md')
     ]);
-    for (const document of [limitations, privacy, brief]) {
-        assert.match(document, /raw console[^\n]*(?:server|API)|(?:server|API)[^\n]*raw console/i);
-        assert.match(document, /release blocker/i);
-        assert.match(document, /exact (?:activity )?(?:location|coordinates)[^\n]*(?:date|external)|exact[^\n]*date[^\n]*(?:location|coordinates|external)/i);
+    const currentBrief = brief.split('## Superseding current-tree ledger')[1];
+    assert.notEqual(currentBrief, undefined);
+
+    assert.doesNotMatch(readme, /Connect later/i);
+    for (const pattern of [
+        /Connect\/Reconnect|Connect[^\n]*Reconnect/i,
+        /Sync latest 25/,
+        /Disconnect/,
+        /Recover\/Abandon|Recover[^\n]*Abandon/i,
+        /eligible[^\n]*Retry|Retry[^\n]*eligible/i
+    ]) assert.match(readme, pattern);
+
+    assert.doesNotMatch(
+        gates,
+        /Repository[^\n]*Storage[^\n]*Import[^\n]*Decoder[^\n]*(?:Not implemented|未实现)/i
+    );
+    assert.match(gates, /deterministic|确定性/i);
+    assert.match(gates, /private|私人|真实账户|real account/i);
+    assert.match(gates, /browser|浏览器/i);
+
+    for (const document of [limitations, privacy, currentBrief]) {
+        assert.doesNotMatch(
+            document,
+            /raw console[^\n]*(?:server|API)[^\n]*(?:release blocker|发布阻断)|(?:server|API)[^\n]*raw console[^\n]*(?:release blocker|发布阻断)/i
+        );
+        assert.doesNotMatch(
+            document,
+            /exact (?:activity )?(?:location|coordinates)[^\n]*(?:release blocker|production privacy release blocker)/i
+        );
     }
-    assert.match(privacy, /safe Diagnostics[^\n]*does not[^\n]*all application logs/i);
+
+    for (const document of [limitations, privacy]) {
+        assert.match(document, /rounded to (?:two|2) decimals|two-decimal|2-decimal/i);
+        assert.match(document, /exact local (?:calendar )?date/i);
+        assert.match(document, /explicit|consent/i);
+        assert.match(document, /public (?:Git )?history|Git history/i);
+        assert.match(document, /BLOCKED/);
+    }
+
+    assert.match(limitations, /stravastats-static-v2-000001/);
+    assert.match(limitations, /strava-dashboard-v1[^\n]*(?:legacy|previous|preserved|recognized)/i);
+    assert.doesNotMatch(limitations, /unresolved[^\n]*Service Worker API-cache/i);
+    assert.match(limitations, /Option B|empty V1 (?:database )?shell/i);
+    assert.match(limitations, /provider[^\n]*no automatic retry|no automatic retry[^\n]*provider/i);
+    assert.match(limitations, /retained[^\n]*(?:bytes|byte)[^\n]*Retry|Retry[^\n]*retained[^\n]*(?:bytes|byte)/i);
+
+    assert.match(brief, /superseding current-tree ledger/i);
+    assert.match(brief, /eb0b6695b5dbf618877ff794dbc76935babeb793/);
+    assert.match(brief, /R3[^\n]*current tree[^\n]*(?:CLOSED|PASS)/i);
+    assert.match(brief, /public (?:Git )?history[^\n]*BLOCKED/i);
+    for (const pattern of [
+        /real account|private library/i,
+        /Safari|Firefox/i,
+        /production-like Service Worker|production Service Worker/i,
+        /deployment[^\n]*rollback|rollback[^\n]*deployment/i,
+        /version[^\n]*tag[^\n]*artifact|tag[^\n]*artifact/i,
+        /release-owner|release owner/i
+    ]) assert.match(brief, pattern);
 });
 
 test('release-gate status does not claim a conditional PASS', async () => {

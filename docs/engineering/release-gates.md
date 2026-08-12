@@ -5,7 +5,7 @@
 | Status | Proposed |
 | Owner | XiChuan9 |
 | Created | 2026-07-28 |
-| Last updated | 2026-07-28 |
+| Last updated | 2026-08-12 |
 | Related plan | [V2 Development Plan](./v2-development-plan.md) |
 
 ## 1. 目的
@@ -26,7 +26,7 @@ Release Gate 是阻断条件，不是建议清单。功能“看起来可用”�
 
 ## 2. 当前能力声明
 
-PR-00 建立以下最低自动能力：
+PR-00 建立了以下最低自动能力，当前 integration 继续执行：
 
 ```text
 npm ci
@@ -35,10 +35,17 @@ npm run check:privacy
 npm test
 ```
 
-GitHub Actions 在 Node 24 LTS 上执行相同检查。当前单元测试只覆盖
-Feature Flag、Service Worker 开发策略和确定性 Demo。E2E、Repository、
-Storage、Import、Decoder、安全和性能测试仍为 `Not implemented`，不得
-因为最低 CI 通过而声称这些 Gate 已完成。
+GitHub Actions 在 Node 24 LTS 上执行相同检查。当前确定性测试覆盖 Feature Flag、
+Repository、Storage V6、Import、CSV/ZIP/FIT/TCX/GPX Decoder、Backup format 3、
+Source Manager Connect/Disconnect/Sync/Recover/Abandon/Retry、Repository consumers、
+Service Worker policy/lifecycle、隐私边界和已冻结的性能样本。测试数会随独立任务变化，
+因此以 exact-head CI 和
+[PR-24 current-tree supplement](../tasks/pr-24-release-documentation.md#superseding-current-tree-ledger)
+记录的精确基线为准。
+
+这些自动证据不替代真实账户/私人资料库、Safari/Firefox/Windows/iOS/PWA、生产式
+Service Worker/部署/联合回滚、公共 Git 历史处置、性能预算豁免、版本/制品或发布负责人
+批准。没有执行的环境 Gate 仍为 `PARTIAL`、`BLOCKED` 或 `NOT RUN`。
 
 ## 3. PR Gate
 
@@ -60,7 +67,8 @@ Storage、Import、Decoder、安全和性能测试仍为 `Not implemented`，不
 - [ ] 人工验收项目已列出；
 - [ ] 未执行的验证被明确报告，没有伪装成 Pass。
 
-纯文档 PR 在 `npm test` 尚不存在时，可以按当前仓库能力执行 syntax 和 diff 检查，但必须在 PR 中说明测试基础尚未建立。
+纯文档 PR 也必须执行 `npm ci`、syntax、privacy、完整 `npm test`、专项文档测试、
+`git diff --check` 和 literal changed-path gate；未执行项必须明确报告。
 
 ## 4. Integration Gate
 

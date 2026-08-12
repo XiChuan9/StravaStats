@@ -72,7 +72,10 @@ activity IDs never enter browser URLs. The server uses the access credential onl
 provider request, removes profile/name/map/gear/device/unknown fields, and returns only the reduced
 summary, optional detail/laps, and exact stream set. Responses are no-store and subject to fixed
 request, record, point, lap, byte, timeout, concurrency, and total-acquisition limits. There is no
-retry, second page, polling, webhook, background Sync, or cross-tab owner claim.
+automatic provider-request retry, second page, polling, webhook, background Sync, or cross-tab
+owner claim. Separately, an eligible failed local import can expose an explicit single-use Retry
+from retained pending bytes under the shared Source Manager lock/lease. It sends no provider
+request, never starts automatically, and preserves previously committed items.
 
 Reduced GPS, heart-rate, power, and other activity values still remain private athlete data. They
 may enter the browser only through the bounded same-origin route and reach durable storage only
@@ -127,8 +130,10 @@ and jsPDF are exact-version-pinned, integrity checked, and served same-origin wi
 
 - a cold first-ever offline load may lack uncached local visualization assets;
 - Legacy provider features use same-origin serverless API routes;
-- weather can send an exact activity date and coordinates to its external service after its
-  separate consent flow;
+- weather starts denied. After the user explicitly chooses `Allow for this tab`, one Open-Meteo
+  request can send one approximate start coordinate rounded to two decimals and the exact local calendar date.
+  The grant is tab-scoped and revocable; startup, denied state, and Demo send no
+  weather request;
 - external map tiles begin denied. A Real map with valid local geometry can request only
   OpenStreetMap PNG tiles from the exact `a`, `b`, or `c.tile.openstreetmap.org` hosts after the
   user chooses **“Load approximate OpenStreetMap tiles for this map”**. The map computes the full
@@ -146,10 +151,12 @@ and jsPDF are exact-version-pinned, integrity checked, and served same-origin wi
   consent, key, provider, history, or storage I/O.
 
 These external feature boundaries are not evidence that private activity data is uploaded by local
-import. Exact weather location/date external requests remain a production privacy release blocker.
-R8 governs declared tile-location requests only; same-origin Leaflet code does not authorize a
-tile request. Never add product analytics events containing a filename, route, user identity,
-Token, raw payload, or health/power data; R11 authorizes no runtime telemetry event at all.
+import. R6 closed the former automatic/exact-coordinate weather defect with the selected consented
+two-decimal-coordinate plus exact-local-date contract; that request remains external and is not
+described as local-only. R8 governs declared tile-location requests only; same-origin Leaflet code
+does not authorize a tile request. Never add product analytics events containing a filename, route,
+user identity, Token, raw payload, or health/power data; R11 authorizes no runtime telemetry event
+at all.
 
 Existing browsers may still contain the inherited `gemini_api_key` or `ai_chat_history` records.
 AI Coach does not read, copy, migrate, overwrite, or delete either record during normal rendering
@@ -158,16 +165,23 @@ copy-key, delete-key, and delete-history actions are separate and explicit. Copy
 
 ## Console, DOM, and error handling
 
-The reviewed V2 import, restore, and Diagnostics surfaces use closed safe codes, but that guarantee
-does not cover every inherited application path. Inherited raw console and server/API logging is a
-production privacy release blocker: established analysis/weather code can log activity values, and
-serverless provider routes can log provider response/error values. Safe Diagnostics does not make all application logs safe.
+R4/R5 reviewed the production server/client logging responsibility paths. They emit fixed events,
+safe copy, and non-identifying counts rather than raw activity/provider values, response/error
+text, identifiers, or platform causes. Current deterministic logging and privacy tests pass; this
+does not claim that a real account/private library or every future path has been exercised.
 
 Do not add `console.log(error)`, raw caught objects, provider responses, activity objects, storage
 records, identifiers, or filenames. User-facing recovery copy in a reviewed safe-code boundary must
 not echo a malicious filename or platform message. Use Diagnostics at `/diagnostics.html` and
 [Troubleshooting](./troubleshooting.md) instead of asking users to paste their full console or
 storage contents.
+
+## Current tree versus public Git history
+
+R3 removed the identified tracked identity from the current tree and the privacy guard passes.
+That deterministic current-tree result does not resolve the separate public Git history incident.
+Its disposition remains `BLOCKED` pending a privacy/security owner decision. This guide does not
+repeat the value and authorizes no history rewrite, force-push, or branch cleanup.
 
 ## Synthetic fixtures and browser evidence
 
