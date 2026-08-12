@@ -2,7 +2,9 @@
 
 This list distinguishes release blockers from accepted product/verification limitations. Passing
 unit tests, a merged PR, Draft-to-Ready, or a release-candidate document does not close a blocker.
-The authoritative item-level status is the [PR-24 release-gate ledger](../tasks/pr-24-release-documentation.md).
+The authoritative item-level current status is the
+[V2 release gates](../engineering/release-gates.md). PR-24 is preserved as point-in-time historical
+evidence and is not the live roadmap.
 
 ## Production release blockers
 
@@ -10,16 +12,30 @@ The authoritative item-level status is the [PR-24 release-gate ledger](../tasks/
 | --- | --- | --- |
 | No V2 release artifact | Package metadata remains `1.0.0`; there is no `v2.0.0-*` tag, GitHub Release, production deployment, or release-owner approval | Version/release decision, authorized tag/artifact/deployment, exact release evidence, owner approval |
 | Production Service Worker lifecycle | R9 admits only approved same-origin static assets; API/private/dynamic requests never enter cache handling. D3 has deterministic evidence for the waiting/drained lifecycle with current cache `stravastats-static-v2-000001`; `strava-dashboard-v1` is recognized as the preserved legacy cache, not treated as the current cache or blindly deleted. Production update, mixed-version, cold-offline, eviction, deployment, and rollback are not run | Rehearsed production-like worker/cache/deployment matrix without deleting user data |
-| Public Git-history incident disposition | R3 removed the tracked identity from the current tree and the privacy guard passes, but current-tree removal does not decide treatment of the public Git history | Privacy/security owner disposition; this docs task authorizes no history rewrite or value repetition |
-| Real account and private-library evidence | Auth lifecycle and imports pass deterministic synthetic tests; real OAuth, disconnect, private Legacy/V2 libraries, and real FIT/TCX/GPX/ZIP were not run | Private, authorized evidence outside Git with redacted public summary |
+| Real account and private-library evidence | Auth lifecycle and imports pass deterministic synthetic tests; real OAuth, disconnect, private Legacy/V2 libraries, and real FIT/TCX/GPX/CSV/ZIP were not run. G2 blocks RC for real Legacy rescue; G5/G6 remain `NOT RUN` | Separately authorized private evidence outside Git under the approved protocol, with redacted public summary |
 | Cross-browser support | Actual-served evidence is disposable Chromium/Chrome; Safari, Firefox, Windows, iOS/PWA, mobile, and broad assistive-technology matrices are not verified | Release matrix for supported browsers/platforms or an approved, time-bounded waiver |
-| Real parity and Shadow review | Projection and redacted Shadow reports pass synthetic tests; no real-library Legacy/Canonical parity or Shadow difference sign-off exists | Private parity review with owner decision and zero unresolved P0 discrepancy |
+| Real parity and Shadow review | Projection and redacted Shadow reports pass synthetic tests; G3 blocks RC for real parity and remains `PARTIAL` without real-library sign-off | Private parity review with zero unresolved P0 discrepancy and XiChuan9 explanation/sign-off for every non-P0 difference |
 | Full rollback rehearsal | Explicit Legacy/Shadow behavior is tested, but production deployment, Service Worker, backup, disconnect, and final rollback drill are not run together | Recorded end-to-end rollback exercise with owners and preserved data counts |
-| Performance budget/waiver | 5,000 activities and 200,000 points pass in disclosed synthetic environments; 10,000 activities and 1,000 FIT throughput remain record-only without an approved absolute budget or waiver | Approve thresholds or a time-bounded waiver, then record the retained environment and owner |
-| Defect closure | M22 completed a release-wide inventory and PR #57 closed the retained P0 explicit-Retry gap. P1-DOCS remains open until this reconciliation receives fresh no-findings review, Closure, and exact-head CI | Close this docs package, re-run the current-tree inventory, and obtain release-owner sign-off |
+| Performance budget/waiver | 5,000 activities and 200,000 points pass in disclosed synthetic environments; 10,000 activities and 1,000 FIT throughput remain record-only. XiChuan9 approved a time-bounded waiver through 2026-11-12 | Complete a representative real-hardware budget task before expiry; do not weaken correctness/privacy gates or claim performance `PASS` |
+| Final defect and release-head closure | PR #57 Retry closed deterministically. PR #58 P1-DOCS closed deterministically at `f7f18392...`; no unresolved deterministic P0/P1 was found there | G12 exact verification and a fresh zero-P0/P1 inventory on each future release head, followed by release-owner approval |
 
 These blockers are outside PR-24's docs-only authority. They must not be “fixed” by weakening a
 gate, deleting data, editing a test result, or describing unrun work as passed.
+
+## Accepted owner dispositions that are not evidence PASS
+
+- **R3 public Git history:** privacy/security owner XiChuan9 approved a no-rewrite risk acceptance
+  disposition after no evidence of credential exposure was found. Current-tree removal and the
+  regression guard remain mandatory. This is not erasure: the historical exposure was not removed
+  from public history, and this authorization permits no rewrite, force-push, ref/tag/Release/PR
+  deletion, value repetition, or external notification.
+- **Limited Alpha:** `v2.0.0-alpha.1` is a future limited local, non-production static Web bundle,
+  current macOS Chrome-only and explicitly synthetic-only. G2 and G3 are deferred to RC, not waived
+  or `PASS`. Public web Alpha, version bump, artifact build/publication, tag and Release remain
+  unauthorized.
+- **Private evidence protocol:** XiChuan9 is custodian. Raw Tokens/accounts/private files and browser
+  profiles never enter Git; only separately authorized disposable/isolated execution and permitted
+  redacted aggregate counts/statuses/hashes may be used. Protocol approval is not real-data access.
 
 ## Current product limitations (non-blocking for documentation)
 
@@ -109,8 +125,8 @@ external-service evidence was run for release.
 
 - The 5,000-activity and 200,000-point gates passed in the disclosed synthetic Chromium and Node
   environments.
-- 10,000 activities and 1,000 FIT throughput are record-only. No absolute release threshold or
-  approved waiver closes those rows.
+- 10,000 activities and 1,000 FIT throughput are record-only. The waiver through 2026-11-12 keeps
+  the rows `PARTIAL`, not `PASS`; a representative real-hardware budget task is due before expiry.
 - Browser Chart, Leaflet, and Canonical Store measurements disclose recording stubs. They do not
   constitute every-device production measurements.
 

@@ -5,7 +5,8 @@
 | Status | Integrated V2 code documentation; not an Alpha, Beta, Release Candidate, or production release |
 | Exact implementation baseline | `integration/v2@eb0b6695b5dbf618877ff794dbc76935babeb793` |
 | Package metadata | `1.0.0` (no V2 tag, GitHub Release, artifact, deployment, or release-owner approval) |
-| Current evidence ledger | [PR-24 historical ledger and current-tree supplement](./tasks/pr-24-release-documentation.md#superseding-current-tree-ledger) |
+| Current authoritative roadmap | [V2 release gates](./engineering/release-gates.md) |
+| Historical evidence | [PR-24 point-in-time ledger and supplement](./tasks/pr-24-release-documentation.md#superseding-current-tree-ledger) |
 
 This directory contains durable product, architecture, migration, testing, and per-PR evidence for
 the local-first V2 migration. Accepted ADRs, the PRD, engineering plan and release gates remain the
@@ -32,11 +33,9 @@ code lifecycle, C1-C4 Source Manager authorization/identity/provider/recovery co
 explicit Retry for eligible failed local imports. These are bounded code/test facts, not evidence
 that every release environment is complete.
 
-Release remains blocked on the separate R3 public Git history disposition; authorized real
-account/private-library/Disconnect/parity evidence; Safari, Firefox, Windows, iOS/PWA, mobile and
-broad accessibility evidence or waiver; production-like Service Worker/deployment/combined
-rollback rehearsal; performance budgets or waiver; version/tag/artifact; and release-owner
-approval.
+Use the [current authoritative release roadmap](./engineering/release-gates.md) for the exact
+remaining Alpha and full-`v2.0.0` paths, owner dispositions, evidence classes and non-`PASS` rows.
+PR-24 remains historical and must not be used as the live gate inventory.
 
 ## Authority and engineering
 
@@ -74,7 +73,7 @@ operator steps.
 - [Regression matrix](./testing/regression-matrix.md)
 - [Fixture policy](./testing/fixture-policy.md)
 - [Task Brief index](./tasks/README.md)
-- [PR-24 release-gate ledger](./tasks/pr-24-release-documentation.md)
+- [PR-24 historical release-gate ledger](./tasks/pr-24-release-documentation.md)
 
 Task Brief statuses capture their point-in-time workflow. A merged first-parent integration commit
 is stronger evidence of inclusion than stale phrases such as “Draft” or “Ready handoff pending” in
