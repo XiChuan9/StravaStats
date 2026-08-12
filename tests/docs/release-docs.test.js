@@ -413,6 +413,8 @@ test('canonical roadmap has the exact remaining A-F gate rows and no external PA
     }
     assert.match(gates, /Class A[\s\S]*Class B[\s\S]*Class C[\s\S]*Class D[\s\S]*Class E[\s\S]*Class F/);
     assert.match(gates, /\| Status \| Accepted \|/);
+    assert.match(gates, /`PASS deterministic`[\s\S]{0,80}`PASS verified`/);
+    assert.match(gates, /`PASS verified`[\s\S]{0,240}exact acceptance evidence[\s\S]{0,160}verifier\/owner[\s\S]{0,160}environment/i);
     for (const row of actualRows) {
         const columns = row.split('|').map(column => column.trim());
         assert.doesNotMatch(columns[3], /^PASS\b/i, `${columns[1]} external Result must not be PASS`);

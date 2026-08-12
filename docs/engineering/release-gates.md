@@ -16,11 +16,14 @@ product/architecture authority; Task Briefs and PR-24 preserve point-in-time evi
 Task Brief status, merged PR, green CI, Draft-to-Ready transition or synthetic browser record cannot
 promote a missing environmental or owner gate.
 
-Every gate records evidence, verifier/owner, date/environment, result and related task. The current
-result vocabulary is `PASS deterministic`, `PARTIAL`, `BLOCKED`, `NOT RUN`, `NOT APPLICABLE`, or
-`CLOSED BY DISPOSITION`. Only a specific bounded deterministic row may use `PASS deterministic`.
-`PARTIAL`, `BLOCKED` and `NOT RUN` are non-`PASS` states. A disposition closes a decision, not an
-unperformed test and not an erased historical fact.
+Every gate records evidence, verifier/owner, date/environment, result and related task. The result
+vocabulary is `PASS deterministic`, `PASS verified`, `PARTIAL`, `BLOCKED`, `NOT RUN`,
+`NOT APPLICABLE`, or `CLOSED BY DISPOSITION`. Only a specific bounded deterministic row may use
+`PASS deterministic`. An executed C/D/F or other environmental gate may use `PASS verified` only
+when its exact acceptance evidence, verifier/owner, date, environment and related task are recorded;
+it cannot be inferred from synthetic or earlier-head evidence. `PARTIAL`, `BLOCKED` and `NOT RUN`
+are non-`PASS` states. A disposition closes a decision, not an unperformed test and not an erased
+historical fact.
 
 ## 2. Authoritative current baseline
 
