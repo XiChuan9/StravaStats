@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | M34 / FINAL-ROADMAP |
-| Status | Approved for implementation |
+| Status | Final Review Closure complete; remote depth-one, exact-head CI, and Ready handoff pending |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/final-roadmap` |
 | Worktree | `/Users/wangchuanliang/.codex/worktrees/345f/StravaStats` |
@@ -471,5 +471,67 @@ package. Do not infer approval. Draft/Ready is review state only and is never me
 
 ## Completion evidence
 
-Pending A2 audit, frozen allowlist, failure-first repair, independent reviews, full verification,
-remote exact-head evidence, and final Closure.
+### Final Review Closure — 2026-08-12
+
+The findings-first audit and failure-first implementation are closed at implementation head
+`821f744`. This Closure changes only this Task Brief; its commit becomes the final candidate for the
+required true remote depth-one and exact-head CI gates.
+
+The focused test expanded from 13 to 19 cases. Before the release copy changed, the first expanded
+run produced 14 passes and five intended failures for the missing exact `f7f18392...` baseline,
+canonical A-F inventory, Alpha/full-V2 paths and current document authority. Repair then reached
+19/19. The independent review cycle found and fixed:
+
+- exact candidate/artifact verification and owner-approval order;
+- Beta/RC stage coverage and G8 waiver operation/expiry;
+- Accepted roadmap metadata and the five-path handling of the Privacy Guide's pre-M34 R3 sentence;
+- candidate freeze before environmental evidence and the structural external-`PASS` guard;
+- the `PASS verified` result for genuinely executed environmental gates; and
+- the explicit G8 waiver reason plus its impact, mitigation, owner, expiry and follow-up.
+
+The final fresh independent review at `821f744` reported no actionable findings and independently
+passed the focused suite, syntax, privacy, diff and all 1,919 tests.
+
+### Closed package
+
+```text
+exact base                         f7f18392dc28e1f1d6ed10c1d8cc0aa297ab7628
+exact base tree                    58b8339361991c5c34258be579733ccda3cbe066
+first Task-Brief-only commit       d4269eb
+owner-approval commit              a5c4da5
+implementation/review-repair head  821f744
+cumulative changed paths           exactly five; no sixth path
+focused failure-first              14/19 PASS, 5 intended FAIL
+focused repaired/final             PASS, 19/19
+npm ci                             PASS, 6 packages
+syntax                             PASS, 283 files
+privacy                            PASS
+full suite                         PASS, 1,919/1,919
+npm audit --omit=dev               PASS, 0 vulnerabilities
+git diff --check                   PASS
+independent findings-first review  findings repaired in bounded commits
+fresh independent re-review        no actionable findings
+```
+
+The final five paths are:
+
+```text
+docs/tasks/pr-47-final-v2-release-roadmap.md
+docs/engineering/release-gates.md
+docs/guides/known-limitations.md
+docs/README.md
+tests/docs/release-docs.test.js
+```
+
+PR #57 Retry and PR #58 P1-DOCS are closed only as deterministic code/documentation rows on the
+exact integration baseline. The canonical roadmap deliberately leaves real/private evidence,
+browser/platform/accessibility, production Service Worker/deployment/rollback, and version/artifact/
+tag/Release actions in their exact non-`PASS` states. R3 is closed by owner no-rewrite disposition,
+not by erasure. No real data, credential, private file or user profile was accessed; no product,
+schema, migration, package, workflow, Service Worker, cache, data, deployment, history, version,
+artifact, tag or Release state changed.
+
+Rollback remains a normal revert of this documentation/test series. It needs no data rewrite,
+cache deletion, deployment action or history rewrite. The Closure does not authorize merge or any
+release action. Draft-to-Ready is permitted only after the final Closure commit is pushed, a true
+remote depth-one checkout matches it and passes all gates, and GitHub CI succeeds on that exact head.
