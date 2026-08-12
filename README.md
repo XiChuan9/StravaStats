@@ -124,11 +124,12 @@ redacted events rather than raw causes, IDs, filenames, routes, GPS, heart-rate,
 responses, or payloads. This is deterministic current-tree evidence, not real-account or
 private-library verification.
 
-That local-first statement does **not** mean the complete application is fully offline. Current V2
-Source Manager provider I/O occurs only after explicit Connect or `Sync latest 25` and uses bounded
-same-origin routes; local import and local Canonical browsing do not call the provider. Legacy
-provider paths remain separate. Weather, map, and AI each have separate explicit consent
-boundaries and distinct external destinations.
+That local-first statement does **not** mean the complete application is fully offline. In the
+current V2 Source Manager, explicit Connect/Reconnect navigates to provider authorization. The
+callback exchange, explicit Disconnect revocation, and explicit `Sync latest 25` use separate
+bounded same-origin routes that perform the corresponding provider I/O. Local import and local
+Canonical browsing do not call the provider. Legacy provider paths remain separate. Weather, map,
+and AI each have separate explicit consent boundaries and distinct external destinations.
 
 Production runtime telemetry is disabled and visualization libraries are exact-version-pinned,
 integrity checked, and served same-origin; the visualization runtime makes no third-party CDN

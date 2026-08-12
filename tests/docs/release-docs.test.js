@@ -251,8 +251,12 @@ test('current release prose rejects superseded blockers and preserves external g
         readme,
         /current V2\s+Source Manager[\s\S]{0,160}(?:provider|same-origin)|(?:provider|same-origin)[\s\S]{0,160}current V2\s+Source Manager/i
     );
+    assert.match(readme, /Connect\/Reconnect[\s\S]{0,120}provider authorization/i);
+    assert.match(readme, /callback exchange[\s\S]{0,120}same-origin/i);
+    assert.match(readme, /Disconnect[\s\S]{0,120}(?:revoke|revocation)[\s\S]{0,120}same-origin/i);
+    assert.match(readme, /Sync latest 25[\s\S]{0,120}same-origin/i);
     assert.match(readme, /Legacy\s+provider/i);
-    assert.match(readme, /weather[^\n]*map[^\n]*AI[^\n]*(?:separate|consent)/i);
+    assert.match(readme, /weather[\s\S]{0,100}map[\s\S]{0,100}AI[\s\S]{0,100}(?:separate|consent)/i);
 
     assert.doesNotMatch(
         gates,

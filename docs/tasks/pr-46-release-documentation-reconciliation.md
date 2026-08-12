@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 release hardening / P1-DOCS |
-| Status | Option A nine-path repair complete; independent review pending |
+| Status | Independent findings repaired; fresh no-findings review pending |
 | Branch | `codex/v2/release-documentation-reconciliation` |
 | Exact base | `integration/v2@eb0b6695b5dbf618877ff794dbc76935babeb793` |
 | Exact base tree | `6cdee026ec61604e016c20204e722816264a9f0c` |
@@ -215,6 +215,13 @@ Markdown line wrapping initially exposed three bounded test-regex defects after 
 Those assertions were corrected to accept whitespace/newlines without weakening the required facts;
 the final focused result remains `13/13`. No production source, package, workflow, schema, Service
 Worker, deployment configuration, private data, provider or browser profile was used or changed.
+
+The post-commit independent findings-first review found one P1 copy/test gap: the Source Manager
+paragraph conflated direct Connect/Reconnect provider authorization with the same-origin callback
+exchange, and omitted Disconnect revocation from the network inventory. A new direct assertion
+failed `1/13` against that wording. The bounded repair now distinguishes provider authorization,
+callback exchange, Disconnect revocation, and `Sync latest 25`; it also preserves the separate
+Legacy and weather/map/AI boundaries. No other actionable finding was reported.
 
 ## Failure-first and verification contract
 
