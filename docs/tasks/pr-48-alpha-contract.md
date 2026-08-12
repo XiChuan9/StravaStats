@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | M35 / G1 ALPHA-CONTRACT |
-| Status | A2 findings and literal allowlist frozen; failure-first implementation authorized |
+| Status | Final Review Closure complete; remote depth-one, exact-head CI and Ready handoff pending |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/alpha-contract` |
 | Worktree | `/Users/wangchuanliang/.codex/worktrees/3282/StravaStats` |
@@ -183,6 +183,82 @@ to hash `PROVENANCE.json`; G12 instead records the SHA-256 of the complete manif
 container in external candidate-verification evidence. A semantic regression assertion extracts the
 provenance rule, rejects reintroduction of a circular digest and requires the acyclic external record.
 A fresh independent no-findings review is required before Closure.
+
+## Final Review Closure — 2026-08-12
+
+The fresh independent read-only re-review inspected exact implementation/review-fix head
+`6c8d6d984b5423dcc9fc5884a51c2ddb8afc7dec` and reported no actionable P0/P1/P2 findings. It
+confirmed that the digest graph is now acyclic, the regression assertion detects the original
+circular field, the PRD/M34/runtime/privacy/rollback claims remain aligned and the exact three-path
+scope is clean.
+
+### Commit and scope evidence
+
+```text
+Task-Brief-only first commit  239c1ea89350ef2f5c3da135aef15bd2dce62c28
+A2 scope-freeze commit        71600ff2572d1d613b394c97e21f2d4079274123
+implementation commit         145f5f0b07d13eb1f02a36ed57f7d5d597a3873a
+independent-review fix        6c8d6d984b5423dcc9fc5884a51c2ddb8afc7dec
+changed paths                 exactly 3/3 frozen allowlist paths
+prohibited paths              0
+package/version/lock changes  0
+product/workflow/SW/deploy    0
+artifact/tag/Release actions  0
+```
+
+The only cumulative changed paths are:
+
+```text
+docs/tasks/pr-48-alpha-contract.md
+docs/engineering/release-gates.md
+tests/docs/release-docs.test.js
+```
+
+This Closure changes only this Task Brief. It does not widen the allowlist or alter the accepted
+contract.
+
+### Post-fix local verification
+
+```text
+npm ci                            PASS; 6 packages
+focused docs contract             PASS; 24/24
+npm run check:syntax              PASS; 283 files
+npm run check:privacy             PASS
+npm test                          PASS; 1,924/1,924
+npm audit                         PASS; 0 vulnerabilities
+git diff --check                  PASS
+literal changed-path gate         PASS; exactly 3/3 allowed paths
+independent findings-first review first pass: one P1, repaired
+fresh independent re-review       PASS; no actionable P0/P1/P2 findings
+```
+
+The full suite was run outside the loopback-restricted sandbox because two existing tests bind
+`127.0.0.1`; all 1,924 tests passed. No real account, Token, provider, private file/activity, user
+browser profile, Service Worker, cache, deployment or data surface was used.
+
+### Migration, privacy and rollback impact
+
+- Migration/data: documentation and tests only; no schema, IndexedDB, LocalStorage, Cache Storage,
+  settings, Legacy or V2 record was read, written, cleared, migrated or overwritten.
+- Privacy: no credentials or identifiable athlete material was accessed or committed. The contract
+  requires synthetic-only Alpha evidence and zero real provider/private/external activity.
+- Rollback: reverting this PR changes only the Alpha decision documentation/tests. A future Alpha
+  withdrawal stops sharing or replaces only the named artifact and never clears Legacy, V2, Cache
+  Storage, settings or user libraries. Legacy startup/feature-flag rollback remains unchanged.
+- Compatibility: no runtime or data-contract code changed; opaque string IDs and absent/null/zero
+  semantics remain untouched.
+
+### Explicitly unrun and still unauthorized
+
+No Alpha candidate, bundle, `PROVENANCE.json`, `SHA256SUMS`, browser matrix, G12 verification, package
+version, tag, GitHub Release, publication, deployment, Service Worker rehearsal, real Legacy rescue,
+real parity/Shadow sign-off, provider/account evidence or private-library evidence was created or
+run. G2/G5/G6/G12 remain `NOT RUN`; G3/G8 remain `PARTIAL`; G7/G9/G10/G13 remain `BLOCKED`.
+
+The Closure commit must now be pushed and verified from a true remote depth-one checkout with the
+focused, syntax, privacy, full, audit, diff and path gates. GitHub Actions must succeed on that exact
+Closure head before Draft PR #60 may be marked Ready. Ready remains open/unmerged review state and
+does not authorize Squash Merge, cleanup or any G13 release action.
 
 ## Required Alpha acceptance contract
 
