@@ -9,7 +9,10 @@ import {
     createImportService,
     createInlineImportWorker
 } from '../../js/import/index.js';
-import { recoverImportServiceJob } from '../../js/import/import-service.js';
+import {
+    inspectImportServiceRetryJobs,
+    recoverImportServiceJob
+} from '../../js/import/import-service.js';
 import { createSourceManagerRecoveryController } from
     '../../js/app/source-manager-recovery.js';
 import {
@@ -100,6 +103,24 @@ class SyntheticLocks {
     }
 }
 
+class DelayedLocks extends SyntheticLocks {
+    constructor() {
+        super();
+        this.gate = new Promise(resolve => { this.releaseRequest = resolve; });
+    }
+    async request(name, options, callback) {
+        this.requests.push({ name, options });
+        await this.gate;
+        if (this.held) return callback(null);
+        this.held = true;
+        try {
+            return await callback(Object.freeze({ name, mode: 'exclusive' }));
+        } finally {
+            this.held = false;
+        }
+    }
+}
+
 function timers() {
     const pending = [];
     return {
@@ -124,11 +145,36 @@ function uuidSequence() {
     return { randomUUID: () => values[index++] ?? values.at(-1) };
 }
 
+function retryGateWorker() {
+    const inline = createInlineImportWorker();
+    let calls = 0;
+    let reached;
+    let release;
+    const reachedGate = new Promise(resolve => { reached = resolve; });
+    const gate = new Promise(resolve => { release = resolve; });
+    return {
+        reached: reachedGate,
+        release,
+        worker: {
+            async process(input) {
+                calls += 1;
+                if (calls === 1) throw new Error('synthetic initial failure');
+                reached();
+                await gate;
+                return inline.process(input);
+            },
+            close() { inline.close(); }
+        }
+    };
+}
+
 async function harness({
     indexedDB = new IDBFactory(),
     locks = new SyntheticLocks(),
     initialNow = START_MS,
     failHeartbeat = false,
+    failPrepareCode = null,
+    worker = createInlineImportWorker(),
     cancelProviderAcquisition = async () => undefined,
     advanceProviderHistory = async () => false
 } = {}) {
@@ -144,7 +190,7 @@ async function harness({
     });
     const service = createImportService({
         importStore,
-        worker: createInlineImportWorker(),
+        worker,
         crypto: webcrypto,
         createId: kind => `recovery:${kind}:${++sequence}`
     });
@@ -159,9 +205,10 @@ async function harness({
         importArtifacts: (...args) => service.importArtifacts(...args),
         cancelJob: jobId => service.cancelJob(jobId),
         waitForJob: jobId => service.waitForJob(jobId),
-        recoverJob: jobId => recoverImportServiceJob(service, jobId)
+        recoverJob: jobId => recoverImportServiceJob(service, jobId),
+        inspectRetryJobs: () => inspectImportServiceRetryJobs(service)
     });
-    const controllerOperationStore = failHeartbeat
+    const controllerOperationStore = failHeartbeat || failPrepareCode !== null
         ? Object.freeze({
             initialize: (...args) => operationStore.initialize(...args),
             getOperation: (...args) => operationStore.getOperation(...args),
@@ -169,6 +216,9 @@ async function harness({
             heartbeatOperation: async () => {
                 throw Object.freeze({ code: 'CONFLICT' });
             },
+            prepareRetryOperation: failPrepareCode === null
+                ? (...args) => operationStore.prepareRetryOperation(...args)
+                : async () => { throw Object.freeze({ code: failPrepareCode }); },
             beginHistoryCommit: (...args) => operationStore.beginHistoryCommit(...args),
             completeOperation: (...args) => operationStore.completeOperation(...args),
             listOrphanImportJobs: (...args) => operationStore.listOrphanImportJobs(...args),
@@ -242,9 +292,10 @@ async function createLinkedCrash(value, {
 test('initialization is read-only, creates one document owner, and exposes only redacted state', async () => {
     const value = await harness();
     assert.deepEqual(Object.keys(value.controller), [
-        'initialize', 'getRecoveryState', 'refresh', 'runLocalImport',
+        'initialize', 'getRecoveryState', 'getRetryState', 'listImportLog',
+        'refresh', 'runLocalImport',
         'runProviderSync', 'importArtifacts', 'beginHistoryCommit',
-        'recover', 'abandon', 'close'
+        'recover', 'abandon', 'retry', 'cancelRetry', 'close'
     ]);
     assert.equal((await value.controller.initialize()).status, 'idle');
     assert.equal(value.locks.requests.length, 0);
@@ -278,6 +329,342 @@ test('one exclusive lock covers atomic local job link through terminal completio
     assert.equal(operation.ownerId, null);
     assert.equal(operation.jobId, null);
     await value.controller.close();
+    await value.service.close();
+});
+
+test('explicit Retry uses one ephemeral handle and one exclusive atomic operation', async () => {
+    const inline = createInlineImportWorker();
+    let calls = 0;
+    const value = await harness({
+        worker: {
+            async process(input) {
+                calls += 1;
+                if (calls === 1) throw new Error('private retry failure');
+                return inline.process(input);
+            },
+            close() { inline.close(); }
+        }
+    });
+    const started = await value.service.importArtifacts([{
+        mediaType: SYNTHETIC_JSON_MEDIA_TYPE,
+        content: JSON.stringify(bundle())
+    }]);
+    assert.equal((await value.service.waitForJob(started.jobId)).status, 'failed_decode');
+    await value.controller.initialize();
+    const log = await value.controller.listImportLog();
+    assert.equal(log.length, 1);
+    assert.equal(log[0].retry.available, true);
+    assert.match(log[0].retry.handle, /^retry-[1-9][0-9]*-[1-9][0-9]*$/);
+    assert.equal(Object.hasOwn(log[0].report, 'jobId'), false);
+    const staleHandle = log[0].retry.handle;
+    const rebuilt = await value.controller.listImportLog();
+    assert.notEqual(rebuilt[0].retry.handle, staleHandle);
+    await assert.rejects(
+        value.controller.retry(staleHandle),
+        error => error.code === 'RETRY_NOT_ELIGIBLE'
+    );
+    const actionable = await value.controller.listImportLog();
+    const report = await value.controller.retry(actionable[0].retry.handle);
+    assert.equal(report.status, 'completed');
+    assert.equal(value.controller.getRetryState().code, 'RETRY_COMPLETED');
+    assert.equal(value.locks.requests.length, 1);
+    const operation = await value.operationStore.getOperation();
+    assert.equal(operation.status, 'idle');
+    assert.equal(operation.lastAction, 'completed');
+    assert.equal(operation.lastResultCode, null);
+    await assert.rejects(
+        value.controller.retry(staleHandle),
+        error => error.code === 'RETRY_NOT_ELIGIBLE'
+    );
+    await value.controller.close();
+    await value.service.close();
+});
+
+test('immediate explicit Retry cancellation latches until the internal job becomes active', async () => {
+    const inline = createInlineImportWorker();
+    let calls = 0;
+    const value = await harness({
+        worker: {
+            async process(input) {
+                calls += 1;
+                if (calls === 1) throw new Error('synthetic initial failure');
+                return inline.process(input);
+            },
+            close() { inline.close(); }
+        }
+    });
+    const started = await value.service.importArtifacts([{
+        mediaType: SYNTHETIC_JSON_MEDIA_TYPE,
+        content: JSON.stringify(bundle())
+    }]);
+    assert.equal((await value.service.waitForJob(started.jobId)).status, 'failed_decode');
+    await value.controller.initialize();
+    const log = await value.controller.listImportLog();
+    const running = value.controller.retry(log[0].retry.handle);
+    while (value.controller.getRetryState().status !== 'running') {
+        await new Promise(resolve => setImmediate(resolve));
+    }
+    assert.deepEqual(await value.controller.cancelRetry(), {
+        status: 'cancellation-requested'
+    });
+    assert.equal((await running).status, 'cancelled');
+    assert.equal(value.controller.getRetryState().code, 'RETRY_CANCELLED');
+    assert.equal((await value.operationStore.getOperation()).lastAction, 'failed');
+    await value.controller.close();
+    await value.service.close();
+});
+
+test('Cancel latches before an asynchronous Web Lock callback begins', async () => {
+    const locks = new DelayedLocks();
+    const inline = createInlineImportWorker();
+    let calls = 0;
+    const value = await harness({
+        locks,
+        worker: {
+            async process(input) {
+                calls += 1;
+                if (calls === 1) throw new Error('synthetic initial failure');
+                return inline.process(input);
+            },
+            close() { inline.close(); }
+        }
+    });
+    const started = await value.service.importArtifacts([{
+        mediaType: SYNTHETIC_JSON_MEDIA_TYPE,
+        content: JSON.stringify(bundle())
+    }]);
+    assert.equal((await value.service.waitForJob(started.jobId)).status, 'failed_decode');
+    await value.controller.initialize();
+    const log = await value.controller.listImportLog();
+    const running = value.controller.retry(log[0].retry.handle);
+    assert.equal(value.controller.getRetryState().status, 'running');
+    assert.deepEqual(await value.controller.cancelRetry(), {
+        status: 'cancellation-requested'
+    });
+    locks.releaseRequest();
+    assert.equal((await running).status, 'cancelled');
+    assert.equal(value.controller.getRetryState().code, 'RETRY_CANCELLED');
+    assert.equal((await value.operationStore.getOperation()).lastAction, 'failed');
+    await value.controller.close();
+    await value.service.close();
+});
+
+test('close before an asynchronous Web Lock callback performs zero Retry mutation', async () => {
+    const locks = new DelayedLocks();
+    let calls = 0;
+    const value = await harness({
+        locks,
+        worker: {
+            async process() {
+                calls += 1;
+                throw new Error('synthetic initial failure');
+            },
+            close() {}
+        }
+    });
+    const started = await value.service.importArtifacts([{
+        mediaType: SYNTHETIC_JSON_MEDIA_TYPE,
+        content: JSON.stringify(bundle())
+    }]);
+    assert.equal((await value.service.waitForJob(started.jobId)).status, 'failed_decode');
+    const beforeJob = await value.importStore.getImportJob(started.jobId);
+    const beforeItems = await value.importStore.listImportItems(started.jobId);
+    await value.controller.initialize();
+    const log = await value.controller.listImportLog();
+    const running = value.controller.retry(log[0].retry.handle);
+    const rejected = assert.rejects(
+        running,
+        error => error.code === 'RETRY_CANCELLED'
+    );
+    const closing = value.controller.close();
+    locks.releaseRequest();
+    await rejected;
+    await closing;
+    assert.equal(calls, 1);
+    assert.deepEqual(await value.importStore.getImportJob(started.jobId), beforeJob);
+    assert.deepEqual(await value.importStore.listImportItems(started.jobId), beforeItems);
+    assert.equal(value.controller.getRetryState().status, 'closed');
+    await value.service.close();
+});
+
+test('atomic Retry prepare quota stays a SourceOperation storage failure with no Import mutation', async () => {
+    let calls = 0;
+    const value = await harness({
+        failPrepareCode: 'QUOTA_EXCEEDED',
+        worker: {
+            async process() {
+                calls += 1;
+                throw new Error('synthetic initial failure');
+            },
+            close() {}
+        }
+    });
+    const started = await value.service.importArtifacts([{
+        mediaType: SYNTHETIC_JSON_MEDIA_TYPE,
+        content: JSON.stringify(bundle())
+    }]);
+    assert.equal((await value.service.waitForJob(started.jobId)).status, 'failed_decode');
+    const beforeJob = await value.importStore.getImportJob(started.jobId);
+    const beforeItems = await value.importStore.listImportItems(started.jobId);
+    await value.controller.initialize();
+    const log = await value.controller.listImportLog();
+    await assert.rejects(
+        value.controller.retry(log[0].retry.handle),
+        error => error.code === 'SOURCE_OPERATION_STORAGE_FAILED'
+    );
+    assert.equal(calls, 1);
+    assert.deepEqual(await value.importStore.getImportJob(started.jobId), beforeJob);
+    assert.deepEqual(await value.importStore.listImportItems(started.jobId), beforeItems);
+    assert.equal((await value.operationStore.getOperation()).status, 'idle');
+    await value.controller.close();
+    await value.service.close();
+});
+
+test('atomic Retry prepare schema mismatch fails closed as Retry unavailable', async () => {
+    let calls = 0;
+    const value = await harness({
+        failPrepareCode: 'SCHEMA_MISMATCH',
+        worker: {
+            async process() {
+                calls += 1;
+                throw new Error('synthetic initial failure');
+            },
+            close() {}
+        }
+    });
+    const started = await value.service.importArtifacts([{
+        mediaType: SYNTHETIC_JSON_MEDIA_TYPE,
+        content: JSON.stringify(bundle())
+    }]);
+    assert.equal((await value.service.waitForJob(started.jobId)).status, 'failed_decode');
+    const beforeJob = await value.importStore.getImportJob(started.jobId);
+    const beforeItems = await value.importStore.listImportItems(started.jobId);
+    await value.controller.initialize();
+    const log = await value.controller.listImportLog();
+    await assert.rejects(
+        value.controller.retry(log[0].retry.handle),
+        error => error.code === 'RETRY_UNAVAILABLE'
+    );
+    assert.equal(calls, 1);
+    assert.deepEqual(await value.importStore.getImportJob(started.jobId), beforeJob);
+    assert.deepEqual(await value.importStore.listImportItems(started.jobId), beforeItems);
+    assert.equal((await value.operationStore.getOperation()).status, 'idle');
+    await value.controller.close();
+    await value.service.close();
+});
+
+test('Import Log rebuild during Retry preserves cancellation and publishes no second handle', async () => {
+    const gated = retryGateWorker();
+    const value = await harness({ worker: gated.worker });
+    const started = await value.service.importArtifacts([{
+        mediaType: SYNTHETIC_JSON_MEDIA_TYPE,
+        content: JSON.stringify(bundle())
+    }]);
+    assert.equal((await value.service.waitForJob(started.jobId)).status, 'failed_decode');
+    await value.controller.initialize();
+    const log = await value.controller.listImportLog();
+    const running = value.controller.retry(log[0].retry.handle);
+    await gated.reached;
+    const refreshed = await value.controller.listImportLog();
+    assert.deepEqual(refreshed, []);
+    assert.equal(value.controller.getRetryState().status, 'running');
+    assert.equal(value.controller.getRetryState().actions.cancel, true);
+    await value.controller.cancelRetry();
+    gated.release();
+    assert.equal((await running).status, 'cancelled');
+    await value.controller.close();
+    await value.service.close();
+});
+
+test('two controllers enforce Retry Web Lock exclusion and consume the losing handle', async () => {
+    const indexedDB = new IDBFactory();
+    const locks = new SyntheticLocks();
+    const gated = retryGateWorker();
+    const first = await harness({ indexedDB, locks, worker: gated.worker });
+    const started = await first.service.importArtifacts([{
+        mediaType: SYNTHETIC_JSON_MEDIA_TYPE,
+        content: JSON.stringify(bundle())
+    }]);
+    assert.equal((await first.service.waitForJob(started.jobId)).status, 'failed_decode');
+    const second = await harness({ indexedDB, locks });
+    await first.controller.initialize();
+    await second.controller.initialize();
+    const firstLog = await first.controller.listImportLog();
+    const secondLog = await second.controller.listImportLog();
+    const running = first.controller.retry(firstLog[0].retry.handle);
+    await gated.reached;
+    await assert.rejects(
+        second.controller.retry(secondLog[0].retry.handle),
+        error => error.code === 'SOURCE_OPERATION_ACTIVE'
+    );
+    await assert.rejects(
+        second.controller.retry(secondLog[0].retry.handle),
+        error => error.code === 'RETRY_NOT_ELIGIBLE'
+    );
+    assert.equal(locks.requests[1].options.ifAvailable, true);
+    assert.equal(Object.hasOwn(locks.requests[1].options, 'steal'), false);
+    gated.release();
+    assert.equal((await running).status, 'completed');
+    await first.controller.close();
+    await second.controller.close();
+    await first.service.close();
+    await second.service.close();
+});
+
+test('Retry heartbeat CAS loss cancels work and leaves the active row for C4', async () => {
+    const gated = retryGateWorker();
+    const value = await harness({ worker: gated.worker, failHeartbeat: true });
+    const started = await value.service.importArtifacts([{
+        mediaType: SYNTHETIC_JSON_MEDIA_TYPE,
+        content: JSON.stringify(bundle())
+    }]);
+    assert.equal((await value.service.waitForJob(started.jobId)).status, 'failed_decode');
+    await value.controller.initialize();
+    const log = await value.controller.listImportLog();
+    const running = value.controller.retry(log[0].retry.handle);
+    await gated.reached;
+    value.setNow(START_MS + 15_000);
+    value.clock.pending.at(-1).callback();
+    await new Promise(resolve => setImmediate(resolve));
+    gated.release();
+    await assert.rejects(
+        running,
+        error => error.code === 'SOURCE_OPERATION_CONFLICT'
+    );
+    const operation = await value.operationStore.getOperation();
+    assert.equal(operation.status, 'active');
+    assert.notEqual(operation.ownerId, null);
+    await value.controller.close();
+    await value.service.close();
+});
+
+test('orderly close during Retry cancels, waits, and leaves the controller closed', async () => {
+    const gated = retryGateWorker();
+    const indexedDB = new IDBFactory();
+    const value = await harness({ indexedDB, worker: gated.worker });
+    const started = await value.service.importArtifacts([{
+        mediaType: SYNTHETIC_JSON_MEDIA_TYPE,
+        content: JSON.stringify(bundle())
+    }]);
+    assert.equal((await value.service.waitForJob(started.jobId)).status, 'failed_decode');
+    await value.controller.initialize();
+    const log = await value.controller.listImportLog();
+    const running = value.controller.retry(log[0].retry.handle);
+    await gated.reached;
+    const closing = value.controller.close();
+    gated.release();
+    assert.equal((await running).status, 'cancelled');
+    assert.deepEqual(await closing, { status: 'closed' });
+    assert.equal(value.controller.getRetryState().status, 'closed');
+    const verifier = createSourceOperationStore({
+        indexedDB,
+        IDBKeyRange,
+        now: () => START_MS,
+        applicationVersion: 'recovery-close-verifier@1'
+    });
+    await verifier.initialize();
+    assert.equal((await verifier.getOperation()).status, 'idle');
+    await verifier.close();
     await value.service.close();
 });
 
@@ -405,7 +792,29 @@ test('missing coordination capabilities keep every operation action at fixed una
             importArtifacts: () => Promise.reject(new Error()),
             cancelJob: () => Promise.resolve(),
             waitForJob: () => Promise.resolve(),
-            recoverJob: () => Promise.resolve()
+            recoverJob: () => Promise.resolve(),
+            inspectRetryJobs: async () => Object.freeze([Object.freeze({
+                jobId: 'private-durable-job-id',
+                report: Object.freeze({
+                    schemaVersion: 1,
+                    status: 'failed_decode',
+                    totals: Object.freeze({
+                        total: 1,
+                        completed: 0,
+                        reviewRequired: 0,
+                        skippedExactDuplicate: 0,
+                        failed: 1,
+                        cancelled: 0
+                    }),
+                    items: Object.freeze([Object.freeze({
+                        ordinal: 0,
+                        outcome: 'failed_decode',
+                        errorCode: 'WORKER_CRASHED',
+                        retryable: true
+                    })])
+                }),
+                eligibility: 'eligible'
+            })])
         }),
         locks: null,
         crypto: uuidSequence(),
@@ -420,6 +829,11 @@ test('missing coordination capabilities keep every operation action at fixed una
     const initialized = await controller.initialize();
     assert.equal(initialized.status, 'unavailable');
     assert.equal(initialized.code, 'SOURCE_OPERATION_UNAVAILABLE');
+    const log = await controller.listImportLog();
+    assert.equal(log[0].retry.available, false);
+    assert.equal(log[0].retry.code, 'RETRY_UNAVAILABLE');
+    assert.equal(log[0].retry.handle, null);
+    assert.doesNotMatch(JSON.stringify(log), /private-durable-job-id/);
     for (const action of [
         () => controller.runLocalImport(async () => undefined),
         () => controller.runProviderSync(async () => undefined)

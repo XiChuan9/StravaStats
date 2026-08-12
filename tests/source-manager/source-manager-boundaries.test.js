@@ -149,6 +149,40 @@ test('page consumer does not select storage/provider/auth or disclose raw inputs
     assert.match(page, /`\$\{kind\.toUpperCase\(\)\} file \$\{ordinal \+ 1\}`/);
 });
 
+test('PR-45 Retry stays internal, redacted, Demo-free, and within the eleven-path ceiling', async () => {
+    const brief = await source('docs/tasks/pr-45-source-manager-explicit-retry.md');
+    const app = await source('js/app/source-manager.js');
+    const page = await source('js/pages/source-manager/source-manager.js');
+    const importIndex = await source('js/import/index.js');
+    const allowed = [
+        'docs/tasks/pr-45-source-manager-explicit-retry.md',
+        'js/app/source-manager-recovery.js',
+        'js/app/source-manager.js',
+        'js/import/import-service.js',
+        'js/pages/source-manager/source-manager.js',
+        'js/storage/source-operation-store.js',
+        'tests/import/import-core.test.js',
+        'tests/source-manager/source-manager-boundaries.test.js',
+        'tests/source-manager/source-manager-browser-smoke.html',
+        'tests/source-manager/source-manager-recovery.test.js',
+        'tests/storage/source-operation-store.test.js'
+    ];
+    assert.equal(new Set(allowed).size, 11);
+    for (const path of allowed) assert.equal(brief.includes(path), true, path);
+    assert.match(brief, /eleven-path hard maximum/i);
+    assert.match(app, /inspectImportServiceRetryJobs/);
+    assert.match(app, /recoverImportServiceJob/);
+    assert.doesNotMatch(app, /service\.retryJob\(/);
+    assert.doesNotMatch(importIndex, /inspectImportServiceRetryJobs/);
+    assert.doesNotMatch(importIndex, /recoverImportServiceJob/);
+    assert.match(page, /const handle = entry\.retry\.handle;/);
+    assert.doesNotMatch(page, /dataset\.[A-Za-z]*retry|setAttribute\([^\n]*handle/);
+    assert.match(page, /RETRY_AVAILABLE: 'This failed import can be retried from its preserved local bytes\.'/);
+    assert.match(page, /RETRY_FAILED: 'The failed import could not be completed\. Previously committed items were kept\.'/);
+    const demoFacade = app.match(/function demoFacade\(\) \{[\s\S]*?\n\}/)?.[0] ?? '';
+    assert.doesNotMatch(demoFacade, /retry|Retry|operationStore|locks|Worker/);
+});
+
 test('composition root uses only existing public Import/V2 boundaries and keeps Demo isolated', async () => {
     const app = await source('js/app/source-manager.js');
     assert.match(app, /createImportService/);

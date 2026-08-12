@@ -78,6 +78,17 @@
             throw new Error(code);
         }
 
+        async function waitForAsync(check, code, timeout = 20_000) {
+            const started = performance.now();
+            while (performance.now() - started < timeout) {
+                let value = null;
+                try { value = await check(); } catch { value = null; }
+                if (value) return value;
+                await new Promise(resolve => setTimeout(resolve, 25));
+            }
+            throw new Error(code);
+        }
+
         function request(request) {
             return new Promise((resolve, reject) => {
                 request.onsuccess = () => resolve(request.result);
@@ -458,6 +469,385 @@
             }
         }
 
+        function retryBundle(activityId) {
+            return {
+                schemaVersion: 1,
+                activity: {
+                    schemaVersion: 1,
+                    id: activityId,
+                    sportCategory: 'run',
+                    sportVariant: null,
+                    startTimeUtc: '2026-08-12T01:02:03.004Z',
+                    timeZone: { ianaName: 'Etc/UTC', utcOffsetMinutes: 0 },
+                    capabilities: {
+                        hasGps: false,
+                        hasHeartRate: false,
+                        hasPower: false,
+                        hasCadence: false,
+                        hasLaps: false
+                    },
+                    name: 'Synthetic Retry Evidence',
+                    distanceMeters: 0,
+                    movingTimeSeconds: 0,
+                    elapsedTimeSeconds: 0,
+                    extensions: {
+                        privateFilename: 'private-athlete-retry.fit',
+                        privatePath: '/private/athlete/retry.fit',
+                        coordinateCanary: '37.123456,-122.654321',
+                        healthCanary: 'heart-rate-private-199',
+                        powerCanary: 'power-private-777',
+                        tokenCanary: 'Bearer synthetic-private-token',
+                        providerCanary: 'private-provider-response'
+                    }
+                },
+                streams: { activityId, series: [] },
+                laps: [],
+                events: [],
+                sources: [{
+                    id: `${activityId}:source`,
+                    activityId,
+                    provider: 'synthetic-provider',
+                    acquisitionMethod: 'synthetic-import',
+                    deviceId: null,
+                    importedAt: '2026-08-12T01:02:03.004Z'
+                }],
+                devices: [],
+                warnings: [],
+                versionMetadata: {
+                    schemaVersion: 1,
+                    parserVersion: 'retry-browser-evidence@1',
+                    normalizerVersion: 'retry-browser-evidence@1',
+                    analysisVersion: null,
+                    settingsVersion: 'retry-browser-evidence@1',
+                    inputHash: null
+                }
+            };
+        }
+
+        async function retryArtifact(content) {
+            const bytes = encoder.encode(content);
+            const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+            const sha256 = Array.from(digest, value => value.toString(16).padStart(2, '0')).join('');
+            return {
+                id: `raw:${sha256}`,
+                sha256,
+                mediaType: 'application/vnd.stravastats.synthetic+json',
+                byteLength: bytes.byteLength,
+                content,
+                acquiredVia: 'local-file',
+                importedAt: new Date().toISOString(),
+                state: 'pending',
+                activityId: null
+            };
+        }
+
+        async function seedRetryJob({ jobId, itemPrefix, itemCount = 1, withBytes = true }) {
+            const content = JSON.stringify(retryBundle(`synthetic:${jobId}:activity`));
+            const artifact = await retryArtifact(content);
+            const database = await request(indexedDB.open(V2_NAME));
+            const tx = database.transaction(
+                ['importJobs', 'importItems', 'rawArtifacts'],
+                'readwrite'
+            );
+            const completedAt = new Date().toISOString();
+            tx.objectStore('importJobs').put({
+                id: jobId,
+                status: 'failed_decode',
+                totalItems: itemCount,
+                completedItems: itemCount,
+                createdAt: completedAt,
+                completedAt,
+                retryCount: 0,
+                errorCode: 'WORKER_CRASHED'
+            });
+            for (let ordinal = 0; ordinal < itemCount; ordinal += 1) {
+                tx.objectStore('importItems').put({
+                    id: `${itemPrefix}-${ordinal + 1}`,
+                    jobId,
+                    ordinal,
+                    artifactId: artifact.id,
+                    status: 'failed_decode',
+                    errorCode: 'WORKER_CRASHED',
+                    retryable: true,
+                    activityId: null
+                });
+            }
+            if (withBytes) tx.objectStore('rawArtifacts').put(artifact);
+            await transaction(tx);
+            database.close();
+            return artifact;
+        }
+
+        async function readRetryRecord(storeName, id) {
+            const database = await request(indexedDB.open(V2_NAME));
+            const tx = database.transaction(storeName, 'readonly');
+            const value = await request(tx.objectStore(storeName).get(id));
+            await transaction(tx);
+            database.close();
+            return value;
+        }
+
+        async function writeOperation(record) {
+            const database = await request(indexedDB.open(V2_NAME));
+            const tx = database.transaction('sourceOperations', 'readwrite');
+            tx.objectStore('sourceOperations').put(record);
+            await transaction(tx);
+            database.close();
+        }
+
+        async function reload(frame) {
+            const loaded = new Promise(resolve => { frame.onload = resolve; });
+            frame.contentWindow.location.reload();
+            await loaded;
+        }
+
+        async function runRetryEvidence() {
+            let evidenceFrame = null;
+            let evidenceSecond = null;
+            let evidenceDemo = null;
+            try {
+                await ensureSentinel();
+                const sentinelBefore = await sentinelSnapshot();
+                evidenceFrame = await createFrame('real');
+                const eligibleJob = 'private-durable-job-eligible';
+                const eligibleItem = 'private-durable-item-eligible';
+                const artifact = await seedRetryJob({
+                    jobId: eligibleJob,
+                    itemPrefix: eligibleItem
+                });
+                await reload(evidenceFrame);
+                let doc = evidenceFrame.contentDocument;
+                await waitFor(
+                    () => doc.querySelector('.report-card__retry-actions button'),
+                    'RETRY_RELOAD_RECONSTRUCTION_TIMEOUT'
+                );
+                const beforeReload = await readRetryRecord('importJobs', eligibleJob);
+                assert(beforeReload.status === 'failed_decode', 'RELOAD_NO_AUTO_RETRY_STATUS');
+                assert(beforeReload.retryCount === 0, 'RELOAD_NO_AUTO_RETRY_COUNT');
+                await reload(evidenceFrame);
+                doc = evidenceFrame.contentDocument;
+                const retryButton = await waitFor(
+                    () => doc.querySelector('.report-card__retry-actions button'),
+                    'RETRY_ELIGIBLE_TIMEOUT'
+                );
+                const serialized = doc.documentElement.outerHTML;
+                for (const forbidden of [
+                    eligibleJob,
+                    eligibleItem,
+                    artifact.id,
+                    artifact.sha256,
+                    'private-athlete-retry.fit',
+                    '/private/athlete/retry.fit',
+                    '37.123456,-122.654321',
+                    'heart-rate-private-199',
+                    'power-private-777',
+                    'Bearer synthetic-private-token',
+                    'private-provider-response',
+                    'Synthetic Retry Evidence'
+                ]) {
+                    assert(!serialized.includes(forbidden), 'RETRY_DOM_REDACTION');
+                }
+                assert(!/retry-[1-9][0-9]*-[1-9][0-9]*/.test(serialized),
+                    'RETRY_HANDLE_NOT_SERIALIZED');
+                retryButton.click();
+                await waitForAsync(
+                    () => readRetryRecord('importJobs', eligibleJob)
+                        .then(job => job?.status === 'completed'),
+                    'RETRY_COMPLETION_TIMEOUT',
+                    30_000
+                );
+                assert(
+                    doc.getElementById('import-live').textContent
+                        === 'Retry completed. Previously committed items were kept.',
+                    'RETRY_COMPLETED_FIXED_COPY'
+                );
+                assert((await readRetryRecord('importJobs', eligibleJob)).retryCount === 1,
+                    'RETRY_COUNT_EXACTLY_ONCE');
+
+                const missingJob = 'private-durable-job-missing';
+                await seedRetryJob({
+                    jobId: missingJob,
+                    itemPrefix: 'private-durable-item-missing',
+                    withBytes: false
+                });
+                await reload(evidenceFrame);
+                doc = evidenceFrame.contentDocument;
+                await waitFor(
+                    () => doc.body.textContent.includes(
+                        'The preserved local import bytes are unavailable. The existing import record was not changed.'
+                    ),
+                    'RETRY_MISSING_BYTES_COPY_TIMEOUT'
+                );
+                assert(!doc.body.textContent.includes(missingJob), 'RETRY_MISSING_ID_REDACTED');
+
+                const cancelJob = 'private-durable-job-cancel';
+                await seedRetryJob({
+                    jobId: cancelJob,
+                    itemPrefix: 'private-durable-item-cancel',
+                    itemCount: 250
+                });
+                const idle = await readRetryRecord(
+                    'sourceOperations',
+                    'source-operation:manager'
+                );
+                const heartbeatAt = new Date().toISOString();
+                await writeOperation({
+                    ...idle,
+                    status: 'active',
+                    kind: 'local_import',
+                    phase: 'importing',
+                    ownerId: '11111111-1111-4111-8111-111111111111',
+                    operationId: '22222222-2222-4222-8222-222222222222',
+                    jobId: cancelJob,
+                    sourceConnectionRevision: null,
+                    acquiredAt: null,
+                    startedAt: heartbeatAt,
+                    heartbeatAt,
+                    leaseExpiresAt: new Date(Date.parse(heartbeatAt) + 90_000).toISOString(),
+                    revision: idle.revision + 1
+                });
+                await reload(evidenceFrame);
+                doc = evidenceFrame.contentDocument;
+                await waitFor(
+                    () => doc.body.textContent.includes(
+                        'This Source Manager operation is still active in another tab.'
+                    ),
+                    'RETRY_CONFLICT_COPY_TIMEOUT'
+                );
+                assert(doc.querySelectorAll('.report-card__retry-actions').length === 0,
+                    'RETRY_CONFLICT_NO_ACTION');
+                const active = await readRetryRecord(
+                    'sourceOperations',
+                    'source-operation:manager'
+                );
+                const releasedAt = new Date().toISOString();
+                await writeOperation({
+                    id: 'source-operation:manager',
+                    status: 'idle',
+                    kind: null,
+                    phase: null,
+                    ownerId: null,
+                    operationId: null,
+                    jobId: null,
+                    sourceConnectionRevision: null,
+                    acquiredAt: null,
+                    startedAt: null,
+                    heartbeatAt: null,
+                    leaseExpiresAt: null,
+                    revision: active.revision + 1,
+                    lastAction: 'failed',
+                    lastActionKind: 'local_import',
+                    lastActionAt: releasedAt,
+                    lastResultCode: null
+                });
+                await reload(evidenceFrame);
+                doc = evidenceFrame.contentDocument;
+                const cancelRetryButton = await waitFor(
+                    () => Array.from(doc.querySelectorAll('.report-card__retry-actions button'))
+                        .find(button => button.textContent === 'Retry'),
+                    'RETRY_CANCEL_ACTION_TIMEOUT'
+                );
+                evidenceSecond = await createNavigationFrame(
+                    '?mode=real',
+                    'second-tab Retry Source Manager'
+                );
+                const secondDoc = evidenceSecond.contentDocument;
+                const secondRetryButton = await waitFor(
+                    () => Array.from(secondDoc.querySelectorAll(
+                        '.report-card__retry-actions button'
+                    )).find(button => button.textContent === 'Retry'),
+                    'RETRY_TWO_TAB_ACTION_TIMEOUT'
+                );
+                cancelRetryButton.click();
+                await waitForAsync(
+                    async () => (await readRetryRecord(
+                        'sourceOperations',
+                        'source-operation:manager'
+                    ))?.status === 'active',
+                    'RETRY_CANCEL_ACTIVE_TIMEOUT'
+                );
+                secondRetryButton.click();
+                await waitFor(
+                    () => secondDoc.getElementById('import-alert').textContent
+                        === 'SOURCE_OPERATION_ACTIVE. This Source Manager operation is still active in another tab.',
+                    'RETRY_TWO_TAB_LOCK_TIMEOUT'
+                );
+                assert(true, 'RETRY_TWO_TAB_WEB_LOCK_EXCLUSION');
+                const cancelButton = await waitFor(
+                    () => Array.from(doc.querySelectorAll('.report-card__retry-actions button'))
+                        .find(button => button.textContent === 'Cancel Retry' && !button.hidden),
+                    'RETRY_CANCEL_BUTTON_TIMEOUT'
+                );
+                cancelButton.click();
+                await waitForAsync(
+                    () => readRetryRecord('importJobs', cancelJob)
+                        .then(job => job?.status === 'cancelled'),
+                    'RETRY_CANCEL_TERMINAL_TIMEOUT',
+                    30_000
+                );
+                await waitFor(
+                    () => doc.getElementById('import-live').textContent
+                        === 'Retry cancelled. Previously committed items were kept.',
+                    'RETRY_CANCEL_COPY_TIMEOUT',
+                    30_000
+                );
+                assert(
+                    doc.getElementById('import-live').textContent
+                        === 'Retry cancelled. Previously committed items were kept.',
+                    'RETRY_CANCELLED_FIXED_COPY'
+                );
+
+                const beforeDemo = JSON.stringify(await v2Snapshot());
+                evidenceDemo = await createFrame('demo');
+                const demoDoc = evidenceDemo.contentDocument;
+                assert(demoDoc.querySelectorAll('.report-card__retry-actions').length === 0,
+                    'DEMO_ZERO_RETRY_CAPABILITY');
+                assert(JSON.stringify(await v2Snapshot()) === beforeDemo,
+                    'DEMO_ZERO_RETRY_STORAGE_IO');
+                assert(await sentinelSnapshot() === sentinelBefore, 'RETRY_LEGACY_SENTINEL_UNCHANGED');
+                collectResources(evidenceFrame);
+                collectResources(evidenceSecond);
+                collectResources(evidenceDemo);
+                assert(metrics.externalHttp === 0, 'RETRY_ZERO_EXTERNAL_HTTP');
+                assert(metrics.provider === 0, 'RETRY_ZERO_PROVIDER_REQUESTS');
+                assert(metrics.telemetry === 0, 'RETRY_ZERO_TELEMETRY');
+                assert(metrics.xhr === 0, 'RETRY_ZERO_XHR');
+                assert(metrics.webSocket === 0, 'RETRY_ZERO_WEBSOCKET');
+                const result = {
+                    status: 'passed',
+                    gates,
+                    evidence: {
+                        eligible: true,
+                        ineligibleMissingBytes: true,
+                        conflict: true,
+                        cancelled: true,
+                        reloadNoAutomaticRetry: true,
+                        demoZeroCapability: true,
+                        domIdentifiersRedacted: true
+                    }
+                };
+                document.body.dataset.status = 'passed';
+                state.textContent = 'passed';
+                summary.textContent = JSON.stringify(result, null, 2);
+            } catch (error) {
+                document.body.dataset.status = 'failed';
+                state.textContent = 'failed';
+                summary.textContent = JSON.stringify({
+                    status: 'failed',
+                    code: typeof error?.message === 'string'
+                        ? error.message : 'RETRY_BROWSER_EVIDENCE_FAILED',
+                    gates
+                }, null, 2);
+            } finally {
+                evidenceFrame?.remove();
+                evidenceSecond?.remove();
+                evidenceDemo?.remove();
+            }
+        }
+
+        if (location.search === '?retry=1') {
+            await runRetryEvidence();
+        } else {
         let realFrame;
         let demoFrame;
         let authorizedFrame;
@@ -936,6 +1326,7 @@
                 metrics,
                 diagnostic
             }, null, 2);
+        }
         }
     </script>
 </body>
