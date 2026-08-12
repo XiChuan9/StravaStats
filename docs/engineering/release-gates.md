@@ -30,19 +30,19 @@ historical fact.
 The authoritative postmerge baseline is:
 
 ```text
-integration commit      f7f18392dc28e1f1d6ed10c1d8cc0aa297ab7628
-integration tree        58b8339361991c5c34258be579733ccda3cbe066
+integration commit      4375d699fb1fc1142d399c158b9ad0c4e7e730dc
+integration tree        b076c4f80cd1d6de7719cebe26e327d18a1f4734
 integration divergence  0/0
 npm ci                  PASS; 6 packages
 syntax                  PASS; 283 files
 privacy                 PASS
-full test               PASS; 1,913/1,913
+full test               PASS; 1,919/1,919
 npm audit               PASS; 0 vulnerabilities
 diff/worktree           PASS; clean
-integration CI          run 31569312683 / job 94027710807 SUCCESS
+integration CI          run 31578877301 / job 94057153726 SUCCESS
 ```
 
-The exact `integration/v2@f7f18392dc28e1f1d6ed10c1d8cc0aa297ab7628` tree contains the
+The exact `integration/v2@4375d699fb1fc1142d399c158b9ad0c4e7e730dc` tree contains the
 deterministic Feature Flag, Repository, V6 Storage/migration, Import, CSV/ZIP/FIT/TCX/GPX,
 Backup format 3, Source Manager, consumers, privacy, Service Worker policy/lifecycle and bounded
 performance evidence. No unresolved deterministic P0/P1 defect was found on this tree.
@@ -51,6 +51,7 @@ performance evidence. No unresolved deterministic P0/P1 defect was found on this
 | --- | --- | --- |
 | PR #57 Retry | PASS deterministic — closed deterministically | Eligible retained-byte Retry is explicit, single-use and lock/lease bounded; committed items are preserved and provider acquisition has no automatic retry |
 | PR #58 P1-DOCS | PASS deterministic — closed deterministically | Squash merge is the exact integration head; postmerge 1,913/1,913 and exact integration CI are green |
+| PR #59 FINAL-ROADMAP | PASS deterministic — closed deterministically | Squash merge publishes this Accepted roadmap at the exact integration head; postmerge 1,919/1,919 and exact integration CI are green |
 | Current P0/P1 inventory | PASS deterministic | No unresolved deterministic P0/P1; environmental and owner gates below remain non-`PASS` rather than being reclassified as defects |
 
 PR-24's additive supplement is preserved unchanged as the exact `eb0b6695...` point-in-time
@@ -96,6 +97,145 @@ duplicated here.
 | G10 | B + D | BLOCKED | RC / production | Production Service Worker / deployment / rollback | Approved non-production Vercel preview/staging plan then authorized rehearsal of two worker generations/tabs, wait/drain, mixed version, cold offline, owned-cache eviction, failed deploy/install, rollback trigger/time objective and preserved Legacy/V2 counts | Injected D3 evidence is not native SW/Cache Storage, deployment, rehearsal or production rollout | Planning/rehearsal Task Brief only after M34 merge; execution needs separate authority | XiChuan9 owns future plan; no public Alpha or rehearsal is authorized now | Isolated staging first; never delete Legacy/V2; rollback restores prior deployment/worker while preserving libraries |
 | G12 | A | NOT RUN | Alpha / Beta / RC / production | Exact release-head verification | After the separately authorized G13 candidate build, verify its exact versioned commit and bundle/manifest from a true remote depth-one checkout with focused/syntax/privacy/full/audit/diff/path gates, current P0/P1 inventory and exact-head CI before any tag, Release or publication | Earlier integration, M34 CI or pre-candidate CI does not validate a later version/artifact head | `RELEASE-HEAD-VERIFICATION`, after the G13 candidate-building phase and before G13 publication approval | Mechanical once the exact versioned candidate head exists | Static/synthetic/read-only; rollback reverts candidate commits without data/cache deletion |
 | G13 | F | BLOCKED | Alpha / Beta / RC / production | Version / tag / artifact / release | Under separate authority, first create an exact versioned candidate, static Web bundle and SHA-256 manifest; after G12 verifies that exact candidate, obtain XiChuan9 exact-object/final approval before any tag, GitHub Release, publication or, only after G10, deployment; every object binds to one commit | Selected route/owner, package `1.0.0`, CI or a Draft/Ready PR is not an artifact or release | `VERSION-ARTIFACT-RELEASE`: candidate-building phase before environmental/G12 evidence; owner-approval then publication phases after G12, last for each named stage | Alpha → Beta → RC → `v2.0.0`; XiChuan9 owns tag/Release and final production approval | No action under M34; later rollback/revocation must preserve local data and public auditability |
+
+## 4.1 Closed G1 Alpha acceptance contract
+
+G1 is **CLOSED BY DISPOSITION** for the limited `v2.0.0-alpha.1` scope decision below. This closes
+only audience, distribution, support, evidence and eventual artifact shape. It does not create a
+candidate, close G12 or authorize any G13 action.
+
+### Audience, distribution and support
+
+- XiChuan9 is release owner. Distribution is one owner-provided local, non-production static Web
+  bundle delivered directly to a named evaluator and served only from a loopback origin. It is not
+  publicly hosted, publicly indexed, deployed or described as a public web Alpha.
+- “Current macOS Chrome” means the latest stable Google Chrome generally available for macOS when
+  the future G13 candidate-head freeze occurs. G12 evidence records the exact full Chrome version,
+  exact macOS version and architecture. If stable Chrome changes before publication, the disposable
+  matrix must retest the new latest stable version; an earlier record is stale.
+- Chrome Beta, Dev and Canary; Chromium; Safari; Firefox; Edge; Windows; Linux; iOS; Android;
+  mobile layouts; installed PWA/offline use; background operation; keyboard-only and screen-reader
+  support are explicitly unsupported and unclaimed for Alpha. These exclusions do not narrow the
+  PRD contract for RC/production: G9 remains `BLOCKED`.
+
+### Static payload and manifest
+
+The future G13 candidate task must copy, without source transformation or minification, exactly the
+tracked regular files selected at that exact candidate commit by this rule:
+
+```text
+top-level exact files:
+  classifyBike.js
+  classifyRun.js
+  diagnostics.html
+  icon-sport.svg
+  index.html
+  manifest.json
+  source-manager.html
+  storage-backup.html
+  sw.js
+  js/vendor/THIRD_PARTY_NOTICES.md
+  media/bg-bike.jpg
+  media/bg-run.jpg
+  media/bg-swim.jpg
+
+recursive tracked regular files:
+  html/   with extension .html
+  js/     with extension .js
+  styles/ with extension .css
+```
+
+In literal terms, recursive tracked regular selection includes `html/` files with `.html`, `js/`
+files with `.js`, and `styles/` files with `.css`; no other recursive extension is selected.
+
+The rule excludes every other path, including `api/`, `docs/`, `tests/`, `scripts/`, `.github/`,
+`package.json`, `package-lock.json`, `vercel.json`, every `.env*` file, every `AGENTS.md`, Git
+metadata, local/private data, fixtures, logs, source maps and pre-existing build output. No symlink,
+socket, device, untracked file, Token, credential or generated secret may appear. Client modules
+that contain dormant provider or consented-egress capability are source code, not credentials or
+authority; the browser matrix below must prove they remain unused.
+
+The bundle root additionally contains exactly two G13-generated metadata files:
+
+- `PROVENANCE.json`: canonical UTF-8 JSON with a terminal newline and exact schema-owned fields for
+  `version` (`v2.0.0-alpha.1`), exact candidate commit, exact candidate tree, source repository,
+  build command identifier, Node/npm versions, `sourceDateEpoch` equal to the candidate commit time,
+  and payload-selection rule version. It contains no digest of `SHA256SUMS` or the final container;
+- `SHA256SUMS`: UTF-8, LF-only text with one row per payload file plus `PROVENANCE.json`, ordered by
+  POSIX-relative path using bytewise lexicographic order and ending in a terminal newline. Each row is
+  exactly 64 lowercase hexadecimal SHA-256 characters, two ASCII spaces, then its normalized
+  POSIX-relative path. It never hashes itself and paths contain no absolute prefix, `..`, backslash,
+  control character or newline.
+
+The SHA-256 manifest must enumerate every file in the delivered bundle except `SHA256SUMS`, with no
+missing, duplicate or extra file. The archive/container format, filename and compression parameters
+must be frozen by the future G13 candidate task; M35 authorizes none of them. G12 records the
+SHA-256 of the complete `SHA256SUMS` bytes and the final container outside the bundle, in the
+candidate verification evidence, so the in-bundle digest graph is acyclic.
+
+Reproducibility means two independent builds from two fresh true remote depth-one checkouts of the
+same exact candidate commit, with a clean environment, identical documented Node/npm versions and
+`SOURCE_DATE_EPOCH` set to the recorded candidate time, produce byte-identical payload files,
+`PROVENANCE.json`, `SHA256SUMS` and final container. G12 records both whole-container SHA-256 values
+and rejects environmental paths, timestamps or nondeterministic ordering.
+
+### Exact candidate gates and disposable browser matrix
+
+Only after a separately authorized G13 candidate build exists may G12 run, on its exact candidate
+commit and delivered bytes:
+
+```text
+npm ci
+npm run check:syntax
+npm run check:privacy
+npm test
+npm audit
+git diff --check
+literal candidate-task changed-path gate
+payload selection/exclusion and symlink gate
+manifest grammar, recomputation and no-extra-file gate
+two-build reproducibility gate
+true remote depth-one checkout and exact-head CI
+current P0/P1 inventory with zero unresolved P0/P1
+```
+
+The Alpha browser record uses only synthetic deterministic inputs on the exact manifest-verified
+bundle and a static-only loopback no-API server with directory listing and API execution disabled.
+It uses a fresh disposable Chrome profile with no extensions, sync, saved credentials, existing
+storage or user-profile reuse. It records browser/OS versions and covers:
+
+- first-run and Demo entry, core Dashboard/Run/Ride/Swim summaries and an activity detail route;
+- synthetic FIT, TCX, GPX, CSV and ZIP local imports, exact duplicate handling and explicit Retry;
+- synthetic format-3 Backup, validation and Restore into a second fresh disposable profile;
+- explicit Legacy feature-flag startup/rollback with only synthetic Legacy data and no V2/Legacy
+  clearing; and
+- zero requests to `/api`, Strava, Weather, AI, map tiles, telemetry or any other non-loopback host,
+  with zero real Token, provider credential, private activity/file or identifiable athlete data.
+
+The query `enable-sw=1` is prohibited. No offline, PWA or Service Worker claim may be made, nor any
+deployment or cache-lifecycle claim. Browser evidence failure stops the candidate; it is not
+repaired by weakening the matrix or deleting data.
+
+### Privacy, withdrawal and remaining status
+
+Alpha evidence is synthetic-only. The payload, metadata, logs and evidence contain no real Token,
+provider credential, account identifier, private activity/file, GPS track, heart-rate, power,
+browser profile or user data. An evaluator must not connect an account or import private material.
+
+Withdrawal is non-production and out of band: XiChuan9 stops sharing the named artifact, marks its
+SHA-256 withdrawn in the release record and, if needed, replaces it with a prior verified artifact.
+The evaluator closes the loopback server and may remove only the downloaded artifact/profile under
+their own disposal policy. Withdrawal and rollback never clear or delete Legacy, V2, Cache Storage,
+settings or any user library, never invoke Disconnect/Delete Local Data, and never mutate public Git
+history.
+
+The closed G1 decision does not promote another row. G2 remains `NOT RUN`; G3 remains `PARTIAL`; G5
+and G6 remain `NOT RUN`; G7 remains `BLOCKED`; G8 remains `PARTIAL`; G9 and G10 remain `BLOCKED`;
+G12 remains `NOT RUN`; and G13 remains `BLOCKED` and requires separate authorization. Real Legacy
+rescue and real parity/Shadow sign-off are deferred to RC, not waived and not `PASS`. The actual
+version/package change, build, manifest,
+artifact, tag, GitHub Release, publication and any deployment require separate G13 authorization;
+G12 can verify only the later exact G13 candidate.
 
 ## 5. Shortest honest V2 Alpha path
 
