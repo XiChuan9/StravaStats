@@ -3,13 +3,17 @@
 This file records merged repository changes. It does not claim a package publication, Git tag,
 GitHub Release, deployment, or production release.
 
-## Unreleased — V2 code candidate
+## Unreleased — local Alpha candidate-building head
 
 Exact documented baseline: `integration/v2@eb0b6695b5dbf618877ff794dbc76935babeb793`.
-The package remains `1.0.0`. The planned names `v2.0.0-alpha.1`, `v2.0.0-beta.1`,
-`v2.0.0-rc.1`, and `v2.0.0` are release stages, not existing tags or artifacts.
-This is not an Alpha, Beta, Release Candidate, or production release. There is no V2 tag, GitHub
-Release, artifact, deployment, or release-owner approval.
+The package metadata is `2.0.0-alpha.1` for the authorized local candidate-building head. G13 is
+`PARTIAL`; G12 exact-candidate verification remains `NOT RUN`. This is not a public Alpha, Beta,
+Release Candidate, or production release. There is no `v2.0.0-alpha.1` tag, GitHub Release,
+publication, hosting, deployment, or exact-object release-owner approval.
+
+The G13 implementation adds a deterministic stdlib-only build/verify/loopback-serve tool, exact
+Node/npm pins, external-only candidate outputs and the single missing Dashboard-background repair.
+It changes no Service Worker, cache, storage, schema, Legacy, provider or private-data behavior.
 
 ### Repository safety, contracts, and migration foundations
 

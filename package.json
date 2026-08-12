@@ -1,10 +1,17 @@
 {
   "name": "strava-dashboard-app",
-  "version": "1.0.0",
+  "version": "2.0.0-alpha.1",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": "24.19.0"
+  },
+  "packageManager": "npm@11.17.0",
   "scripts": {
     "dev": "node scripts/local-dev-server.mjs",
+    "build:alpha-candidate": "node scripts/alpha-candidate.mjs -- build",
+    "verify:alpha-candidate": "node scripts/alpha-candidate.mjs -- verify",
+    "serve:alpha-candidate": "node scripts/alpha-candidate.mjs -- serve",
     "check:syntax": "node scripts/check-syntax.mjs",
     "check:privacy": "node scripts/check-privacy.mjs",
     "test": "node --test"

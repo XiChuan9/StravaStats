@@ -2,9 +2,9 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Integrated V2 code documentation; not an Alpha, Beta, Release Candidate, or production release |
+| Status | Unverified local Alpha candidate-building head; not a public Alpha, Beta, Release Candidate, or production release |
 | Exact implementation baseline | `integration/v2@eb0b6695b5dbf618877ff794dbc76935babeb793` |
-| Package metadata | `1.0.0` (no V2 tag, GitHub Release, artifact, deployment, or release-owner approval) |
+| Package metadata | `2.0.0-alpha.1` (G13 `PARTIAL`; G12 `NOT RUN`; no tag, GitHub Release, publication, hosting or deployment) |
 | Current authoritative roadmap | [V2 release gates](./engineering/release-gates.md) |
 | Historical evidence | [PR-24 point-in-time ledger and supplement](./tasks/pr-24-release-documentation.md#superseding-current-tree-ledger) |
 

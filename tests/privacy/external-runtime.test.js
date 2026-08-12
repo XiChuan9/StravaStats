@@ -49,16 +49,62 @@ const vendorAssets = Object.freeze(new Map([
     ['js/vendor/jspdf-2.5.1.umd.min.js', '98ccf17aa10c20bb1301762618fcc9b6ab3a4e7f26b6071d64d0b41154df3875']
 ]));
 
-test('R11 freezes package, lock, and decoder-registry wiring bytes', async () => {
-    const expected = new Map([
-        ['package.json', '0406287a8b8be5d8c34ff994c8979a2bf585cd33b911617c898a83005842823a'],
-        ['package-lock.json', '04c2a7fa76c5daaec25fbe291d33b0b76037166b9b50394929cd7ec21ed8751f'],
-        ['tests/import/decoder-registry-wiring.test.js', 'd4f89f66b3a1c7c7c9adbdcc7c516bcb21cf7a6468dd933bfe1f3e6aff4a51f4']
-    ]);
-    for (const [path, digest] of expected) {
-        const bytes = await readFile(new URL(path, projectRoot));
-        assert.equal(createHash('sha256').update(bytes).digest('hex'), digest, path);
-    }
+test('R11 freezes the exact package dependency graph and lock artifacts semantically', async () => {
+    const packageJson = JSON.parse(await source('package.json'));
+    const packageLock = JSON.parse(await source('package-lock.json'));
+    const dependencies = {
+        '@vercel/speed-insights': '^2.0.0',
+        'node-fetch': '^2.6.7'
+    };
+    const devDependencies = { 'fake-indexeddb': '^6.2.5' };
+    assert.deepEqual(packageJson.dependencies, dependencies);
+    assert.deepEqual(packageJson.devDependencies, devDependencies);
+    assert.deepEqual(packageLock.packages[''].dependencies, dependencies);
+    assert.deepEqual(packageLock.packages[''].devDependencies, devDependencies);
+
+    const lockedArtifacts = Object.fromEntries(
+        Object.entries(packageLock.packages)
+            .filter(([path]) => path !== '')
+            .map(([path, record]) => [path, {
+                version: record.version,
+                resolved: record.resolved,
+                integrity: record.integrity,
+                dev: record.dev === true,
+                dependencies: record.dependencies ?? null
+            }])
+    );
+    assert.deepEqual(lockedArtifacts, {
+        'node_modules/@vercel/speed-insights': {
+            version: '2.0.0', resolved: 'https://registry.npmjs.org/@vercel/speed-insights/-/speed-insights-2.0.0.tgz',
+            integrity: 'sha512-jwkNcrTeafWxjmWq4AHBaptSqZiJkYU5adLC9QBSqeim0GcqDMgN5Ievh8OG1rJ6W3A4l1oiP7qr9CWxGuzu3w==',
+            dev: false, dependencies: null
+        },
+        'node_modules/fake-indexeddb': {
+            version: '6.2.5', resolved: 'https://registry.npmjs.org/fake-indexeddb/-/fake-indexeddb-6.2.5.tgz',
+            integrity: 'sha512-CGnyrvbhPlWYMngksqrSSUT1BAVP49dZocrHuK0SvtR0D5TMs5wP0o3j7jexDJW01KSadjBp1M/71o/KR3nD1w==',
+            dev: true, dependencies: null
+        },
+        'node_modules/node-fetch': {
+            version: '2.7.0', resolved: 'https://registry.npmjs.org/node-fetch/-/node-fetch-2.7.0.tgz',
+            integrity: 'sha512-c4FRfUm/dbcWZ7U+1Wq0AwCyFL+3nt2bEw05wfxSz+DWpWsitgmSgYmy2dQdWyKC1694ELPqMs/YzUSNozLt8A==',
+            dev: false, dependencies: { 'whatwg-url': '^5.0.0' }
+        },
+        'node_modules/tr46': {
+            version: '0.0.3', resolved: 'https://registry.npmjs.org/tr46/-/tr46-0.0.3.tgz',
+            integrity: 'sha512-N3WMsuqV66lT30CrXNbEjx4GEwlow3v6rr4mCcv6prnfwhS01rkgyFdjPNBYd9br7LpXV1+Emh01fHnq2Gdgrw==',
+            dev: false, dependencies: null
+        },
+        'node_modules/webidl-conversions': {
+            version: '3.0.1', resolved: 'https://registry.npmjs.org/webidl-conversions/-/webidl-conversions-3.0.1.tgz',
+            integrity: 'sha512-2JAn3z8AR6rjK8Sm8orRC0h/bcl/DqL7tRPdGZ4I1CjdF+EaMLmYxBHyXuKL849eucPFhvBoxMsflfOb8kxaeQ==',
+            dev: false, dependencies: null
+        },
+        'node_modules/whatwg-url': {
+            version: '5.0.0', resolved: 'https://registry.npmjs.org/whatwg-url/-/whatwg-url-5.0.0.tgz',
+            integrity: 'sha512-saE57nupxk6v3HY35+jzBwYa0rKSy0XR8JSxZPwgLr7ys0IBzhGviA1/TUGJLmSVqs8pb9AnvICXEuOHLprYTw==',
+            dev: false, dependencies: { tr46: '~0.0.3', 'webidl-conversions': '^3.0.0' }
+        }
+    });
 });
 
 test('R11 selected local vendor bytes match the frozen acquisition hashes', async () => {

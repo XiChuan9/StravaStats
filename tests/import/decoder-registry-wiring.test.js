@@ -267,14 +267,58 @@ test('PR-14 keeps public/schema/runtime boundaries and decoder sources frozen', 
     const frozenHashes = new Map([
         ['js/decoders/fit/decoder.js', 'f21961f5b417db97f5ac4abeb5a3365107ae03891d87dde106a5fcf91f29059b'],
         ['js/decoders/tcx/decoder.js', '6e5c03f190fa12500d6d1042800272e817c02ab8fb5e5b288fd05f78153cd868'],
-        ['js/decoders/gpx/decoder.js', 'cb84f3d86c5d6d7cbfa5425b190573d0fab094a7d1ce9124f6231905f1ca664f'],
-        ['package.json', '0406287a8b8be5d8c34ff994c8979a2bf585cd33b911617c898a83005842823a'],
-        ['package-lock.json', '04c2a7fa76c5daaec25fbe291d33b0b76037166b9b50394929cd7ec21ed8751f']
+        ['js/decoders/gpx/decoder.js', 'cb84f3d86c5d6d7cbfa5425b190573d0fab094a7d1ce9124f6231905f1ca664f']
     ]);
     for (const [path, expected] of frozenHashes) {
         const digest = createHash('sha256').update(await readFile(new URL(path, ROOT))).digest('hex');
         assert.equal(digest, expected, path);
     }
+
+    const packageJson = JSON.parse(await source('package.json'));
+    const packageLock = JSON.parse(await source('package-lock.json'));
+    assert.deepEqual(packageJson.dependencies, {
+        '@vercel/speed-insights': '^2.0.0',
+        'node-fetch': '^2.6.7'
+    });
+    assert.deepEqual(packageJson.devDependencies, { 'fake-indexeddb': '^6.2.5' });
+    assert.deepEqual(packageLock.packages[''].dependencies, packageJson.dependencies);
+    assert.deepEqual(packageLock.packages[''].devDependencies, packageJson.devDependencies);
+    const lockedArtifacts = Object.fromEntries(
+        Object.entries(packageLock.packages)
+            .filter(([path]) => path !== '')
+            .map(([path, record]) => [path, {
+                version: record.version,
+                resolved: record.resolved,
+                integrity: record.integrity,
+                dev: record.dev === true
+            }])
+    );
+    assert.deepEqual(lockedArtifacts, {
+        'node_modules/@vercel/speed-insights': {
+            version: '2.0.0', resolved: 'https://registry.npmjs.org/@vercel/speed-insights/-/speed-insights-2.0.0.tgz',
+            integrity: 'sha512-jwkNcrTeafWxjmWq4AHBaptSqZiJkYU5adLC9QBSqeim0GcqDMgN5Ievh8OG1rJ6W3A4l1oiP7qr9CWxGuzu3w==', dev: false
+        },
+        'node_modules/fake-indexeddb': {
+            version: '6.2.5', resolved: 'https://registry.npmjs.org/fake-indexeddb/-/fake-indexeddb-6.2.5.tgz',
+            integrity: 'sha512-CGnyrvbhPlWYMngksqrSSUT1BAVP49dZocrHuK0SvtR0D5TMs5wP0o3j7jexDJW01KSadjBp1M/71o/KR3nD1w==', dev: true
+        },
+        'node_modules/node-fetch': {
+            version: '2.7.0', resolved: 'https://registry.npmjs.org/node-fetch/-/node-fetch-2.7.0.tgz',
+            integrity: 'sha512-c4FRfUm/dbcWZ7U+1Wq0AwCyFL+3nt2bEw05wfxSz+DWpWsitgmSgYmy2dQdWyKC1694ELPqMs/YzUSNozLt8A==', dev: false
+        },
+        'node_modules/tr46': {
+            version: '0.0.3', resolved: 'https://registry.npmjs.org/tr46/-/tr46-0.0.3.tgz',
+            integrity: 'sha512-N3WMsuqV66lT30CrXNbEjx4GEwlow3v6rr4mCcv6prnfwhS01rkgyFdjPNBYd9br7LpXV1+Emh01fHnq2Gdgrw==', dev: false
+        },
+        'node_modules/webidl-conversions': {
+            version: '3.0.1', resolved: 'https://registry.npmjs.org/webidl-conversions/-/webidl-conversions-3.0.1.tgz',
+            integrity: 'sha512-2JAn3z8AR6rjK8Sm8orRC0h/bcl/DqL7tRPdGZ4I1CjdF+EaMLmYxBHyXuKL849eucPFhvBoxMsflfOb8kxaeQ==', dev: false
+        },
+        'node_modules/whatwg-url': {
+            version: '5.0.0', resolved: 'https://registry.npmjs.org/whatwg-url/-/whatwg-url-5.0.0.tgz',
+            integrity: 'sha512-saE57nupxk6v3HY35+jzBwYa0rKSy0XR8JSxZPwgLr7ys0IBzhGviA1/TUGJLmSVqs8pb9AnvICXEuOHLprYTw==', dev: false
+        }
+    });
 
     const featureFlags = await import(`../../js/app/feature-flags.js?pr14=${Date.now()}`);
     assert.deepEqual(Object.keys(featureFlags).sort(), [

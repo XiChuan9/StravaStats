@@ -73,7 +73,7 @@ Deterministic evidence cannot promote these environmental rows:
 | Browser / platform | BLOCKED | Full V2 still requires Safari, Firefox, Windows, iOS/PWA, mobile and core keyboard/screen-reader evidence; only limited Alpha is macOS Chrome-only |
 | Production Service Worker / deployment / combined rollback | BLOCKED | Planning/rehearsal execution, native worker/cache evidence, deployment and rollback remain unauthorized |
 | R3 public Git history | CLOSED BY DISPOSITION | XiChuan9 accepted no-rewrite risk; current-tree removal and guard remain mandatory; this is not erasure |
-| Version / tag / artifact / release owner | BLOCKED | Route and owner are selected, but package remains `1.0.0` and no V2 artifact, tag, GitHub Release or deployment is authorized |
+| Version / tag / artifact / release owner | PARTIAL | Package metadata and deterministic local candidate-building tooling are `2.0.0-alpha.1`; G12 is `NOT RUN` and no tag, GitHub Release, publication, hosting, deployment or exact-object owner approval exists |
 
 The Privacy Guide's pre-M34 sentence that calls the R3 decision `BLOCKED` is superseded for release
 status only by this Accepted roadmap and the recorded owner disposition. Its operational privacy,
@@ -96,13 +96,14 @@ duplicated here.
 | G9 | B + C | BLOCKED | RC / production | Browser / platform / accessibility | PRD matrix: supported Safari/Firefox/Chrome versions, macOS/Windows, iOS/PWA/mobile basic use and core keyboard/screen-reader evidence, or a separately approved time-bounded waiver | macOS Chrome Alpha or disposable Chromium is not the full matrix | `BROWSER-MATRIX`, after release-head freeze; private smoke additionally requires G4 | No permanent narrowing; any waiver needs owner and expiry | Prefer synthetic disposable profiles; no user profile mutation; private evidence stays off Git |
 | G10 | B + D | BLOCKED | RC / production | Production Service Worker / deployment / rollback | Approved non-production Vercel preview/staging plan then authorized rehearsal of two worker generations/tabs, wait/drain, mixed version, cold offline, owned-cache eviction, failed deploy/install, rollback trigger/time objective and preserved Legacy/V2 counts | Injected D3 evidence is not native SW/Cache Storage, deployment, rehearsal or production rollout | Planning/rehearsal Task Brief only after M34 merge; execution needs separate authority | XiChuan9 owns future plan; no public Alpha or rehearsal is authorized now | Isolated staging first; never delete Legacy/V2; rollback restores prior deployment/worker while preserving libraries |
 | G12 | A | NOT RUN | Alpha / Beta / RC / production | Exact release-head verification | After the separately authorized G13 candidate build, verify its exact versioned commit and bundle/manifest from a true remote depth-one checkout with focused/syntax/privacy/full/audit/diff/path gates, current P0/P1 inventory and exact-head CI before any tag, Release or publication | Earlier integration, M34 CI or pre-candidate CI does not validate a later version/artifact head | `RELEASE-HEAD-VERIFICATION`, after the G13 candidate-building phase and before G13 publication approval | Mechanical once the exact versioned candidate head exists | Static/synthetic/read-only; rollback reverts candidate commits without data/cache deletion |
-| G13 | F | BLOCKED | Alpha / Beta / RC / production | Version / tag / artifact / release | Under separate authority, first create an exact versioned candidate, static Web bundle and SHA-256 manifest; after G12 verifies that exact candidate, obtain XiChuan9 exact-object/final approval before any tag, GitHub Release, publication or, only after G10, deployment; every object binds to one commit | Selected route/owner, package `1.0.0`, CI or a Draft/Ready PR is not an artifact or release | `VERSION-ARTIFACT-RELEASE`: candidate-building phase before environmental/G12 evidence; owner-approval then publication phases after G12, last for each named stage | Alpha → Beta → RC → `v2.0.0`; XiChuan9 owns tag/Release and final production approval | No action under M34; later rollback/revocation must preserve local data and public auditability |
+| G13 | F | PARTIAL | Alpha / Beta / RC / production | Version / tag / artifact / release | The separately authorized A3 phase sets exact `2.0.0-alpha.1` metadata and deterministic local static-bundle/SHA-256 tooling; after G12 verifies the immutable exact candidate, obtain XiChuan9 exact-object/final approval before any tag, GitHub Release, publication or, only after G10, deployment; every object binds to one commit | Package metadata, local candidate bytes, CI or a Draft/Ready PR is not a verified or published release artifact | `VERSION-ARTIFACT-RELEASE`: finish candidate-building before environmental/G12 evidence; owner-approval then publication phases after G12, last for each named stage | Alpha → Beta → RC → `v2.0.0`; XiChuan9 owns tag/Release and final production approval | A3 is local, external-output and synthetic-only; later rollback/revocation preserves local data and public auditability |
 
 ## 4.1 Closed G1 Alpha acceptance contract
 
 G1 is **CLOSED BY DISPOSITION** for the limited `v2.0.0-alpha.1` scope decision below. This closes
-only audience, distribution, support, evidence and eventual artifact shape. It does not create a
-candidate, close G12 or authorize any G13 action.
+only audience, distribution, support, evidence and eventual artifact shape. G1 itself did not
+create a candidate, close G12 or authorize G13; the later M36 A3 owner decision separately
+authorized only the bounded local candidate-building phase.
 
 ### Audience, distribution and support
 
@@ -231,11 +232,11 @@ history.
 
 The closed G1 decision does not promote another row. G2 remains `NOT RUN`; G3 remains `PARTIAL`; G5
 and G6 remain `NOT RUN`; G7 remains `BLOCKED`; G8 remains `PARTIAL`; G9 and G10 remain `BLOCKED`;
-G12 remains `NOT RUN`; and G13 remains `BLOCKED` and requires separate authorization. Real Legacy
+G12 remains `NOT RUN`; G13 is `PARTIAL` because only the bounded local candidate-building phase is
+authorized. Real Legacy
 rescue and real parity/Shadow sign-off are deferred to RC, not waived and not `PASS`. The actual
-version/package change, build, manifest,
-artifact, tag, GitHub Release, publication and any deployment require separate G13 authorization;
-G12 can verify only the later exact G13 candidate.
+tag, GitHub Release, publication and any deployment still require separate later G13 authorization;
+G12 can verify only the immutable exact A3 candidate.
 
 ## 5. Shortest honest V2 Alpha path
 
@@ -244,8 +245,9 @@ supported surface is **current macOS Chrome only**, and its evidence is explicit
 **synthetic-only**. A public web Alpha is not authorized.
 
 G2 real Legacy rescue and G3 real parity are deferred to RC. They remain `NOT RUN`/`PARTIAL`, are
-not waived and must never be called `PASS` for Alpha. The selected Alpha contract closes the B-class
-scope decision only; version and artifact actions remain **BLOCKED** pending separate authorization.
+not waived and must never be called `PASS` for Alpha. The bounded local candidate-building phase is
+authorized and G13 is `PARTIAL`; G12, exact-object approval, tag, Release, publication, hosting and
+deployment remain pending separate later authority.
 
 Dependency order:
 
@@ -257,8 +259,9 @@ M34 canonical roadmap merge
 → separately authorized G13 tag/Release/publication action
 ```
 
-This path permits no public deployment, real/private access, broader browser-support claim, version
-bump, artifact build/publication, tag or GitHub Release under M34.
+This path permits no public deployment, real/private access, broader browser-support claim,
+artifact publication, tag or GitHub Release. M36 A3 permits only the bounded local version and
+candidate build after M34.
 
 ## 6. Complete v2.0 path
 

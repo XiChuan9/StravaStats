@@ -5,15 +5,14 @@ source-neutral Canonical activity library in the browser, imports common activit
 and keeps the existing Dashboard, sport views, activity details, Run Plus, and NSM consumers behind
 a Repository boundary.
 
-> **Release status:** this repository contains an integrated V2 code candidate. It is not a production
-> release and does not claim an Alpha, Beta, or Release Candidate milestone. The package metadata
-> is still `1.0.0`; no `v2.0.0-*` tag, GitHub Release, production deployment, or release-owner
-> approval is implied by merged PRs, passing CI, or a Ready PR.
+> **Release status:** this repository contains an unverified local Alpha candidate-building head
+> with package metadata `2.0.0-alpha.1`. It is not a public Alpha or production release. G12 exact
+> candidate verification remains `NOT RUN`; there is no `v2.0.0-alpha.1` tag, GitHub Release,
+> publication, hosting, deployment, or exact-object release-owner approval.
 
 ## Start locally
 
-Prerequisite: a Node.js version compatible with the repository lockfile and CI (CI currently uses
-Node 24 LTS).
+Prerequisite: Node.js `24.19.0` and npm `11.17.0`, matching package metadata and CI.
 
 ```bash
 npm ci
@@ -34,6 +33,18 @@ git diff --check
 ```
 
 Tests are offline, deterministic, and do not require Strava credentials or private fixtures.
+
+The separately authorized G13 candidate-building commands write only to an absolute, existing,
+empty directory outside the repository:
+
+```bash
+npm run build:alpha-candidate -- --output-parent /absolute/empty/directory
+npm run verify:alpha-candidate -- --bundle-root /absolute/extracted/root --container /absolute/candidate.zip
+npm run serve:alpha-candidate -- --bundle-root /absolute/extracted/root --port 0
+```
+
+These commands do not publish or deploy the candidate. The static server binds only to loopback,
+rejects `/api`, and must be used only with synthetic data and a disposable browser profile.
 
 ## Current V2 workflow
 
