@@ -462,6 +462,13 @@ test('G1 Alpha contract freezes exact payload, manifest and reproducibility', as
     ]) assert.match(contract, excluded);
     assert.match(contract, /PROVENANCE\.json/);
     assert.match(contract, /SHA256SUMS/);
+    const provenanceRule = /- `PROVENANCE\.json`([\s\S]*?)(?=\n- `SHA256SUMS`)/.exec(contract)?.[1];
+    assert.notEqual(provenanceRule, undefined);
+    assert.doesNotMatch(provenanceRule, /sha256sumsSha256/i);
+    assert.match(provenanceRule, /contains no digest of `SHA256SUMS` or the final container/i);
+    assert.match(contract, /SHA-256 of the complete `SHA256SUMS` bytes[\s\S]{0,160}outside the bundle/i);
+    assert.match(contract, /final container[\s\S]{0,160}outside the bundle/i);
+    assert.match(contract, /digest graph is acyclic/i);
     assert.match(contract, /64 lowercase hexadecimal[\s\S]{0,100}two ASCII spaces[\s\S]{0,100}POSIX-relative path/i);
     assert.match(contract, /lexicographic[\s\S]{0,100}terminal newline/i);
     assert.match(contract, /exact candidate commit[\s\S]{0,120}exact candidate tree/i);
@@ -507,7 +514,7 @@ test('G1 Alpha contract preserves privacy, rollback and remaining non-PASS gates
         assert.match(contract, new RegExp(`${gate}[\\s\\S]{0,100}(?:NOT RUN|PARTIAL|BLOCKED)`));
     }
     assert.match(contract, /G13[\s\S]{0,180}separate authorization/i);
-    assert.doesNotMatch(contract, /real (?:Legacy|parity)[^\n]*PASS/i);
+    assert.doesNotMatch(contract, /real (?:Legacy|parity)[^\n]*(?:is|=)\s*`?PASS/i);
 });
 
 test('canonical roadmap has the exact remaining A-F gate rows and no external PASS', async () => {

@@ -171,6 +171,19 @@ The repaired focused result is 24/24. The implementation changed only the frozen
 allowlist. It did not run an Alpha browser matrix or G12 because no G13 versioned candidate or
 artifact exists; those actions remain separately unauthorized.
 
+## Independent findings-first review
+
+The first independent read-only review found one P1 and no other actionable P0/P1/P2 finding. The
+initial manifest design was circular: `PROVENANCE.json` named a `SHA256SUMS` digest while
+`SHA256SUMS` also hashed `PROVENANCE.json`. That graph could not be mechanically constructed and the
+first focused tests did not detect it.
+
+The repair removes every manifest/container digest from in-bundle provenance. `SHA256SUMS` continues
+to hash `PROVENANCE.json`; G12 instead records the SHA-256 of the complete manifest bytes and final
+container in external candidate-verification evidence. A semantic regression assertion extracts the
+provenance rule, rejects reintroduction of a circular digest and requires the acyclic external record.
+A fresh independent no-findings review is required before Closure.
+
 ## Required Alpha acceptance contract
 
 The final documentation and contract tests must bind all of the following without creating an

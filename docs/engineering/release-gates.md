@@ -160,7 +160,7 @@ The bundle root additionally contains exactly two G13-generated metadata files:
 - `PROVENANCE.json`: canonical UTF-8 JSON with a terminal newline and exact schema-owned fields for
   `version` (`v2.0.0-alpha.1`), exact candidate commit, exact candidate tree, source repository,
   build command identifier, Node/npm versions, `sourceDateEpoch` equal to the candidate commit time,
-  payload-selection rule version, and `sha256sumsSha256`;
+  and payload-selection rule version. It contains no digest of `SHA256SUMS` or the final container;
 - `SHA256SUMS`: UTF-8, LF-only text with one row per payload file plus `PROVENANCE.json`, ordered by
   POSIX-relative path using bytewise lexicographic order and ending in a terminal newline. Each row is
   exactly 64 lowercase hexadecimal SHA-256 characters, two ASCII spaces, then its normalized
@@ -169,7 +169,9 @@ The bundle root additionally contains exactly two G13-generated metadata files:
 
 The SHA-256 manifest must enumerate every file in the delivered bundle except `SHA256SUMS`, with no
 missing, duplicate or extra file. The archive/container format, filename and compression parameters
-must be frozen by the future G13 candidate task; M35 authorizes none of them.
+must be frozen by the future G13 candidate task; M35 authorizes none of them. G12 records the
+SHA-256 of the complete `SHA256SUMS` bytes and the final container outside the bundle, in the
+candidate verification evidence, so the in-bundle digest graph is acyclic.
 
 Reproducibility means two independent builds from two fresh true remote depth-one checkouts of the
 same exact candidate commit, with a clean environment, identical documented Node/npm versions and
@@ -199,8 +201,8 @@ current P0/P1 inventory with zero unresolved P0/P1
 
 The Alpha browser record uses only synthetic deterministic inputs on the exact manifest-verified
 bundle and a static-only loopback no-API server with directory listing and API execution disabled.
-It uses a fresh disposable Chrome profile with no extensions, sync, saved credentials, existing storage or user
-profile reuse. It records browser/OS versions and covers:
+It uses a fresh disposable Chrome profile with no extensions, sync, saved credentials, existing
+storage or user-profile reuse. It records browser/OS versions and covers:
 
 - first-run and Demo entry, core Dashboard/Run/Ride/Swim summaries and an activity detail route;
 - synthetic FIT, TCX, GPX, CSV and ZIP local imports, exact duplicate handling and explicit Retry;
@@ -229,8 +231,9 @@ history.
 
 The closed G1 decision does not promote another row. G2 remains `NOT RUN`; G3 remains `PARTIAL`; G5
 and G6 remain `NOT RUN`; G7 remains `BLOCKED`; G8 remains `PARTIAL`; G9 and G10 remain `BLOCKED`;
-G12 remains `NOT RUN`; and G13 remains `BLOCKED` and requires separate authorization. Real Legacy rescue and real parity/Shadow sign-off
-are deferred to RC, not waived and not `PASS`. The actual version/package change, build, manifest,
+G12 remains `NOT RUN`; and G13 remains `BLOCKED` and requires separate authorization. Real Legacy
+rescue and real parity/Shadow sign-off are deferred to RC, not waived and not `PASS`. The actual
+version/package change, build, manifest,
 artifact, tag, GitHub Release, publication and any deployment require separate G13 authorization;
 G12 can verify only the later exact G13 candidate.
 
