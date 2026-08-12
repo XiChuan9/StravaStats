@@ -106,6 +106,63 @@ At minimum the matrix must reconcile:
 - real account/private library/Disconnect/parity, browser/platform, production deployment/rollback,
   history, version/tag/artifact, and release-owner gates.
 
+## A2 current-tree evidence and copy matrix
+
+The read-only investigation inspected the exact base, accepted ADR-0001 through ADR-0006, PRD,
+development plan, release gates, current source/tests, the R3-R11 and D3 Task Briefs, C1-C4, PR-45,
+and the six target documents. An independent read-only reviewer repeated the target-document audit
+with `git show` at the exact base. Neither investigation used a provider, private data, browser
+profile, deployment, or repository mutation.
+
+| Surface | Stale baseline statement | Authoritative current statement | Required status |
+| --- | --- | --- | --- |
+| README release label | “integrated V2 release candidate” can imply the RC gate closed | Integrated V2 code candidate; not Alpha, Beta, RC, or production release | BLOCKED for release |
+| README Sources | Strava API card is `Connect later` | Real Sources supports explicit Connect/Reconnect, `Sync latest 25`, Disconnect, Recover/Abandon, and eligible retained-byte Retry; none starts automatically; Demo has no capability | PASS deterministic; real provider NOT RUN |
+| Release-gate capability | Only Flag/SW/Demo tests exist; Repository, Storage, Import, Decoder, security and performance are not implemented | The current 1,912-test suite covers those deterministic boundaries; environmental and threshold gates remain separate | PASS only per evidenced row |
+| Release-gate governance | Status is `Proposed` | This task has no authority to accept policy; retain `Proposed`, update only current capability/evidence | NOT APPLICABLE |
+| Service Worker | Current worker uses fixed `strava-dashboard-v1`; same-origin API-cache risk remains | Current cache is `stravastats-static-v2-000001`; the legacy name is recognized but not blindly deleted; R9 static-only admission bypasses API/private/dynamic requests; D3 waiting/drained lifecycle is deterministic only | PARTIAL overall; production-like NOT RUN |
+| Logging | Raw client/server logging remains a production privacy blocker | R4/R5 reviewed production responsibility paths emit fixed/redacted events; no additional current-tree raw-log defect was found | CLOSED deterministic |
+| Weather | Exact coordinates/date remain an unresolved defect | After exact tab-scoped consent, R6 sends one start coordinate rounded to two decimals and one exact local calendar date; this remains disclosed external egress, not local-only | CLOSED selected code contract; real external evidence NOT RUN |
+| Map and AI | Old inherited external behavior is undifferentiated | R8 map and R7 AI each require their own explicit, memory-only consent and bounded payload; neither implies local-only or zero external I/O | CLOSED deterministic; real external evidence NOT RUN |
+| Telemetry/CDN | Inherited telemetry/CDN baseline is current | R11 disables runtime telemetry and serves pinned visualization assets same-origin with integrity and no CDN fallback | CLOSED deterministic |
+| Legacy probe | Residual is absent from release copy | R10 is non-destructive; accepted Option B can leave only an empty V1 database shell with zero stores/user records after the narrow external-delete/abort race | CLOSED with accepted residual |
+| Retry | Provider “no retry” wording is ambiguous | Provider acquisition has no automatic retry; separately, eligible failed local imports expose explicit single-use Retry from retained pending bytes under the C4 lock/lease | CLOSED deterministic |
+| Defect inventory | No release-wide P0/P1 inventory exists | M22 inventory exists; P0 Retry is closed by PR #57; this P1 documentation drift remains open until this PR's fresh no-findings review and exact-head CI | BLOCKED until Closure |
+| R3 identity | Current tree and public history are conflated | R3 current-tree tracked identity is removed and privacy guard passes; public Git-history incident disposition is a separate owner gate | CLOSED current tree; history BLOCKED |
+| PR-24 ledger | The V4-era ledger is called current | Preserve the original evidence as a historical snapshot and append a superseding exact-`eb0b669...` ledger; do not rewrite old SHAs/counts | Historical + current supplement |
+
+### Current gate interpretation
+
+- Deterministic Alpha/Beta architecture, local imports, Source Manager, explicit Retry, V6,
+  format-3 Backup, consumer regressions, privacy controls, R9 cache boundary, and D3 code lifecycle
+  may be marked `PASS` only at their bounded current-source/test rows.
+- Performance remains `PARTIAL`: 5,000 activities and 200,000 points pass; 10,000 activities and
+  1,000 FIT throughput have record-only evidence without an approved absolute budget or waiver.
+- Real account/private library, real Disconnect, real import, Legacy rescue, Backup restore, and
+  parity/Shadow review remain `PARTIAL` or `NOT RUN`.
+- Safari, Firefox, Windows, iOS/PWA, mobile, broad accessibility, responsive and pixel-level visual
+  evidence remains `BLOCKED` absent a matrix or time-bounded waiver.
+- Production-like Service Worker, mixed-version/cold-offline, deployment and combined rollback
+  rehearsal remain `BLOCKED`/`NOT RUN`.
+- R3 public-history incident disposition remains `BLOCKED`.
+- Version, tag, artifact, deployment and release-owner approval remain `BLOCKED`.
+
+### Resolved authority questions
+
+No unresolved material copy choice remains:
+
+1. `release-gates.md` stays `Proposed`; documentation reconciliation is not policy acceptance.
+2. The exact local date in R6 is an already selected consented-egress contract and must be
+   disclosed. Further minimization would require a separate product/privacy decision.
+3. D3 evidence closes deterministic code rows only; the RC/production Service Worker row remains
+   `PARTIAL` because native production-like evidence is not run.
+4. PR-24 historical evidence is immutable as evidence; a clearly labelled superseding current
+   ledger is additive and does not rewrite history.
+
+The exact documentation test must stop requiring the obsolete logging/exact-coordinate blockers,
+reject their reintroduction, require the selected R6 disclosure, distinguish provider acquisition
+from retained-byte Retry, require R3 history separation, and preserve every external gate above.
+
 ## Failure-first and verification contract
 
 Before editing release copy, add or update the exact documentation test so it fails against the
