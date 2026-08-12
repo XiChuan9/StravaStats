@@ -308,10 +308,12 @@ evidence may be accessed under this task.
 
 XiChuan9 approves a time-bounded waiver through **2026-11-12** for absolute 10,000-activity and
 1,000-FIT thresholds. The existing functional/resource hard limits and 5,000-activity/200,000-point
-hard evidence remain unchanged. Large libraries or batches may be slower or encounter memory/quota
-limits earlier. Mitigations remain bounded imports/chunks, cancellation, explicit Retry/Recover/
-Abandon, and no release performance overclaim. A representative real-hardware budget task must
-complete before expiry. The waiver does not weaken data, privacy or correctness gates.
+hard evidence remain unchanged. **Reason:** those bounded hard results and safeguards exist, while
+the absolute 10,000-activity and 1,000-FIT measurements remain record-only and representative real-
+hardware budget evidence has not yet run. Large libraries or batches may be slower or encounter
+memory/quota limits earlier. Mitigations remain bounded imports/chunks, cancellation, explicit
+Retry/Recover/Abandon, and no release performance overclaim. A representative real-hardware budget
+task must complete before expiry. The waiver does not weaken data, privacy or correctness gates.
 
 ### 5. Browser and platform disposition
 

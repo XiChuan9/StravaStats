@@ -138,12 +138,13 @@ separately unauthorized.
   difference.
 - **Performance:** the waiver temporarily satisfies the absolute 10,000-activity and 1,000-FIT
   threshold blocker and therefore does not block RC/production through **2026-11-12**. Large
-  libraries or large batches may be slower or reach memory/quota limits earlier. Existing functional/
-  resource hard limits and 5k/200k evidence stay unchanged; bounded chunks, cancellation and explicit
-  Retry/Recover/Abandon mitigate impact. A representative real-hardware budget task is required
-  before expiry, and no release performance overclaim is permitted. Expiry without that evidence or
-  a new explicit disposition makes G8 blocking again; it never weakens privacy, correctness or data
-  safety gates.
+  libraries or large batches may be slower or reach memory/quota limits earlier. The reason is that
+  existing functional/resource hard limits and 5k/200k bounded hard evidence stay unchanged while
+  absolute 10k/1,000-FIT evidence is record-only and the
+  representative real-hardware budget task has not yet run. Bounded chunks, cancellation and explicit
+  Retry/Recover/Abandon mitigate impact. That real-hardware task is required before expiry, and no
+  release performance overclaim is permitted. Expiry without that evidence or a new explicit
+  disposition makes G8 blocking again; it never weakens privacy, correctness or data safety gates.
 - **Browser/platform:** full V2 requires Safari, Firefox, Windows, iOS/PWA and mobile evidence plus
   core keyboard and screen-reader evidence. macOS Chrome-only applies solely to the limited Alpha;
   any later time-bounded waiver requires separate owner/expiry approval.

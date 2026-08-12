@@ -455,6 +455,7 @@ test('complete v2 path freezes owner dispositions without claiming unrun evidenc
     assert.match(full, /Retry\/Recover\/Abandon/);
     assert.match(full, /representative real-hardware budget task/i);
     assert.match(full, /waiver[\s\S]{0,180}(?:temporarily satisfies|does not block)[\s\S]{0,180}2026-11-12/i);
+    assert.match(full, /reason[\s\S]{0,180}5k\/200k[\s\S]{0,180}record-only[\s\S]{0,180}real-hardware/i);
     assert.match(full, /Safari[\s\S]*Firefox[\s\S]*Windows[\s\S]*iOS\/PWA[\s\S]*mobile/i);
     assert.match(full, /keyboard[\s\S]{0,80}screen-reader/i);
     assert.match(full, /no-rewrite risk acceptance/i);
