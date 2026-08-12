@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | M35 / G1 ALPHA-CONTRACT |
-| Status | Task Brief published; findings-first audit pending |
+| Status | A2 findings and literal allowlist frozen; failure-first implementation authorized |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/alpha-contract` |
 | Worktree | `/Users/wangchuanliang/.codex/worktrees/3282/StravaStats` |
@@ -13,7 +13,7 @@
 | Exact base tree | `b076c4f80cd1d6de7719cebe26e327d18a1f4734` |
 | Owner / release owner | XiChuan9 |
 | Authority | Documentation and exact documentation-contract tests only |
-| Pull request | Draft PR against `integration/v2` to be recorded after publication |
+| Pull request | [Draft PR #60](https://github.com/XiChuan9/StravaStats/pull/60) |
 
 ## Goal
 
@@ -94,6 +94,51 @@ product/package/workflow/Service Worker/deployment path is required.
 If a material choice remains or any prohibited path is necessary, stop with a minimum owner decision
 package. Otherwise A2 may freeze one exact docs/test-only allowlist, define failure-first assertions,
 and authorize implementation only inside that list.
+
+The first commit is `239c1ea89350ef2f5c3da135aef15bd2dce62c28`. It changed exactly this new
+Task Brief, was pushed to the unused feature branch, and opened Draft PR #60 with exact base
+`4375d699fb1fc1142d399c158b9ad0c4e7e730dc` and exact head `239c1ea...`.
+
+## A2 findings-first audit
+
+The read-only audit inspected the product PRD, Accepted release gates, M34 roadmap Task Brief,
+package and lock metadata, all HTML entry roots, the static JavaScript/CSS/media footprint,
+`manifest.json`, `sw.js`, the runtime Service Worker policy, `vercel.json`, the only GitHub Actions
+workflow and every script in `scripts/`. It read no private fixture, Token, account, provider or user
+browser profile and performed no Service Worker, cache, deployment or data action.
+
+### Findings
+
+| ID | Priority | Finding | Contract consequence |
+| --- | --- | --- | --- |
+| A2-1 | P1 | The PRD's formal support matrix is Chrome/Safari/Firefox across macOS/Windows plus iOS Safari/PWA basics. The Accepted roadmap narrows only the limited Alpha to current macOS Chrome. | Define “current” objectively and list every excluded platform; keep G9 `BLOCKED` for RC/production. |
+| A2-2 | P1 | The roadmap freezes the Alpha route, owner, synthetic-only boundary and static-bundle/SHA-256 direction, but it does not yet define the browser version rule, payload selection, manifest grammar, reproducibility or withdrawal procedure. | Add one bounded G1 contract to the authoritative release gates without changing any remaining gate row. |
+| A2-3 | P1 | `package.json` and the lockfile are still private package `1.0.0`; there is no build/bundle/release script and CI runs only install, syntax, privacy and tests. | M35 changes none of them. A future authorized G13 candidate task must add the version/build machinery; G12 then verifies its exact output. |
+| A2-4 | P1 | `scripts/local-dev-server.mjs` loads `.env`/`.env.local` and exposes serverless `/api` handlers. `vercel.json` is a deployment rewrite map. Neither is a static-only Alpha host. | Exclude `api/`, `scripts/`, `vercel.json`, env files and deployment configuration. Browser evidence must use a no-env, no-API, loopback-only static server. |
+| A2-5 | P1 | The client graph contains provider authorization/sync code and separately consented Weather, AI and map destinations, although secrets live only in excluded server/environment surfaces. | Client code may be present as inert runtime code, but Alpha evidence must record zero `/api`, Strava, Weather, AI, map, telemetry or other non-loopback requests and must never create/read a real Token or private record. |
+| A2-6 | P1 | The current local-host policy registers `sw.js` only with `?enable-sw=1`; otherwise it disables the owned worker and performs exact-name local static-cache cleanup. Native worker/deployment rehearsal remains G10. | The Alpha matrix must omit `enable-sw=1`, use a fresh disposable origin/profile, make no offline/PWA/worker claim and leave G10 `BLOCKED`. Withdrawal is an out-of-band artifact operation, not an in-app cache/data action. |
+| A2-7 | P2 | At the exact base, the collision-audited static payload rule selects 209 regular tracked files (5,727,628 bytes) and excludes repository/process material. The sorted path inventory digest is `d1be5319df2bdfefcc9ef153f8f7f11d67305e249f43b62579be6d8b0f3975c0`. | Freeze the selection rule, not the point-in-time count/digest, so the future exact candidate manifest truthfully binds its then-current payload. Require no symlinks, generated secrets or unmanifested files. |
+| A2-8 | P2 | Root HTML contains canonical/public-site metadata, but M35 authorizes no host, deployment or public indexing and the artifact is owner-provided on loopback only. | No product edit is needed; the contract prohibits treating the local bundle or its metadata as a public Alpha claim. |
+
+No P0 finding, unresolved material choice, package/workflow need or production-path need was found.
+The owner-approved direction determines all material release-policy questions; the remaining details
+above are mechanical acceptance criteria.
+
+### Frozen literal cumulative allowlist
+
+From this point through review and Closure, exactly these paths may change:
+
+```text
+docs/tasks/pr-48-alpha-contract.md
+docs/engineering/release-gates.md
+tests/docs/release-docs.test.js
+```
+
+This is a three-path literal cumulative hard maximum, not a directory glob. The first commit remains
+Task-Brief-only. Every other path—including `package.json`, `package-lock.json`, `.github/`, `api/`,
+`scripts/`, `vercel.json`, all HTML/JS/CSS/product runtime, `sw.js`, manifests, deployment files and
+data/cache/settings surfaces—is prohibited. A fourth path or a requirement to change any prohibited
+surface requires a new owner decision and an immediate stop.
 
 ## Required Alpha acceptance contract
 
