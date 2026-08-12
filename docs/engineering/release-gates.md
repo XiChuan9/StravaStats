@@ -92,7 +92,7 @@ duplicated here.
 | G9 | B + C | BLOCKED | RC / production | Browser / platform / accessibility | PRD matrix: supported Safari/Firefox/Chrome versions, macOS/Windows, iOS/PWA/mobile basic use and core keyboard/screen-reader evidence, or a separately approved time-bounded waiver | macOS Chrome Alpha or disposable Chromium is not the full matrix | `BROWSER-MATRIX`, after release-head freeze; private smoke additionally requires G4 | No permanent narrowing; any waiver needs owner and expiry | Prefer synthetic disposable profiles; no user profile mutation; private evidence stays off Git |
 | G10 | B + D | BLOCKED | RC / production | Production Service Worker / deployment / rollback | Approved non-production Vercel preview/staging plan then authorized rehearsal of two worker generations/tabs, wait/drain, mixed version, cold offline, owned-cache eviction, failed deploy/install, rollback trigger/time objective and preserved Legacy/V2 counts | Injected D3 evidence is not native SW/Cache Storage, deployment, rehearsal or production rollout | Planning/rehearsal Task Brief only after M34 merge; execution needs separate authority | XiChuan9 owns future plan; no public Alpha or rehearsal is authorized now | Isolated staging first; never delete Legacy/V2; rollback restores prior deployment/worker while preserving libraries |
 | G12 | A | NOT RUN | Alpha / Beta / RC / production | Exact release-head verification | After the separately authorized G13 candidate build, verify its exact versioned commit and bundle/manifest from a true remote depth-one checkout with focused/syntax/privacy/full/audit/diff/path gates, current P0/P1 inventory and exact-head CI before any tag, Release or publication | Earlier integration, M34 CI or pre-candidate CI does not validate a later version/artifact head | `RELEASE-HEAD-VERIFICATION`, after the G13 candidate-building phase and before G13 publication approval | Mechanical once the exact versioned candidate head exists | Static/synthetic/read-only; rollback reverts candidate commits without data/cache deletion |
-| G13 | F | BLOCKED | Alpha / Beta / RC / production | Version / tag / artifact / release | Under separate authority, first create an exact versioned candidate, static Web bundle and SHA-256 manifest; after G12 verifies that exact candidate, separately approve its tag/GitHub Release/publication and, only after G10, deployment; every object binds to one commit and XiChuan9 approval | Selected route/owner, package `1.0.0`, CI or a Draft/Ready PR is not an artifact or release | `VERSION-ARTIFACT-RELEASE`: candidate-building phase before G12, publication phase after G12, last for each named stage | Alpha → Beta → RC → `v2.0.0`; XiChuan9 owns tag/Release and final production approval | No action under M34; later rollback/revocation must preserve local data and public auditability |
+| G13 | F | BLOCKED | Alpha / Beta / RC / production | Version / tag / artifact / release | Under separate authority, first create an exact versioned candidate, static Web bundle and SHA-256 manifest; after G12 verifies that exact candidate, obtain XiChuan9 exact-object/final approval before any tag, GitHub Release, publication or, only after G10, deployment; every object binds to one commit | Selected route/owner, package `1.0.0`, CI or a Draft/Ready PR is not an artifact or release | `VERSION-ARTIFACT-RELEASE`: candidate-building phase before environmental/G12 evidence; owner-approval then publication phases after G12, last for each named stage | Alpha → Beta → RC → `v2.0.0`; XiChuan9 owns tag/Release and final production approval | No action under M34; later rollback/revocation must preserve local data and public auditability |
 
 ## 5. Shortest honest V2 Alpha path
 
@@ -110,8 +110,8 @@ Dependency order:
 M34 canonical roadmap merge
 → separately authorized G13 versioned Alpha candidate and static-bundle/SHA-256-manifest build
 → G12 exact candidate-head, artifact and current P0/P1 verification
-→ separately authorized G13 publication/tag/Release approval
 → XiChuan9 exact-object approval
+→ separately authorized G13 tag/Release/publication action
 ```
 
 This path permits no public deployment, real/private access, broader browser-support claim, version
@@ -158,24 +158,25 @@ separately unauthorized.
 
 ```text
 M34 canonical roadmap merge
+→ separately authorized G13 versioned candidate build and release-head freeze
 → separately authorized G2/G3/G5/G6 private evidence tasks
 → G7 XiChuan9 parity sign-off
 → while the G8 waiver is active, schedule its real-hardware follow-up without blocking later gates
 → after 2026-11-12, G8 evidence or a new explicit disposition is required before proceeding
 → G9 PRD browser/platform/accessibility matrix
 → post-M34 G10 planning Task Brief and separately authorized staging rehearsal
-→ separately authorized G13 versioned candidate build and bundle/manifest
 → G12 final exact candidate-head/artifact verification and zero-P0/P1 inventory
-→ separately authorized G13 publication/tag/Release and, after G10, deployment
-→ XiChuan9 final production approval
+→ XiChuan9 final exact-object approval
+→ separately authorized G13 publication/tag/Release and, after G10, deployment action
 ```
 
 Beta/RC naming never erases a row. RC requires G2/G3/G5-G7/G9/G10 plus the G13 candidate-building
-phase, G12 verification of that exact candidate and the G13 RC publication approval. G8 additionally
-blocks RC after waiver expiry unless its evidence or a new explicit disposition exists. Production
-requires every non-waived remaining row; G8 likewise becomes mandatory after expiry. Data loss,
-Legacy destruction, private data in Git/logs, inability to roll back, exact duplicate creation,
-Disconnect deletion and unauthorized external egress remain non-waivable.
+phase, G12 verification of that exact candidate, XiChuan9 exact-object approval and only then the G13
+RC publication action. G8 additionally blocks RC after waiver expiry unless its evidence or a new
+explicit disposition exists. Production requires every non-waived remaining row; G8 likewise becomes
+mandatory after expiry. Data loss, Legacy destruction, private data in Git/logs, inability to roll
+back, exact duplicate creation, Disconnect deletion and unauthorized external egress remain
+non-waivable.
 
 ## 7. Pull request and integration gates
 

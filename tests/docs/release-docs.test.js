@@ -399,6 +399,12 @@ test('canonical roadmap has the exact remaining A-F gate rows and no external PA
     const gates = await source('docs/engineering/release-gates.md');
     const remaining = gates.split('## 4. Canonical remaining gate inventory')[1]?.split('## 5.')[0];
     assert.notEqual(remaining, undefined);
+    const actualRows = remaining.split('\n').filter(line => /^\| G\d+ \|/.test(line));
+    assert.equal(actualRows.length, REMAINING_GATE_ROWS.length);
+    assert.deepEqual(
+        actualRows.map(line => line.split('|')[1].trim()),
+        REMAINING_GATE_ROWS.map(([id]) => id)
+    );
     for (const [id, evidenceClass, result, blocks] of REMAINING_GATE_ROWS) {
         const row = new RegExp(
             `\\| ${id} \\| ${evidenceClass.replaceAll('+', '\\+')} \\| ${result} \\| ${blocks.replaceAll('/', '\\/')} \\|`
@@ -407,16 +413,9 @@ test('canonical roadmap has the exact remaining A-F gate rows and no external PA
     }
     assert.match(gates, /Class A[\s\S]*Class B[\s\S]*Class C[\s\S]*Class D[\s\S]*Class E[\s\S]*Class F/);
     assert.match(gates, /\| Status \| Accepted \|/);
-    for (const label of [
-        'Real Legacy rescue',
-        'Real parity',
-        'Real provider / Disconnect',
-        'Real import / Backup',
-        'Browser / platform / accessibility',
-        'Production Service Worker / deployment / rollback',
-        'Version / tag / artifact / release'
-    ]) {
-        assert.doesNotMatch(remaining, new RegExp(`\\| ${label} \\| PASS \\|`, 'i'));
+    for (const row of actualRows) {
+        const columns = row.split('|').map(column => column.trim());
+        assert.doesNotMatch(columns[3], /^PASS\b/i, `${columns[1]} external Result must not be PASS`);
     }
 });
 
@@ -433,6 +432,16 @@ test('shortest Alpha path stays local synthetic-only and defers real evidence to
     assert.match(alpha, /public web Alpha[\s\S]{0,80}(?:not authorized|unauthorized)/i);
     assert.match(alpha, /version[\s\S]{0,80}artifact[\s\S]{0,80}(?:BLOCKED|separate authorization)/i);
     assert.doesNotMatch(alpha, /real (?:Legacy|parity)[^\n]*PASS/i);
+    const dependency = /Dependency order:[\s\S]*?```text\n([\s\S]*?)\n```/.exec(alpha)?.[1];
+    assert.notEqual(dependency, undefined);
+    const alphaOrder = [
+        dependency.indexOf('G13 versioned Alpha candidate'),
+        dependency.indexOf('G12 exact candidate-head'),
+        dependency.indexOf('XiChuan9 exact-object approval'),
+        dependency.indexOf('G13 tag/Release/publication action')
+    ];
+    assert(alphaOrder.every(position => position >= 0));
+    assert(alphaOrder.every((position, index) => index === 0 || alphaOrder[index - 1] < position));
 });
 
 test('complete v2 path freezes owner dispositions without claiming unrun evidence', async () => {
@@ -459,10 +468,17 @@ test('complete v2 path freezes owner dispositions without claiming unrun evidenc
     assert.match(full, /production deployment[\s\S]{0,80}(?:BLOCKED|not authorized)/i);
     assert.match(full, /RC requires G2\/G3\/G5-G7\/G9\/G10[\s\S]{0,180}G8[\s\S]{0,120}(?:after|expiry)/i);
     assert.match(full, /production[\s\S]{0,100}G8[\s\S]{0,120}(?:after|expiry)/i);
-    assert.match(
-        full,
-        /G13[\s\S]{0,100}(?:versioned candidate|candidate build)[\s\S]{0,160}G12[\s\S]{0,160}G13[\s\S]{0,120}(?:publication|tag|Release)/i
-    );
+    const dependency = /### Dependency order[\s\S]*?```text\n([\s\S]*?)\n```/.exec(full)?.[1];
+    assert.notEqual(dependency, undefined);
+    const fullOrder = [
+        dependency.indexOf('G13 versioned candidate build'),
+        dependency.indexOf('G9 PRD browser/platform/accessibility matrix'),
+        dependency.indexOf('G12 final exact candidate-head/artifact verification'),
+        dependency.indexOf('XiChuan9 final exact-object approval'),
+        dependency.indexOf('G13 publication/tag/Release')
+    ];
+    assert(fullOrder.every(position => position >= 0));
+    assert(fullOrder.every((position, index) => index === 0 || fullOrder[index - 1] < position));
 });
 
 test('documentation index and limitations point to the canonical roadmap', async () => {

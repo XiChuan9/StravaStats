@@ -284,8 +284,9 @@ These five paths are the cumulative hard maximum. A sixth path requires a new ow
 
 The shortest honest Alpha path is therefore M34 closure, then a separately authorized G13 versioned
 Alpha candidate build, G12 verification/current P0/P1 inventory on that exact candidate and bundle,
-and a separately authorized G13 publication/tag/Release approval. It must continue to disclose G2
-and G3 as RC blockers and cannot claim real-data, public deployment or cross-platform evidence.
+XiChuan9 exact-object approval, and only then a separately authorized G13 tag/Release/publication
+action. It must continue to disclose G2 and G3 as RC blockers and cannot claim real-data, public
+deployment or cross-platform evidence.
 
 ### 3. Private-evidence protocol definition
 
