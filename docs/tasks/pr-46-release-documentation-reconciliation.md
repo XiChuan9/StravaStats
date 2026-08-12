@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 release hardening / P1-DOCS |
-| Status | A1 scope freeze complete; A2 reconciliation pending |
+| Status | A2 complete; Option A nine-path repair authorized and in progress |
 | Branch | `codex/v2/release-documentation-reconciliation` |
 | Exact base | `integration/v2@eb0b6695b5dbf618877ff794dbc76935babeb793` |
 | Exact base tree | `6cdee026ec61604e016c20204e722816264a9f0c` |
@@ -51,12 +51,25 @@ docs/guides/known-limitations.md
 docs/guides/privacy-guide.md
 docs/tasks/pr-24-release-documentation.md
 tests/docs/release-docs.test.js
+docs/README.md
+CHANGELOG.md
 ```
 
 The first commit is restricted further to this Task Brief only. Later commits may use the remainder
 only after the Draft PR exists and the findings-first copy matrix is recorded here. Production
 JavaScript, HTML, CSS, package/version, workflow, schema, API, Worker, Service Worker, deployment,
 release configuration, and user data are expressly outside scope.
+
+### Option A scope expansion
+
+The first independent implementation review found that `docs/README.md` and `CHANGELOG.md` are
+linked release-documentation surfaces and are included by the exact documentation test, but both
+still described the historical `61d7b032...`/V4/PR-24 state as current. The task stopped without
+editing either path.
+
+The owner then selected scope Option A and authorized exactly those two additional paths. The
+cumulative hard maximum is now the nine literal paths above. This authorization does not change
+product or release behavior and does not permit a tenth path.
 
 ## Baseline readback
 
@@ -162,6 +175,19 @@ No unresolved material copy choice remains:
 The exact documentation test must stop requiring the obsolete logging/exact-coordinate blockers,
 reject their reintroduction, require the selected R6 disclosure, distinguish provider acquisition
 from retained-byte Retry, require R3 history separation, and preserve every external gate above.
+
+The first implementation review additionally requires:
+
+- `docs/README.md` and `CHANGELOG.md` to use the exact current integration baseline and describe
+  R3-R11, D3, C1-C4 and explicit Retry without claiming an Alpha/Beta/RC/release;
+- release-gate assertions to bind each private, browser/platform, production Service Worker,
+  deployment/rollback, history, version/artifact and owner category directly to a non-PASS state;
+- README to distinguish current V2 Source Manager provider I/O from Legacy provider paths and from
+  separately consented weather, map and AI egress;
+- current-ledger assertions to inspect only the appended current supplement, never historical
+  PR-24 prose;
+- package `1.0.0`, absent V2 tag/GitHub Release/release-owner approval and no milestone claim to
+  remain explicit.
 
 ## Failure-first and verification contract
 
