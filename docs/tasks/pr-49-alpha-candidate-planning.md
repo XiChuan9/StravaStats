@@ -5,21 +5,21 @@
 | Field | Value |
 | --- | --- |
 | Milestone | M36 / G13-ALPHA-CANDIDATE-PLANNING |
-| Status | A2 complete; recommended A3 package frozen; owner authorization pending |
+| Status | A3 implementation authorized; fifteen-path cumulative maximum frozen |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/alpha-candidate-planning` |
 | Worktree | `/Users/wangchuanliang/.codex/worktrees/d939/StravaStats` |
 | Exact base | `integration/v2@de9b47f3551d08102364f0b0794f487935d167a9` |
 | Exact base tree | `4a273bfffe5248ecdb4af7dbe6707c318398c6ac` |
 | Owner / release owner | XiChuan9 |
-| Authority | A0/A1/A2 planning and audit only; A3 implementation requires later explicit owner authorization |
+| Authority | A3 candidate-building implementation only; no G12, merge, tag, Release, publication, hosting or deployment |
 
 ## Goal
 
-Prepare an exact, bounded candidate-building authorization package for the owner-approved limited
-local, non-production `v2.0.0-alpha.1` static Web bundle. This task may verify the baseline, publish
-this Task Brief, audit the merged G1 contract and current repository, and freeze one recommended A3
-decision package. It does not authorize any candidate implementation or release action.
+Implement the owner-approved, exact bounded candidate-building package for the limited local,
+non-production `v2.0.0-alpha.1` static Web bundle. A0/A1/A2 froze the contract; A3 may now implement
+and verify it only within the authorized fifteen-path maximum. This task still does not authorize
+G12 final verification, merge, tag, GitHub Release, delivery, publication, hosting or deployment.
 
 The authoritative contract is the accepted G1 section of
 `docs/engineering/release-gates.md` together with `docs/tasks/pr-48-alpha-contract.md`. The G13
@@ -140,10 +140,25 @@ package.json
 scripts/alpha-candidate.mjs
 styles/gear.css
 tests/docs/release-docs.test.js
+tests/import/decoder-registry-wiring.test.js
+tests/privacy/external-runtime.test.js
 tests/release/alpha-candidate.test.js
 ```
 
-This is a thirteen-path literal cumulative hard maximum, not a directory glob. A fourteenth path,
+The owner authorized the original thirteen-path package, then separately approved the test-only
+whole-file SHA-256 collision repair as the fourteenth path. The frozen PR-14 regression test had
+collided with the approved package/version changes. The approved repair replaces only the
+`package.json` and `package-lock.json` whole-file hashes in that test with narrow semantic guards
+that freeze dependency names, ranges, resolved versions, URLs and integrity hashes. Decoder and
+runtime hashes remain frozen.
+
+The owner then separately approved `tests/privacy/external-runtime.test.js` as a test-only fifteenth
+path after its R11 whole-file guard collided with all three authorized package/lock/PR-14 test
+changes. That repair freezes the exact dependency graph and lock artifact versions, resolved URLs,
+integrity values and transitive ranges semantically; all other R11 external-runtime, vendor and CSP
+invariants remain unchanged. Direct decoder/runtime hashes and wiring stay owned by the PR-14 test.
+
+This is a fifteen-path literal cumulative hard maximum, not a directory glob. A sixteenth path,
 new dependency, different product-byte edit, payload-rule change or generated repository file stops
 implementation and requires a new owner decision. In particular, `api/`, `vercel.json`,
 `manifest.json`, `sw.js`, every other HTML/JS/CSS/runtime path, storage/migration/Legacy code, data,
@@ -178,6 +193,9 @@ npm run serve:alpha-candidate  -- --bundle-root <absolute-extracted-root> [--por
 Build must fail closed unless Node is exactly `v24.19.0`, npm is exactly `11.17.0`, `HEAD` is a
 commit on the authorized branch, the worktree/index are clean, package/lock versions match, and the
 output parent is an absolute existing empty directory whose resolved path is outside the repository.
+The only detached-HEAD exception is the GitHub Actions `pull_request` job whose exact head ref is
+`codex/v2/alpha-candidate-planning` and whose workflow-provided authorized SHA equals `HEAD`; push,
+local environment spoofing without the Actions context, other refs and mismatched SHAs fail closed.
 It reads the exact commit/tree/time and selected payload bytes through Git plumbing from `HEAD`, not
 from untracked or modified worktree files. It rejects selected non-`100644` modes, symlinks, unsafe
 paths, duplicates, excluded prefixes/extensions and any mismatch with the G1 rule.
@@ -296,7 +314,7 @@ failure stops the candidate; it cannot be repaired by clearing data or weakening
 - Before implementation, add focused built-in `node:test` assertions and record their expected
   failure against the unmodified A2 head. Tests use temp directories and synthetic bytes only; no
   network, credentials, private fixture or browser profile.
-- Tests freeze the thirteen-path allowlist; package/lock/toolchain/dependency invariants; exact
+- Tests freeze the fifteen-path allowlist; package/lock/toolchain/dependency invariants; exact
   selector/exclusions/modes; Dashboard missing-asset repair; provenance/manifest/evidence schemas;
   ZIP profile and corruption failures; output refusal/atomicity; two same-checkout byte-identical
   builds; static-server loopback/no-API/no-listing/traversal behavior; and protected SW/cache/data/
@@ -315,7 +333,7 @@ failure stops the candidate; it cannot be repaired by clearing data or weakening
 
 ### Rollback and withdrawal
 
-Candidate-code rollback is an ordinary revert of only the thirteen authorized paths and removal of
+Candidate-code rollback is an ordinary revert of only the fifteen authorized paths and removal of
 only external temporary candidate files. It never invokes Disconnect/Delete Local Data, changes a
 feature-flag default, edits Service Worker/cache names, clears Cache Storage/settings/IndexedDB, or
 reads, rewrites, migrates or deletes Legacy/V2 records. Opaque string IDs and missing/null/zero
@@ -328,8 +346,8 @@ profiles. No tag, Release, deployment or public history exists to delete under A
 
 ## Hard boundaries
 
-- No version bump, package/lock edit, build-script implementation, candidate generation,
-  `PROVENANCE.json`, `SHA256SUMS`, archive or other artifact in this task.
+- A3 may implement and build only the frozen fifteen paths and external temporary candidate
+  outputs. No repository-tracked `PROVENANCE.json`, `SHA256SUMS`, archive or generated artifact.
 - No tag, GitHub Release, publication, hosting, deployment or public Alpha claim.
 - No workflow, product runtime, Service Worker lifecycle, cache, settings, IndexedDB, Legacy or V2
   data action.
@@ -342,14 +360,72 @@ profiles. No tag, Release, deployment or public history exists to delete under A
 
 ## Completion and handoff
 
-Completion of this planning task means:
+Completion of this A3 task means:
 
 1. this Task-Brief-only first commit remains identifiable in Draft PR history;
 2. the Draft PR remains open against `integration/v2`;
-3. A2 findings and one recommended exact A3 authorization package are recorded here and reported to
-   the control tower;
-4. all repository changes remain limited to this Task Brief; and
-5. work stops before any candidate implementation or release/publication action.
+3. A2 findings, the owner-authorized A3 package and both separately authorized test-only collision
+   paths are recorded here;
+4. all repository changes remain within the frozen fifteen-path cumulative maximum;
+5. deterministic repository gates, local external build/verify/reproducibility evidence,
+   independent findings-first review and Task-Brief-only Final Review Closure pass; and
+6. work stops with the PR open and unmerged before G12, tag, GitHub Release, delivery, publication,
+   hosting or deployment.
 
-The later owner decision may authorize, reject or revise A3. Even an authorized candidate build does
-not authorize G12 to pass, a tag, GitHub Release, delivery, hosting or deployment.
+Even a successful A3 candidate build does not authorize G12 to pass, a merge, tag, GitHub Release,
+delivery, hosting or deployment.
+
+## Final Review Closure
+
+### Authorized implementation record
+
+- Owner authorization expanded the original thirteen-path package only for two discovered
+  test-only whole-file-hash collisions. The final cumulative maximum is exactly the fifteen paths
+  listed above; no sixteenth path, dependency or additional product-byte change was used.
+- Failure-first evidence was recorded before each repair: the initial candidate suite was 1/5;
+  the PR-14 hash collision failed full verification; the R11 hash collision left full verification
+  at 1,933/1,934; and independent review repairs were first reproduced as focused failures.
+- The implementation commit is `99270bd323b0e108a4fc854f29f979ceae4ece82`. It contains the
+  fourteen non-Task-Brief paths. This separate Closure commit changes only this Task Brief.
+
+### Final findings-first review
+
+Independent read-only review initially found two P1 and one P2 issue: query-bearing local routes
+were rejected, strict verification accepted a self-consistent non-candidate bundle, and traversal
+was checked only after URL normalization. After failure-first repairs, a fresh review found the
+authorized-branch build boundary missing; after that repair, another fresh review found that
+ordinary exact-toolchain CI tests would attempt an unauthorized detached build. Each finding was
+reproduced, repaired within the frozen paths and re-reviewed.
+
+The final fresh independent re-review reported **no actionable P0/P1/P2 findings**. It confirmed:
+
+- required query routes work while `/api`, `enable-sw=1`, raw/encoded traversal, non-loopback Host,
+  dotfile and unlisted-file requests fail closed;
+- verification binds the exact ordered provenance schema and bytes, package/toolchain metadata,
+  current exact Git commit/tree payload blobs, manifest and deterministic container;
+- build authority accepts only the exact local feature branch or the trusted detached GitHub
+  Actions `pull_request` head/ref/SHA tuple, rejecting push, other refs and mismatched SHAs;
+- ordinary unauthorized exact-toolchain tests assert refusal without output, while the authorized
+  local/CI path retains the real two-build comparison; and
+- CI, documentation, Service Worker/cache/data/Legacy boundaries and the fifteen-path scope remain
+  aligned.
+
+### Repository gates before final Closure
+
+```text
+npm ci                    PASS; 6 packages (current shell emitted the expected engine warning)
+focused Alpha/R11/PR-14  PASS; 35/35
+release documentation    PASS; 24/24
+syntax                    PASS; 285 files
+privacy                   PASS
+full test                 PASS; 1,936/1,936
+npm audit                 PASS; 0 vulnerabilities
+git diff --check          PASS
+independent re-review     PASS; no actionable P0/P1/P2
+changed-path gate         PASS; exact fifteen authorized paths
+```
+
+The current shell is Node `v25.8.1`/npm `11.11.0`, so it is intentionally ineligible to create
+candidate bytes. The exact Node `v24.19.0`/npm `11.17.0` local external build, two-build comparison,
+true remote depth-one verification and exact-head CI follow only from this clean immutable final
+Closure head. No repository commit is permitted after candidate generation.
