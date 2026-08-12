@@ -10,7 +10,7 @@ evidence and is not the live roadmap.
 
 | Blocker | Current evidence | Required before production release |
 | --- | --- | --- |
-| No V2 release artifact | Package metadata remains `1.0.0`; there is no `v2.0.0-*` tag, GitHub Release, production deployment, or release-owner approval | Version/release decision, authorized tag/artifact/deployment, exact release evidence, owner approval |
+| No verified or published V2 release artifact | Package metadata is `2.0.0-alpha.1` on an unverified local candidate-building head; G13 is `PARTIAL` and G12 is `NOT RUN`. There is no tag, GitHub Release, publication, hosting, deployment, or exact-object release-owner approval | G12 exact-head and exact-object verification, later owner approval, and separately authorized tag/Release/publication actions |
 | Production Service Worker lifecycle | R9 admits only approved same-origin static assets; API/private/dynamic requests never enter cache handling. D3 has deterministic evidence for the waiting/drained lifecycle with current cache `stravastats-static-v2-000001`; `strava-dashboard-v1` is recognized as the preserved legacy cache, not treated as the current cache or blindly deleted. Production update, mixed-version, cold-offline, eviction, deployment, and rollback are not run | Rehearsed production-like worker/cache/deployment matrix without deleting user data |
 | Real account and private-library evidence | Auth lifecycle and imports pass deterministic synthetic tests; real OAuth, disconnect, private Legacy/V2 libraries, and real FIT/TCX/GPX/CSV/ZIP were not run. G2 blocks RC for real Legacy rescue; G5/G6 remain `NOT RUN` | Separately authorized private evidence outside Git under the approved protocol, with redacted public summary |
 | Cross-browser support | Actual-served evidence is disposable Chromium/Chrome; Safari, Firefox, Windows, iOS/PWA, mobile, and broad assistive-technology matrices are not verified | Release matrix for supported browsers/platforms or an approved, time-bounded waiver |
@@ -29,10 +29,10 @@ gate, deleting data, editing a test result, or describing unrun work as passed.
   regression guard remain mandatory. This is not erasure: the historical exposure was not removed
   from public history, and this authorization permits no rewrite, force-push, ref/tag/Release/PR
   deletion, value repetition, or external notification.
-- **Limited Alpha:** `v2.0.0-alpha.1` is a future limited local, non-production static Web bundle,
-  current macOS Chrome-only and explicitly synthetic-only. G2 and G3 are deferred to RC, not waived
-  or `PASS`. Public web Alpha, version bump, artifact build/publication, tag and Release remain
-  unauthorized.
+- **Limited Alpha candidate:** `v2.0.0-alpha.1` is an unverified local, non-production static Web
+  candidate-building head, current macOS Chrome-only and explicitly synthetic-only. G2 and G3 are
+  deferred to RC, not waived or `PASS`. G12 final status, public web Alpha, artifact publication,
+  tag, Release, hosting and deployment remain unauthorized.
 - **Private evidence protocol:** XiChuan9 is custodian. Raw Tokens/accounts/private files and browser
   profiles never enter Git; only separately authorized disposable/isolated execution and permitted
   redacted aggregate counts/statuses/hashes may be used. Protocol approval is not real-data access.

@@ -48,7 +48,7 @@ const REMAINING_GATE_ROWS = Object.freeze([
     ['G9', 'B + C', 'BLOCKED', 'RC / production'],
     ['G10', 'B + D', 'BLOCKED', 'RC / production'],
     ['G12', 'A', 'NOT RUN', 'Alpha / Beta / RC / production'],
-    ['G13', 'F', 'BLOCKED', 'Alpha / Beta / RC / production']
+    ['G13', 'F', 'PARTIAL', 'Alpha / Beta / RC / production']
 ]);
 
 async function source(relativePath) {
@@ -120,13 +120,16 @@ test('README commands, routes, and release status match executable repository fa
         source('diagnostics.html')
     ]);
     const packageData = JSON.parse(packageJson);
-    assert.equal(packageData.version, '1.0.0');
+    assert.equal(packageData.version, '2.0.0-alpha.1');
     for (const command of [
         'npm ci',
         'npm run dev',
         'npm run check:syntax',
         'npm run check:privacy',
-        'npm test'
+        'npm test',
+        'npm run build:alpha-candidate',
+        'npm run verify:alpha-candidate',
+        'npm run serve:alpha-candidate'
     ]) assert.match(readme, new RegExp(command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
     for (const route of [
         '/source-manager.html?mode=real',
@@ -136,12 +139,13 @@ test('README commands, routes, and release status match executable repository fa
     assert.match(sourceManager, /<title>Sources — StravaStats<\/title>/);
     assert.match(backup, /<title>Storage &amp; Backup — StravaStats<\/title>/);
     assert.match(diagnostics, /<title>Diagnostics — StravaStats<\/title>/);
-    assert.match(readme, /not (?:a )?production[\s>]*release/i);
-    assert.match(readme, /does not claim an Alpha, Beta, or Release Candidate milestone/i);
-    assert.match(readme, /package metadata[\s\S]{0,40}\`1\.0\.0\`/i);
-    assert.match(readme, /no[^\n]*v2\.0\.0-\*[^\n]*tag/i);
+    assert.match(readme, /not (?:a )?public Alpha or production release/i);
+    assert.match(readme, /unverified local Alpha candidate-building head/i);
+    assert.match(readme, /package metadata[\s\S]{0,40}\`2\.0\.0-alpha\.1\`/i);
+    assert.match(readme, /no[^\n]*v2\.0\.0-alpha\.1[^\n]*tag/i);
     assert.match(readme, /no[^\n]*GitHub Release/i);
-    assert.match(readme, /package metadata[\s\S]{0,160}no[\s\S]{0,160}release-owner[\s>]*approval/i);
+    assert.match(readme, /G12 exact[\s\S]{0,80}NOT RUN/i);
+    assert.match(readme, /no[\s\S]{0,160}exact-object release-owner approval/i);
     assert.doesNotMatch(readme, /v2\.0\.0 (?:is |has been )?(?:released|deployed|published)/i);
 });
 
@@ -153,8 +157,8 @@ test('current documentation index and changelog share the exact post-Retry basel
     for (const document of [index, changelog]) {
         assert.match(document, /eb0b6695b5dbf618877ff794dbc76935babeb793/);
         assert.doesNotMatch(document, /61d7b032305fd8f12d71544315f06d553213801d/);
-        assert.match(document, /\`1\.0\.0\`/);
-        assert.match(document, /not[^\n]*(?:Alpha|Beta|Release Candidate|production release)/i);
+        assert.match(document, /\`?2\.0\.0-alpha\.1\`?/);
+        assert.match(document, /not[^\n]*(?:public Alpha|Beta|Release Candidate|production release)/i);
     }
     for (const pattern of [
         /public (?:Git )?history|Git history/i,
@@ -513,7 +517,8 @@ test('G1 Alpha contract preserves privacy, rollback and remaining non-PASS gates
     for (const gate of ['G5', 'G6', 'G7', 'G8', 'G9', 'G10', 'G12', 'G13']) {
         assert.match(contract, new RegExp(`${gate}[\\s\\S]{0,100}(?:NOT RUN|PARTIAL|BLOCKED)`));
     }
-    assert.match(contract, /G13[\s\S]{0,180}separate authorization/i);
+    assert.match(contract, /G13 is `PARTIAL`[\s\S]{0,180}candidate-building phase/i);
+    assert.match(contract, /tag[\s\S]{0,120}GitHub Release[\s\S]{0,160}separate later G13 authorization/i);
     assert.doesNotMatch(contract, /real (?:Legacy|parity)[^\n]*(?:is|=)\s*`?PASS/i);
 });
 
@@ -554,7 +559,8 @@ test('shortest Alpha path stays local synthetic-only and defers real evidence to
     assert.match(alpha, /synthetic-only/i);
     assert.match(alpha, /G2[\s\S]{0,100}G3[\s\S]{0,160}deferred to RC/i);
     assert.match(alpha, /public web Alpha[\s\S]{0,80}(?:not authorized|unauthorized)/i);
-    assert.match(alpha, /version[\s\S]{0,80}artifact[\s\S]{0,80}(?:BLOCKED|separate authorization)/i);
+    assert.match(alpha, /G13 is `PARTIAL`[\s\S]{0,160}G12[\s\S]{0,160}separate later authority/i);
+    assert.match(alpha, /artifact publication[\s\S]{0,80}tag[\s\S]{0,80}GitHub Release/i);
     assert.doesNotMatch(alpha, /real (?:Legacy|parity)[^\n]*PASS/i);
     const dependency = /Dependency order:[\s\S]*?```text\n([\s\S]*?)\n```/.exec(alpha)?.[1];
     assert.notEqual(dependency, undefined);

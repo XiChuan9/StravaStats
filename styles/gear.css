@@ -2620,9 +2620,7 @@ html[data-tab-background-images='off'] .tab-content {
 }
 
 #dashboard-tab.tab-content {
-    background-image:
-        linear-gradient(var(--tab-bg-overlay), var(--tab-bg-overlay)),
-        url('../media/bg-dashboard.jpg');
+    background-image: linear-gradient(var(--tab-bg-overlay), var(--tab-bg-overlay));
 }
 
 #run-tab.tab-content {
