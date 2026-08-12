@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | M33 / P0-RETRY Option A |
-| Status | Executable Option A1 approved; implementation in progress; PR remains Draft |
+| Status | Final Review Closure complete; publication gates pending; PR remains Draft |
 | Base branch | `integration/v2` |
 | Exact base | `integration/v2@1669d1636188184232d76b3c05305496d26ff313` |
 | Exact base tree | `d62d29bee122ee2d9abcd76d805309564d91dbe9` |
@@ -537,11 +537,11 @@ it creates a `retrying` orphan crash gap and violates the required atomic C4 lin
 operation first and transitioning the terminal job later is equally non-atomic. Automatic startup,
 reload, crash, visibility, online, timer, or background retry remains prohibited.
 
-## Exact owner decision required
+## Owner decision record (satisfied)
 
-Implementation remains blocked until the owner returns exactly one of the following mutually
-exclusive selections. Any edit, hybrid, new path, or broader contract requires another material
-turn.
+The following mutually exclusive responses were the frozen decision boundary. On 2026-08-12 the
+owner returned the recommended Executable Option A1 response exactly in substance, as recorded in
+`Owner approval recorded`. Option A2, hybrids, new paths, and broader contracts remain unauthorized.
 
 Recommended exact response:
 
@@ -570,14 +570,54 @@ Stop before implementation, Ready, or any broader mutation if:
 
 ## Completion evidence
 
-The Task-Brief-only first commit and OPEN/Draft PR #57 record exact-base verification and the
-pre-implementation blocker. This material-decision update freezes a complete common executable
-contract plus mutually exclusive Executable Options A1 and A2. No production or test behavior has
-changed. The PR must remain Draft and implementation must remain absent until the owner returns
-exactly one response from `Exact owner decision required`.
+### Final Review Closure — 2026-08-12
 
-The docs-only material head passed 78/78 focused Import, Source Manager boundary/recovery, and
-SourceOperation storage tests; 283-file syntax validation; privacy validation; the complete
-1,897/1,897 suite; `git diff --check`; and an exact changed-path gate proving this Task Brief is the
-only path changed from the prior published head. No browser evidence was run because this turn
-authorizes no implementation and makes no browser-behavior claim.
+The owner approval is isolated in Task-Brief-only commit
+`68122c2ff5dc25489dc7550bd25c0ab75831a46f`. The failure-first implementation and all production
+and test changes are isolated in commit `39ce61d14df884e483554c296398af4a77acb4a1`.
+The implementation uses the selected controller-owned memory-only catalog and handles, revalidates
+all terminal Import and retained-byte facts in the atomic four-store prepare, holds the existing
+exclusive Web Lock through terminal verification and SourceOperation release, and exposes only the
+frozen safe codes/copy through listener closures. Cancel, page close, and pagehide latch before an
+asynchronous Web Lock callback can begin; the callback rechecks closed state before clock, UUID,
+storage, or Worker work. Startup, reload, refresh, online, visibility, and Demo schedule no Retry.
+
+The final integration diff is exactly the frozen eleven paths. No twelfth path was required. The
+implementation adds no public API or module export, schema/store/index/record field, migration,
+Backup change, dependency, Worker or Service Worker contract, provider/auth/Token request,
+retention rule, or terminal state. It preserves completed/committed items, existing Legacy and V2
+data, opaque string IDs, missing/null semantics, V6, and Backup format 3. Rollback remains removal
+of the page/controller/internal helper and atomic-prepare call sites; it needs no data rewrite or
+cleanup and never deletes retained artifacts.
+
+The independent findings-first review reported five initial findings covering malformed terminal
+semantics, running-state refresh/cancellation, evidence completeness, storage-code separation, and
+single-use handles. After repairs, a fresh review found two asynchronous-lock/close and
+`SCHEMA_MISMATCH` mapping gaps. Both were repaired failure-first. The final genuinely independent
+re-review reported **no findings**, rechecked every prior finding, and made no edits.
+
+Executed on the final implementation tree before this Task-Brief-only closure:
+
+```text
+npm ci                                                       PASS; 6 packages
+focused Import/SourceOperation/Source Manager tests          PASS; 93/93
+npm run check:syntax                                         PASS; 283 files
+npm run check:privacy                                        PASS
+npm test                                                     PASS; 1,912/1,912
+git diff --check                                             PASS
+exact integration/v2 changed-path gate                       PASS; 11/11 allowed paths
+```
+
+Authorized disposable synthetic Chromium evidence ran against the actually served page on a fresh
+local origin and passed eligible completion, missing-byte ineligibility, conflict with no action,
+true two-tab Web Lock exclusion, explicit cancellation, reload with no automatic Retry, Demo zero
+Retry capability and storage I/O, unchanged Legacy sentinel, opaque-handle non-serialization, and
+DOM/public-report canary redaction. It recorded zero external HTTP, provider, telemetry, XHR, or
+WebSocket requests and zero console warnings/errors. All fixtures and state were disposable and
+synthetic; no Token, account, provider activity, private fixture, or user browser profile was used.
+
+This closure intentionally precedes publication so it can remain the required Task-Brief-only final
+commit. PR #57 must remain OPEN/Draft/unmerged until this exact closure head is pushed normally,
+verified against the true depth-one remote head, and its exact-head CI succeeds. Only then may the
+safe PR body be updated and Draft changed to Ready under standing authorization. Ready is not merge
+authorization; PR #56 and historical PR #31 remain untouched.
