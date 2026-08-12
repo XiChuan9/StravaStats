@@ -26,6 +26,26 @@ function options(indexedDB, now = () => START_MS) {
     };
 }
 
+function overwriteRecord(indexedDB, storeName, value) {
+    return new Promise((resolve, reject) => {
+        const opened = indexedDB.open('strava-stats-v2', 6);
+        opened.onerror = () => reject(opened.error);
+        opened.onsuccess = () => {
+            const database = opened.result;
+            const transaction = database.transaction(storeName, 'readwrite');
+            transaction.objectStore(storeName).put(value);
+            transaction.oncomplete = () => {
+                database.close();
+                resolve();
+            };
+            transaction.onabort = () => {
+                database.close();
+                reject(transaction.error);
+            };
+        };
+    });
+}
+
 function claim(overrides = {}) {
     return {
         expectedRevision: 0,
@@ -69,6 +89,7 @@ test('V6 migration creates one exact idle operation and the public factory is fr
         'getOperation',
         'claimOperation',
         'heartbeatOperation',
+        'prepareRetryOperation',
         'linkOperationJob',
         'beginHistoryCommit',
         'completeOperation',
@@ -165,6 +186,153 @@ test('ImportJob creation and operation link commit atomically', async () => {
         assertStorageError(STORAGE_ERROR_CODE.CONFLICT, 'createImportJob')
     );
     assert.equal(await importStore.getImportJob('other-job'), null);
+    await importStore.close();
+    await operationStore.close();
+});
+
+test('explicit Retry atomically claims the operation and schedules only retryable pending bytes', async () => {
+    const indexedDB = new IDBFactory();
+    const operationStore = createSourceOperationStore(options(indexedDB));
+    const importStore = createImportStore(options(indexedDB));
+    await operationStore.initialize();
+    await importStore.initialize();
+    await importStore.createImportJob('retry-job', ['retry-item', 'kept-item']);
+    await importStore.transitionImportJob('retry-job', 'queued', 'validating');
+    for (const id of ['retry-item', 'kept-item']) {
+        await importStore.transitionImportItem(id, 'queued', 'validating', {
+            errorCode: null,
+            retryable: false,
+            activityId: null
+        });
+        await importStore.transitionImportItem(id, 'validating', 'hashing', {
+            errorCode: null,
+            retryable: false,
+            activityId: null
+        });
+    }
+    const content = '{"synthetic":true}';
+    await importStore.storeRawArtifact('retry-item', {
+        id: `raw:${'a'.repeat(64)}`,
+        sha256: 'a'.repeat(64),
+        mediaType: 'application/vnd.stravastats.synthetic+json',
+        byteLength: new TextEncoder().encode(content).byteLength,
+        content
+    });
+    await importStore.transitionImportItem(
+        'retry-item', 'hashing', 'failed_validation', {
+            errorCode: 'FILE_CORRUPTED',
+            retryable: true,
+            activityId: null
+        }
+    );
+    await importStore.transitionImportItem(
+        'kept-item', 'hashing', 'failed_validation', {
+            errorCode: 'FILE_CORRUPTED',
+            retryable: false,
+            activityId: null
+        }
+    );
+    await importStore.transitionImportJob(
+        'retry-job', 'validating', 'failed_validation', 'FILE_CORRUPTED'
+    );
+
+    const prepared = await operationStore.prepareRetryOperation({
+        expectedRevision: 0,
+        ownerId: OWNER,
+        operationId: OPERATION,
+        jobId: 'retry-job',
+        actionAt: START,
+        leaseExpiresAt: EXPIRES
+    });
+    assert.equal(prepared.operation.status, 'active');
+    assert.equal(prepared.operation.phase, 'importing');
+    assert.equal(prepared.operation.jobId, 'retry-job');
+    assert.equal(prepared.job.status, 'retrying');
+    assert.equal(prepared.job.retryCount, 1);
+    assert.equal(prepared.job.completedItems, 1);
+    assert.equal(prepared.scheduledItems, 1);
+    const items = await importStore.listImportItems('retry-job');
+    assert.equal(items[0].status, 'retrying');
+    assert.equal(items[0].retryable, false);
+    assert.equal(items[1].status, 'failed_validation');
+    assert.equal(items[1].retryable, false);
+    await importStore.close();
+    await operationStore.close();
+});
+
+test('explicit Retry rejects malformed terminal semantics and quota with zero partial writes', async () => {
+    const indexedDB = new IDBFactory();
+    const operationStore = createSourceOperationStore(options(indexedDB));
+    const importStore = createImportStore(options(indexedDB));
+    await operationStore.initialize();
+    await importStore.initialize();
+    await importStore.createImportJob('strict-retry-job', ['strict-retry-item']);
+    await importStore.transitionImportJob('strict-retry-job', 'queued', 'validating');
+    await importStore.transitionImportItem(
+        'strict-retry-item', 'queued', 'validating'
+    );
+    await importStore.transitionImportItem(
+        'strict-retry-item', 'validating', 'hashing'
+    );
+    const content = '{"strict":true}';
+    await importStore.storeRawArtifact('strict-retry-item', {
+        id: `raw:${'c'.repeat(64)}`,
+        sha256: 'c'.repeat(64),
+        mediaType: 'application/vnd.stravastats.synthetic+json',
+        byteLength: new TextEncoder().encode(content).byteLength,
+        content
+    });
+    await importStore.transitionImportItem(
+        'strict-retry-item', 'hashing', 'failed_validation', {
+            errorCode: 'FILE_CORRUPTED',
+            retryable: true,
+            activityId: null
+        }
+    );
+    await importStore.transitionImportJob(
+        'strict-retry-job', 'validating', 'failed_validation', 'FILE_CORRUPTED'
+    );
+    const validItem = await importStore.getImportItem('strict-retry-item');
+    const input = {
+        expectedRevision: 0,
+        ownerId: OWNER,
+        operationId: OPERATION,
+        jobId: 'strict-retry-job',
+        actionAt: START,
+        leaseExpiresAt: EXPIRES
+    };
+    await overwriteRecord(indexedDB, 'importItems', {
+        ...validItem,
+        errorCode: null
+    });
+    const idle = await operationStore.getOperation();
+    const job = await importStore.getImportJob('strict-retry-job');
+    await assert.rejects(
+        operationStore.prepareRetryOperation(input),
+        assertStorageError(STORAGE_ERROR_CODE.SCHEMA_MISMATCH, 'linkSourceOperationJob')
+    );
+    assert.deepEqual(await operationStore.getOperation(), idle);
+    assert.deepEqual(await importStore.getImportJob('strict-retry-job'), job);
+    await overwriteRecord(indexedDB, 'importItems', validItem);
+
+    const originalPut = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (...args) {
+        if (this.name === 'importJobs') {
+            throw Object.freeze({ name: 'QuotaExceededError' });
+        }
+        return originalPut.apply(this, args);
+    };
+    try {
+        await assert.rejects(
+            operationStore.prepareRetryOperation(input),
+            assertStorageError(STORAGE_ERROR_CODE.QUOTA_EXCEEDED, 'linkSourceOperationJob')
+        );
+    } finally {
+        IDBObjectStore.prototype.put = originalPut;
+    }
+    assert.deepEqual(await operationStore.getOperation(), idle);
+    assert.deepEqual(await importStore.getImportJob('strict-retry-job'), job);
+    assert.deepEqual(await importStore.getImportItem('strict-retry-item'), validItem);
     await importStore.close();
     await operationStore.close();
 });

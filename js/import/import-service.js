@@ -12,12 +12,21 @@ import {
 } from './state-machine.js';
 
 const RECOVERY_HANDLES = new WeakMap();
+const RETRY_INSPECTORS = new WeakMap();
 
 /** Internal Source Manager recovery entry; intentionally not re-exported by Import index. */
 export function recoverImportServiceJob(service, jobId) {
     const recover = RECOVERY_HANDLES.get(service);
     return recover
         ? recover(jobId)
+        : Promise.reject(importError(IMPORT_ERROR_CODE.INVALID_REQUEST));
+}
+
+/** Internal Source Manager Retry catalog; intentionally not re-exported by Import index. */
+export function inspectImportServiceRetryJobs(service) {
+    const inspect = RETRY_INSPECTORS.get(service);
+    return inspect
+        ? inspect()
         : Promise.reject(importError(IMPORT_ERROR_CODE.INVALID_REQUEST));
 }
 import {
@@ -270,6 +279,126 @@ function publicReport(job, items) {
             retryable: item.retryable
         })))
     });
+}
+
+function exactUtc(value) {
+    if (
+        typeof value !== 'string'
+        || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)
+    ) return false;
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
+}
+
+function exactRetryJob(value) {
+    const job = ownDataValues(value, [
+        'id', 'status', 'totalItems', 'completedItems', 'createdAt',
+        'completedAt', 'retryCount', 'errorCode'
+    ]);
+    return job
+        && typeof job.id === 'string'
+        && job.id.length > 0
+        && Object.values(J).includes(job.status)
+        && Number.isSafeInteger(job.totalItems)
+        && job.totalItems > 0
+        && Number.isSafeInteger(job.completedItems)
+        && job.completedItems >= 0
+        && job.completedItems <= job.totalItems
+        && exactUtc(job.createdAt)
+        && (
+            [
+            J.COMPLETED, J.COMPLETED_WITH_WARNINGS, J.FAILED_VALIDATION,
+            J.FAILED_DECODE, J.FAILED_STORAGE, J.CANCELLED
+            ].includes(job.status)
+                ? job.completedItems === job.totalItems
+                    && exactUtc(job.completedAt)
+                : job.completedAt === null
+        )
+        && Number.isSafeInteger(job.retryCount)
+        && job.retryCount >= 0
+        && (job.errorCode === null || (
+            typeof job.errorCode === 'string' && job.errorCode.length > 0
+        ))
+        && (
+            [J.COMPLETED, J.COMPLETED_WITH_WARNINGS].includes(job.status)
+                ? job.errorCode === null
+                : ![
+                    J.FAILED_VALIDATION, J.FAILED_DECODE,
+                    J.FAILED_STORAGE, J.CANCELLED
+                ].includes(job.status) || job.errorCode !== null
+        )
+        ? Object.freeze({ ...job })
+        : null;
+}
+
+function exactRetryItems(value, job) {
+    const values = denseArraySnapshot(value);
+    if (!values || values.length !== job.totalItems) return null;
+    const terminal = new Set([
+        I.COMPLETED, I.REVIEW_REQUIRED, I.SKIPPED_EXACT_DUPLICATE,
+        I.FAILED_VALIDATION, I.FAILED_DECODE, I.FAILED_STORAGE, I.CANCELLED
+    ]);
+    const failed = new Set([
+        I.FAILED_VALIDATION, I.FAILED_DECODE, I.FAILED_STORAGE
+    ]);
+    const successful = new Set([
+        I.COMPLETED, I.REVIEW_REQUIRED, I.SKIPPED_EXACT_DUPLICATE
+    ]);
+    const items = values.map(item => ownDataValues(item, [
+        'id', 'jobId', 'ordinal', 'artifactId', 'status', 'errorCode',
+        'retryable', 'activityId'
+    ]));
+    if (items.some((item, ordinal) => (
+        !item
+        || typeof item.id !== 'string'
+        || item.id.length === 0
+        || item.jobId !== job.id
+        || item.ordinal !== ordinal
+        || (item.artifactId !== null && typeof item.artifactId !== 'string')
+        || !terminal.has(item.status)
+        || (item.errorCode !== null && typeof item.errorCode !== 'string')
+        || typeof item.retryable !== 'boolean'
+        || (item.activityId !== null && typeof item.activityId !== 'string')
+        || (item.retryable && !failed.has(item.status))
+        || (successful.has(item.status) && (
+            item.errorCode !== null
+            || item.retryable
+            || item.activityId === null
+        ))
+        || ((failed.has(item.status) || item.status === I.CANCELLED) && (
+            item.errorCode === null
+            || item.activityId !== null
+        ))
+    ))) return null;
+    return Object.freeze(items.map(item => Object.freeze({ ...item })));
+}
+
+function exactPendingRetryArtifact(value, artifactId) {
+    const artifact = ownDataValues(value, [
+        'id', 'sha256', 'mediaType', 'byteLength', 'content', 'acquiredVia',
+        'importedAt', 'state', 'activityId'
+    ]);
+    if (
+        !artifact
+        || artifact.id !== artifactId
+        || !/^raw:[a-f0-9]{64}$/.test(artifact.id)
+        || artifact.id !== `raw:${artifact.sha256}`
+        || !ACCEPTED_MEDIA_TYPES.includes(artifact.mediaType)
+        || !Number.isSafeInteger(artifact.byteLength)
+        || artifact.byteLength < 1
+        || typeof artifact.content !== 'string'
+        || artifact.content.length === 0
+        || new TextEncoder().encode(artifact.content).byteLength !== artifact.byteLength
+        || artifact.acquiredVia !== (
+            artifact.mediaType === STRAVA_PROVIDER_ARTIFACT_MEDIA_TYPE
+                ? 'provider-artifact'
+                : 'local-file'
+        )
+        || !exactUtc(artifact.importedAt)
+        || artifact.state !== 'pending'
+        || artifact.activityId !== null
+    ) return null;
+    return Object.freeze({ ...artifact });
 }
 
 export function createImportService(options) {
@@ -671,6 +800,56 @@ export function createImportService(options) {
         return publicReport(job, await dependencies.store.listImportItems(jobId));
     }
 
+    async function inspectRetryJobs() {
+        if (closed) throw importError(IMPORT_ERROR_CODE.STORAGE_UNAVAILABLE);
+        const listed = denseArraySnapshot(await dependencies.store.listImportJobs());
+        if (!listed) throw importError(IMPORT_ERROR_CODE.INVALID_REQUEST);
+        const catalog = [];
+        for (const value of listed) {
+            const job = exactRetryJob(value);
+            if (!job) throw importError(IMPORT_ERROR_CODE.INVALID_REQUEST);
+            if (![
+                J.COMPLETED,
+                J.COMPLETED_WITH_WARNINGS,
+                J.FAILED_VALIDATION,
+                J.FAILED_DECODE,
+                J.FAILED_STORAGE,
+                J.CANCELLED
+            ].includes(job.status)) continue;
+            const items = exactRetryItems(
+                await dependencies.store.listImportItems(job.id),
+                job
+            );
+            if (!items) throw importError(IMPORT_ERROR_CODE.INVALID_REQUEST);
+            let eligibility = 'not_eligible';
+            if ([
+                J.FAILED_VALIDATION,
+                J.FAILED_DECODE,
+                J.FAILED_STORAGE
+            ].includes(job.status)) {
+                const retryable = items.filter(item => item.retryable === true);
+                if (retryable.length > 0) {
+                    eligibility = 'eligible';
+                    for (const item of retryable) {
+                        const artifact = item.artifactId
+                            ? await dependencies.store.getRawArtifact(item.artifactId)
+                            : null;
+                        if (!exactPendingRetryArtifact(artifact, item.artifactId)) {
+                            eligibility = 'source_unavailable';
+                            break;
+                        }
+                    }
+                }
+            }
+            catalog.push(Object.freeze({
+                jobId: job.id,
+                report: publicReport(job, items),
+                eligibility
+            }));
+        }
+        return Object.freeze(catalog);
+    }
+
     async function importArtifacts(value, sourceOperationLink = null) {
         if (closed) throw importError(IMPORT_ERROR_CODE.STORAGE_UNAVAILABLE);
         const artifacts = await snapshotArtifacts(value, () => closed);
@@ -702,7 +881,11 @@ export function createImportService(options) {
         }
         if (
             wasActive
-            && (canCancelImportJob(job.status) || job.status === J.HASHING)
+            && (
+                canCancelImportJob(job.status)
+                || job.status === J.HASHING
+                || job.status === J.RETRYING
+            )
         ) {
             observeImportCancellation();
             return Object.freeze({ status: 'cancellation-requested' });
@@ -785,5 +968,6 @@ export function createImportService(options) {
         }
     });
     RECOVERY_HANDLES.set(publicService, recoverJob);
+    RETRY_INSPECTORS.set(publicService, inspectRetryJobs);
     return publicService;
 }

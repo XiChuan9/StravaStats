@@ -681,6 +681,31 @@ function assertExactTerminalJob(job, items, operation) {
     ) throw schemaMismatch(operation);
 }
 
+function assertExactRetryTerminalItems(items, operation) {
+    const successful = new Set([
+        'completed', 'review_required', 'skipped_exact_duplicate'
+    ]);
+    const failed = new Set([
+        'failed_validation', 'failed_decode', 'failed_storage'
+    ]);
+    if (items.some(item => (
+        (successful.has(item.status) && (
+            item.errorCode !== null
+            || item.retryable
+            || item.activityId === null
+        ))
+        || (failed.has(item.status) && (
+            item.errorCode === null
+            || item.activityId !== null
+        ))
+        || (item.status === 'cancelled' && (
+            item.errorCode === null
+            || item.retryable
+            || item.activityId !== null
+        ))
+    ))) throw schemaMismatch(operation);
+}
+
 export function createSourceOperationStore(options) {
     const dependencies = normalizeOptions(options);
     if (!dependencies) {
@@ -823,6 +848,122 @@ export function createSourceOperationStore(options) {
                     leaseExpiresAt: input.leaseExpiresAt
                 });
                 context.put(V2_STORE_NAME.SOURCE_OPERATIONS, { ...result });
+            });
+            return () => result;
+        }));
+    }
+
+    function prepareRetryOperation(value) {
+        const operation = STORAGE_OPERATION.LINK_SOURCE_OPERATION_JOB;
+        const input = normalizeAction(value);
+        if (!input || input.jobId === null) {
+            return Promise.reject(dataInvalid(operation));
+        }
+        return runReady(operation, database => runTransaction(database, {
+            storeNames: [
+                V2_STORE_NAME.SOURCE_OPERATIONS,
+                V2_STORE_NAME.IMPORT_JOBS,
+                V2_STORE_NAME.IMPORT_ITEMS,
+                V2_STORE_NAME.RAW_ARTIFACTS
+            ],
+            mode: 'readwrite',
+            operation
+        }, context => {
+            const operationToken = queueOperation(context);
+            const jobToken = context.get(V2_STORE_NAME.IMPORT_JOBS, input.jobId);
+            const itemsToken = context.getAll(
+                V2_STORE_NAME.IMPORT_ITEMS,
+                'byJobId',
+                input.jobId
+            );
+            let current;
+            let job;
+            let items;
+            let retryable;
+            let artifactTokens;
+            let result;
+            context.afterReads(() => {
+                current = readOperation(operationToken, operation);
+                job = normalizeImportJobRecord(jobToken.read());
+                if (!job) throw notFound(operation);
+                items = exactItemsForJob(itemsToken.read(), job, operation);
+                assertExactTerminalJob(job, items, operation);
+                assertExactRetryTerminalItems(items, operation);
+                if (items.some(item => (
+                    item.retryable === true
+                    && !['failed_validation', 'failed_decode', 'failed_storage']
+                        .includes(item.status)
+                ))) throw schemaMismatch(operation);
+                if (
+                    current.status !== STATUS.IDLE
+                    || current.revision !== input.expectedRevision
+                    || !['failed_validation', 'failed_decode', 'failed_storage']
+                        .includes(job.status)
+                ) throw conflict(operation);
+                retryable = items.filter(item => item.retryable === true);
+                if (retryable.length === 0) throw conflict(operation);
+                artifactTokens = retryable.map(item => (
+                    item.artifactId === null
+                        ? null
+                        : context.get(V2_STORE_NAME.RAW_ARTIFACTS, item.artifactId)
+                ));
+            });
+            context.afterReads(() => {
+                for (let index = 0; index < retryable.length; index += 1) {
+                    const item = retryable[index];
+                    const artifact = artifactTokens[index] === null
+                        ? null
+                        : normalizeRawArtifactRecord(artifactTokens[index].read());
+                    if (
+                        !artifact
+                        || artifact.id !== item.artifactId
+                        || artifact.state !== 'pending'
+                    ) throw notFound(operation);
+                }
+                const scheduled = new Set(retryable.map(item => item.id));
+                const nextItems = items.map(item => (
+                    scheduled.has(item.id)
+                        ? Object.freeze({
+                            ...item,
+                            status: 'retrying',
+                            errorCode: null,
+                            retryable: false,
+                            activityId: null
+                        })
+                        : item
+                ));
+                const nextJob = Object.freeze({
+                    ...job,
+                    status: 'retrying',
+                    completedItems: job.totalItems - retryable.length,
+                    completedAt: null,
+                    retryCount: job.retryCount + 1,
+                    errorCode: null
+                });
+                const nextOperation = activeRecord(current, {
+                    kind: 'local_import',
+                    phase: 'importing',
+                    ownerId: input.ownerId,
+                    operationId: input.operationId,
+                    jobId: input.jobId,
+                    sourceConnectionRevision: null,
+                    acquiredAt: null,
+                    startedAt: input.actionAt,
+                    heartbeatAt: input.actionAt,
+                    leaseExpiresAt: input.leaseExpiresAt
+                });
+                for (const item of nextItems) {
+                    if (scheduled.has(item.id)) {
+                        context.put(V2_STORE_NAME.IMPORT_ITEMS, { ...item });
+                    }
+                }
+                context.put(V2_STORE_NAME.IMPORT_JOBS, { ...nextJob });
+                context.put(V2_STORE_NAME.SOURCE_OPERATIONS, { ...nextOperation });
+                result = Object.freeze({
+                    operation: nextOperation,
+                    job: nextJob,
+                    scheduledItems: retryable.length
+                });
             });
             return () => result;
         }));
@@ -1341,6 +1482,7 @@ export function createSourceOperationStore(options) {
         getOperation,
         claimOperation,
         heartbeatOperation,
+        prepareRetryOperation,
         linkOperationJob,
         beginHistoryCommit,
         completeOperation,

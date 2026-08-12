@@ -12,6 +12,7 @@ import {
     createInlineImportWorker
 } from '../../js/import/index.js';
 import { ACTIVITIES_CSV_MEDIA_TYPE } from '../../js/import/activities-csv-decoder.js';
+import { inspectImportServiceRetryJobs } from '../../js/import/import-service.js';
 import { createCanonicalStore, createImportStore } from '../../js/storage/index.js';
 
 const FIXED_TIME = Date.parse('2026-08-05T01:02:03.004Z');
@@ -409,6 +410,70 @@ test('worker crash is redacted, persisted, and explicitly retryable', async () =
     report = await core.waitForJob(run.jobId);
     assert.equal(report.status, 'completed');
     assert.equal((await core.previewActivities()).total, 1);
+    await core.close();
+});
+
+test('internal Retry inspection preserves the public service and report surfaces', async () => {
+    const indexedDB = new IDBFactory();
+    const importStore = store(indexedDB);
+    let calls = 0;
+    const inline = createInlineImportWorker();
+    const core = service(importStore, {
+        worker: {
+            async process(input) {
+                calls += 1;
+                if (calls === 1) throw new Error('private worker detail');
+                return inline.process(input);
+            },
+            close() { inline.close(); }
+        }
+    });
+    await core.initialize();
+    const run = await core.importArtifacts([await artifact()]);
+    const report = await core.waitForJob(run.jobId);
+    const catalog = await inspectImportServiceRetryJobs(core);
+    assert.deepEqual(Object.keys(core), [
+        'initialize', 'importArtifacts', 'cancelJob', 'retryJob', 'getReport',
+        'previewActivities', 'waitForJob', 'close'
+    ]);
+    assert.equal(catalog.length, 1);
+    assert.equal(catalog[0].jobId, run.jobId);
+    assert.equal(catalog[0].eligibility, 'eligible');
+    assert.deepEqual(catalog[0].report, report);
+    assert.equal(Object.hasOwn(catalog[0].report, 'jobId'), false);
+    assert.doesNotMatch(JSON.stringify(catalog[0].report), /opaque-job|private worker/);
+    await core.close();
+});
+
+test('internal Retry inspection rejects an entire failed job when retained bytes disappear', async () => {
+    const indexedDB = new IDBFactory();
+    const realStore = store(indexedDB);
+    let hideRaw = false;
+    const wrappedStore = {
+        ...realStore,
+        getRawArtifact(id) {
+            return hideRaw ? Promise.resolve(null) : realStore.getRawArtifact(id);
+        }
+    };
+    let calls = 0;
+    const core = service(wrappedStore, {
+        worker: {
+            async process(input) {
+                calls += 1;
+                if (calls === 1) throw new Error('synthetic failure');
+                return createInlineImportWorker().process(input);
+            },
+            close() {}
+        }
+    });
+    await core.initialize();
+    const run = await core.importArtifacts([await artifact()]);
+    assert.equal((await core.waitForJob(run.jobId)).status, 'failed_decode');
+    hideRaw = true;
+    const catalog = await inspectImportServiceRetryJobs(core);
+    assert.equal(catalog.length, 1);
+    assert.equal(catalog[0].eligibility, 'source_unavailable');
+    assert.equal(catalog[0].report.items[0].retryable, true);
     await core.close();
 });
 

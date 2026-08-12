@@ -98,7 +98,17 @@ const PREFLIGHT_COPY = Object.freeze({
     RECOVERY_REQUEUED: 'Preserved pending bytes were explicitly scheduled for recovery.',
     RECOVERY_SOURCE_UNAVAILABLE: 'Some interrupted items had no valid pending bytes and were cancelled.',
     RECOVERY_ABANDONED: 'The interrupted operation was abandoned. Committed items were kept.',
-    RECOVERY_HISTORY_NOT_ADVANCED: 'Recovered items were kept, but provider Sync history was not advanced.'
+    RECOVERY_HISTORY_NOT_ADVANCED: 'Recovered items were kept, but provider Sync history was not advanced.',
+    RETRY_AVAILABLE: 'This failed import can be retried from its preserved local bytes.',
+    RETRY_RUNNING: 'Retrying the failed import from preserved local bytes.',
+    RETRY_COMPLETED: 'Retry completed. Previously committed items were kept.',
+    DEMO_RETRY_UNAVAILABLE: 'Import Retry is unavailable in Demo mode.',
+    RETRY_UNAVAILABLE: 'Import Retry is unavailable. The existing import record was not changed.',
+    RETRY_NOT_ELIGIBLE: 'This import can no longer be retried.',
+    RETRY_SOURCE_UNAVAILABLE: 'The preserved local import bytes are unavailable. The existing import record was not changed.',
+    RETRY_STORAGE_FAILED: 'Browser storage space is not sufficient for this Retry. Previously committed items were kept.',
+    RETRY_CANCELLED: 'Retry cancelled. Previously committed items were kept.',
+    RETRY_FAILED: 'The failed import could not be completed. Previously committed items were kept.'
 });
 
 const IMPORT_COPY = Object.freeze({
@@ -617,6 +627,51 @@ function isReport(value) {
         && value.totals && Array.isArray(value.items);
 }
 
+function retryLogEntry(value) {
+    try {
+        if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
+        const fields = Object.getOwnPropertyDescriptors(value);
+        if (
+            Reflect.ownKeys(fields).length !== 3
+            || !['schemaVersion', 'report', 'retry'].every(name => (
+                fields[name]?.enumerable && Object.hasOwn(fields[name], 'value')
+            ))
+            || fields.schemaVersion.value !== 1
+            || !isReport(fields.report.value)
+        ) return null;
+        const retry = fields.retry.value;
+        const retryFields = retry && typeof retry === 'object' && !Array.isArray(retry)
+            ? Object.getOwnPropertyDescriptors(retry) : null;
+        if (
+            !retryFields
+            || Reflect.ownKeys(retryFields).length !== 3
+            || !['available', 'code', 'handle'].every(name => (
+                retryFields[name]?.enumerable && Object.hasOwn(retryFields[name], 'value')
+            ))
+            || typeof retryFields.available.value !== 'boolean'
+            || typeof retryFields.code.value !== 'string'
+            || !SAFE_UI_CODES.has(retryFields.code.value)
+            || (retryFields.handle.value !== null
+                && (typeof retryFields.handle.value !== 'string'
+                    || !/^retry-[1-9][0-9]*-[1-9][0-9]*$/
+                        .test(retryFields.handle.value)))
+            || (retryFields.available.value !== (retryFields.handle.value !== null))
+            || (retryFields.available.value
+                && retryFields.code.value !== 'RETRY_AVAILABLE')
+        ) return null;
+        return Object.freeze({
+            report: fields.report.value,
+            retry: Object.freeze({
+                available: retryFields.available.value,
+                code: retryFields.code.value,
+                handle: retryFields.handle.value
+            })
+        });
+    } catch {
+        return null;
+    }
+}
+
 function validConnectionSnapshot(value) {
     try {
         if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -1075,12 +1130,17 @@ export function createSourceManagerPage({
 
     function renderReports(reports, filter = 'all') {
         elements.reportList.replaceChildren();
-        const safeReports = Array.isArray(reports) ? reports.filter(isReport) : [];
-        if (safeReports.length === 0) {
+        const safeEntries = Array.isArray(reports) ? reports.map(value => {
+            const entry = retryLogEntry(value);
+            if (entry) return entry;
+            return isReport(value) ? Object.freeze({ report: value, retry: null }) : null;
+        }).filter(Boolean) : [];
+        if (safeEntries.length === 0) {
             elements.reportList.append(text(document, 'p', 'No imports recorded.', 'empty-copy'));
             return;
         }
-        safeReports.forEach((report, reportIndex) => {
+        safeEntries.forEach((entry, reportIndex) => {
+            const report = entry.report;
             const card = text(document, 'article', '', 'report-card');
             const heading = text(document, 'h3', `Import ${reportIndex + 1}`);
             const summary = text(document, 'div', '', 'report-card__summary');
@@ -1116,6 +1176,59 @@ export function createSourceManagerPage({
                     `${hiddenCount} additional items are not shown.`,
                     'report-items__remainder'
                 ));
+            }
+            if (
+                entry.retry !== null
+                && ['failed_validation', 'failed_decode', 'failed_storage']
+                    .includes(report.status)
+            ) {
+                const retryCopy = text(
+                    document,
+                    'p',
+                    safeCopy(entry.retry.code),
+                    'report-card__retry-state'
+                );
+                card.append(retryCopy);
+                if (entry.retry.available && recoveryFacade) {
+                    const handle = entry.retry.handle;
+                    const controls = text(document, 'div', '', 'report-card__retry-actions');
+                    const retryButton = text(document, 'button', 'Retry');
+                    retryButton.type = 'button';
+                    const cancelButton = text(document, 'button', 'Cancel Retry');
+                    cancelButton.type = 'button';
+                    cancelButton.hidden = true;
+                    cancelButton.addEventListener('click', async () => {
+                        cancelButton.disabled = true;
+                        try {
+                            await recoveryFacade.cancelRetry();
+                        } catch (error) {
+                            const code = safeCode(error, 'RETRY_FAILED');
+                            retryCopy.textContent = safeCopy(code);
+                            elements.alert.textContent = `${code}. ${safeCopy(code)}`;
+                        }
+                    });
+                    retryButton.addEventListener('click', async () => {
+                        retryButton.disabled = true;
+                        cancelButton.hidden = false;
+                        retryCopy.textContent = safeCopy('RETRY_RUNNING');
+                        elements.live.textContent = safeCopy('RETRY_RUNNING');
+                        try {
+                            await recoveryFacade.retry(handle);
+                            const state = recoveryFacade.getRetryState();
+                            const code = state?.code && SAFE_UI_CODES.has(state.code)
+                                ? state.code : 'RETRY_FAILED';
+                            elements.live.textContent = safeCopy(code);
+                        } catch (error) {
+                            const code = safeCode(error, 'RETRY_FAILED');
+                            elements.alert.textContent = `${code}. ${safeCopy(code)}`;
+                        } finally {
+                            cancelButton.hidden = true;
+                            await refreshPublicReads().catch(() => {});
+                        }
+                    });
+                    controls.append(retryButton, cancelButton);
+                    card.append(controls);
+                }
             }
             elements.reportList.append(card);
         });
@@ -1269,7 +1382,10 @@ export function createSourceManagerPage({
     async function refreshPublicReads() {
         const [preview, reports, reviews] = await Promise.all([
             importFacade.previewActivities(),
-            importFacade.listPersistedReports(),
+            sessionMode === SOURCE_MANAGER_SESSION_MODE.REAL
+                && recoveryFacade?.listImportLog
+                ? recoveryFacade.listImportLog()
+                : importFacade.listPersistedReports(),
             importFacade.listDuplicateReviews()
         ]);
         renderPreview(preview);
@@ -1570,7 +1686,11 @@ export function createSourceManagerPage({
                     item.classList.toggle('is-active', active);
                     item.setAttribute('aria-pressed', String(active));
                 });
-                renderReports(await importFacade.listPersistedReports(), button.dataset.reportFilter);
+                const reports = sessionMode === SOURCE_MANAGER_SESSION_MODE.REAL
+                    && recoveryFacade?.listImportLog
+                    ? await recoveryFacade.listImportLog()
+                    : await importFacade.listPersistedReports();
+                renderReports(reports, button.dataset.reportFilter);
             });
         });
     }

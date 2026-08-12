@@ -1,5 +1,8 @@
 import { createImportService, createBrowserImportWorker } from '../import/index.js';
-import { recoverImportServiceJob } from '../import/import-service.js';
+import {
+    inspectImportServiceRetryJobs,
+    recoverImportServiceJob
+} from '../import/import-service.js';
 import {
     createImportStore,
     createSourceConnectionStore,
@@ -116,6 +119,7 @@ function realFacade({ indexedDB, IDBKeyRange, crypto, Worker }) {
             service.importArtifacts(artifacts, sourceOperationLink)
         ),
         recoverJob: jobId => recoverImportServiceJob(service, jobId),
+        inspectRetryJobs: () => inspectImportServiceRetryJobs(service),
         cancelJob: jobId => service.cancelJob(jobId),
         getReport: jobId => service.getReport(jobId),
         waitForJob: jobId => service.waitForJob(jobId),
