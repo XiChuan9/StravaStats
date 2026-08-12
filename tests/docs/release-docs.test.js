@@ -38,10 +38,10 @@ const REMAINING_GATE_ROWS = Object.freeze([
     ['G5', 'C', 'NOT RUN', 'RC / production'],
     ['G6', 'C', 'NOT RUN', 'RC / production'],
     ['G7', 'B + C', 'BLOCKED', 'RC / production'],
-    ['G8', 'B', 'PARTIAL', 'RC / production'],
+    ['G8', 'B', 'PARTIAL', 'RC / production after 2026-11-12'],
     ['G9', 'B + C', 'BLOCKED', 'RC / production'],
     ['G10', 'B + D', 'BLOCKED', 'RC / production'],
-    ['G12', 'A', 'NOT RUN', 'Alpha / RC / production'],
+    ['G12', 'A', 'NOT RUN', 'Alpha / Beta / RC / production'],
     ['G13', 'F', 'BLOCKED', 'Alpha / Beta / RC / production']
 ]);
 
@@ -402,6 +402,7 @@ test('canonical roadmap has the exact remaining A-F gate rows and no external PA
         assert.match(remaining, row, `${id} exact row`);
     }
     assert.match(gates, /Class A[\s\S]*Class B[\s\S]*Class C[\s\S]*Class D[\s\S]*Class E[\s\S]*Class F/);
+    assert.match(gates, /\| Status \| Accepted \|/);
     for (const label of [
         'Real Legacy rescue',
         'Real parity',
@@ -438,6 +439,7 @@ test('complete v2 path freezes owner dispositions without claiming unrun evidenc
     assert.match(full, /large libraries|large batches/i);
     assert.match(full, /Retry\/Recover\/Abandon/);
     assert.match(full, /representative real-hardware budget task/i);
+    assert.match(full, /waiver[\s\S]{0,180}(?:temporarily satisfies|does not block)[\s\S]{0,180}2026-11-12/i);
     assert.match(full, /Safari[\s\S]*Firefox[\s\S]*Windows[\s\S]*iOS\/PWA[\s\S]*mobile/i);
     assert.match(full, /keyboard[\s\S]{0,80}screen-reader/i);
     assert.match(full, /no-rewrite risk acceptance/i);
@@ -451,6 +453,11 @@ test('complete v2 path freezes owner dispositions without claiming unrun evidenc
     assert.match(full, /XiChuan9/);
     assert.match(full, /real\/private evidence[\s\S]{0,80}NOT RUN/i);
     assert.match(full, /production deployment[\s\S]{0,80}(?:BLOCKED|not authorized)/i);
+    assert.match(full, /RC requires G2\/G3\/G5-G10[\s\S]{0,100}G12[\s\S]{0,100}G13/i);
+    assert.match(
+        full,
+        /G13[\s\S]{0,100}(?:versioned candidate|candidate build)[\s\S]{0,160}G12[\s\S]{0,160}G13[\s\S]{0,120}(?:publication|tag|Release)/i
+    );
 });
 
 test('documentation index and limitations point to the canonical roadmap', async () => {

@@ -2,7 +2,7 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| Status | Proposed |
+| Status | Accepted |
 | Owner | XiChuan9 |
 | Created | 2026-07-28 |
 | Last updated | 2026-08-12 |
@@ -83,11 +83,11 @@ duplicated here.
 | G5 | C | NOT RUN | RC / production | Real provider / Disconnect | Authorized Connect/Reconnect, one bounded `Sync latest 25`, auth/rate degradation and Disconnect with preserved Legacy/V2 counts | Provider doubles are not real account evidence; Disconnect is not Delete Local Data | `REAL-PROVIDER-DISCONNECT`, after separate G4 execution authority | Source mix and custodian frozen; actual access not authorized by M34 | Token/provider evidence stays off Git; rollback revokes connection only and preserves local libraries |
 | G6 | C | NOT RUN | RC / production | Real import / Backup | Representative FIT/TCX/GPX/CSV/ZIP import plus format-3 Backup/Restore into a fresh isolated target with redacted manifest/count/hash reconciliation | Synthetic formats do not prove a private library or unsupported vendor coverage | `REAL-IMPORT-BACKUP`, after separate G4 execution authority | Required source mix frozen; actual access not authorized by M34 | Private files remain off Git; disposable target only; original files and Legacy data preserved |
 | G7 | B + C | BLOCKED | RC / production | Real parity sign-off | XiChuan9 disposition for every G3/G5/G6 discrepancy with zero unresolved P0 discrepancy | Unreviewed warnings, missing tolerances or counts-only comparison cannot be `PASS` | `REAL-PARITY-SIGNOFF`, after G3/G5/G6 | XiChuan9 is sign-off owner | Redacted derived evidence only; no automatic merge/delete; rollback withdraws evidence, not data |
-| G8 | B | PARTIAL | RC / production | Performance budget | Existing 5k/200k hard evidence remains; representative real-hardware budget task completes before 2026-11-12 or a new explicit disposition is approved | Waiver and record-only 10k/1,000-FIT timings are not performance `PASS` or production-wide speed claims | `PERFORMANCE-REAL-HARDWARE-BUDGET`, before waiver expiry | XiChuan9 waiver through 2026-11-12 | Synthetic until separately authorized; no correctness/privacy weakening; rollback reverts policy/test changes only |
+| G8 | B | PARTIAL | RC / production after 2026-11-12 | Performance budget | The waiver temporarily satisfies the absolute 10,000-activity and 1,000-FIT threshold blocker through 2026-11-12 while existing functional/resource hard limits and 5k/200k hard evidence remain; complete a representative real-hardware budget task before expiry or obtain a new explicit disposition | Waiver and record-only 10k/1,000-FIT timings are not performance `PASS` or production-wide speed claims | `PERFORMANCE-REAL-HARDWARE-BUDGET`, before waiver expiry | XiChuan9 waiver through 2026-11-12 | Synthetic until separately authorized; no correctness/privacy weakening; rollback reverts policy/test changes only |
 | G9 | B + C | BLOCKED | RC / production | Browser / platform / accessibility | PRD matrix: supported Safari/Firefox/Chrome versions, macOS/Windows, iOS/PWA/mobile basic use and core keyboard/screen-reader evidence, or a separately approved time-bounded waiver | macOS Chrome Alpha or disposable Chromium is not the full matrix | `BROWSER-MATRIX`, after release-head freeze; private smoke additionally requires G4 | No permanent narrowing; any waiver needs owner and expiry | Prefer synthetic disposable profiles; no user profile mutation; private evidence stays off Git |
 | G10 | B + D | BLOCKED | RC / production | Production Service Worker / deployment / rollback | Approved non-production Vercel preview/staging plan then authorized rehearsal of two worker generations/tabs, wait/drain, mixed version, cold offline, owned-cache eviction, failed deploy/install, rollback trigger/time objective and preserved Legacy/V2 counts | Injected D3 evidence is not native SW/Cache Storage, deployment, rehearsal or production rollout | Planning/rehearsal Task Brief only after M34 merge; execution needs separate authority | XiChuan9 owns future plan; no public Alpha or rehearsal is authorized now | Isolated staging first; never delete Legacy/V2; rollback restores prior deployment/worker while preserving libraries |
-| G12 | A | NOT RUN | Alpha / RC / production | Exact release-head verification | True remote depth-one checkout, focused/syntax/privacy/full/audit/diff/path gates, current P0/P1 inventory and exact-head CI on each selected release head | Earlier integration or M34 CI does not validate a later version/artifact head | `RELEASE-HEAD-VERIFICATION`, after applicable evidence and before G13 | Mechanical once the exact release head exists | Static/synthetic/read-only; rollback reverts candidate commits without data/cache deletion |
-| G13 | F | BLOCKED | Alpha / Beta / RC / production | Version / tag / artifact / release | Exact separately approved version change, static Web bundle, SHA-256 manifest, tag/GitHub Release and, only after G10, deployment; every object binds to one commit and XiChuan9 approval | Selected route/owner, package `1.0.0`, CI or a Draft/Ready PR is not an artifact or release | `VERSION-ARTIFACT-RELEASE`, last for each named stage | Alpha → Beta → RC → `v2.0.0`; XiChuan9 owns tag/Release and final production approval | No action under M34; later rollback/revocation must preserve local data and public auditability |
+| G12 | A | NOT RUN | Alpha / Beta / RC / production | Exact release-head verification | After the separately authorized G13 candidate build, verify its exact versioned commit and bundle/manifest from a true remote depth-one checkout with focused/syntax/privacy/full/audit/diff/path gates, current P0/P1 inventory and exact-head CI before any tag, Release or publication | Earlier integration, M34 CI or pre-candidate CI does not validate a later version/artifact head | `RELEASE-HEAD-VERIFICATION`, after the G13 candidate-building phase and before G13 publication approval | Mechanical once the exact versioned candidate head exists | Static/synthetic/read-only; rollback reverts candidate commits without data/cache deletion |
+| G13 | F | BLOCKED | Alpha / Beta / RC / production | Version / tag / artifact / release | Under separate authority, first create an exact versioned candidate, static Web bundle and SHA-256 manifest; after G12 verifies that exact candidate, separately approve its tag/GitHub Release/publication and, only after G10, deployment; every object binds to one commit and XiChuan9 approval | Selected route/owner, package `1.0.0`, CI or a Draft/Ready PR is not an artifact or release | `VERSION-ARTIFACT-RELEASE`: candidate-building phase before G12, publication phase after G12, last for each named stage | Alpha → Beta → RC → `v2.0.0`; XiChuan9 owns tag/Release and final production approval | No action under M34; later rollback/revocation must preserve local data and public auditability |
 
 ## 5. Shortest honest V2 Alpha path
 
@@ -103,8 +103,9 @@ Dependency order:
 
 ```text
 M34 canonical roadmap merge
-→ G12 exact Alpha-head verification and current P0/P1 inventory
-→ separately authorized G13 version/static-bundle/SHA-256/tag/Release task
+→ separately authorized G13 versioned Alpha candidate and static-bundle/SHA-256-manifest build
+→ G12 exact candidate-head, artifact and current P0/P1 verification
+→ separately authorized G13 publication/tag/Release approval
 → XiChuan9 exact-object approval
 ```
 
@@ -127,11 +128,14 @@ separately unauthorized.
   M34.
 - **Parity:** zero unresolved P0 discrepancies; XiChuan9 must explain and sign off every non-P0
   difference.
-- **Performance:** the time-bounded waiver expires **2026-11-12**. Large libraries or large batches
-  may be slower or reach memory/quota limits earlier. Existing hard limits and 5k/200k evidence stay
-  unchanged; bounded chunks, cancellation and explicit Retry/Recover/Abandon mitigate impact. A
-  representative real-hardware budget task is required before expiry, and no release performance
-  overclaim is permitted.
+- **Performance:** the waiver temporarily satisfies the absolute 10,000-activity and 1,000-FIT
+  threshold blocker and therefore does not block RC/production through **2026-11-12**. Large
+  libraries or large batches may be slower or reach memory/quota limits earlier. Existing functional/
+  resource hard limits and 5k/200k evidence stay unchanged; bounded chunks, cancellation and explicit
+  Retry/Recover/Abandon mitigate impact. A representative real-hardware budget task is required
+  before expiry, and no release performance overclaim is permitted. Expiry without that evidence or
+  a new explicit disposition makes G8 blocking again; it never weakens privacy, correctness or data
+  safety gates.
 - **Browser/platform:** full V2 requires Safari, Firefox, Windows, iOS/PWA and mobile evidence plus
   core keyboard and screen-reader evidence. macOS Chrome-only applies solely to the limited Alpha;
   any later time-bounded waiver requires separate owner/expiry approval.
@@ -154,14 +158,16 @@ M34 canonical roadmap merge
 → G8 real-hardware budget before waiver expiry
 → G9 PRD browser/platform/accessibility matrix
 → post-M34 G10 planning Task Brief and separately authorized staging rehearsal
-→ G12 final exact-head verification and zero-P0/P1 inventory
-→ separately authorized G13 version/bundle/manifest/tag/Release/deployment
+→ separately authorized G13 versioned candidate build and bundle/manifest
+→ G12 final exact candidate-head/artifact verification and zero-P0/P1 inventory
+→ separately authorized G13 publication/tag/Release and, after G10, deployment
 → XiChuan9 final production approval
 ```
 
-Beta/RC naming never erases a row. RC requires G2/G3/G5-G10; production requires every remaining
-row. Data loss, Legacy destruction, private data in Git/logs, inability to roll back, exact duplicate
-creation, Disconnect deletion and unauthorized external egress remain non-waivable.
+Beta/RC naming never erases a row. RC requires G2/G3/G5-G10 plus the G13 candidate-building phase,
+G12 verification of that exact candidate and the G13 RC publication approval; production requires
+every remaining row. Data loss, Legacy destruction, private data in Git/logs, inability to roll back,
+exact duplicate creation, Disconnect deletion and unauthorized external egress remain non-waivable.
 
 ## 7. Pull request and integration gates
 
