@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | V2 release hardening / P1-DOCS |
-| Status | A2 complete; Option A nine-path repair authorized and in progress |
+| Status | Option A nine-path repair complete; independent review pending |
 | Branch | `codex/v2/release-documentation-reconciliation` |
 | Exact base | `integration/v2@eb0b6695b5dbf618877ff794dbc76935babeb793` |
 | Exact base tree | `6cdee026ec61604e016c20204e722816264a9f0c` |
@@ -188,6 +188,33 @@ The first implementation review additionally requires:
   PR-24 prose;
 - package `1.0.0`, absent V2 tag/GitHub Release/release-owner approval and no milestone claim to
   remain explicit.
+
+## Option A failure-first repair evidence
+
+The expanded exact documentation test was run before either newly authorized surface was repaired.
+It failed `3/13` cases for the intended reasons: the root README did not freeze the package/release
+contract, `docs/README.md` and `CHANGELOG.md` still named the historical `61d7b032...` baseline, and
+the current provider/external-gate boundaries were not directly asserted. After repairing only the
+frozen nine-path package, the focused test passes `13/13`.
+
+The repair:
+
+- labels the root README, documentation index and changelog as an integrated V2 code candidate,
+  explicitly not Alpha, Beta, RC or production release;
+- freezes package `1.0.0`, no `v2.0.0-*` tag, no GitHub Release or artifact, no production
+  deployment and no release-owner approval;
+- updates the documentation index and changelog to exact baseline `eb0b669...`, V6/format 3,
+  R3-R11, D3, C1-C4 and explicit Retry while preserving all external blockers;
+- binds five release-gate rows directly to non-PASS states in `release-gates.md`, so aggregated
+  keywords elsewhere cannot produce a false green;
+- scopes current-ledger assertions to the appended superseding supplement only; and
+- separates current V2 Source Manager provider I/O, Legacy provider paths, and the independently
+  consented weather, map and AI destinations.
+
+Markdown line wrapping initially exposed three bounded test-regex defects after the content repair.
+Those assertions were corrected to accept whitespace/newlines without weakening the required facts;
+the final focused result remains `13/13`. No production source, package, workflow, schema, Service
+Worker, deployment configuration, private data, provider or browser profile was used or changed.
 
 ## Failure-first and verification contract
 

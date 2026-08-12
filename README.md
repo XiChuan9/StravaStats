@@ -6,10 +6,9 @@ and keeps the existing Dashboard, sport views, activity details, Run Plus, and N
 a Repository boundary.
 
 > **Release status:** this repository contains an integrated V2 code candidate. It is not a production
-> release and does not claim an Alpha, Beta, or Release Candidate milestone. The package
-> metadata is still `1.0.0`; no
-> `v2.0.0-*` tag, GitHub Release, production deployment, or release-owner approval is implied by
-> merged PRs, passing CI, or a Ready PR.
+> release and does not claim an Alpha, Beta, or Release Candidate milestone. The package metadata
+> is still `1.0.0`; no `v2.0.0-*` tag, GitHub Release, production deployment, or release-owner
+> approval is implied by merged PRs, passing CI, or a Ready PR.
 
 ## Start locally
 
@@ -125,12 +124,15 @@ redacted events rather than raw causes, IDs, filenames, routes, GPS, heart-rate,
 responses, or payloads. This is deterministic current-tree evidence, not real-account or
 private-library verification.
 
-That local-first statement does **not** mean the complete application is fully offline. Production
-runtime telemetry is disabled and visualization libraries are exact-version-pinned, integrity
-checked, and served same-origin; the visualization runtime makes no third-party CDN request and
-has no CDN fallback. Some Legacy features still use provider,
-weather, map, or explicitly user-authorized AI services. Review the
-[Privacy Guide](./docs/guides/privacy-guide.md) and
+That local-first statement does **not** mean the complete application is fully offline. Current V2
+Source Manager provider I/O occurs only after explicit Connect or `Sync latest 25` and uses bounded
+same-origin routes; local import and local Canonical browsing do not call the provider. Legacy
+provider paths remain separate. Weather, map, and AI each have separate explicit consent
+boundaries and distinct external destinations.
+
+Production runtime telemetry is disabled and visualization libraries are exact-version-pinned,
+integrity checked, and served same-origin; the visualization runtime makes no third-party CDN
+request and has no CDN fallback. Review the [Privacy Guide](./docs/guides/privacy-guide.md) and
 [Known Limitations](./docs/guides/known-limitations.md) before production use.
 
 External base-map tiles are denied by default. A Real map with validated local geometry offers the

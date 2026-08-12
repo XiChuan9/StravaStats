@@ -47,6 +47,22 @@ Service Worker policy/lifecycle、隐私边界和已冻结的性能样本。测�
 Service Worker/部署/联合回滚、公共 Git 历史处置、性能预算豁免、版本/制品或发布负责人
 批准。没有执行的环境 Gate 仍为 `PARTIAL`、`BLOCKED` 或 `NOT RUN`。
 
+### 2.1 当前外部与环境门禁
+
+以下结果直接约束当前 `integration/v2@eb0b6695b5dbf618877ff794dbc76935babeb793`。
+确定性代码/测试通过不能把这些行提升为 `PASS`：
+
+| Evidence class | Result | Missing evidence or decision |
+| --- | --- | --- |
+| Real account / private library | NOT RUN | 授权的真实 OAuth、Disconnect、Legacy/V2 私人资料库、真实导入、Backup 恢复与 parity/Shadow 复核 |
+| Browser / platform | BLOCKED | Safari、Firefox、Windows、iOS/PWA、mobile、广泛 accessibility 矩阵或有时限豁免 |
+| Production Service Worker / deployment / combined rollback | BLOCKED | 生产式 mixed-version、cold-offline、cache eviction、部署失败和完整回滚演练及授权 |
+| R3 public Git history | BLOCKED | Privacy/security owner 的 incident disposition；当前树移除不等于公共历史闭合 |
+| Version / tag / artifact / release owner | BLOCKED | Package 仍为 `1.0.0`；没有 V2 tag、GitHub Release、artifact、deployment 或 release-owner approval |
+
+性能也保持 `PARTIAL`：5,000 activities 与 200,000 points 的确定性证据已通过，
+10,000 activities 与 1,000 FIT throughput 仍只有记录性结果，没有批准的绝对预算或豁免。
+
 ## 3. PR Gate
 
 每个功能 PR 必须满足：

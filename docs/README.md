@@ -2,22 +2,22 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Integrated release-candidate documentation; not a production release |
-| Exact implementation baseline | `integration/v2@61d7b032305fd8f12d71544315f06d553213801d` |
-| Package metadata | `1.0.0` (not a published V2 version) |
-| Current evidence ledger | [PR-24 Task Brief](./tasks/pr-24-release-documentation.md) |
+| Status | Integrated V2 code documentation; not an Alpha, Beta, Release Candidate, or production release |
+| Exact implementation baseline | `integration/v2@eb0b6695b5dbf618877ff794dbc76935babeb793` |
+| Package metadata | `1.0.0` (no V2 tag, GitHub Release, artifact, deployment, or release-owner approval) |
+| Current evidence ledger | [PR-24 historical ledger and current-tree supplement](./tasks/pr-24-release-documentation.md#superseding-current-tree-ledger) |
 
 This directory contains durable product, architecture, migration, testing, and per-PR evidence for
 the local-first V2 migration. Accepted ADRs, the PRD, engineering plan and release gates remain the
 authority hierarchy. Historical `Proposed` status or an older baseline SHA in a durable record is
 not automatically current release evidence.
 
-## Release-candidate guides
+## Current V2 guides
 
-- [Migration Guide](./guides/migration-guide.md) — physical isolation, First-run, modes, V4, and
+- [Migration Guide](./guides/migration-guide.md) — physical isolation, First-run, modes, V6, and
   non-destructive rollback.
-- [Backup Guide](./guides/backup-guide.md) — exact-current backup, 256 MiB bound, protected restore,
-  and recovery statuses.
+- [Backup Guide](./guides/backup-guide.md) — exact-current format 3/V6 backup, frozen format 1/V4
+  and format 2/V5 restore profiles, 256 MiB bound, and protected recovery statuses.
 - [Known Limitations](./guides/known-limitations.md) — blockers, unverified matrices, and deferred
   product capabilities.
 - [Privacy Guide](./guides/privacy-guide.md) — local data, Diagnostics versus Backup, external
@@ -26,6 +26,17 @@ not automatically current release evidence.
   safe error codes.
 - [Repository changelog](../CHANGELOG.md) — merged V2 work grouped by milestone, with no invented
   tag, publication date, or deployment.
+
+The exact current tree includes deterministic R3-R11 privacy/network hardening, D3 Service Worker
+code lifecycle, C1-C4 Source Manager authorization/identity/provider/recovery contracts, and
+explicit Retry for eligible failed local imports. These are bounded code/test facts, not evidence
+that every release environment is complete.
+
+Release remains blocked on the separate R3 public Git history disposition; authorized real
+account/private-library/Disconnect/parity evidence; Safari, Firefox, Windows, iOS/PWA, mobile and
+broad accessibility evidence or waiver; production-like Service Worker/deployment/combined
+rollback rehearsal; performance budgets or waiver; version/tag/artifact; and release-owner
+approval.
 
 ## Authority and engineering
 

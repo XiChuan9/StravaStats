@@ -110,7 +110,34 @@ test('README commands, routes, and release status match executable repository fa
     assert.match(backup, /<title>Storage &amp; Backup — StravaStats<\/title>/);
     assert.match(diagnostics, /<title>Diagnostics — StravaStats<\/title>/);
     assert.match(readme, /not (?:a )?production[\s>]*release/i);
+    assert.match(readme, /does not claim an Alpha, Beta, or Release Candidate milestone/i);
+    assert.match(readme, /package metadata[\s\S]{0,40}\`1\.0\.0\`/i);
+    assert.match(readme, /no[^\n]*v2\.0\.0-\*[^\n]*tag/i);
+    assert.match(readme, /no[^\n]*GitHub Release/i);
+    assert.match(readme, /package metadata[\s\S]{0,160}no[\s\S]{0,160}release-owner[\s>]*approval/i);
     assert.doesNotMatch(readme, /v2\.0\.0 (?:is |has been )?(?:released|deployed|published)/i);
+});
+
+test('current documentation index and changelog share the exact post-Retry baseline', async () => {
+    const [index, changelog] = await Promise.all([
+        source('docs/README.md'),
+        source('CHANGELOG.md')
+    ]);
+    for (const document of [index, changelog]) {
+        assert.match(document, /eb0b6695b5dbf618877ff794dbc76935babeb793/);
+        assert.doesNotMatch(document, /61d7b032305fd8f12d71544315f06d553213801d/);
+        assert.match(document, /\`1\.0\.0\`/);
+        assert.match(document, /not[^\n]*(?:Alpha|Beta|Release Candidate|production release)/i);
+        assert.match(document, /public (?:Git )?history|Git history/i);
+        assert.match(document, /Safari|Firefox/i);
+        assert.match(document, /production(?:-like)? Service Worker/i);
+        assert.match(document, /release[- ]owner/i);
+    }
+    assert.match(index, /V6/);
+    assert.match(index, /format 3/i);
+    for (const pattern of [/R3-R11/, /D3/, /C1-C4/, /explicit Retry/i]) {
+        assert.match(changelog, pattern);
+    }
 });
 
 test('guides freeze exact Canonical, V6, backup compatibility, privacy, and rollback facts', async () => {
@@ -210,6 +237,7 @@ test('current release prose rejects superseded blockers and preserves external g
     ]);
     const currentBrief = brief.split('## Superseding current-tree ledger')[1];
     assert.notEqual(currentBrief, undefined);
+    assert(currentBrief.length >= 2_000);
 
     assert.doesNotMatch(readme, /Connect later/i);
     for (const pattern of [
@@ -219,14 +247,32 @@ test('current release prose rejects superseded blockers and preserves external g
         /Recover\/Abandon|Recover[^\n]*Abandon/i,
         /eligible[^\n]*Retry|Retry[^\n]*eligible/i
     ]) assert.match(readme, pattern);
+    assert.match(
+        readme,
+        /current V2\s+Source Manager[\s\S]{0,160}(?:provider|same-origin)|(?:provider|same-origin)[\s\S]{0,160}current V2\s+Source Manager/i
+    );
+    assert.match(readme, /Legacy\s+provider/i);
+    assert.match(readme, /weather[^\n]*map[^\n]*AI[^\n]*(?:separate|consent)/i);
 
     assert.doesNotMatch(
         gates,
         /Repository[^\n]*Storage[^\n]*Import[^\n]*Decoder[^\n]*(?:Not implemented|未实现)/i
     );
     assert.match(gates, /deterministic|确定性/i);
-    assert.match(gates, /private|私人|真实账户|real account/i);
-    assert.match(gates, /browser|浏览器/i);
+    for (const pattern of [
+        /\| Real account \/ private library \| (?:PARTIAL|BLOCKED|NOT RUN) \|/i,
+        /\| Browser \/ platform \| (?:PARTIAL|BLOCKED|NOT RUN) \|/i,
+        /\| Production Service Worker \/ deployment \/ combined rollback \| (?:PARTIAL|BLOCKED|NOT RUN) \|/i,
+        /\| R3 public Git history \| (?:PARTIAL|BLOCKED|NOT RUN) \|/i,
+        /\| Version \/ tag \/ artifact \/ release owner \| (?:PARTIAL|BLOCKED|NOT RUN) \|/i
+    ]) assert.match(gates, pattern);
+    for (const pattern of [
+        /\| Real account \/ private library \| PASS \|/i,
+        /\| Browser \/ platform \| PASS \|/i,
+        /\| Production Service Worker \/ deployment \/ combined rollback \| PASS \|/i,
+        /\| R3 public Git history \| PASS \|/i,
+        /\| Version \/ tag \/ artifact \/ release owner \| PASS \|/i
+    ]) assert.doesNotMatch(gates, pattern);
 
     for (const document of [limitations, privacy, currentBrief]) {
         assert.doesNotMatch(
@@ -254,10 +300,9 @@ test('current release prose rejects superseded blockers and preserves external g
     assert.match(limitations, /provider[^\n]*no automatic retry|no automatic retry[^\n]*provider/i);
     assert.match(limitations, /retained[^\n]*(?:bytes|byte)[^\n]*Retry|Retry[^\n]*retained[^\n]*(?:bytes|byte)/i);
 
-    assert.match(brief, /superseding current-tree ledger/i);
-    assert.match(brief, /eb0b6695b5dbf618877ff794dbc76935babeb793/);
-    assert.match(brief, /R3[^\n]*current tree[^\n]*(?:CLOSED|PASS)/i);
-    assert.match(brief, /public (?:Git )?history[^\n]*BLOCKED/i);
+    assert.match(currentBrief, /eb0b6695b5dbf618877ff794dbc76935babeb793/);
+    assert.match(currentBrief, /R3[^\n]*current tree[^\n]*(?:CLOSED|PASS)/i);
+    assert.match(currentBrief, /public (?:Git )?history[^\n]*BLOCKED/i);
     for (const pattern of [
         /real account|private library/i,
         /Safari|Firefox/i,
@@ -265,7 +310,7 @@ test('current release prose rejects superseded blockers and preserves external g
         /deployment[^\n]*rollback|rollback[^\n]*deployment/i,
         /version[^\n]*tag[^\n]*artifact|tag[^\n]*artifact/i,
         /release-owner|release owner/i
-    ]) assert.match(brief, pattern);
+    ]) assert.match(currentBrief, pattern);
 });
 
 test('release-gate status does not claim a conditional PASS', async () => {
