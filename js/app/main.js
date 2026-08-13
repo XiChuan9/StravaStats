@@ -805,6 +805,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const appSection = document.getElementById('app-section');
     const localFirstError = document.getElementById('local-first-error');
     const sourceStatus = document.getElementById('source-status');
+    const canonicalInspectionNotFound = Object.freeze({ status: 'not-found' });
+    const canonicalInspectionStorage = Object.freeze({
+        getItem() { return null; }
+    });
+    let applicationInspectionState = null;
 
     function buildAICoachActivitySnapshot(activities) {
         if (activeSessionMode !== APP_SESSION_MODE.REAL || aiCoachSession.enabled !== true) return null;
@@ -1363,6 +1368,42 @@ document.addEventListener('DOMContentLoaded', () => {
         hideLoading();
     }
 
+    function showLocalFirstEntry(state) {
+        renderSourceStatus(state);
+        appSection?.classList.add('hidden');
+        loginSection?.classList.remove('hidden');
+        if (localFirstError) localFirstError.hidden = true;
+
+        let sourcesLink = document.getElementById('first-run-sources-link');
+        if (sourcesLink === null) {
+            sourcesLink = document.createElement('a');
+            sourcesLink.id = 'first-run-sources-link';
+            sourcesLink.href = '/source-manager.html?mode=real';
+            sourcesLink.textContent = 'Open Sources / import files';
+            sourcesLink.setAttribute('aria-label', 'Open Sources to import local activity files');
+            sourcesLink.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;flex:1;min-width:200px;padding:0.7em 1.5em;';
+            demoButton?.parentElement?.append(sourcesLink);
+        }
+        sourcesLink.hidden = false;
+        hideLoading();
+    }
+
+    async function inspectApplicationStart() {
+        if (
+            documentSessionMode === APP_SESSION_MODE.REAL
+            && getFeatureFlags().dataRepositoryMode === 'canonical'
+        ) {
+            applicationInspectionState = await inspectLocalFirstBootstrap({
+                localStorage: canonicalInspectionStorage,
+                legacyIndexedDbReader: async () => canonicalInspectionNotFound,
+                legacyLocalStorageReader: () => canonicalInspectionNotFound
+            });
+            return applicationInspectionState;
+        }
+        applicationInspectionState = await inspectLocalFirstBootstrap();
+        return applicationInspectionState;
+    }
+
     async function initializeLocalDashboard(state) {
         renderSourceStatus(state);
         if (getFeatureFlags().dataRepositoryMode === 'canonical') {
@@ -1440,7 +1481,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 activityLoad.source === REPOSITORY_SOURCE.CANONICAL
                 && activities.length === 0
             ) {
-                window.location.assign('/source-manager.html?mode=real');
+                showLocalFirstEntry(applicationInspectionState);
                 return;
             }
             if (
@@ -1665,7 +1706,9 @@ document.addEventListener('DOMContentLoaded', () => {
         aiCoachSession = createAICoachSession({
             sessionMode: APP_SESSION_MODE.DEMO
         });
-        loginWithDemo(initializeApp);
+        loginWithDemo(() => {
+            window.location.reload();
+        });
     });
     if (logoutButton) logoutButton.addEventListener('click', () => {
         aiCoachSession.revoke();
@@ -1833,22 +1876,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- APP ENTRY POINT ---
-    const applicationStart = (
-        documentSessionMode === APP_SESSION_MODE.REAL
-        && getFeatureFlags().dataRepositoryMode === 'canonical'
-    )
-        ? initializeApp(null)
-        : runLocalFirstBootstrap({
+    const applicationStart = runLocalFirstBootstrap({
         sessionMode: documentSessionMode,
-        inspect: () => inspectLocalFirstBootstrap(),
+        inspect: inspectApplicationStart,
         startDemo: state => {
             renderSourceStatus(state);
             return handleAuth(initializeApp);
         },
         startDashboard: initializeLocalDashboard,
-        navigateFirstRun: () => {
-            window.location.assign('/source-manager.html?mode=real');
-        },
+        navigateFirstRun: showLocalFirstEntry,
         showBlocked: showLocalFirstBlocked
     });
     applicationStart.catch(() => {

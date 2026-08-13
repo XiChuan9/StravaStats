@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | M37 / G12-RELEASE-HEAD-VERIFICATION |
-| Status | A2 hard stop; implementation awaits an explicit owner choice |
+| Status | Option A authorized; bounded pre-freeze implementation in progress; G12 remains `NOT RUN` |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/release-head-verification` |
 | Worktree | `/Users/wangchuanliang/.codex/worktrees/2ccf/StravaStats` |
@@ -244,14 +244,26 @@ docs/tasks/pr-50-release-head-verification.md
 scripts/alpha-candidate.mjs
 tests/docs/release-docs.test.js
 tests/release/alpha-candidate.test.js
+storage-backup.html
+js/app/storage-backup.js
+js/pages/storage-backup/storage-backup.js
+js/app/main.js
+tests/consumers/summary-boundaries.test.js
+tests/legacy/demo-isolation.test.js
+README.md
+js/demo/polylines.js
+tests/default-canonical.test.js
 ```
 
 Its frozen intent is limited to authenticating the G12 repository/base/branch/SHA context; making
 the output boundary realpath/symlink-safe; requiring canonical evidence-file verification and
 tamper negatives; independently auditing the ZIP profile; running the exact candidate gate in G12
-CI; and correcting stale source-baseline/assertion copy without pretending the feature or a future
-squash commit is already the current postmerge baseline. It does not authorize any other path,
-package/dependency, schema, public API, product/data algorithm or workflow expansion.
+CI; correcting stale source-baseline/assertion copy without pretending the feature or a future
+squash commit is already the current postmerge baseline; making Try Demo seed deterministic Demo
+state before a reload/re-entry establishes any Repository; replacing unverified route fixtures with
+deliberately fabricated geometry; and keeping the real Demo and Sources actions available in a
+verified-empty Canonical First-run before any summary Repository exists. It does not authorize any
+other path, package/dependency, schema, public API, product/data algorithm or workflow expansion.
 
 For option 2, no product/tool/CI implementation is authorized. Its exact repository allowlist is:
 
@@ -264,12 +276,98 @@ Review Closure. It may not change the old candidate, release-gates status or oth
 Option 3 has the same one-path ceiling solely to close the investigation as not run; it authorizes
 no candidate generation, selection or verification claim.
 
+## A3 owner decision and source implementation authority
+
+On 2026-08-13, the owner explicitly selected option 1 and then approved seven findings-first repair
+expansions. This authorizes the bounded renewed G13 source/freeze phase, the exact seventeen-path
+maximum above, and the exact-SHA PR/check-run/control-
+tower ledger as the canonical post-freeze evidence record. It does not authorize a candidate build
+before freeze commit `C`, and it does not mark G12 `PASS` or G13 complete.
+
+The implementation decisions are frozen as follows:
+
+- Candidate source authority moves only to `codex/v2/release-head-verification`. A local build must
+  be on that symbolic branch at an explicitly supplied candidate SHA equal to the exact same commit
+  as its `origin` tracking ref from the exact XiChuan9/StravaStats repository. A detached Actions
+  build must prove open Draft PR #62, exact base SHA `57c2cdf...`, the exact base/head repositories
+  and refs, and checkout `HEAD` equal to the event's PR-head SHA and authorized SHA;
+  `GITHUB_SHA` is the synthetic merge identity and is never relabeled as `C`. A branch-name alias or
+  a partial/spoofed environment tuple remains a failure. Local checks establish build eligibility;
+  only post-freeze GitHub remote-head/check-run readback supplies remote authority.
+- Output validation canonicalizes the checkout and output through filesystem real paths before any
+  staging path is created. A symlinked ancestor that resolves inside the checkout fails closed;
+  the caller-supplied destination must remain an absolute, existing, empty external directory.
+- Strict verification requires the canonical bundle-root, ZIP and sibling evidence filenames. It
+  parses the evidence as the exact ordered seven-key JSON record, recomputes the manifest and ZIP
+  digests, and rejects missing, renamed, malformed, reordered, extra-key or tampered evidence.
+- ZIP verification uses an independent stored-ZIP32 parser rather than treating reconstruction by
+  the writer as its only oracle. It freezes local header, central directory and EOCD fields;
+  filenames/order; regular-file modes; offsets; CRC and sizes; data bytes; entry counts; and the
+  absence of directories, data descriptors, encryption, compression, extras, comments, trailing
+  bytes and unmanifested entries.
+- G12 candidate CI uses a dedicated job only for the exact same-repository G12 pull request into
+  `integration/v2`. An unconditional first assertion in that job fails on tuple drift, and the
+  candidate step itself is unconditional so a skipped step cannot yield candidate success. It must
+  retain the depth-one/exact-head/toolchain assertions, run strict verification for two external
+  temporary builds and compare extracted roots, ZIP bytes and evidence bytes. Nothing is uploaded
+  or retained as an Actions artifact.
+- Exact-toolchain enforcement is unconditional for every build entry, including the exported API;
+  no caller option may mint bytes under another runtime while provenance claims Node `v24.19.0` and
+  npm `11.17.0`. Output containment derives the canonical Git top-level, worktree Git directory and
+  common Git directory from Git itself, so a subdirectory `cwd` cannot redefine the Repository and
+  no output can land inside tracked worktree or Git metadata boundaries.
+- Release prose and its contract tests name `57c2cdf...` / `80224e92...` as the exact pre-G12
+  integration source baseline, keep `03ccf18...` as distinct historical G13 candidate evidence,
+  and keep tracked G12 `NOT RUN`. They must not predict commit `C`, a future squash identity, or a
+  post-freeze PASS.
+- The ninth path changes only the candidate payload's false static V4 backup copy: its loading
+  placeholder is neutral and its durable export description says V6, matching format 3 / physical
+  IndexedDB V6. An already-authorized documentation test rejects a regression to V4 copy.
+- The tenth path changes only Demo's display-state database version from a stale literal `4` to the
+  already imported `V2_DATABASE_VERSION`. Demo backup and restore remain unavailable and its
+  activity count remains zero. An already-authorized documentation test freezes those boundaries.
+- The eleventh path changes only the post-restore display: after either successful restore result,
+  Physical database becomes `V6` while the existing status, detail and activity-count updates stay
+  intact. An already-authorized documentation test freezes that immediate UI transition.
+- Paths twelve through fourteen change only Try Demo entry and its two existing durable assertions.
+  The click first revokes the Real AI capability, `loginWithDemo` atomically seeds deterministic
+  Demo state, and its callback reloads the document so the new entry selects Demo before any
+  Repository is created. In-place Real-to-Demo Repository switching remains prohibited. An
+  already-authorized documentation test also freezes the seed-then-reload boundary.
+- The fifteenth path changes only the root README candidate-build command contract. It requires an
+  exact candidate SHA supplied from the external approval record before build; the value is never
+  inferred from local `HEAD`, and the existing fail-closed local HEAD/origin equality remains.
+- The sixteenth path replaces every shipped Demo route byte with deterministic, deliberately
+  fabricated geometry. Its durable provenance states that no person-derived or real GPS track was
+  used, and it removes the prior real-world and named-city claims without changing the exported
+  shape, activity schema, network behavior or storage behavior. An already-authorized test freezes
+  that provenance and rejects the old route claims and bytes.
+- The seventeenth path updates only the conflicting default-Canonical startup assertions for the
+  already-authorized `js/app/main.js` repair. Real Canonical entry uses the existing local-first
+  inspection: existing Canonical data opens the Dashboard; an unsafe inspection remains blocked;
+  and verified-empty Canonical shows the actionable root First-run with its actual Demo button and
+  one idempotent visible Sources/import link, without constructing a summary Repository or
+  auto-redirecting. Legacy and Shadow behavior remain unchanged. Focused assertions stay within
+  the seventeenth path and the already-authorized consumer, Demo-isolation and documentation tests.
+
+Failure-first focused tests cover unauthorized repository/base/head/SHA combinations, a local
+branch that is not equal to its trusted remote ref, an output ancestor symlink into the checkout,
+evidence absence/schema/order/digest/name tampering, and independent ZIP field/entry/negative-space
+mutations before the broader gates run.
+
+After implementation and source review, the implementation commit is created locally but is not
+itself a candidate. A later Task-Brief-only commit `C` records source-review Closure and freezes the
+sole proposed candidate identity while tracked G12 remains `NOT RUN`. Both local commits are pushed
+together so the Draft PR's candidate step first runs at exact `C`. From that push onward, a failure
+withdraws `C` and returns to the owner; it is never repaired or relabeled in place.
+
 ## Post-A2 implementation gate
 
-No implementation allowlist is owner-authorized yet. The exact proposed lists and candidate models
-above have no effect until one is explicitly selected. Any later changed path not in the selected
-owner-approved list is a hard stop. Dependencies, schemas, public APIs, algorithms, workflows and
-product behavior may not expand silently.
+Option 1 and its exact seventeen-path maximum are now owner-authorized. Any changed eighteenth path or
+material expansion is a hard stop. Dependencies, schemas, public APIs, product/data algorithms and
+product behavior remain frozen except for the exact bounded backup-display, synthetic Demo-route
+and actionable First-run/Try Demo repairs above; workflow changes are limited to the exact
+candidate-CI semantics above.
 
 After explicit owner approval only, verification uses exact Node `v24.19.0` and npm `11.17.0` in
 disposable temporary locations. Generated bundle, ZIP and evidence output remains external and
@@ -277,7 +375,12 @@ starts in an empty directory. No artifact is uploaded, published, delivered or d
 
 ## Required verification lifecycle
 
-The eventual approved path must include, on the frozen immutable candidate object:
+Before candidate freeze, the approved path requires all focused and full local gates plus an
+independent findings-first source review, repair of every in-scope finding and a fresh no-findings
+source re-review. No candidate build is permitted in that phase. Task-Brief-only source-review
+Closure commit `C` then freezes the sole candidate identity while tracked G12 stays `NOT RUN`.
+
+On frozen immutable candidate `C`, the required lifecycle is:
 
 ```text
 npm ci
@@ -294,8 +397,21 @@ two fresh true remote depth-one exact-commit checkouts
 exact-head CI whose semantics actually exercise the required candidate gates
 current zero-unresolved-P0/P1 inventory
 independent findings-first review and fresh no-findings re-review
-Task-Brief-only Final Review Closure
+final current-state readback: origin branch and PR #62 head equal C; exact repo/head/base/open-Draft tuple
+both checks and exact-alpha-candidate jobs SUCCESS; auth/checkout/build/two-verifies/compares not skipped
+record the workflow run ID, check/job/step conclusions and synthetic GITHUB_SHA separately from C
+exact-SHA PR/check-run/control-tower ledger-only Final Verification Closure; no repository commit
 ```
+
+The post-`C` Closure is external and exact-SHA-bound. It never edits the Task Brief or any other
+tracked file. Its final readback must be current at Closure time: `origin/codex/v2/release-head-verification`
+and the current PR head both equal `C`; PR #62 remains open Draft in `XiChuan9/StravaStats`, with the
+exact head/base repositories and refs and base SHA above; both `checks` and `exact-alpha-candidate`
+jobs conclude `SUCCESS`; and event authentication, exact checkout, two builds, two strict verifies
+and all root/ZIP/evidence comparisons conclude successfully rather than skip. The ledger records the
+run, jobs and step conclusions, and records Actions' synthetic `GITHUB_SHA` separately without ever
+calling it `C`. A post-`C` failure or tuple/readback drift withdraws `C` and requires a new owner
+decision.
 
 The limited Alpha browser record, if and only if the approved G12 path reaches it, uses synthetic
 data and newly created disposable profiles only, omits `enable-sw=1`, serves only on loopback, and
@@ -317,13 +433,18 @@ never uses a real account, Token, private activity/file or user browser profile.
 
 ## Rollback and privacy impact
 
-This initial commit is documentation-only and has no runtime, storage, migration, cache, provider
-or private-data effect. Its rollback is an ordinary revert of this single Task Brief. A later
-approved G12 verification may remove only its own external disposable outputs/profiles and must
-never invoke Disconnect, Delete Local Data or any Legacy/V2/cache clearing action.
+The authorized seventeen-path phase changes candidate authority/verification tooling, exact
+candidate CI, release documentation/tests, bounded backup display copy/state, deliberately
+fabricated Demo geometry and the actionable First-run/Try Demo seed-then-reload boundary. It does
+not change dependencies, schemas, storage format, migration, provider, Service Worker/cache or
+data algorithms and does not read private data. Demo entry writes only its existing deterministic
+Demo namespace before reloading. Before `C`, rollback is an ordinary revert of the bounded branch
+commits. After `C`, any failure withdraws that immutable candidate and stops; it is never repaired
+in place. Neither path invokes Disconnect, Delete Local Data or any Legacy/V2/cache clearing action.
 
 ## Completion boundary
 
-Draft remains mandatory until Final Review Closure, exact-head CI and fresh independent no-findings
-review pass. Ready may then be delegated under standing authority. Squash Merge, tag, Release,
-publication, delivery, hosting and deployment remain separate owner-authorized actions.
+Draft remains mandatory until the external exact-SHA Final Verification Closure, exact-head CI and
+fresh independent no-findings review pass. Ready may then be delegated under standing authority.
+Squash Merge, tag, Release, publication, delivery, hosting and deployment remain separate
+owner-authorized actions.

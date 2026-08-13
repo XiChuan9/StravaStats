@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { createReadStream, readFileSync } from 'node:fs';
 import {
-  lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile,
+  lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile,
 } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { basename, dirname, extname, isAbsolute, join, resolve, sep } from 'node:path';
@@ -12,7 +12,11 @@ export const ALPHA_VERSION = '2.0.0-alpha.1';
 export const ALPHA_RELEASE_NAME = `v${ALPHA_VERSION}`;
 export const REQUIRED_NODE_VERSION = 'v24.19.0';
 export const REQUIRED_NPM_VERSION = '11.17.0';
-export const AUTHORIZED_BRANCH = 'codex/v2/alpha-candidate-planning';
+export const AUTHORIZED_BRANCH = 'codex/v2/release-head-verification';
+export const AUTHORIZED_BASE_BRANCH = 'integration/v2';
+export const AUTHORIZED_BASE_SHA = '57c2cdf9358afef1330d5a71f3799f18d41f6d13';
+export const AUTHORIZED_PR_NUMBER = 62;
+export const AUTHORIZED_REPOSITORY = 'XiChuan9/StravaStats';
 export const SOURCE_REPOSITORY = 'https://github.com/XiChuan9/StravaStats.git';
 export const PAYLOAD_RULE_VERSION = 'g1-alpha-static-v1';
 const ROOT_NAME = `stravastats-${ALPHA_RELEASE_NAME}`;
@@ -86,6 +90,17 @@ export function createProvenanceBytes({ commit, tree, sourceDateEpoch }) {
   });
 }
 
+export function createEvidenceBytes({ commit, tree, manifestSha256, containerSha256 }) {
+  if (!/^[0-9a-f]{40}$/.test(commit) || !/^[0-9a-f]{40}$/.test(tree)
+      || !/^[0-9a-f]{64}$/.test(manifestSha256)
+      || !/^[0-9a-f]{64}$/.test(containerSha256)) fail('EVIDENCE_VALUE_INVALID');
+  return canonicalJson({
+    version: ALPHA_RELEASE_NAME, commit, tree,
+    manifestFile: `${ROOT_NAME}/SHA256SUMS`, manifestSha256,
+    containerFile: ZIP_NAME, containerSha256,
+  });
+}
+
 export function createSha256SumsBytes(files) {
   if (!(files instanceof Map)) fail('MANIFEST_INPUT_INVALID');
   const paths = [...files.keys()].sort(byteCompare);
@@ -119,7 +134,7 @@ export function createStoredZipBytes(files, rootName = ROOT_NAME) {
   const central = [];
   let offset = 0;
   for (const path of paths) {
-    if (!safePath(path) || !Buffer.isBuffer(files.get(path))) fail('ZIP_INPUT_INVALID');
+    if (!safePath(path) || path.endsWith('/') || !Buffer.isBuffer(files.get(path))) fail('ZIP_INPUT_INVALID');
     const name = Buffer.from(`${rootName}/${path}`, 'utf8');
     const data = files.get(path);
     const crc = crc32(data);
@@ -143,8 +158,109 @@ export function createStoredZipBytes(files, rootName = ROOT_NAME) {
   ])]);
 }
 
+function zipU16(bytes, offset) {
+  if (offset < 0 || offset + 2 > bytes.length) fail('CONTAINER_PROFILE');
+  return bytes.readUInt16LE(offset);
+}
+function zipU32(bytes, offset) {
+  if (offset < 0 || offset + 4 > bytes.length) fail('CONTAINER_PROFILE');
+  return bytes.readUInt32LE(offset);
+}
+function auditCrc32(bytes) {
+  let value = 0xffffffff;
+  for (const byte of bytes) {
+    value ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) value = (value >>> 1) ^ ((value & 1) ? 0xedb88320 : 0);
+  }
+  return (value ^ 0xffffffff) >>> 0;
+}
+
+export function auditStoredZip32Bytes(bytes, expectedFiles, rootName = ROOT_NAME) {
+  if (!Buffer.isBuffer(bytes) || !(expectedFiles instanceof Map)
+      || !safePath(rootName) || rootName.includes('/') || bytes.length < 22) fail('CONTAINER_PROFILE');
+  const expectedPaths = [...expectedFiles.keys()].sort(byteCompare);
+  if (expectedPaths.length === 0 || expectedPaths.length > 0xffff) fail('CONTAINER_PROFILE');
+  for (const path of expectedPaths) {
+    if (!safePath(path) || path.endsWith('/') || !Buffer.isBuffer(expectedFiles.get(path))) fail('CONTAINER_PROFILE');
+  }
+
+  const eocd = bytes.length - 22;
+  if (zipU32(bytes, eocd) !== 0x06054b50
+      || zipU16(bytes, eocd + 4) !== 0 || zipU16(bytes, eocd + 6) !== 0
+      || zipU16(bytes, eocd + 8) !== expectedPaths.length
+      || zipU16(bytes, eocd + 10) !== expectedPaths.length
+      || zipU16(bytes, eocd + 20) !== 0) fail('CONTAINER_PROFILE');
+  const centralSize = zipU32(bytes, eocd + 12);
+  const centralOffset = zipU32(bytes, eocd + 16);
+  if (centralOffset + centralSize !== eocd) fail('CONTAINER_PROFILE');
+
+  const entries = [];
+  let cursor = centralOffset;
+  for (const path of expectedPaths) {
+    if (zipU32(bytes, cursor) !== 0x02014b50) fail('CONTAINER_PROFILE');
+    const nameLength = zipU16(bytes, cursor + 28);
+    const extraLength = zipU16(bytes, cursor + 30);
+    const commentLength = zipU16(bytes, cursor + 32);
+    const end = cursor + 46 + nameLength + extraLength + commentLength;
+    if (end > eocd
+        || zipU16(bytes, cursor + 4) !== 0x0314
+        || zipU16(bytes, cursor + 6) !== 10
+        || zipU16(bytes, cursor + 8) !== 0x0800
+        || zipU16(bytes, cursor + 10) !== 0
+        || zipU16(bytes, cursor + 12) !== 0
+        || zipU16(bytes, cursor + 14) !== 0x0021
+        || extraLength !== 0 || commentLength !== 0
+        || zipU16(bytes, cursor + 34) !== 0
+        || zipU16(bytes, cursor + 36) !== 0
+        || zipU32(bytes, cursor + 38) !== 0x81a40000) fail('CONTAINER_PROFILE');
+    const expectedName = `${rootName}/${path}`;
+    if (bytes.toString('utf8', cursor + 46, cursor + 46 + nameLength) !== expectedName
+        || nameLength !== Buffer.byteLength(expectedName)) fail('CONTAINER_PROFILE');
+    const data = expectedFiles.get(path);
+    if (zipU32(bytes, cursor + 16) !== auditCrc32(data)
+        || zipU32(bytes, cursor + 20) !== data.length
+        || zipU32(bytes, cursor + 24) !== data.length) fail('CONTAINER_PROFILE');
+    entries.push(Object.freeze({
+      path, crc: zipU32(bytes, cursor + 16), size: data.length,
+      localOffset: zipU32(bytes, cursor + 42),
+    }));
+    cursor = end;
+  }
+  if (cursor !== eocd || cursor - centralOffset !== centralSize) fail('CONTAINER_PROFILE');
+
+  cursor = 0;
+  for (const entry of entries) {
+    const data = expectedFiles.get(entry.path);
+    const expectedName = `${rootName}/${entry.path}`;
+    if (entry.localOffset !== cursor || zipU32(bytes, cursor) !== 0x04034b50) fail('CONTAINER_PROFILE');
+    const nameLength = zipU16(bytes, cursor + 26);
+    const extraLength = zipU16(bytes, cursor + 28);
+    const dataOffset = cursor + 30 + nameLength + extraLength;
+    const end = dataOffset + data.length;
+    if (end > centralOffset
+        || zipU16(bytes, cursor + 4) !== 10
+        || zipU16(bytes, cursor + 6) !== 0x0800
+        || zipU16(bytes, cursor + 8) !== 0
+        || zipU16(bytes, cursor + 10) !== 0
+        || zipU16(bytes, cursor + 12) !== 0x0021
+        || zipU32(bytes, cursor + 14) !== entry.crc
+        || zipU32(bytes, cursor + 18) !== entry.size
+        || zipU32(bytes, cursor + 22) !== entry.size
+        || extraLength !== 0
+        || bytes.toString('utf8', cursor + 30, cursor + 30 + nameLength) !== expectedName
+        || nameLength !== Buffer.byteLength(expectedName)
+        || !bytes.subarray(dataOffset, end).equals(data)) fail('CONTAINER_PROFILE');
+    cursor = end;
+  }
+  if (cursor !== centralOffset) fail('CONTAINER_PROFILE');
+  return Object.freeze({ entryCount: entries.length, paths: Object.freeze([...expectedPaths]) });
+}
+
 function git(args, options = {}) {
-  return execFileSync('git', args, { cwd: options.cwd ?? process.cwd(), encoding: options.encoding ?? 'utf8' });
+  return execFileSync('git', args, {
+    cwd: options.cwd ?? process.cwd(), encoding: options.encoding ?? 'utf8',
+    stdio: options.stdio ?? ['ignore', 'pipe', 'pipe'],
+  });
 }
 function treeRecords(commit, cwd) {
   return git(['ls-tree', '-rz', '--full-tree', commit], { cwd, encoding: 'buffer' }).toString('utf8')
@@ -156,8 +272,7 @@ function treeRecords(commit, cwd) {
 }
 function gitBlob(object, cwd) { return git(['cat-file', 'blob', object], { cwd, encoding: 'buffer' }); }
 function exactNpmVersion() {
-  const fromAgent = /(?:^|\s)npm\/([^\s]+)/.exec(process.env.npm_config_user_agent ?? '')?.[1];
-  return fromAgent ?? execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim();
+  return execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim();
 }
 function assertToolchain() {
   if (process.version !== REQUIRED_NODE_VERSION) fail(`NODE_VERSION_REQUIRED:${REQUIRED_NODE_VERSION}`);
@@ -166,25 +281,92 @@ function assertToolchain() {
 function assertClean(cwd) {
   if (git(['status', '--porcelain=v1', '--untracked-files=all'], { cwd }) !== '') fail('WORKTREE_NOT_CLEAN');
 }
+function canonicalRepositoryUrl(value) {
+  return String(value ?? '').trim().replace(/\.git$/, '').replace(/^git@github\.com:/, 'https://github.com/');
+}
+function exactRef(cwd, ref) {
+  try { return git(['rev-parse', '--verify', ref], { cwd, stdio: ['ignore', 'pipe', 'ignore'] }).trim(); }
+  catch { return null; }
+}
 export function assertAuthorizedBranch({ cwd = process.cwd(), commit, env = process.env } = {}) {
-  let branch = null;
-  try { branch = git(['symbolic-ref', '--quiet', '--short', 'HEAD'], { cwd }).trim(); } catch {}
-  if (branch === AUTHORIZED_BRANCH) return;
   const exactCommit = commit ?? git(['rev-parse', 'HEAD'], { cwd }).trim();
+  if (exactRef(cwd, 'HEAD') !== exactCommit) fail('AUTHORIZED_HEAD_MISMATCH');
+  let branch = null;
+  try {
+    branch = git(['symbolic-ref', '--quiet', '--short', 'HEAD'], {
+      cwd, stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {}
+  if (env.GITHUB_ACTIONS === 'true' && branch !== null) fail('AUTHORIZED_ACTIONS_DETACHED_HEAD_REQUIRED');
+  if (branch === AUTHORIZED_BRANCH) {
+    if (env.ALPHA_CANDIDATE_AUTHORIZED_HEAD !== exactCommit) fail('AUTHORIZED_HEAD_REQUIRED');
+    let origin;
+    try {
+      origin = git(['remote', 'get-url', 'origin'], { cwd, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    } catch {}
+    if (canonicalRepositoryUrl(origin) !== canonicalRepositoryUrl(SOURCE_REPOSITORY)) fail('AUTHORIZED_REPOSITORY_REQUIRED');
+    let upstream = null;
+    try {
+      upstream = git(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'], {
+        cwd, stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+    } catch {}
+    if (upstream === `origin/${AUTHORIZED_BRANCH}` && exactRef(cwd, upstream) === exactCommit) return;
+    fail('AUTHORIZED_REMOTE_HEAD_REQUIRED');
+  }
+  if (branch !== null) fail(`AUTHORIZED_BRANCH_REQUIRED:${AUTHORIZED_BRANCH}`);
+  let event;
+  try {
+    event = JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, 'utf8'));
+  } catch {}
   const authorizedDetached = env.GITHUB_ACTIONS === 'true'
     && env.GITHUB_EVENT_NAME === 'pull_request'
     && env.GITHUB_HEAD_REF === AUTHORIZED_BRANCH
-    && env.ALPHA_CANDIDATE_AUTHORIZED_HEAD === exactCommit;
+    && env.GITHUB_BASE_REF === AUTHORIZED_BASE_BRANCH
+    && env.GITHUB_REPOSITORY === AUTHORIZED_REPOSITORY
+    && env.ALPHA_CANDIDATE_AUTHORIZED_HEAD === exactCommit
+    && event?.number === AUTHORIZED_PR_NUMBER
+    && event?.repository?.full_name === AUTHORIZED_REPOSITORY
+    && event?.pull_request?.state === 'open'
+    && event?.pull_request?.draft === true
+    && event?.pull_request?.head?.ref === AUTHORIZED_BRANCH
+    && event?.pull_request?.head?.sha === exactCommit
+    && event?.pull_request?.head?.repo?.full_name === AUTHORIZED_REPOSITORY
+    && event?.pull_request?.base?.ref === AUTHORIZED_BASE_BRANCH
+    && event?.pull_request?.base?.sha === AUTHORIZED_BASE_SHA
+    && event?.pull_request?.base?.repo?.full_name === AUTHORIZED_REPOSITORY;
   if (!authorizedDetached) fail(`AUTHORIZED_BRANCH_REQUIRED:${AUTHORIZED_BRANCH}`);
 }
-async function assertEmptyExternalParent(parent, cwd) {
+function gitBoundaryRoots(cwd) {
+  let topLevel;
+  let gitDirectory;
+  let gitCommonDirectory;
+  try {
+    topLevel = git(['rev-parse', '--path-format=absolute', '--show-toplevel'], { cwd }).trim();
+    gitDirectory = git(['rev-parse', '--path-format=absolute', '--git-dir'], { cwd }).trim();
+    gitCommonDirectory = git(['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd }).trim();
+  } catch { fail('REPOSITORY_BOUNDARY_REQUIRED'); }
+  return [topLevel, gitDirectory, gitCommonDirectory];
+}
+function pathInside(path, boundary) {
+  return path === boundary || path.startsWith(`${boundary}${sep}`);
+}
+export async function assertEmptyExternalParent(parent, cwd) {
   if (!isAbsolute(parent)) fail('OUTPUT_PARENT_NOT_ABSOLUTE');
   const resolvedParent = resolve(parent);
-  const resolvedRepo = resolve(cwd);
-  if (resolvedParent === resolvedRepo || resolvedParent.startsWith(`${resolvedRepo}${sep}`)) fail('OUTPUT_INSIDE_REPOSITORY');
-  if (!(await stat(resolvedParent)).isDirectory()) fail('OUTPUT_PARENT_NOT_DIRECTORY');
-  if ((await readdir(resolvedParent)).length !== 0) fail('OUTPUT_PARENT_NOT_EMPTY');
-  return resolvedParent;
+  let physicalParent;
+  let physicalBoundaries;
+  try {
+    physicalParent = await realpath(resolvedParent);
+    physicalBoundaries = await Promise.all(gitBoundaryRoots(cwd).map(boundary => realpath(boundary)));
+  } catch { fail('OUTPUT_PARENT_REALPATH_REQUIRED'); }
+  if (physicalBoundaries.some(boundary => pathInside(physicalParent, boundary))) fail('OUTPUT_INSIDE_REPOSITORY');
+  const parentInfo = await lstat(resolvedParent);
+  if (!parentInfo.isDirectory() || parentInfo.isSymbolicLink()) fail('OUTPUT_PARENT_NOT_DIRECTORY');
+  if ((await readdir(physicalParent)).length !== 0) fail('OUTPUT_PARENT_NOT_EMPTY');
+  const physicalContainer = await realpath(dirname(physicalParent));
+  if (physicalBoundaries.some(boundary => pathInside(physicalContainer, boundary))) fail('OUTPUT_INSIDE_REPOSITORY');
+  return physicalParent;
 }
 
 async function writeBundle(root, files) {
@@ -207,9 +389,12 @@ async function walkFiles(root, current = '', output = []) {
   return output;
 }
 
-export async function verifyCandidate({ bundleRoot, container, cwd = process.cwd() }) {
-  const bundle = await verifyBundleRoot(bundleRoot);
+export async function verifyCandidate({ bundleRoot, container, evidence, cwd = process.cwd() }) {
   const root = resolve(bundleRoot);
+  let rootInfo;
+  try { rootInfo = await lstat(root); } catch { fail('BUNDLE_ROOT_REQUIRED'); }
+  if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) fail('BUNDLE_ROOT_REQUIRED');
+  const bundle = await verifyBundleRoot(root);
   const provenanceBytes = await readFile(join(root, 'PROVENANCE.json'));
   let provenance;
   try { provenance = JSON.parse(provenanceBytes); } catch { fail('PROVENANCE_GRAMMAR'); }
@@ -242,14 +427,47 @@ export async function verifyCandidate({ bundleRoot, container, cwd = process.cwd
   for (const [path, bytes] of expected) {
     if (!(await readFile(join(root, ...path.split('/')))).equals(bytes)) fail('CANDIDATE_SOURCE_PAYLOAD');
   }
-  if (container === undefined) return Object.freeze({ ...bundle, commit, tree });
-  const zip = await readFile(container);
+  if (container === undefined) fail('CONTAINER_FILE_REQUIRED');
+  const resolvedContainer = resolve(container);
+  const resolvedEvidence = resolve(evidence ?? join(dirname(resolvedContainer), EVIDENCE_NAME));
+  if (basename(resolvedContainer) !== ZIP_NAME || dirname(resolvedContainer) !== dirname(root)
+      || basename(root) !== ROOT_NAME || dirname(root) !== dirname(resolvedContainer)
+      || basename(resolvedEvidence) !== EVIDENCE_NAME
+      || dirname(resolvedEvidence) !== dirname(resolvedContainer)) fail('CANDIDATE_SIBLING_LAYOUT');
+  const [physicalRoot, physicalContainerParent, physicalEvidenceParent] = await Promise.all([
+    realpath(root), realpath(dirname(resolvedContainer)), realpath(dirname(resolvedEvidence)),
+  ]);
+  if (dirname(physicalRoot) !== physicalContainerParent || physicalContainerParent !== physicalEvidenceParent) {
+    fail('CANDIDATE_SIBLING_LAYOUT');
+  }
+  let containerInfo;
+  let evidenceInfo;
+  try { containerInfo = await lstat(resolvedContainer); } catch { fail('CONTAINER_FILE_REQUIRED'); }
+  try { evidenceInfo = await lstat(resolvedEvidence); } catch { fail('EVIDENCE_FILE_REQUIRED'); }
+  if (!containerInfo.isFile() || containerInfo.isSymbolicLink()) fail('CONTAINER_FILE_REQUIRED');
+  if (!evidenceInfo.isFile() || evidenceInfo.isSymbolicLink()) fail('EVIDENCE_FILE_REQUIRED');
+  const zip = await readFile(resolvedContainer);
   const reconstructed = new Map();
   for (const path of bundle.paths) reconstructed.set(path, await readFile(join(root, ...path.split('/'))));
-  if (!createStoredZipBytes(reconstructed).equals(zip)) fail('CONTAINER_PROFILE');
+  auditStoredZip32Bytes(zip, reconstructed);
+  const expectedEvidence = createEvidenceBytes({
+    commit, tree, manifestSha256: bundle.manifestSha256, containerSha256: sha256(zip),
+  });
+  let evidenceBytes;
+  try { evidenceBytes = await readFile(resolvedEvidence); } catch { fail('EVIDENCE_FILE_REQUIRED'); }
+  let evidenceRecord;
+  try { evidenceRecord = JSON.parse(evidenceBytes); } catch { fail('EVIDENCE_GRAMMAR'); }
+  const evidenceKeys = [
+    'version', 'commit', 'tree', 'manifestFile', 'manifestSha256', 'containerFile', 'containerSha256',
+  ];
+  if (!evidenceRecord || typeof evidenceRecord !== 'object' || Array.isArray(evidenceRecord)
+      || Object.keys(evidenceRecord).length !== evidenceKeys.length
+      || Object.keys(evidenceRecord).some((key, index) => key !== evidenceKeys[index])) fail('EVIDENCE_SCHEMA');
+  if (!evidenceBytes.equals(expectedEvidence)) fail('EVIDENCE_AUTHENTICATION');
   return Object.freeze({
     manifestSha256: bundle.manifestSha256, containerSha256: sha256(zip),
-    fileCount: bundle.fileCount, commit, tree,
+    evidenceSha256: sha256(evidenceBytes), selectedFileCount: expectedPaths.length - 2,
+    fileCount: bundle.fileCount, commit, tree, sourceDateEpoch,
   });
 }
 
@@ -270,13 +488,16 @@ async function verifyBundleRoot(bundleRoot) {
   const named = [...expected.keys(), 'SHA256SUMS'].sort(byteCompare);
   if (actual.length !== named.length || actual.some((path, index) => path !== named[index])) fail('BUNDLE_FILE_SET');
   for (const [path, digest] of expected) if (sha256(await readFile(join(root, ...path.split('/')))) !== digest) fail('BUNDLE_HASH');
-  const provenance = JSON.parse(await readFile(join(root, 'PROVENANCE.json'), 'utf8'));
-  if (provenance.version !== ALPHA_RELEASE_NAME) fail('PROVENANCE_VERSION');
+  let provenance;
+  try { provenance = JSON.parse(await readFile(join(root, 'PROVENANCE.json'), 'utf8')); }
+  catch { fail('PROVENANCE_GRAMMAR'); }
+  if (!provenance || typeof provenance !== 'object' || Array.isArray(provenance)
+      || provenance.version !== ALPHA_RELEASE_NAME) fail('PROVENANCE_VERSION');
   return Object.freeze({ manifestSha256: sha256(manifest), fileCount: actual.length, paths: Object.freeze(actual) });
 }
 
-export async function buildCandidate({ outputParent, cwd = process.cwd(), enforceToolchain = true } = {}) {
-  if (enforceToolchain) assertToolchain();
+export async function buildCandidate({ outputParent, cwd = process.cwd() } = {}) {
+  assertToolchain();
   assertClean(cwd);
   const parent = await assertEmptyExternalParent(outputParent, cwd);
   const commit = git(['rev-parse', 'HEAD'], { cwd }).trim();
@@ -291,10 +512,8 @@ export async function buildCandidate({ outputParent, cwd = process.cwd(), enforc
   files.set('PROVENANCE.json', createProvenanceBytes({ commit, tree, sourceDateEpoch }));
   files.set('SHA256SUMS', createSha256SumsBytes(files));
   const zip = createStoredZipBytes(files);
-  const evidence = canonicalJson({
-    version: ALPHA_RELEASE_NAME, commit, tree,
-    manifestFile: `${ROOT_NAME}/SHA256SUMS`, manifestSha256: sha256(files.get('SHA256SUMS')),
-    containerFile: ZIP_NAME, containerSha256: sha256(zip),
+  const evidence = createEvidenceBytes({
+    commit, tree, manifestSha256: sha256(files.get('SHA256SUMS')), containerSha256: sha256(zip),
   });
   const stage = await mkdtemp(join(dirname(parent), `.${basename(parent)}.stage-`));
   try {
@@ -302,7 +521,10 @@ export async function buildCandidate({ outputParent, cwd = process.cwd(), enforc
     await writeBundle(join(stage, ROOT_NAME), files);
     await writeFile(join(stage, ZIP_NAME), zip, { flag: 'wx', mode: 0o644 });
     await writeFile(join(stage, EVIDENCE_NAME), evidence, { flag: 'wx', mode: 0o644 });
-    await verifyCandidate({ bundleRoot: join(stage, ROOT_NAME), container: join(stage, ZIP_NAME) });
+    await verifyCandidate({
+      bundleRoot: join(stage, ROOT_NAME), container: join(stage, ZIP_NAME),
+      evidence: join(stage, EVIDENCE_NAME), cwd,
+    });
     await rename(stage, parent);
   } catch (error) {
     await rm(stage, { recursive: true, force: true });

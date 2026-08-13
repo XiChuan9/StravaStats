@@ -63,8 +63,74 @@ jobs:
       - name: Check patch whitespace
         run: git diff --check
 
-      - name: Build, verify, and compare local Alpha candidates
-        if: github.event_name == 'pull_request' && github.head_ref == 'codex/v2/alpha-candidate-planning'
+  exact-alpha-candidate:
+    needs: checks
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.number == 62 &&
+      github.repository == 'XiChuan9/StravaStats'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Authenticate exact Draft PR 62 event
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = "pull_request"
+          test "$GITHUB_REPOSITORY" = "XiChuan9/StravaStats"
+          test "$GITHUB_HEAD_REF" = "codex/v2/release-head-verification"
+          test "$GITHUB_BASE_REF" = "integration/v2"
+          jq --exit-status '
+            .number == 62 and
+            .repository.full_name == "XiChuan9/StravaStats" and
+            .pull_request.state == "open" and
+            .pull_request.draft == true and
+            .pull_request.head.ref == "codex/v2/release-head-verification" and
+            .pull_request.head.repo.full_name == "XiChuan9/StravaStats" and
+            .pull_request.base.ref == "integration/v2" and
+            .pull_request.base.sha == "57c2cdf9358afef1330d5a71f3799f18d41f6d13" and
+            .pull_request.base.repo.full_name == "XiChuan9/StravaStats" and
+            (.pull_request.head.sha | test("^[0-9a-f]{40}$"))
+          ' "$GITHUB_EVENT_PATH"
+
+      - name: Check out exact candidate head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up exact candidate toolchain
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.19.0
+
+      - name: Authenticate checked-out exact candidate SHA
+        shell: bash
+        env:
+          ALPHA_CANDIDATE_AUTHORIZED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          node --input-type=module --eval \
+            "const { assertAuthorizedBranch } = await import('./scripts/alpha-candidate.mjs'); assertAuthorizedBranch({ commit: process.env.ALPHA_CANDIDATE_AUTHORIZED_HEAD });"
+          test "$(git status --porcelain=v1 --untracked-files=all)" = ""
+
+      - name: Pin npm and assert exact detached candidate context
+        shell: bash
+        env:
+          ALPHA_CANDIDATE_AUTHORIZED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          npm install --global npm@11.17.0
+          test "$(node --version)" = "v24.19.0"
+          test "$(npm --version)" = "11.17.0"
+          test "$(git rev-parse HEAD)" = "$ALPHA_CANDIDATE_AUTHORIZED_HEAD"
+          test "$(git symbolic-ref --quiet --short HEAD || true)" = ""
+          test "$(git rev-parse --is-shallow-repository)" = "true"
+          test "$(git rev-list --count HEAD)" = "1"
+
+      - name: Build, authenticate, and compare exact Alpha candidate
         shell: bash
         env:
           ALPHA_CANDIDATE_AUTHORIZED_HEAD: ${{ github.event.pull_request.head.sha }}
@@ -79,6 +145,10 @@ jobs:
           npm run verify:alpha-candidate -- \
             --bundle-root "$first/$root" \
             --container "$first/$root.zip"
+          npm run verify:alpha-candidate -- \
+            --bundle-root "$second/$root" \
+            --container "$second/$root.zip"
           diff --recursive --brief "$first/$root" "$second/$root"
           cmp "$first/$root.zip" "$second/$root.zip"
           cmp "$first/$root.evidence.json" "$second/$root.evidence.json"
+          sha256sum "$first/$root/SHA256SUMS" "$first/$root.zip" "$first/$root.evidence.json"

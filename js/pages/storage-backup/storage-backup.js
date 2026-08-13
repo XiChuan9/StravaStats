@@ -122,6 +122,7 @@ export function createStorageBackupPage({ document, sessionMode, URL }) {
                 ? 'This exact backup is already restored.'
                 : 'Backup restored.';
             elements.detail.textContent = `${formatBytes(result.byteLength)} · ${result.activityCount} activities · ${result.createdAt}`;
+            elements.version.textContent = 'V6';
             elements.count.textContent = String(result.activityCount);
         } catch (error) {
             recordDiagnosticError({

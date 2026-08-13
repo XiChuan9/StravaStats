@@ -35,37 +35,40 @@ test('PR-23 freezes the exact nine-path hard maximum and unchanged protected sur
     }
 });
 
-test('default and explicit Canonical keep the direct zero-Legacy startup boundary', async () => {
+test('default and explicit Canonical inspect local-first without Legacy or Token reads', async () => {
     const main = await source('js/app/main.js');
     assert.match(
         main,
-        /documentSessionMode === APP_SESSION_MODE\.REAL[\s\S]*?getFeatureFlags\(\)\.dataRepositoryMode === 'canonical'[\s\S]*?\? initializeApp\(null\)[\s\S]*?: runLocalFirstBootstrap/
+        /async function inspectApplicationStart\(\)[\s\S]*?documentSessionMode === APP_SESSION_MODE\.REAL[\s\S]*?getFeatureFlags\(\)\.dataRepositoryMode === 'canonical'[\s\S]*?inspectLocalFirstBootstrap\(\{[\s\S]*?localStorage: canonicalInspectionStorage,[\s\S]*?legacyIndexedDbReader:[\s\S]*?canonicalInspectionNotFound,[\s\S]*?legacyLocalStorageReader:[\s\S]*?canonicalInspectionNotFound/
     );
-    assert.doesNotMatch(
+    assert.match(
         main.slice(main.indexOf('const applicationStart =')),
-        /inspectLocalFirstBootstrap\(\)[\s\S]*?initializeApp\(null\)[\s\S]*?dataRepositoryMode === 'canonical'/
+        /const applicationStart = runLocalFirstBootstrap\(\{[\s\S]*?inspect: inspectApplicationStart,[\s\S]*?startDashboard: initializeLocalDashboard/
     );
+    assert.doesNotMatch(main, /\?\s*initializeApp\(null\)\s*:\s*runLocalFirstBootstrap/);
 });
 
-test('an empty validated Canonical summary enters exact Real First-run before optional reads', async () => {
+test('an empty validated Canonical summary keeps one actionable root First-run entry', async () => {
     const main = await source('js/app/main.js');
-    const activityResult = main.indexOf('const activities = activityLoad.data;');
-    const firstRunNavigation = main.indexOf(
-        "window.location.assign('/source-manager.html?mode=real');",
-        activityResult
-    );
-    const optionalMetadata = main.indexOf(
-        'loadInitializeAthleteAndZones(repository)',
-        activityResult
-    );
-    assert.notEqual(activityResult, -1);
-    assert.notEqual(firstRunNavigation, -1);
-    assert.notEqual(optionalMetadata, -1);
-    assert(firstRunNavigation < optionalMetadata);
+    const firstRun = main.split('function showLocalFirstEntry(state)')[1]
+        ?.split('async function inspectApplicationStart()')[0];
+    assert.notEqual(firstRun, undefined);
+    assert.match(firstRun, /appSection\?\.classList\.add\('hidden'\)/);
+    assert.match(firstRun, /loginSection\?\.classList\.remove\('hidden'\)/);
+    assert.match(firstRun, /document\.getElementById\('first-run-sources-link'\)/);
+    assert.match(firstRun, /sourcesLink === null[\s\S]*?document\.createElement\('a'\)/);
+    assert.match(firstRun, /sourcesLink\.href = '\/source-manager\.html\?mode=real'/);
+    assert.match(firstRun, /sourcesLink\.textContent = 'Open Sources \/ import files'/);
+    assert.match(firstRun, /sourcesLink\.hidden = false/);
     assert.match(
-        main.slice(activityResult, optionalMetadata),
-        /activityLoad\.source === REPOSITORY_SOURCE\.CANONICAL[\s\S]*?activities\.length === 0[\s\S]*?window\.location\.assign\('\/source-manager\.html\?mode=real'\)[\s\S]*?return;/
+        main.slice(main.indexOf('const applicationStart =')),
+        /navigateFirstRun: showLocalFirstEntry/
     );
+    assert.match(
+        main,
+        /activityLoad\.source === REPOSITORY_SOURCE\.CANONICAL[\s\S]*?activities\.length === 0[\s\S]*?showLocalFirstEntry\(applicationInspectionState\)[\s\S]*?return;/
+    );
+    assert.doesNotMatch(main, /window\.location\.assign\('\/source-manager\.html\?mode=real'\)/);
 });
 
 test('the default switch does not change lower Repository, storage, provider, or public boundaries', async () => {
@@ -76,7 +79,10 @@ test('the default switch does not change lower Repository, storage, provider, or
         source('js/app/local-first-bootstrap.js')
     ]);
     assert.match(factory, /const mode = values\.mode \?\? 'legacy'/);
-    assert.doesNotMatch(main, /strava_tokens|Authorization|\/api\/strava-|indexedDB/i);
+    assert.doesNotMatch(
+        main,
+        /strava_tokens|Authorization|\/api\/strava-|indexedDB\.(?:open|deleteDatabase)/i
+    );
     assert.match(repository, /createRepository/);
     assert.doesNotMatch(repository, /local-first-bootstrap|feature-flags/);
     assert.doesNotMatch(localFirst, /dataRepositoryMode|DEFAULT_FEATURE_FLAGS/);

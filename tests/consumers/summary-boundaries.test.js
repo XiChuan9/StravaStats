@@ -156,8 +156,15 @@ test('main obtains provider-owned data only through the Repository public entry'
     assert.match(mainSource, /repository\.getGears\(\)/);
     assert.match(
         mainSource,
-        /documentSessionMode === APP_SESSION_MODE\.REAL[\s\S]*?dataRepositoryMode === 'canonical'[\s\S]*?\? initializeApp\(null\)[\s\S]*?: runLocalFirstBootstrap/
+        /const applicationStart = runLocalFirstBootstrap\(\{[\s\S]*?inspect: inspectApplicationStart,[\s\S]*?startDashboard: initializeLocalDashboard,[\s\S]*?navigateFirstRun: showLocalFirstEntry/
     );
+    const firstRunBoundary = mainSource.split('function showLocalFirstEntry(state)')[1]
+        ?.split('async function inspectApplicationStart()')[0];
+    assert.notEqual(firstRunBoundary, undefined);
+    assert.doesNotMatch(firstRunBoundary, /createRepository|establishSummaryRepositorySession/);
+    assert.match(firstRunBoundary, /document\.getElementById\('first-run-sources-link'\)/);
+    assert.match(firstRunBoundary, /sourcesLink === null[\s\S]*?document\.createElement\('a'\)/);
+    assert.match(firstRunBoundary, /sourcesLink\.hidden = false/);
     assert.match(
         mainSource,
         /activityLoad\.source === REPOSITORY_SOURCE\.CANONICAL\s*\? structuredClone\(activities\)\s*:\s*activities/
@@ -174,7 +181,7 @@ test('main has no direct Strava API, Token, Authorization, or IndexedDB boundary
         /\/api\/strava-/i,
         /strava_tokens/i,
         /Authorization/,
-        /indexedDB/i,
+        /indexedDB\.(?:open|deleteDatabase)/i,
         /new\s+StravaApiConnector/,
         /createRepositoryWithDependencies/
     ]) {
@@ -574,8 +581,9 @@ test('R7 main injects one frozen AI Coach session while the tab owns no provider
     assert.doesNotMatch(aiBoundarySource, /\?key=|Authorization/);
     assert.match(
         mainSource,
-        /demoButton\.addEventListener\('click',\s*\(\)\s*=>\s*\{\s*aiCoachSession\.revoke\(\);\s*aiCoachActivitySnapshot = null;\s*aiCoachSession = createAICoachSession\(\{\s*sessionMode:\s*APP_SESSION_MODE\.DEMO\s*\}\);\s*loginWithDemo\(initializeApp\)/
+        /demoButton\.addEventListener\('click',\s*\(\)\s*=>\s*\{\s*aiCoachSession\.revoke\(\);\s*aiCoachActivitySnapshot = null;\s*aiCoachSession = createAICoachSession\(\{\s*sessionMode:\s*APP_SESSION_MODE\.DEMO\s*\}\);\s*loginWithDemo\(\(\)\s*=>\s*\{\s*window\.location\.reload\(\);\s*\}\)/
     );
+    assert.doesNotMatch(mainSource, /loginWithDemo\(initializeApp\)/);
     assert.match(mainSource, /function buildAICoachActivitySnapshot\(activities\)[\s\S]*?try\s*\{[\s\S]*?createActivitySnapshot\(\)[\s\S]*?builder\.add\([\s\S]*?builder\.finish\(\)[\s\S]*?catch\s*\{\s*return null/);
     assert.match(mainSource, /activeTabId === 'ai-chat-tab'[\s\S]*?aiCoachSession\.cancelPending\(\)/);
     assert.match(mainSource, /refreshButton\.addEventListener\('click',[\s\S]*?aiCoachSession\.cancelPending\(\)/);

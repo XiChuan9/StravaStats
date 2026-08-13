@@ -1,58 +1,53 @@
 /**
  * Demo Polylines - Encoded Google polyline format
- * These are real-world encoded polylines for Spanish running/cycling routes
+ * SYNTHETIC_ROUTE_PROVENANCE_V1: deliberately fabricated coordinate geometry;
+ * no person or real GPS trace is represented or was used as source material.
+ * These abstract shapes are not tied to any named place.
  */
 
 export const DEMO_POLYLINES = {
-    // Running routes (shorter polylines)
+    // Fabricated compact linework
     Run: [
-        // Madrid central park route
-        '_p~iF~ps|U_ulLnnqC_mqNvxq`@',
-        'gfo}EtohhU',
-        '_p~iF~ps|U_ulLnnqC',
-        'yvxEhrxU|C}A|@iBrA}@',
-        'eyvEoaxxU}A{@gA}@cB{@',
-        // Barcelona Sagrada Familia loop
-        'yvxEhrxU|C}A|@iBrA}@~BiBlAr@',
-        'u{~vFvyys@{AoAyAoA',
-        // Sevilla riverside
-        '~yvFbx_sAaB|@kAjAoAjA',
-        // Valencia beach run
-        'yvxEhrxU}A{@gA}@cBsA{@qA',
-        'gfo}EtohhU}@sAqAyA',
-        // Additional routes for variety
-        'qvxEhrxU}A{@',
-        'ivxEhrxU|C}A|@iB',
-        'mvxEhrxU}A{@gA}@',
-        'nvxEhrxU|C}A|@iBrA}@',
+        '_ibE~reKoF_DgEvBnAnFnFf@vBgE',
+        'wtcEfrfK_DcGwGg@wBfErDfEjHS',
+        'o`eEnqgKkH?_DsD?kHzEkCbGvB',
+        'glfEvphKwBvGoF~CwGoAg@cGfEsD',
+        '_xgE~oiKgEgEgEfEfEfEfEgEgEgE',
+        'wciEfojKoA_IsDkCwGf@kCnFz@jH',
+        'oojEnnkKcGwBcBwG~C{EjH?jCnF',
+        'g{kEvmlKsDfE_If@_DoFf@kHbGkC',
+        '_gmE~lmKcBoF{E_DkH?gErDf@vG',
+        'wrnEflnKwGnAsDnFz@jHbGvBzE_D',
+        'o~oEnkoKkCsD_D{Ez@kHbGcBfErD',
+        'gjqEvjpK{E{@cGjCwBvGjCnFjHf@',
+        '_vrE~iqK{@bGgEzEkHRsDgEf@wG',
+        'watEfirKoFoFkH?wBbG~CbGjHR',
     ],
 
-    // Cycling routes (medium to long polylines)
+    // Fabricated extended linework
     Ride: [
-        '_p~iF~ps|U_ulLnnqC_mqNvxq`@~BiBlAr@z@fAb@rA',
-        'yvxEhrxU|C}A|@iBrA}@~BiBlAr@z@fAb@rAbAbAz@jA',
-        'u{~vFvyys@{AoAyAoAcBoB}@{AeA}AcAyA',
-        'eyvEoaxxU}A{@gA}@cB{@eAyAoAkAsAoA',
-        '_p~iF~ps|U_ulLnnqC_mqNvxq`@~BiBlAr@z@fAb@rAbAbAz@jAbAjAhAtArAz@jA',
-        // Longer routes
-        'gfo}EtohhU}@sAqAyAcBoB{@{AeA}AcAyAgA{AcBqBiAuAwAwA',
-        'yvxEhrxU|C}A|@iBrA}@~BiBlAr@z@fAb@rAbAbAz@jAbAjAhAtArAz@jAbAlAhAzAz@tAvAdAbA',
-        'u{~vFvyys@{AoAyAoAcBoB}@{AeA}AcAyAgA{AcBqBiAuAwAwAsAwAwA',
-        // Mountain bike routes (more technical)
-        'yvxEhrxU|C}A|@iBrA}@~BiB',
-        'gfo}EtohhU}@sAqAyAcBoB',
-        'u{~vFvyys@{AoAyAoAcBoB}@{A',
+        '_}hQ_glWgJ_DsIoFoFsIg@{JfEsIrIgEzJ?jHnFbBzJ',
+        'gujQ_ujWsD{JgJoFoK?_IbGwBnKrDfJzJ~CfJgE~C{J',
+        'omlQ_ciWoK{@sIcGgE{Jf@cLbG_InKwBfJfE~CzJkCnK',
+        'wenQ_qgWcGrIoKvB{J_D{EgJf@cLjHkHbLg@~HvGz@bL',
+        '_~oQ__fWcL?gJgE{EgJ?cLnFsIzJ_DnKvBbGrISbL',
+        'gvqQ_mdWkCcL_IkHcL{@gJzE_DnKjCbLfJnFbLg@jH_I',
+        'onsQ_{bWsIcGcLSsIbGcBbLzEfJnKjCzJsDrD{JkCcL',
+        'wfuQ_iaWoKvB_IjHoAbLfEzJzJrDnKwBvGsIf@cLoFsI',
+        '__wQ_w_W{EgJoKkC{JrDsDzJjCbLfJzEbLoAbGgJ{@cL',
+        'gwxQ_e~V{JgE{J~CgEzJvBbLfJnFbLg@jH_IRcLwGsI',
+        'oozQ_s|VkHjHcLf@gJoFwBcLfE{JnKkCzJfEjCnKsDzJ',
     ],
 
-    // Swimming (point-to-point, short polylines)
+    // Fabricated short linework
     Swim: [
-        'yvxEhrxU|C}A',
-        'gfo}EtohhU}@sA',
-        'eyvEoaxxU}A{@',
-        '_p~iF~ps|U_ulL',
-        'u{~vFvyys@{AoA',
-        'qvxEhrxU|C}A',
-        'ivxEhrxU|C}A',
+        '~po]_{rc@sDoAsDoAsDoA',
+        'flm]sctc@kCvBkCvBkCvB',
+        'ngk]gluc@oF?oF?',
+        'vbi]{tvc@?{E?{E',
+        '~}f]o}wc@_D_D~C_D~C~C',
+        'fyd]cfyc@gEz@gE{@gEz@',
+        'ntb]wnzc@wBgEwBfEwBgE',
     ],
 };
 
