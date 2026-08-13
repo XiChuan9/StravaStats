@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | M37 / G12-RELEASE-HEAD-VERIFICATION |
-| Status | Candidate `C` withdrawn; source-review Closure frozen for Task-Brief-only `C2`; G12 `NOT RUN`; G13 `PARTIAL` |
+| Status | Candidates `C` and `C2` withdrawn; source-review Closure frozen for Task-Brief-only `C3`; G12 `NOT RUN`; G13 `PARTIAL` |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/release-head-verification` |
 | Worktree | `/Users/wangchuanliang/.codex/worktrees/2ccf/StravaStats` |
@@ -542,6 +542,104 @@ candidate bytes existed before this commit. Tracked G12 remains `NOT RUN` and G1
 hosting or deployment evidence. After the one authorized push, no repository commit or branch
 mutation is permitted. Every post-freeze gate must bind the exact commit and tree read back for
 `C2`; any failure withdraws `C2` and returns to the owner without repair or relabeling.
+
+## Candidate C2 withdrawal and C3 authority
+
+Candidate `C2` was commit `2fd912c19e7e02bba9b91e51c78bc7980be9f6f7`, tree
+`0c0d9554d5b53b73bcb09890fa5dcfe96fe4d072`, with withdrawn `C` as its parent. Its post-freeze
+dependency, syntax, privacy, audit, diff and exact seventeen-path checks passed. The first local
+candidate-build invocation then failed closed before generating bytes with
+`AUTHORIZED_HEAD_REQUIRED`: the operator supplied `APPROVED_EXACT_CANDIDATE_SHA=C2`, while the
+builder accepts only `ALPHA_CANDIDATE_AUTHORIZED_HEAD=<exact candidate SHA>`. The external output
+directory remained empty. This is an operator invocation-wiring failure, not a source, tool, tree,
+candidate-byte, privacy, migration or rollback defect. Per the immutable-candidate contract,
+`C2` was withdrawn immediately and is never retried, revived or relabeled.
+
+No `C2` candidate bytes, remote clone, browser/Chrome launch, PR-body/Ready transition, tag,
+Release, upload, publication, hosting, deployment, private-data access or cleanup occurred. The
+owner authorized a fresh `C3` lifecycle on the unchanged source and tool tree. Repository scope
+remains the existing exact seventeen-path cumulative allowlist; only this Task Brief may record
+`C2` withdrawal, the fresh pre-freeze evidence and Task-Brief-only `C3` source-review Closure. No
+eighteenth path, source/tool change, package, schema, migration, provider or product behavior
+expansion is authorized.
+
+Before the one first local `C3` build attempt, a separate external preflight must print only:
+
+```text
+variable name              ALPHA_CANDIDATE_AUTHORIZED_HEAD
+variable present           true
+exact-SHA equality         true
+branch                     codex/v2/release-head-verification
+HEAD                       exact approved C3 SHA
+upstream                   exact approved C3 SHA
+tree                       exact approved C3 tree
+output empty               true
+```
+
+The preflight must never print a secret value or unrelated environment data. The literal build
+invocation is `ALPHA_CANDIDATE_AUTHORIZED_HEAD=<exact approved C3 SHA> npm run
+build:alpha-candidate -- --output-parent <fresh external empty directory>`. The variable must be
+present and equal the exact approved `C3`, local `HEAD` and upstream before the builder runs. Every
+pre-freeze exact-toolchain gate and both independent source reviews rerun from zero before `C3` is
+created and pushed once. After that push, repository and branch mutation are prohibited. Every
+post-freeze local/remote build, independent artifact audit, exact-`C3` CI, corrected observable
+loopback/browser matrix, inventory and final two-review gate reruns from zero. Any failure
+withdraws `C3` and requires a new owner decision.
+
+The first attempted `C3` pre-freeze run was not exact-toolchain evidence: npm itself was
+`11.17.0`, but lifecycle scripts resolved the unpinned shell `node` to system Node `v25.8.1`. Its
+successful results are retained as ineligible environment evidence and are not counted as a gate
+PASS. No candidate existed and no source, threshold or test was changed. The lifecycle restarted
+from `npm ci` with the exact disposable toolchain directory first in `PATH`, so both direct and npm
+lifecycle invocations resolved Node `v24.19.0` and npm `11.17.0`.
+
+The restarted exact-toolchain audit first encountered restricted-environment registry DNS
+unavailability and then passed with zero vulnerabilities under authorized network execution. The
+exact full suite passed 1,944/1,944. Both the ineligible PATH attempt and the restricted-DNS audit
+attempt remain explicit rather than being silently promoted or discarded.
+
+## C3 source-review Closure and candidate freeze
+
+The `C3` pre-freeze lifecycle ran on the unchanged source/tool/runtime tree. The first environment
+was rejected as ineligible after npm lifecycle scripts exposed system Node `v25.8.1`; it created no
+candidate and is not counted below. The lifecycle restarted from `npm ci` with the disposable
+toolchain directory first in `PATH`, making both direct and npm lifecycle invocations use exact
+Node `v24.19.0` and npm `11.17.0`:
+
+```text
+npm ci                         PASS; 6 packages
+syntax                         PASS; 285 files
+privacy                        PASS
+npm audit restricted attempt  RETAINED ENVIRONMENT FAIL; registry DNS unavailable
+npm audit authorized retry    PASS; 0 vulnerabilities
+full test suite                PASS; 1,944/1,944
+focused release-doc tests      PASS; 29/29
+git diff --check               PASS
+literal path/base/tree gate    PASS; exact 17 paths, zero untracked, no path 18
+findings-first source review   PASS; P0 0, P1 0
+complete fresh re-review       PASS; 17/17 paths; P0 0, P1 0
+```
+
+The complete fresh re-review line-read every changed hunk in all seventeen cumulative paths and
+performed a cross-file authority, privacy, data, migration, rollback and browser-contract sweep.
+It retained the existing P2 items and added one P2 documentation/historical-harness drift cluster:
+`docs/guides/migration-guide.md` and `docs/guides/troubleshooting.md` still describe automatic
+Source Manager navigation, and `tests/default-canonical-browser-smoke.html` still waits for that
+old redirect, while the approved root First-run intentionally remains actionable at `/`. Those
+three paths are outside the seventeen-path authority. They do not change candidate runtime bytes
+or the separately required corrected G12 browser matrix, and they are not silently expanded or
+called fixed. The other retained P2 items are the 250-versus-500 Demo copy drift, the unproven
+environment-sensitive parallel performance outlier, and the previously disclosed forensic
+record limitations.
+
+This Task-Brief-only commit is `C3`. Its parent is withdrawn candidate `C2`; compared with that
+parent it changes only this Task Brief and contains no source/tool/runtime change. No `C3`
+candidate bytes existed before this commit. Tracked G12 remains `NOT RUN` and G13 remains
+`PARTIAL`; this Closure is not exact-object verification, Ready, merge, tag, Release, publication,
+hosting or deployment evidence. After the one authorized push, no repository commit or branch
+mutation is permitted. Every post-freeze gate and the secret-free build preflight must bind the
+exact commit and tree read back for `C3`; any failure withdraws `C3` and returns to the owner
+without repair or relabeling.
 
 ## Hard boundaries
 
