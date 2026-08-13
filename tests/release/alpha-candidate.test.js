@@ -305,6 +305,12 @@ test('external output containment rejects repository aliases and symlink output 
   const outsideTarget = join(root, 'outside-target');
   await Promise.all([mkdir(repo), mkdir(outside), mkdir(outsideTarget)]);
   execFileSync('git', ['init', '--quiet', '--initial-branch=arbitrary'], { cwd: repo });
+  await writeFile(join(repo, 'sentinel'), 'repository\n');
+  execFileSync('git', ['add', 'sentinel'], { cwd: repo });
+  execFileSync('git', [
+    '-c', 'user.name=Alpha Test', '-c', 'user.email=alpha@example.invalid',
+    'commit', '--quiet', '-m', 'output containment',
+  ], { cwd: repo });
   assert.equal(await tool.assertEmptyExternalParent(outside, repo), await realpath(outside));
 
   const inside = join(repo, 'candidate');
@@ -317,6 +323,19 @@ test('external output containment rejects repository aliases and symlink output 
   const alias = join(root, 'repo-alias');
   await symlink(repo, alias);
   await assert.rejects(tool.assertEmptyExternalParent(join(alias, 'candidate'), repo), /OUTPUT_INSIDE_REPOSITORY/);
+
+  const linked = join(root, 'linked-worktree');
+  execFileSync('git', ['worktree', 'add', '--quiet', '--detach', linked], { cwd: repo });
+  const linkedOutput = join(linked, 'candidate');
+  await mkdir(linkedOutput);
+  await assert.rejects(
+    tool.assertEmptyExternalParent(linkedOutput, repo), /OUTPUT_INSIDE_REPOSITORY/,
+  );
+  const linkedAlias = join(root, 'linked-worktree-alias');
+  await symlink(linked, linkedAlias);
+  await assert.rejects(
+    tool.assertEmptyExternalParent(join(linkedAlias, 'candidate'), repo), /OUTPUT_INSIDE_REPOSITORY/,
+  );
 
   const outputSymlink = join(root, 'output-symlink');
   await symlink(outsideTarget, outputSymlink);

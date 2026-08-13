@@ -348,6 +348,45 @@ function gitBoundaryRoots(cwd) {
   } catch { fail('REPOSITORY_BOUNDARY_REQUIRED'); }
   return [topLevel, gitDirectory, gitCommonDirectory];
 }
+function registeredWorktreeRoots(cwd) {
+  let listing;
+  try {
+    listing = git(['worktree', 'list', '--porcelain', '-z'], { cwd, encoding: 'buffer' });
+  } catch { fail('WORKTREE_BOUNDARY_REQUIRED'); }
+  if (!Buffer.isBuffer(listing) || listing.length < 2
+      || listing.at(-2) !== 0 || listing.at(-1) !== 0) fail('WORKTREE_BOUNDARY_REQUIRED');
+  const text = listing.toString('utf8');
+  if (!Buffer.from(text, 'utf8').equals(listing)) fail('WORKTREE_BOUNDARY_REQUIRED');
+  const roots = text.slice(0, -2).split('\0\0').map(record => {
+    const fields = record.split('\0');
+    if (fields.length < 2 || fields.some(field => field.length === 0)
+        || !fields[0].startsWith('worktree ')
+        || fields.slice(1).some(field => field.startsWith('worktree '))) {
+      fail('WORKTREE_BOUNDARY_REQUIRED');
+    }
+    const root = fields[0].slice('worktree '.length);
+    if (!isAbsolute(root)) fail('WORKTREE_BOUNDARY_REQUIRED');
+    let headCount = 0;
+    let stateCount = 0;
+    const singletonFields = new Set();
+    for (const field of fields.slice(1)) {
+      if (/^HEAD [0-9a-f]{40}$/.test(field)) headCount += 1;
+      else if (/^branch refs\/heads\/[^\x00-\x20\x7f]+$/.test(field)
+          || field === 'detached' || field === 'bare') stateCount += 1;
+      else if (field === 'locked' || field.startsWith('locked ')) singletonFields.add('locked');
+      else if (field === 'prunable' || field.startsWith('prunable ')) singletonFields.add('prunable');
+      else fail('WORKTREE_BOUNDARY_REQUIRED');
+    }
+    if (headCount > 1 || stateCount !== 1
+        || (fields.includes('bare') ? headCount !== 0 : headCount !== 1)
+        || singletonFields.size !== fields.filter(
+          field => /^(?:locked|prunable)(?: |$)/.test(field),
+        ).length) fail('WORKTREE_BOUNDARY_REQUIRED');
+    return root;
+  });
+  if (roots.length === 0 || new Set(roots).size !== roots.length) fail('WORKTREE_BOUNDARY_REQUIRED');
+  return roots;
+}
 function pathInside(path, boundary) {
   return path === boundary || path.startsWith(`${boundary}${sep}`);
 }
@@ -355,11 +394,26 @@ export async function assertEmptyExternalParent(parent, cwd) {
   if (!isAbsolute(parent)) fail('OUTPUT_PARENT_NOT_ABSOLUTE');
   const resolvedParent = resolve(parent);
   let physicalParent;
-  let physicalBoundaries;
+  let physicalRepositoryBoundaries;
   try {
     physicalParent = await realpath(resolvedParent);
-    physicalBoundaries = await Promise.all(gitBoundaryRoots(cwd).map(boundary => realpath(boundary)));
+    physicalRepositoryBoundaries = await Promise.all(
+      gitBoundaryRoots(cwd).map(boundary => realpath(boundary)),
+    );
   } catch { fail('OUTPUT_PARENT_REALPATH_REQUIRED'); }
+  let physicalWorktreeBoundaries;
+  try {
+    physicalWorktreeBoundaries = await Promise.all(
+      registeredWorktreeRoots(cwd).map(boundary => realpath(boundary)),
+    );
+  } catch { fail('WORKTREE_BOUNDARY_REQUIRED'); }
+  if (!physicalWorktreeBoundaries.includes(physicalRepositoryBoundaries[0])
+      || new Set(physicalWorktreeBoundaries).size !== physicalWorktreeBoundaries.length) {
+    fail('WORKTREE_BOUNDARY_REQUIRED');
+  }
+  const physicalBoundaries = [...new Set([
+    ...physicalRepositoryBoundaries, ...physicalWorktreeBoundaries,
+  ])];
   if (physicalBoundaries.some(boundary => pathInside(physicalParent, boundary))) fail('OUTPUT_INSIDE_REPOSITORY');
   const parentInfo = await lstat(resolvedParent);
   if (!parentInfo.isDirectory() || parentInfo.isSymbolicLink()) fail('OUTPUT_PARENT_NOT_DIRECTORY');

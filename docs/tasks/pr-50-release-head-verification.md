@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | M37 / G12-RELEASE-HEAD-VERIFICATION |
-| Status | Candidates `C` and `C2` withdrawn; source-review Closure frozen for Task-Brief-only `C3`; G12 `NOT RUN`; G13 `PARTIAL` |
+| Status | Candidates `C`, `C2` and `C3` withdrawn; owner-authorized `C4` linked-worktree repair and pre-freeze restart in progress; G12 `NOT RUN`; G13 `PARTIAL` |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/release-head-verification` |
 | Worktree | `/Users/wangchuanliang/.codex/worktrees/2ccf/StravaStats` |
@@ -640,6 +640,155 @@ hosting or deployment evidence. After the one authorized push, no repository com
 mutation is permitted. Every post-freeze gate and the secret-free build preflight must bind the
 exact commit and tree read back for `C3`; any failure withdraws `C3` and returns to the owner
 without repair or relabeling.
+
+## Candidate C3 withdrawal and C4 authority
+
+Candidate `C3` was commit `d43f3fc75ceccfbd947ef665ac020d973d75752d`, tree
+`418d0635b542306b6cc077fc2087dd4680dedea3`, with withdrawn `C2` as its parent. Its mandatory
+separate preflight ran before any build and correctly reported the exact branch, `HEAD`, upstream,
+tree and empty output, but reported `variable present false` and `exact-SHA equality false`. The
+operator had referenced `ALPHA_CANDIDATE_AUTHORIZED_HEAD` in the preflight without assigning it in
+the process environment. The preflight therefore failed closed exactly as designed. No build
+command ran, both external output directories remained empty, and no `C3` candidate bytes exist.
+This is an operator command-construction failure, not a source, tool, tree, privacy, migration,
+rollback or candidate-byte defect. `C3` was withdrawn immediately and is never retried, revived or
+relabeled.
+
+No `C3` remote clone, exact-head CI claim, browser/Chrome launch, PR-body/Ready transition, tag,
+Release, upload, publication, hosting, deployment, private-data access or cleanup occurred. The
+owner authorized a fresh `C4` lifecycle on the unchanged source/tool/runtime tree. Repository
+scope remains the existing exact seventeen-path cumulative allowlist; only this Task Brief may
+record `C3` withdrawal, fresh pre-freeze evidence and the Task-Brief-only `C4` source-review
+Closure. No eighteenth path or source/tool/product expansion is authorized.
+
+`C4` eliminates implicit shell inheritance. Before either executable command, the controller
+prints only these redacted command shapes:
+
+```text
+/usr/bin/env ALPHA_CANDIDATE_AUTHORIZED_HEAD=<redacted-exact-C4-SHA> PATH=<exact-toolchain-path> <secret-free-preflight>
+/usr/bin/env ALPHA_CANDIDATE_AUTHORIZED_HEAD=<redacted-exact-C4-SHA> PATH=<exact-toolchain-path> npm run build:alpha-candidate -- --output-parent <fresh-empty-output>
+```
+
+It then independently inspects the actual argument vector and fails unless it contains the literal
+assignment `ALPHA_CANDIDATE_AUTHORIZED_HEAD=<exact approved C4 SHA>` and the exact toolchain PATH.
+The SHA value is never printed in the command-shape record. The preflight is the only executable
+before the build and is invoked exactly as:
+
+```text
+C4_SHA=<exact approved C4 SHA>
+/usr/bin/env ALPHA_CANDIDATE_AUTHORIZED_HEAD="$C4_SHA" PATH=<exact-toolchain-path> <secret-free-preflight>
+```
+
+It may print only the variable name, presence and exact-SHA equality booleans, branch, `HEAD`,
+upstream, tree and output-empty boolean. Only after every value passes may the one first build run:
+
+```text
+/usr/bin/env ALPHA_CANDIDATE_AUTHORIZED_HEAD="$C4_SHA" PATH=<exact-toolchain-path> npm run build:alpha-candidate -- --output-parent <fresh-empty-output>
+```
+
+Every pre-freeze exact-toolchain gate and both complete independent source reviews rerun from zero
+before `C4` is committed and pushed once. After that push, repository and branch mutation are
+prohibited. Every post-freeze local/remote build, independent artifact audit, exact-`C4` CI,
+observable loopback/browser matrix, inventory and final two-review gate reruns from zero. Any
+failure withdraws `C4` and requires a new owner decision.
+
+## C4 pre-freeze gate record
+
+The `C4` lifecycle restarted on the unchanged source/tool/runtime tree with the disposable
+toolchain directory first in `PATH`, so direct and npm lifecycle invocations resolved exact Node
+`v24.19.0` and npm `11.17.0`. The restricted audit attempt again encountered registry DNS
+unavailability; the separately authorized network retry passed with zero vulnerabilities. One
+full-suite execution is retained but not counted because its terminal result was no longer
+available after tool-output compaction. A fresh, independently readable execution then passed all
+1,944 tests and retained the Stream diagnostic at median/p95/max
+`9.076/13.964/15.053 ms`:
+
+```text
+npm ci                              PASS; 6 packages
+syntax                              PASS; 285 files
+privacy                             PASS
+npm audit restricted attempt       RETAINED ENVIRONMENT FAIL; registry DNS unavailable
+npm audit authorized retry         PASS; 0 vulnerabilities
+first full-suite execution          NOT COUNTED; final summary unavailable
+fresh retained full test suite      PASS; 1,944/1,944
+git diff --check                    PASS
+literal path/base/tree gate         PASS; exact 17 paths, zero untracked, no path 18
+findings-first complete review      PENDING
+fresh complete no-findings review   PENDING
+```
+
+No candidate commit or candidate bytes exist for `C4` at this stage. Tracked G12 remains
+`NOT RUN` and G13 remains `PARTIAL`.
+
+## C4 linked-worktree finding and repair authority
+
+Both complete independent seventeen-path reviews found the same P1 before `C4` was frozen. The
+candidate tool resolved only the invoking worktree top level, its per-worktree Git directory and
+the shared Git common directory. It did not enumerate every registered linked worktree. In this
+repository an empty directory beneath another registered worktree could therefore pass the
+external-parent check and receive generated candidate output. Existing negatives covered the
+invoking repository, subdirectory invocation and symlink aliases, but not a sibling linked
+worktree. No candidate commit, preflight, build or candidate bytes followed this finding.
+
+The owner selected the repair option. The cumulative repository maximum remains the same exact
+seventeen paths with no path eighteen. This repair may change only:
+
+```text
+scripts/alpha-candidate.mjs
+tests/release/alpha-candidate.test.js
+docs/tasks/pr-50-release-head-verification.md
+```
+
+The tool must consume Git's NUL-delimited porcelain worktree inventory, fail closed if that
+inventory is malformed or cannot be resolved, realpath every registered worktree root, and reject
+both the output parent and its physical container beneath any registered worktree or symlink
+alias. Existing invoking-worktree, Git-directory and common-Git-directory protection remains.
+Focused tests must create a temporary linked worktree and prove rejection through its direct and
+symlink-aliased paths.
+
+The repair is a noncandidate commit. Every earlier `C4` pre-freeze result above is retained as
+historical evidence but cannot authorize a freeze after source/tool mutation. From the repair
+commit, `npm ci`, every exact-toolchain gate and both complete independent seventeen-path reviews
+restart from zero. Only after a zero-P0/P1 result may one additional Task-Brief-only commit become
+the sole immutable `C4`; the repair commit and `C4` are then pushed together once. After that push,
+repository and branch mutation are prohibited and every post-freeze gate restarts from zero. Any
+path eighteen, material expansion or post-`C4` failure stops for a new owner decision.
+
+### Retained pre-commit performance chronology and one-shot disposition
+
+Verification of the repaired working tree under exact Node `v24.19.0` and npm `11.17.0` produced
+the following complete execution order before the noncandidate repair commit existed:
+
+```text
+required full npm test              RETAINED PRE-COMMIT PASS; 1,944/1,944
+additional isolated Stream gate     RETAINED PRE-COMMIT FAIL; p95 57.130 ms > 25 ms
+immediate isolated diagnostic       RETAINED PRE-COMMIT PASS; median/p95/max 8.903/11.147/11.659 ms
+subsequent fresh npm test           RETAINED PRE-COMMIT PASS; 1,944/1,944
+```
+
+The failing isolated execution breached both hard elapsed-time limits: p95 is the second-largest
+of thirty measured samples, so p95 `57.130 ms` proves at least two samples exceeded that value and
+the maximum necessarily exceeded its `50 ms` limit. The linked-worktree repair did not change the
+Stream implementation, performance test, `package.json`, lockfile or dependencies. That narrows
+the regression surface but does not prove an environmental cause. The failure occurred in
+isolation and must not be relabeled as a parallel-suite outlier, scheduler false negative or erased
+by either later PASS. The aggregate classification is recurrent/intermittent environment- or
+runtime-sensitive elapsed-time variability with exact cause unproven.
+
+The owner authorized one prospective, explicitly bounded disposition from the exact unpushed
+noncandidate repair commit. Before execution, read back that commit and verify the unchanged
+performance implementation/test/package/lockfile identities, exact Node `v24.19.0` and npm
+`11.17.0`, and no overlapping repository test or build. Restart all pre-freeze gates from
+`npm ci`. Run the unchanged isolated Stream test exactly once. Only if it passes every semantic
+assertion with p95 at most `25 ms`, maximum at most `50 ms` and a complete diagnostic may exactly
+one fresh `npm test` run. That full run must return a complete `1,944/1,944` result including the
+same passing Stream gate.
+
+An isolated failure stops immediately without the full-suite run or another retry. An isolated
+PASS followed by a full-suite failure, wrong toolchain/hash identity, overlapping test/build,
+missing diagnostic or missing terminal summary also stops with no `C4`. Only isolated PASS plus
+fresh full PASS closes this test disposition as retained P2; all other exact-toolchain gates and
+both complete seventeen-path reviews must still pass before the Task-Brief-only `C4` freeze.
 
 ## Hard boundaries
 
