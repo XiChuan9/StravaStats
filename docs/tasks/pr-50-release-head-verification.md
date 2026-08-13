@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | M37 / G12-RELEASE-HEAD-VERIFICATION |
-| Status | Option A authorized; bounded pre-freeze implementation in progress; G12 remains `NOT RUN` |
+| Status | Source-review Closure frozen at Task-Brief-only commit `C`; G12 `NOT RUN`; G13 `PARTIAL` |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/release-head-verification` |
 | Worktree | `/Users/wangchuanliang/.codex/worktrees/2ccf/StravaStats` |
@@ -417,6 +417,46 @@ The limited Alpha browser record, if and only if the approved G12 path reaches i
 data and newly created disposable profiles only, omits `enable-sw=1`, serves only on loopback, and
 requires zero `/api`, provider, Weather, AI, map-tile, telemetry or other non-loopback requests. It
 never uses a real account, Token, private activity/file or user browser profile.
+
+## Source-review Closure and candidate freeze
+
+On 2026-08-13, the owner-authorized seventeen-path implementation was committed locally as
+`4eda06f3b71aba9bdf0787c0648c828aecf10258`, tree
+`e813abbe5a2c01fcd6929214aa038dec6e1c989e`. That implementation commit is the noncandidate parent
+of this Task-Brief-only commit `C`. Its exact binary diff from the frozen integration source base is
+SHA-256 `f5656166a3e78eccc2d4545292be493b248d7469b70af495040bcc97cf9b2671` and contains exactly the
+seventeen owner-authorized paths, with no untracked or eighteenth path.
+
+Pre-freeze verification used exact Node `v24.19.0` and npm `11.17.0` and closed as follows:
+
+```text
+npm ci                         PASS; 6 packages
+syntax                         PASS; 285 files
+privacy                        PASS
+full test suite                PASS; 1,944/1,944
+npm audit                      PASS; 0 vulnerabilities
+git diff --check               PASS
+literal path/base/tree gate    PASS; exact 17 paths, zero untracked
+findings-first source review   PASS; P0 0, P1 0
+fresh no-findings re-review    PASS; P0 0, P1 0
+```
+
+The first restricted-sandbox focused run could not bind `127.0.0.1` and reported only
+`listen EPERM`; its isolated loopback case then passed in the permitted disposable environment,
+and the final full suite passed all 1,944 tests there. This is retained as environment evidence,
+not relabeled as a product failure or silently omitted. The known lower-severity copy drift remains
+inventoried: two UI/loading strings say 250 Demo activities while the deterministic generator
+creates 500. It does not alter candidate identity, privacy, data semantics or the zero-P0/P1 result,
+and repairing it is outside the frozen seventeen-path scope.
+
+This Task-Brief-only commit is `C` and freezes the sole proposed immutable candidate identity. Its
+exact commit and tree are read back after creation and may be named only by the post-freeze
+exact-SHA PR/check-run/control-tower ledger. No candidate bytes existed before `C`. Tracked G12
+remains `NOT RUN` and G13 remains `PARTIAL`; this Closure is not exact-object verification, Ready,
+merge, tag, Release, publication, hosting or deployment evidence. Both local commits are pushed
+together. From a successful push onward there is no repository commit or branch mutation: every
+post-`C` gate must bind this exact object, and any failure or authority drift withdraws `C` and
+returns to the owner without repair, relabeling or later-commit substitution.
 
 ## Hard boundaries
 
