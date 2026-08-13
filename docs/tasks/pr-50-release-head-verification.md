@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | M37 / G12-RELEASE-HEAD-VERIFICATION |
-| Status | Source-review Closure frozen at Task-Brief-only commit `C`; G12 `NOT RUN`; G13 `PARTIAL` |
+| Status | Candidate `C` withdrawn; source-review Closure frozen for Task-Brief-only `C2`; G12 `NOT RUN`; G13 `PARTIAL` |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/release-head-verification` |
 | Worktree | `/Users/wangchuanliang/.codex/worktrees/2ccf/StravaStats` |
@@ -457,6 +457,91 @@ merge, tag, Release, publication, hosting or deployment evidence. Both local com
 together. From a successful push onward there is no repository commit or branch mutation: every
 post-`C` gate must bind this exact object, and any failure or authority drift withdraws `C` and
 returns to the owner without repair, relabeling or later-commit substitution.
+
+## Candidate C withdrawal and C2 authority
+
+Candidate `C` was commit `bd12fb6674dba90c43e9acd271338882493c3726`, tree
+`d3f35703305929bc124f4053c1039ba6ee1b9b28`. Its exact local and remote candidate builds,
+independent bundle/evidence/ZIP checks and exact-head CI completed successfully, but the required
+disposable-browser phase stopped before Chrome launched. The preserved external harness reported
+`CANDIDATE_SERVER_START_FAILED` after its fixed 45-second readiness deadline, so the immutable
+candidate was withdrawn immediately. No browser result, G12 `PASS`, Ready transition, merge, tag,
+Release, upload, publication, hosting or deployment was claimed.
+
+Read-only forensics proved that the harness spawned the correct exact-`C` command with exact Node
+`v24.19.0`, the verified bundle and port `0`, but did not observe the child process's `error`,
+`exit` or `close` events. It buffered stderr yet persisted it only after successful readiness. The
+opaque 45.027-second timeout with `cause: null` is consistent with a restricted-environment
+loopback-listen denial and matches the earlier retained restricted-sandbox `listen EPERM` evidence. The
+single owner-authorized direct-start diagnostic then ran the identical command under authorized
+loopback execution. Strict candidate verification passed and the server emitted authenticated
+loopback address `127.0.0.1:50513` by the 30.002-second diagnostic yield; it was deliberately
+stopped with `SIGINT` before any Chrome launch. This classifies the failure as an external
+execution-context/harness-observability false negative, not a candidate-byte, verifier,
+static-server, product, privacy, migration or rollback defect. The original errno is not
+recoverable because the preserved harness discarded child stderr and exit state.
+
+The owner authorized a fresh `C2` lifecycle without reviving or relabeling `C`. Repository scope
+remains the exact existing seventeen-path cumulative allowlist, with no eighteenth path and no
+source/tool change. Only this Task Brief may record the withdrawal, classification, fresh
+pre-freeze evidence and Task-Brief-only `C2` source-review Closure. Every exact-toolchain
+pre-freeze gate and both independent source reviews must rerun from zero on the unchanged source
+tree before `C2` is committed and pushed once. After that push, repository and branch mutation are
+prohibited and every post-freeze gate must bind only `C2`.
+
+The fresh pre-freeze parallel full-suite attempt retained one environment-sensitive scheduling
+outlier: 1,943/1,944 tests passed, while the 200,000-point Stream reduction recorded p95
+`46.779 ms` against its unchanged `25 ms` gate. The unchanged focused test then passed under the
+same exact Node runtime with median/p95/maximum `8.615/8.791/8.843 ms`; the entire unchanged suite
+passed serially 1,944/1,944; and a fresh non-overlapping required `npm test` rerun passed
+1,944/1,944. No threshold, test, package or product source was changed. All results remain in the
+record. Their pattern is consistent with parallel host contention, but the exact cause is not
+claimed as proven and the first failure is neither erased nor promoted into a broader performance
+claim.
+
+The external browser harness contract for `C2` runs the exact verified candidate server under
+authorized disposable loopback execution, records child spawn error, exit code/signal, stdout,
+stderr and elapsed time, fails immediately on spawn error or premature exit, retains the 45-second
+readiness deadline, and launches Chrome only after parsing the authenticated loopback JSON. Every
+post-`C2` local/remote build, independent artifact audit, exact-head CI, synthetic browser,
+inventory and two-review gate reruns from zero. Any failure withdraws `C2` and requires a new owner
+decision; neither withdrawn candidate may be repaired or relabeled in place.
+
+## C2 source-review Closure and candidate freeze
+
+The `C2` pre-freeze rerun used exact Node `v24.19.0` and npm `11.17.0` on the unchanged source and
+tool tree. It completed as follows:
+
+```text
+npm ci                         PASS; 6 packages
+syntax                         PASS; 285 files
+privacy                        PASS
+parallel full suite attempt    RETAINED FAIL; 1,943/1,944; Stream p95 46.779 ms
+focused unchanged Stream gate  PASS; 1/1; median/p95/max 8.615/8.791/8.843 ms
+serial full suite              PASS; 1,944/1,944
+fresh required npm test        PASS; 1,944/1,944
+npm audit restricted attempt  RETAINED ENVIRONMENT FAIL; registry DNS unavailable
+npm audit authorized retry    PASS; 0 vulnerabilities
+focused release-doc tests      PASS; 29/29
+git diff --check               PASS
+literal path/base/tree gate    PASS; exact 17 paths, zero untracked, no path 18
+findings-first source review   PASS; P0 0, P1 0
+fresh no-findings re-review    PASS; P0 0, P1 0
+```
+
+The retained P2 inventory is the known 250-versus-500 Demo copy drift, the unproven
+environment-sensitive parallel performance outlier, and the direct-start diagnostic's raw
+transcript existing only in the control-tower tool record while this Task Brief durably records
+its exact result and evidence limitation. None changes candidate identity, privacy, migration,
+rollback or the zero-unresolved-P0/P1 source result.
+
+This Task-Brief-only commit is `C2`. Its parent is withdrawn candidate `C`; compared with that
+parent it changes only this Task Brief and contains no source/tool/runtime change. No `C2`
+candidate bytes existed before this commit. Tracked G12 remains `NOT RUN` and G13 remains
+`PARTIAL`; this Closure is not exact-object verification, Ready, merge, tag, Release, publication,
+hosting or deployment evidence. After the one authorized push, no repository commit or branch
+mutation is permitted. Every post-freeze gate must bind the exact commit and tree read back for
+`C2`; any failure withdraws `C2` and returns to the owner without repair or relabeling.
 
 ## Hard boundaries
 
