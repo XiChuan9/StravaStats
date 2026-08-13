@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Milestone | M37 / G12-RELEASE-HEAD-VERIFICATION |
-| Status | Candidates `C`, `C2` and `C3` withdrawn; owner-authorized `C4` linked-worktree repair and pre-freeze restart in progress; G12 `NOT RUN`; G13 `PARTIAL` |
+| Status | Candidates `C`, `C2` and `C3` withdrawn; source-review Closure frozen for Task-Brief-only `C4`; G12 `NOT RUN`; G13 `PARTIAL` |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/release-head-verification` |
 | Worktree | `/Users/wangchuanliang/.codex/worktrees/2ccf/StravaStats` |
@@ -713,8 +713,8 @@ first full-suite execution          NOT COUNTED; final summary unavailable
 fresh retained full test suite      PASS; 1,944/1,944
 git diff --check                    PASS
 literal path/base/tree gate         PASS; exact 17 paths, zero untracked, no path 18
-findings-first complete review      PENDING
-fresh complete no-findings review   PENDING
+findings-first complete review      RETAINED FAIL; linked-worktree P1
+fresh complete no-findings review   RETAINED FAIL; linked-worktree P1
 ```
 
 No candidate commit or candidate bytes exist for `C4` at this stage. Tracked G12 remains
@@ -789,6 +789,83 @@ PASS followed by a full-suite failure, wrong toolchain/hash identity, overlappin
 missing diagnostic or missing terminal summary also stops with no `C4`. Only isolated PASS plus
 fresh full PASS closes this test disposition as retained P2; all other exact-toolchain gates and
 both complete seventeen-path reviews must still pass before the Task-Brief-only `C4` freeze.
+
+## C4 post-repair exact-commit gate record
+
+The unpushed noncandidate repair commit is
+`25aed5cd4a510be19324f6da476d939dc726df0f`, tree
+`14654707dfd01d7a857f4a463dc47e4010677668`, with withdrawn `C3` as its parent. Its commit delta is
+exactly the three authorized repair paths above. The worktree was clean, its upstream still read
+back exact withdrawn `C3`, and its cumulative exact-base delta remained the same seventeen paths
+with no untracked path or path eighteen.
+
+The repair commit retained these exact Git blob identities from `C3`:
+
+```text
+Stream implementation       940600a4a50cfef140d9d2c4aba5715ae09fc5a4
+Stream performance test     cc8eb70b5355932ebf1477ad00742b1acba6b975
+package.json                7e3fca7e01ed420b03dd4dd4a292a1a92b54371c
+package-lock.json           7d2d861be26db9ed985d2df311d3f097f74be31e
+```
+
+Exact Node `v24.19.0` and npm `11.17.0` were read back. The immediate elevated, `LC_ALL=C`
+process-list assertion reported no repository `node`/`npm` test or candidate build before the
+one-shot gate. The predeclared post-repair lifecycle then produced:
+
+```text
+npm ci                              PASS; 6 packages
+syntax                              PASS; 285 files
+privacy                             PASS
+npm audit restricted attempt       RETAINED ENVIRONMENT FAIL; registry DNS unavailable
+npm audit authorized retry         PASS; 0 vulnerabilities
+isolated Stream one-shot            PASS; 1/1; median/p95/max 8.554/8.900/9.043 ms
+fresh required npm test             PASS; 1,944/1,944; complete terminal summary
+git diff --check                    PASS
+literal path/base/tree gate         PASS; exact 17 paths, zero untracked, no path 18
+focused release-doc tests           PASS; 29/29
+findings-first complete review      PASS; 17/17 paths; P0 0, P1 0
+fresh complete no-findings review   PASS; 17/17 paths; P0 0, P1 0
+```
+
+The isolated PASS and fresh full PASS close only the owner-approved performance disposition. The
+earlier isolated failure remains retained and the aggregate item remains P2 recurrent/intermittent
+environment- or runtime-sensitive elapsed-time variability with exact cause unproven. No test,
+threshold, performance source, package, dependency or product behavior was changed to obtain the
+PASS. No candidate commit, candidate preflight, candidate bytes, remote reproduction, CI or
+browser evidence exists for `C4` yet; G12 remains `NOT RUN` and G13 remains `PARTIAL`.
+
+## C4 source-review Closure and candidate freeze
+
+Both post-repair reviews independently restarted from the governing corpus and completed
+line-by-line coverage of every cumulative hunk in all seventeen authorized paths, the exact
+three-path repair commit and the current Task-Brief-only delta. Each returned P0 zero and P1 zero.
+They verified all seven registered worktree roots are included in the physical containment set;
+the NUL-delimited inventory, UTF-8/record/state/root validation, invoking-root inclusion and
+realpath failures are fail closed; and direct plus symlink-aliased linked-worktree negatives cover
+the repaired boundary. Authority/CI, exact toolchain, evidence/ZIP authentication, deterministic
+payload selection, privacy, data preservation, migration, rollback, actionable First-run/Demo,
+backup V6 display and the future explicit `/usr/bin/env` invocation remained coherent.
+
+The retained nonblocking P2 inventory is:
+
+- recurrent/intermittent Stream elapsed-time variability with exact cause unproven, including the
+  retained isolated p95 `57.130 ms` failure and the owner-authorized one-shot/full-suite PASS;
+- 250-versus-500 Demo count copy drift outside the authorized path set;
+- migration/troubleshooting documentation and the historical default-Canonical browser harness
+  still expecting the superseded automatic Source Manager redirect;
+- the original `C` harness losing child exit/stderr, its direct-start transcript existing only in
+  the control-tower record, and one compacted pre-repair suite correctly remaining uncounted; and
+- incomplete exhaustive selector/staged-failure-cleanup negative coverage, without a contrary
+  finding in the static implementation or current exact payload.
+
+This Task-Brief-only commit is `C4`. Its parent is the unpushed noncandidate repair commit
+`25aed5cd4a510be19324f6da476d939dc726df0f`; compared with that parent it changes only this Task
+Brief and contains no source/tool/runtime change. No `C4` preflight or candidate bytes exist before
+this commit. Tracked G12 remains `NOT RUN` and G13 remains `PARTIAL`; this Closure is not exact
+object verification, Ready, merge, tag, Release, publication, hosting or deployment evidence. The
+repair commit and `C4` are pushed together once. After that successful push, no repository commit,
+branch mutation, rebase, amend, force-push or relabeling is permitted. Every post-freeze gate must
+bind the exact pushed `C4` commit/tree; any failure withdraws `C4` and stops for owner decision.
 
 ## Hard boundaries
 
