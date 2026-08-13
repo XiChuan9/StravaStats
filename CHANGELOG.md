@@ -3,13 +3,23 @@
 This file records merged repository changes. It does not claim a package publication, Git tag,
 GitHub Release, deployment, or production release.
 
-## Unreleased — local Alpha candidate-building head
+## Unreleased — local Alpha candidate work
 
-Exact documented baseline: `integration/v2@eb0b6695b5dbf618877ff794dbc76935babeb793`.
-The package metadata is `2.0.0-alpha.1` for the authorized local candidate-building head. G13 is
-`PARTIAL`; G12 exact-candidate verification remains `NOT RUN`. This is not a public Alpha, Beta,
-Release Candidate, or production release. There is no `v2.0.0-alpha.1` tag, GitHub Release,
-publication, hosting, deployment, or exact-object release-owner approval.
+The exact pre-G12 integration source baseline is
+`integration/v2@57c2cdf9358afef1330d5a71f3799f18d41f6d13`, tree
+`80224e924d4270c03f1c9b526ae4bb6d20326aa9`. PR #61's historical Final Review Closure and local
+candidate-building evidence bind to commit `03ccf18c10c6bc146660920b81f409a7d9ca6a0e`. That commit
+has the same tree but is a different Git object; its evidence is not integration-head or future G12
+candidate evidence.
+
+The package metadata is `2.0.0-alpha.1`. G13 is `PARTIAL`; G12 exact-candidate verification remains
+`NOT RUN`. The owner-approved Option A sequence freezes at most one exact G12 commit, but this
+document neither identifies that commit nor predicts a later squash identity. Only after every
+post-freeze gate passes may the exact-SHA PR/check-run/control-tower ledger become the canonical
+verification record.
+This is not a public Alpha, Beta, Release Candidate, or production release. There is no
+`v2.0.0-alpha.1` tag, GitHub Release, publication, hosting, deployment, or exact-object
+release-owner approval.
 
 The G13 implementation adds a deterministic stdlib-only build/verify/loopback-serve tool, exact
 Node/npm pins, external-only candidate outputs and the single missing Dashboard-background repair.

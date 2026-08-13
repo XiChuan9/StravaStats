@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { access, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
@@ -36,6 +37,26 @@ const ALPHA_CONTRACT_ALLOWLIST = Object.freeze([
     'docs/tasks/pr-48-alpha-contract.md',
     'docs/engineering/release-gates.md',
     'tests/docs/release-docs.test.js'
+]);
+
+const G12_OPTION_A_ALLOWLIST = Object.freeze([
+    '.github/workflows/ci.yml',
+    'CHANGELOG.md',
+    'docs/README.md',
+    'docs/engineering/release-gates.md',
+    'docs/tasks/pr-50-release-head-verification.md',
+    'scripts/alpha-candidate.mjs',
+    'tests/docs/release-docs.test.js',
+    'tests/release/alpha-candidate.test.js',
+    'storage-backup.html',
+    'js/app/storage-backup.js',
+    'js/pages/storage-backup/storage-backup.js',
+    'js/app/main.js',
+    'tests/consumers/summary-boundaries.test.js',
+    'tests/legacy/demo-isolation.test.js',
+    'README.md',
+    'js/demo/polylines.js',
+    'tests/default-canonical.test.js'
 ]);
 
 const REMAINING_GATE_ROWS = Object.freeze([
@@ -147,19 +168,45 @@ test('README commands, routes, and release status match executable repository fa
     assert.match(readme, /G12 exact[\s\S]{0,80}NOT RUN/i);
     assert.match(readme, /no[\s\S]{0,160}exact-object release-owner approval/i);
     assert.doesNotMatch(readme, /v2\.0\.0 (?:is |has been )?(?:released|deployed|published)/i);
+    assert.match(readme, /`APPROVED_EXACT_CANDIDATE_SHA`[\s\S]{0,100}external approval record/i);
+    assert.match(readme, /must not be inferred from the local checkout/i);
+    assert.match(
+        readme,
+        /ALPHA_CANDIDATE_AUTHORIZED_HEAD="\$APPROVED_EXACT_CANDIDATE_SHA"[\s\\\n]*npm run build:alpha-candidate/
+    );
+    assert.match(
+        readme,
+        /--bundle-root \/absolute\/empty\/directory\/stravastats-v2\.0\.0-alpha\.1 --container \/absolute\/empty\/directory\/stravastats-v2\.0\.0-alpha\.1\.zip/
+    );
+    assert.match(
+        readme,
+        /serve:alpha-candidate -- --bundle-root \/absolute\/empty\/directory\/stravastats-v2\.0\.0-alpha\.1 --port 0/
+    );
+    assert.doesNotMatch(readme, /\/absolute\/extracted\/root|\/absolute\/candidate\.zip/);
+    assert.doesNotMatch(readme, /^npm run build:alpha-candidate/m);
 });
 
-test('current documentation index and changelog share the exact post-Retry baseline', async () => {
+test('current documentation index and changelog bind the exact pre-G12 source identity', async () => {
     const [index, changelog] = await Promise.all([
         source('docs/README.md'),
         source('CHANGELOG.md')
     ]);
     for (const document of [index, changelog]) {
-        assert.match(document, /eb0b6695b5dbf618877ff794dbc76935babeb793/);
-        assert.doesNotMatch(document, /61d7b032305fd8f12d71544315f06d553213801d/);
+        assert.match(document, /57c2cdf9358afef1330d5a71f3799f18d41f6d13/);
+        assert.match(document, /80224e924d4270c03f1c9b526ae4bb6d20326aa9/);
+        assert.match(document, /03ccf18c10c6bc146660920b81f409a7d9ca6a0e/);
+        assert.doesNotMatch(document, /eb0b6695b5dbf618877ff794dbc76935babeb793/);
+        assert.doesNotMatch(document, /4375d699fb1fc1142d399c158b9ad0c4e7e730dc/);
+        assert.doesNotMatch(document, /b076c4f80cd1d6de7719cebe26e327d18a1f4734/);
         assert.match(document, /\`?2\.0\.0-alpha\.1\`?/);
         assert.match(document, /not[^\n]*(?:public Alpha|Beta|Release Candidate|production release)/i);
+        assert.match(document, /G13[^\n]*`PARTIAL`|G13 is `PARTIAL`/i);
+        assert.match(document, /G12[^\n]*`NOT RUN`|G12 exact-candidate verification remains\s+`NOT RUN`/i);
     }
+    assert.match(changelog, /same tree[\s\S]{0,160}different Git object/i);
+    assert.match(changelog, /not integration-head or future G12[\s\S]{0,80}evidence/i);
+    assert.match(index, /same tree[\s\S]{0,160}distinct candidate-building commit/i);
+    assert.match(index, /exact-SHA PR\/check-run\/control-tower ledger/i);
     for (const pattern of [
         /public (?:Git )?history|Git history/i,
         /Safari|Firefox/i,
@@ -405,17 +452,209 @@ test('M35 freezes the exact three-path docs and test scope', async () => {
     assert.match(brief, /fourth path[\s\S]{0,100}(?:new owner decision|immediate stop)/i);
 });
 
-test('canonical roadmap binds the exact postmerge baseline and deterministic P0/P1 closure', async () => {
+test('G12 Task Brief freezes the exact Option A scope, C sequence and external ledger', async () => {
+    const brief = await source('docs/tasks/pr-50-release-head-verification.md');
+    const allowlist = /For option 1, the proposed literal cumulative post-A2 allowlist is:[\s\S]*?```text\n([\s\S]*?)\n```/.exec(brief);
+    assert.notEqual(allowlist, null);
+    assert.deepEqual(allowlist[1].split('\n'), G12_OPTION_A_ALLOWLIST);
+
+    const authority = brief.split('## A3 owner decision and source implementation authority')[1]
+        ?.split('## Required verification lifecycle')[0];
+    assert.notEqual(authority, undefined);
+    assert.match(authority, /owner explicitly selected option 1/i);
+    assert.match(authority, /exact seventeen-path[\s\S]{0,20}maximum above/i);
+    assert.match(authority, /exact-SHA PR\/check-run\/control-[\s\S]{0,20}tower ledger as the canonical post-freeze evidence record/i);
+    assert.match(authority, /does not mark G12 `PASS` or G13 complete/i);
+    assert.match(authority, /does not authorize a candidate build[\s\S]{0,40}before freeze commit `C`/i);
+
+    assert.match(
+        authority,
+        /After implementation and source review[\s\S]{0,100}implementation commit[\s\S]{0,80}not[\s\S]{0,40}candidate[\s\S]{0,100}Task-Brief-only commit `C`[\s\S]{0,80}source-review Closure[\s\S]{0,80}freezes the[\s\S]{0,40}sole proposed candidate identity[\s\S]{0,80}tracked G12 remains `NOT RUN`/i
+    );
+
+    assert.match(brief, /Any failure withdraws `C`[\s\S]{0,120}separately authorized new candidate commit[\s\S]{0,80}full rerun/i);
+    assert.match(brief, /No later candidate-branch commit[\s\S]{0,120}successfully verified `C`[\s\S]{0,120}remains selected/i);
+    assert.match(brief, /Do not rebase, amend, force-push, rewrite history/i);
+    assert.match(brief, /later squash commit is a distinct noncandidate identity/i);
+    assert.match(authority, /changed eighteenth path or[\s\S]{0,40}material expansion is a hard stop/i);
+    assert.match(brief, /ledger-only Final Verification Closure; no repository commit/i);
+    assert.match(brief, /post-`C` Closure is external and exact-SHA-bound/i);
+    assert.match(brief, /never edits the Task Brief or any other[\s\S]{0,20}tracked file/i);
+    assert.match(brief, /origin\/codex\/v2\/release-head-verification[\s\S]{0,80}current PR head[\s\S]{0,40}equal `C`/i);
+    assert.match(brief, /PR #62 remains open Draft[\s\S]{0,120}exact head\/base repositories and refs/i);
+    assert.match(brief, /both `checks` and `exact-alpha-candidate`[\s\S]{0,40}(?:conclude|jobs conclude) `?SUCCESS`?/i);
+    assert.match(brief, /two builds[\s\S]{0,60}two strict verifies[\s\S]{0,80}comparisons[\s\S]{0,80}(?:successfully|rather than skip)/i);
+    assert.match(brief, /synthetic `GITHUB_SHA` separately[\s\S]{0,80}(?:without ever[\s\S]{0,20}calling it|from) `C`/i);
+    assert.match(brief, /tuple\/readback drift withdraws `C`/i);
+});
+
+test('Alpha backup page, Demo facade, and restore view use the exact V6 display contract', async () => {
+    const [page, application, view] = await Promise.all([
+        source('storage-backup.html'),
+        source('js/app/storage-backup.js'),
+        source('js/pages/storage-backup/storage-backup.js')
+    ]);
+    assert.match(page, /id="database-version">Checking…<\/dd>/);
+    assert.match(page, /Exports all V6 records and approved durable settings/);
+    assert.doesNotMatch(page, /(?:Physical database[^\n]*|Exports all )V4/i);
+    const demo = /function demoFacade\(\) \{([\s\S]*?)\n\}/.exec(application)?.[1];
+    assert.notEqual(demo, undefined);
+    assert.match(demo, /databaseVersion:\s*V2_DATABASE_VERSION,\s*activityCount:\s*0/);
+    assert.match(demo, /exportLibrary:\s*unavailable/);
+    assert.match(demo, /restoreBackup:\s*unavailable/);
+    assert.doesNotMatch(demo, /databaseVersion:\s*4/);
+    const restore = view.split('async function restoreBackup()')[1]
+        ?.split("elements.input.addEventListener('change'")[0];
+    assert.notEqual(restore, undefined);
+    assert.match(restore, /result\.status === 'already_restored'/);
+    assert.match(restore, /elements\.status\.textContent/);
+    assert.match(restore, /elements\.detail\.textContent/);
+    assert.match(restore, /elements\.version\.textContent = 'V6'/);
+    assert.match(restore, /elements\.count\.textContent = String\(result\.activityCount\)/);
+});
+
+test('Alpha Try Demo entry seeds before a clean Demo-mode document re-entry', async () => {
+    const main = await source('js/app/main.js');
+    const entry = main.split("if (demoButton) demoButton.addEventListener('click'")[1]
+        ?.split("if (logoutButton) logoutButton.addEventListener('click'")[0];
+    assert.notEqual(entry, undefined);
+    assert.match(entry, /aiCoachSession\.revoke\(\)/);
+    assert.match(entry, /sessionMode:\s*APP_SESSION_MODE\.DEMO/);
+    assert.match(
+        entry,
+        /loginWithDemo\(\(\)\s*=>\s*\{\s*window\.location\.reload\(\);\s*\}\)/
+    );
+    assert.doesNotMatch(entry, /loginWithDemo\(initializeApp\)/);
+});
+
+test('Demo route geometry has explicit fabricated provenance and no prior route bytes', async () => {
+    const polylineSource = await source('js/demo/polylines.js');
+    const polylineModule = await import('../../js/demo/polylines.js');
+    const { DEMO_POLYLINES, decodePolyline } = polylineModule;
+
+    assert.deepEqual(Object.keys(polylineModule).sort(), [
+        'DEMO_POLYLINES', 'decodePolyline', 'getRandomPolyline'
+    ]);
+    assert.match(
+        polylineSource,
+        /SYNTHETIC_ROUTE_PROVENANCE_V1:[^\n]*deliberately fabricated coordinate geometry;[\s\S]{0,100}no person or real GPS trace is represented or was used as source material\./
+    );
+    for (const priorClaim of [
+        /real-world encoded polylines/i,
+        /Spanish running\/cycling routes/i,
+        /\b(?:Madrid|Barcelona|Sagrada Familia|Sevilla|Valencia)\b/i,
+        /central park route|riverside|beach run|Mountain bike routes/i
+    ]) assert.doesNotMatch(polylineSource, priorClaim);
+
+    assert.deepEqual(Object.keys(DEMO_POLYLINES), ['Run', 'Ride', 'Swim']);
+    assert.deepEqual(
+        Object.fromEntries(Object.entries(DEMO_POLYLINES).map(([type, values]) => [type, values.length])),
+        { Run: 14, Ride: 11, Swim: 7 }
+    );
+    const routes = Object.values(DEMO_POLYLINES).flat();
+    assert.equal(routes.length, 32);
+    assert.equal(new Set(routes).size, routes.length);
+    assert(routes.every(route => typeof route === 'string' && route.length > 0));
+
+    const priorRouteHashes = new Set([
+        'd1783bdef45cfcee395b742e0a94c50f5caacd245c3da8d0c797e585e01dd63e',
+        '171f6479f740834ab8a53541e62ef48b47f8e0c8d7684e47eb2a8acacca79d9c',
+        '35a558c86318b0fbdddefb00b45a6fdd49a385114b6ecc2afbbccf631abf7ce4',
+        '98df4fcce262db72e2a3d8213d1ae9ecf6e3ba7298fb3a7bf64dd0dfe06ca1b7',
+        '144d2a2e9b8b6f3dba2305c6de2362a5f2ee6d64825e11ef837cf0c675dde80d',
+        '234df9ccf3ba9476064ed251edc943055d42f09013bb4b82ea1338bbef42c7e3',
+        '71e8011a1ced5cb36a3630ff65f51c2f1bd7324d53680b2a68afea234d70b6e9',
+        '49cfd1a9510095bc5c10425a4b6c5213f2bac2d9d60fceffcbac13288a19441a',
+        '508156bcf8ef50bc9968eb8b4e079b10c4fe12d3673da6ce171fa3dce2d4cf56',
+        '46295c3c341fef39f9884059794cd5ffd72e6b2624cadd6a6d44f6e0481c1f89',
+        'd25c5c25cc6f90f5d21bc7cb62b16eeaf2917cb7b00d089c7aa4edd5cf7ee060',
+        'bacd64a37c396f0c2863b40e948eeb97878f5691beac25d9eda2333ddbf9f4d2',
+        '35dad5005578366903d7c34f15b122c7f958443e52e1463875b7a54099d95b95',
+        '990d91f359543e3eb451e61c18a4b6efd9f647552ec2038ea436a994452bdb9b',
+        'e2e68c8da2a14c96a58318d3c1cf0c1494bdafcb64ab7597b59a15b83cb4535b',
+        '0207b680e7f6ef3f83e3bd4ad353a961b1746b0c88e8d65917b7cc0f966be036',
+        '77bd6da5edcbd06daf893ca83ad0ead02f388a4f59e8ba3bad6915d4485018b7',
+        '77fea77c24897b6322d9f03afee95c7eb43fe1af6643c888b824b77e47b6db08',
+        'a9450654381ba1861f536d5134ae886ce16016eee1dabe0d181ea797fa3c8328',
+        '6099ff75316ba762e3822c1701ff333546aa42d35d6f4453f96499a10df48467',
+        '8ec0114a2e03ec5b918f04e5a8dfc247ac72b95b493fa0ddb7df7c76121b4e51',
+        'ca58606a260fe7a5959c6aacf12174417cb40357548c177d59867d768e2aff21',
+        '35116242af7b9ed966504d7bb03f03d52ac6bed6ec44931ac946c1ad211b28d0',
+        'a12ce082779c7f892dd5ae4767415e455ea153047024406e36c7e59a691b55e1',
+        '657cf6bc3fd861a674979dd5a52b21711c1f96628c1dae2b88b3c3f100a199ef',
+        'a8b7bb04bdff65bba8a1008a528c6616891ce085114328568c5bb400baae63f8',
+        '173eb34e849a828a986406e69bb2ab5cc02950c6225a2e3571fb3af93d7356cf',
+        '94c558385d787ef39c170a0db9d0ee4b209adc7e8975602ee536d5b21658b5a4',
+        '3525f49e1b3a5845c3dbf32127b29e04c2524b34d43abccfd265982e1e548b22',
+        '663c3279ee5eaa384f07bbbe880a7111e50afdf58fb8afeedf6bce5ef67c094a',
+        '7dfcf9a8fd4c9e63bc953689db365a882d2e306c76922769d84b735bfd4b7129',
+        '8d90707f4390f983938cb2c2305a137bcd20033d6626ad3eaa9b1fe5721bf361'
+    ]);
+    for (const route of routes) {
+        const digest = createHash('sha256').update(route).digest('hex');
+        assert.equal(priorRouteHashes.has(digest), false, `prior route bytes remain: ${digest}`);
+        const coordinates = decodePolyline(route);
+        assert(coordinates.length >= 2);
+        for (const [latitude, longitude] of coordinates) {
+            assert(Number.isFinite(latitude) && Math.abs(latitude) <= 90);
+            assert(Number.isFinite(longitude) && Math.abs(longitude) <= 180);
+        }
+    }
+    assert.equal(
+        createHash('sha256').update(JSON.stringify(DEMO_POLYLINES)).digest('hex'),
+        'b92159c6552bfbcf5ef31537060311b4b94c0be0635ec52c4014bce7dc26334f'
+    );
+    assert.notEqual(
+        createHash('sha256').update(polylineSource).digest('hex'),
+        'b63be511d7c503af9ce9b27486dfe7c9daeda701bbb5561b34568afb79982804'
+    );
+});
+
+test('canonical roadmap binds the exact pre-G12 baseline and historical PR61 identity', async () => {
     const gates = await source('docs/engineering/release-gates.md');
-    assert.match(gates, /4375d699fb1fc1142d399c158b9ad0c4e7e730dc/);
-    assert.match(gates, /b076c4f80cd1d6de7719cebe26e327d18a1f4734/);
+    assert.match(gates, /57c2cdf9358afef1330d5a71f3799f18d41f6d13/);
+    assert.match(gates, /80224e924d4270c03f1c9b526ae4bb6d20326aa9/);
+    assert.match(gates, /03ccf18c10c6bc146660920b81f409a7d9ca6a0e/);
+    assert.doesNotMatch(gates, /4375d699fb1fc1142d399c158b9ad0c4e7e730dc/);
+    assert.doesNotMatch(gates, /b076c4f80cd1d6de7719cebe26e327d18a1f4734/);
     assert.doesNotMatch(gates, /integration\/v2@f7f18392dc28e1f1d6ed10c1d8cc0aa297ab7628/);
-    assert.match(gates, /1,919\/1,919/);
-    assert.match(gates, /31578877301[\s\S]{0,80}94057153726/);
+    assert.match(gates, /1,936\/1,936/);
+    assert.match(gates, /31595417799[\s\S]{0,80}94109614445/);
+    assert.match(gates, /31595421366[\s\S]{0,80}94109625266/);
+    assert.match(gates, /integration push CI[\s\S]{0,100}31595417799[\s\S]{0,100}candidate step skipped/i);
+    assert.match(gates, /integration PR CI[\s\S]{0,100}31595421366[\s\S]{0,100}candidate step skipped/i);
     assert.match(gates, /PR #57[\s\S]{0,100}(?:PASS deterministic|closed deterministically)/i);
     assert.match(gates, /PR #58[\s\S]{0,100}(?:PASS deterministic|closed deterministically)/i);
     assert.match(gates, /PR #59[\s\S]{0,120}(?:PASS deterministic|closed deterministically|Accepted roadmap)/i);
-    assert.match(gates, /no unresolved deterministic P0\/P1/i);
+    assert.match(gates, /PR #61[\s\S]{0,120}(?:PASS deterministic|historical|commit-bound)/i);
+    assert.match(gates, /Current P0\/P1 inventory \| PARTIAL/i);
+    assert.doesNotMatch(gates, /Current P0\/P1 inventory \| PASS deterministic/i);
+    assert.match(gates, /same tree[\s\S]{0,180}different parent[\s\S]{0,120}commit identity/i);
+    assert.match(gates, /03ccf18\.\.\.[^\n]*(?:not|is not)[^\n]*integration-head/i);
+});
+
+test('Option A freezes non-PASS source status and conditional exact-SHA ledger semantics', async () => {
+    const [gates, index, changelog] = await Promise.all([
+        source('docs/engineering/release-gates.md'),
+        source('docs/README.md'),
+        source('CHANGELOG.md')
+    ]);
+    assert.match(gates, /Task-Brief-only freeze commit `C`[\s\S]{0,100}G12 as `NOT RUN`/i);
+    assert.match(
+        gates,
+        /only after every required post-freeze gate passes[\s\S]{0,180}exact-SHA PR\/check-run\/control-tower ledger[\s\S]{0,180}canonical G12 verification record/i
+    );
+    assert.match(gates, /partial, skipped or failing run cannot populate that record/i);
+    assert.match(gates, /later squash[\s\S]{0,100}distinct noncandidate[\s\S]{0,100}inherits no candidate evidence/i);
+    assert.match(gates, /G12 \| A \| NOT RUN/);
+    assert.match(gates, /G13 \| F \| PARTIAL/);
+    assert.doesNotMatch(gates, /Option A[^\n]*(?:is|=) `PASS/i);
+    for (const document of [index, changelog]) {
+        assert.match(document, /G12[^\n]*`NOT RUN`|G12 exact-candidate verification remains\s+`NOT RUN`/i);
+        assert.match(document, /G13[^\n]*`PARTIAL`|G13 is `PARTIAL`/i);
+        assert.match(document, /only after every[\s\S]{0,80}post-freeze gate[\s\S]{0,40}passes/i);
+        assert.doesNotMatch(document, /G12[^\n]*(?:is|=) `?PASS/i);
+    }
 });
 
 test('G1 Alpha contract freezes local distribution, support and honest status', async () => {
@@ -470,9 +709,9 @@ test('G1 Alpha contract freezes exact payload, manifest and reproducibility', as
     assert.notEqual(provenanceRule, undefined);
     assert.doesNotMatch(provenanceRule, /sha256sumsSha256/i);
     assert.match(provenanceRule, /contains no digest of `SHA256SUMS` or the final container/i);
-    assert.match(contract, /SHA-256 of the complete `SHA256SUMS` bytes[\s\S]{0,160}outside the bundle/i);
-    assert.match(contract, /final container[\s\S]{0,160}outside the bundle/i);
-    assert.match(contract, /digest graph is acyclic/i);
+    assert.match(contract, /SHA-256 of the complete `SHA256SUMS` bytes[\s\S]{0,160}outside\s+the\s+bundle/i);
+    assert.match(contract, /final container[\s\S]{0,160}outside\s+the\s+bundle/i);
+    assert.match(contract, /digest graph\s+is acyclic/i);
     assert.match(contract, /64 lowercase hexadecimal[\s\S]{0,100}two ASCII spaces[\s\S]{0,100}POSIX-relative path/i);
     assert.match(contract, /lexicographic[\s\S]{0,100}terminal newline/i);
     assert.match(contract, /exact candidate commit[\s\S]{0,120}exact candidate tree/i);
@@ -517,7 +756,7 @@ test('G1 Alpha contract preserves privacy, rollback and remaining non-PASS gates
     for (const gate of ['G5', 'G6', 'G7', 'G8', 'G9', 'G10', 'G12', 'G13']) {
         assert.match(contract, new RegExp(`${gate}[\\s\\S]{0,100}(?:NOT RUN|PARTIAL|BLOCKED)`));
     }
-    assert.match(contract, /G13 is `PARTIAL`[\s\S]{0,180}candidate-building phase/i);
+    assert.match(contract, /G13 is `PARTIAL`[\s\S]{0,220}(?:Option A[\s\S]{0,80}repair\/freeze|candidate-building phase)/i);
     assert.match(contract, /tag[\s\S]{0,120}GitHub Release[\s\S]{0,160}separate later G13 authorization/i);
     assert.doesNotMatch(contract, /real (?:Legacy|parity)[^\n]*(?:is|=)\s*`?PASS/i);
 });
@@ -565,8 +804,10 @@ test('shortest Alpha path stays local synthetic-only and defers real evidence to
     const dependency = /Dependency order:[\s\S]*?```text\n([\s\S]*?)\n```/.exec(alpha)?.[1];
     assert.notEqual(dependency, undefined);
     const alphaOrder = [
-        dependency.indexOf('G13 versioned Alpha candidate'),
-        dependency.indexOf('G12 exact candidate-head'),
+        dependency.indexOf('owner-approved Option A seventeen-path repair'),
+        dependency.indexOf('Task-Brief-only commit `C` freezes the sole candidate'),
+        dependency.indexOf('post-`C` exact builds'),
+        dependency.indexOf('exact-SHA PR/check-run/control-tower ledger records G12'),
         dependency.indexOf('XiChuan9 exact-object approval'),
         dependency.indexOf('G13 tag/Release/publication action')
     ];

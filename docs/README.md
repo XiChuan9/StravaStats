@@ -2,9 +2,11 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Unverified local Alpha candidate-building head; not a public Alpha, Beta, Release Candidate, or production release |
-| Exact implementation baseline | `integration/v2@eb0b6695b5dbf618877ff794dbc76935babeb793` |
+| Status | Local Alpha candidate work; tracked G12 remains `NOT RUN`, and this is not a public Alpha, Beta, Release Candidate, or production release |
+| Exact pre-G12 integration source baseline | `integration/v2@57c2cdf9358afef1330d5a71f3799f18d41f6d13`, tree `80224e924d4270c03f1c9b526ae4bb6d20326aa9` |
+| Historical PR #61 Closure | `03ccf18c10c6bc146660920b81f409a7d9ca6a0e`; same tree as the integration squash but a distinct candidate-building commit whose evidence cannot be relabeled |
 | Package metadata | `2.0.0-alpha.1` (G13 `PARTIAL`; G12 `NOT RUN`; no tag, GitHub Release, publication, hosting or deployment) |
+| Post-freeze evidence | Only after every required post-freeze gate passes, the owner-approved exact-SHA PR/check-run/control-tower ledger is the canonical G12 verification record; no future candidate or squash identity is claimed here |
 | Current authoritative roadmap | [V2 release gates](./engineering/release-gates.md) |
 | Historical evidence | [PR-24 point-in-time ledger and supplement](./tasks/pr-24-release-documentation.md#superseding-current-tree-ledger) |
 
@@ -32,10 +34,11 @@ The Privacy Guide's pre-M34 R3 `BLOCKED` status sentence is superseded for relea
 the Accepted [release-gates.md](./engineering/release-gates.md) roadmap. Its operational privacy and
 incident-handling rules remain current; M34's five-path limit does not authorize editing that guide.
 
-The exact current tree includes deterministic R3-R11 privacy/network hardening, D3 Service Worker
-code lifecycle, C1-C4 Source Manager authorization/identity/provider/recovery contracts, and
-explicit Retry for eligible failed local imports. These are bounded code/test facts, not evidence
-that every release environment is complete.
+The exact pre-G12 integration source tree includes deterministic R3-R11 privacy/network hardening,
+D3 Service Worker code lifecycle, C1-C4 Source Manager authorization/identity/provider/recovery
+contracts, explicit Retry for eligible failed local imports, and the merged G13 candidate-building
+tooling. These are bounded code/test facts, not evidence that a candidate has been frozen or that
+every release environment is complete.
 
 Use the [current authoritative release roadmap](./engineering/release-gates.md) for the exact
 remaining Alpha and full-`v2.0.0` paths, owner dispositions, evidence classes and non-`PASS` rows.

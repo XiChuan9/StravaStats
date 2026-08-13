@@ -35,12 +35,15 @@ git diff --check
 Tests are offline, deterministic, and do not require Strava credentials or private fixtures.
 
 The separately authorized G13 candidate-building commands write only to an absolute, existing,
-empty directory outside the repository:
+empty directory outside the repository. Before a build, `APPROVED_EXACT_CANDIDATE_SHA` must be
+supplied from the external approval record; it must not be inferred from the local checkout. The
+build fails unless that approved SHA equals both local `HEAD` and the trusted `origin` tracking ref:
 
 ```bash
-npm run build:alpha-candidate -- --output-parent /absolute/empty/directory
-npm run verify:alpha-candidate -- --bundle-root /absolute/extracted/root --container /absolute/candidate.zip
-npm run serve:alpha-candidate -- --bundle-root /absolute/extracted/root --port 0
+ALPHA_CANDIDATE_AUTHORIZED_HEAD="$APPROVED_EXACT_CANDIDATE_SHA" \
+  npm run build:alpha-candidate -- --output-parent /absolute/empty/directory
+npm run verify:alpha-candidate -- --bundle-root /absolute/empty/directory/stravastats-v2.0.0-alpha.1 --container /absolute/empty/directory/stravastats-v2.0.0-alpha.1.zip
+npm run serve:alpha-candidate -- --bundle-root /absolute/empty/directory/stravastats-v2.0.0-alpha.1 --port 0
 ```
 
 These commands do not publish or deploy the candidate. The static server binds only to loopback,
@@ -52,8 +55,9 @@ rejects `/api`, and must be used only with synthetic data and a disposable brows
 
 Real sessions default to `dataRepositoryMode: 'canonical'`. The application inspects and reads the
 local Canonical library without requiring a Strava Token, provider auth, or network request. A
-successful empty Canonical library is a normal First-run state and navigates to Sources; it is not
-evidence that Legacy data was migrated.
+successful empty Canonical library is a normal First-run state: the root page keeps the real Try
+Demo action and a visible Sources/import link available without constructing a summary Repository
+or redirecting automatically. It is not evidence that Legacy data was migrated.
 
 The three accepted Real modes are:
 

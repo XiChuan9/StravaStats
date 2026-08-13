@@ -5,7 +5,7 @@
 | Status | Accepted |
 | Owner | XiChuan9 |
 | Created | 2026-07-28 |
-| Last updated | 2026-08-12 |
+| Last updated | 2026-08-13 |
 | Related plan | [V2 Development Plan](./v2-development-plan.md) |
 | Decision record | [PR-47 Final V2 Release Roadmap](../tasks/pr-47-final-v2-release-roadmap.md) |
 
@@ -25,34 +25,49 @@ it cannot be inferred from synthetic or earlier-head evidence. `PARTIAL`, `BLOCK
 are non-`PASS` states. A disposition closes a decision, not an unperformed test and not an erased
 historical fact.
 
-## 2. Authoritative current baseline
+For the owner-approved G12/G13 Option A sequence, the Task-Brief-only freeze commit `C` must still
+record G12 as `NOT RUN`. Only after every required post-freeze gate passes may the owner-approved
+exact-SHA PR/check-run/control-tower ledger become the canonical G12 verification record and use
+`PASS verified`. A partial, skipped or failing run cannot populate that record. The later squash is
+a distinct noncandidate object and inherits no candidate evidence.
 
-The authoritative postmerge baseline is:
+## 2. Authoritative pre-G12 source baseline and identity boundary
+
+The exact pre-G12 integration source baseline is:
 
 ```text
-integration commit      4375d699fb1fc1142d399c158b9ad0c4e7e730dc
-integration tree        b076c4f80cd1d6de7719cebe26e327d18a1f4734
-integration divergence  0/0
-npm ci                  PASS; 6 packages
-syntax                  PASS; 283 files
-privacy                 PASS
-full test               PASS; 1,919/1,919
-npm audit               PASS; 0 vulnerabilities
-diff/worktree           PASS; clean
-integration CI          run 31578877301 / job 94057153726 SUCCESS
+integration source commit  57c2cdf9358afef1330d5a71f3799f18d41f6d13
+integration source tree    80224e924d4270c03f1c9b526ae4bb6d20326aa9
+integration divergence     0/0 at G12 A0
+npm ci                     PASS; 6 packages
+syntax                     PASS; 285 files
+privacy                    PASS
+full test                  PASS; serial 1,936/1,936 after a recorded parallel performance outlier
+npm audit                  PASS; 0 vulnerabilities
+diff/worktree              PASS; clean at G12 A0
+integration push CI        run 31595417799 / job 94109614445 SUCCESS; candidate step skipped
+integration PR CI          run 31595421366 / job 94109625266 SUCCESS; candidate step skipped
 ```
 
-The exact `integration/v2@4375d699fb1fc1142d399c158b9ad0c4e7e730dc` tree contains the
+The exact `integration/v2@57c2cdf9358afef1330d5a71f3799f18d41f6d13` tree contains the
 deterministic Feature Flag, Repository, V6 Storage/migration, Import, CSV/ZIP/FIT/TCX/GPX,
 Backup format 3, Source Manager, consumers, privacy, Service Worker policy/lifecycle and bounded
-performance evidence. No unresolved deterministic P0/P1 defect was found on this tree.
+performance evidence, plus the merged G13 candidate-building tooling.
+
+PR #61's Final Review Closure and historical candidate-building evidence bind to commit
+`03ccf18c10c6bc146660920b81f409a7d9ca6a0e`, tree
+`80224e924d4270c03f1c9b526ae4bb6d20326aa9`. The squash commit above has the same tree but a
+different parent, timestamp and commit identity. Commit-bound provenance makes the objects
+non-interchangeable: `03ccf18...` evidence is not integration-head, G12-head or future `C`
+evidence.
 
 | Deterministic closure | Result | Boundary |
 | --- | --- | --- |
 | PR #57 Retry | PASS deterministic — closed deterministically | Eligible retained-byte Retry is explicit, single-use and lock/lease bounded; committed items are preserved and provider acquisition has no automatic retry |
 | PR #58 P1-DOCS | PASS deterministic — closed deterministically | Squash merge is the exact integration head; postmerge 1,913/1,913 and exact integration CI are green |
 | PR #59 FINAL-ROADMAP | PASS deterministic — closed deterministically | Squash merge publishes this Accepted roadmap at the exact integration head; postmerge 1,919/1,919 and exact integration CI are green |
-| Current P0/P1 inventory | PASS deterministic | No unresolved deterministic P0/P1; environmental and owner gates below remain non-`PASS` rather than being reclassified as defects |
+| PR #61 G13 tooling | PASS deterministic — merged | Its Closure-head build evidence is historical and commit-bound; the identical integration tree does not transfer that provenance to the squash commit |
+| Current P0/P1 inventory | PARTIAL — candidate-cycle review not externally closed | G12 A2 found candidate authority, output-containment, evidence-authentication and release-baseline defects; Option A authorizes bounded repair, but zero unresolved P0/P1 may be recorded only after the exact-candidate post-freeze review passes |
 
 PR-24's additive supplement is preserved unchanged as the exact `eb0b6695...` point-in-time
 snapshot. It is historical evidence, not the live roadmap or current baseline.
@@ -73,7 +88,7 @@ Deterministic evidence cannot promote these environmental rows:
 | Browser / platform | BLOCKED | Full V2 still requires Safari, Firefox, Windows, iOS/PWA, mobile and core keyboard/screen-reader evidence; only limited Alpha is macOS Chrome-only |
 | Production Service Worker / deployment / combined rollback | BLOCKED | Planning/rehearsal execution, native worker/cache evidence, deployment and rollback remain unauthorized |
 | R3 public Git history | CLOSED BY DISPOSITION | XiChuan9 accepted no-rewrite risk; current-tree removal and guard remain mandatory; this is not erasure |
-| Version / tag / artifact / release owner | PARTIAL | Package metadata and deterministic local candidate-building tooling are `2.0.0-alpha.1`; G12 is `NOT RUN` and no tag, GitHub Release, publication, hosting, deployment or exact-object owner approval exists |
+| Version / tag / artifact / release owner | PARTIAL | The source has `2.0.0-alpha.1` metadata and deterministic local candidate-building tooling; this tracked row does not identify or verify `C`, G12 is `NOT RUN`, and no tag, GitHub Release, publication, hosting, deployment or exact-object owner approval exists |
 
 The Privacy Guide's pre-M34 sentence that calls the R3 decision `BLOCKED` is superseded for release
 status only by this Accepted roadmap and the recorded owner disposition. Its operational privacy,
@@ -95,15 +110,17 @@ duplicated here.
 | G8 | B | PARTIAL | RC / production after 2026-11-12 | Performance budget | The waiver temporarily satisfies the absolute 10,000-activity and 1,000-FIT threshold blocker through 2026-11-12 while existing functional/resource hard limits and 5k/200k hard evidence remain; complete a representative real-hardware budget task before expiry or obtain a new explicit disposition | Waiver and record-only 10k/1,000-FIT timings are not performance `PASS` or production-wide speed claims | `PERFORMANCE-REAL-HARDWARE-BUDGET`, before waiver expiry | XiChuan9 waiver through 2026-11-12 | Synthetic until separately authorized; no correctness/privacy weakening; rollback reverts policy/test changes only |
 | G9 | B + C | BLOCKED | RC / production | Browser / platform / accessibility | PRD matrix: supported Safari/Firefox/Chrome versions, macOS/Windows, iOS/PWA/mobile basic use and core keyboard/screen-reader evidence, or a separately approved time-bounded waiver | macOS Chrome Alpha or disposable Chromium is not the full matrix | `BROWSER-MATRIX`, after release-head freeze; private smoke additionally requires G4 | No permanent narrowing; any waiver needs owner and expiry | Prefer synthetic disposable profiles; no user profile mutation; private evidence stays off Git |
 | G10 | B + D | BLOCKED | RC / production | Production Service Worker / deployment / rollback | Approved non-production Vercel preview/staging plan then authorized rehearsal of two worker generations/tabs, wait/drain, mixed version, cold offline, owned-cache eviction, failed deploy/install, rollback trigger/time objective and preserved Legacy/V2 counts | Injected D3 evidence is not native SW/Cache Storage, deployment, rehearsal or production rollout | Planning/rehearsal Task Brief only after M34 merge; execution needs separate authority | XiChuan9 owns future plan; no public Alpha or rehearsal is authorized now | Isolated staging first; never delete Legacy/V2; rollback restores prior deployment/worker while preserving libraries |
-| G12 | A | NOT RUN | Alpha / Beta / RC / production | Exact release-head verification | After the separately authorized G13 candidate build, verify its exact versioned commit and bundle/manifest from a true remote depth-one checkout with focused/syntax/privacy/full/audit/diff/path gates, current P0/P1 inventory and exact-head CI before any tag, Release or publication | Earlier integration, M34 CI or pre-candidate CI does not validate a later version/artifact head | `RELEASE-HEAD-VERIFICATION`, after the G13 candidate-building phase and before G13 publication approval | Mechanical once the exact versioned candidate head exists | Static/synthetic/read-only; rollback reverts candidate commits without data/cache deletion |
-| G13 | F | PARTIAL | Alpha / Beta / RC / production | Version / tag / artifact / release | The separately authorized A3 phase sets exact `2.0.0-alpha.1` metadata and deterministic local static-bundle/SHA-256 tooling; after G12 verifies the immutable exact candidate, obtain XiChuan9 exact-object/final approval before any tag, GitHub Release, publication or, only after G10, deployment; every object binds to one commit | Package metadata, local candidate bytes, CI or a Draft/Ready PR is not a verified or published release artifact | `VERSION-ARTIFACT-RELEASE`: finish candidate-building before environmental/G12 evidence; owner-approval then publication phases after G12, last for each named stage | Alpha → Beta → RC → `v2.0.0`; XiChuan9 owns tag/Release and final production approval | A3 is local, external-output and synthetic-only; later rollback/revocation preserves local data and public auditability |
+| G12 | A | NOT RUN | Alpha / Beta / RC / production | Exact release-head verification | After Task-Brief-only commit `C` freezes the sole Option A candidate identity, verify its exact commit and bundle/manifest from two fresh true remote depth-one checkouts with focused/syntax/privacy/full/audit/diff/path gates, current zero-P0/P1 inventory, independent evidence/ZIP checks, disposable synthetic browser evidence and exact-`C` CI before any tag, Release or publication | Historical `03ccf18...` bytes, the integration squash, pre-freeze CI, skipped candidate steps or a later squash do not validate `C` | `RELEASE-HEAD-VERIFICATION`, post-`C` and before G13 publication approval | Option A and the exact-SHA evidence ledger are approved; execution is mechanical only after `C` exists | Static/synthetic/read-only; a failed post-`C` gate withdraws `C` and requires a new owner decision, without data/cache deletion |
+| G13 | F | PARTIAL | Alpha / Beta / RC / production | Version / tag / artifact / release | The merged A3 phase set exact `2.0.0-alpha.1` metadata and deterministic local static-bundle/SHA-256 tooling; Option A authorizes bounded repairs and a renewed build/freeze on the G12 lineage, but G13 remains `PARTIAL` until `C` is frozen and the later required approvals/actions occur | Package metadata, historical candidate bytes, CI, a Draft/Ready PR or a later squash is not a verified or published release artifact | `VERSION-ARTIFACT-RELEASE`: freeze `C`, complete G12 in the exact-SHA ledger, obtain exact-object approval, then seek separately authorized publication phases | Alpha → Beta → RC → `v2.0.0`; XiChuan9 owns tag/Release and final production approval | Candidate work is local, external-output and synthetic-only; later rollback/revocation preserves local data and public auditability |
 
 ## 4.1 Closed G1 Alpha acceptance contract
 
 G1 is **CLOSED BY DISPOSITION** for the limited `v2.0.0-alpha.1` scope decision below. This closes
 only audience, distribution, support, evidence and eventual artifact shape. G1 itself did not
 create a candidate, close G12 or authorize G13; the later M36 A3 owner decision separately
-authorized only the bounded local candidate-building phase.
+authorized only the bounded local candidate-building phase. The later G12/G13 Option A decision
+authorizes the seventeen-path repair, review, `C` freeze and post-freeze verification sequence; it does
+not change either gate's current result or authorize publication.
 
 ### Audience, distribution and support
 
@@ -111,7 +128,7 @@ authorized only the bounded local candidate-building phase.
   bundle delivered directly to a named evaluator and served only from a loopback origin. It is not
   publicly hosted, publicly indexed, deployed or described as a public web Alpha.
 - “Current macOS Chrome” means the latest stable Google Chrome generally available for macOS when
-  the future G13 candidate-head freeze occurs. G12 evidence records the exact full Chrome version,
+  the Option A candidate-head freeze occurs. G12 evidence records the exact full Chrome version,
   exact macOS version and architecture. If stable Chrome changes before publication, the disposable
   matrix must retest the new latest stable version; an earlier record is stale.
 - Chrome Beta, Dev and Canary; Chromium; Safari; Firefox; Edge; Windows; Linux; iOS; Android;
@@ -121,7 +138,7 @@ authorized only the bounded local candidate-building phase.
 
 ### Static payload and manifest
 
-The future G13 candidate task must copy, without source transformation or minification, exactly the
+The Option A candidate task must copy, without source transformation or minification, exactly the
 tracked regular files selected at that exact candidate commit by this rule:
 
 ```text
@@ -169,21 +186,23 @@ The bundle root additionally contains exactly two G13-generated metadata files:
   control character or newline.
 
 The SHA-256 manifest must enumerate every file in the delivered bundle except `SHA256SUMS`, with no
-missing, duplicate or extra file. The archive/container format, filename and compression parameters
-must be frozen by the future G13 candidate task; M35 authorizes none of them. G12 records the
-SHA-256 of the complete `SHA256SUMS` bytes and the final container outside the bundle, in the
-candidate verification evidence, so the in-bundle digest graph is acyclic.
+missing, duplicate or extra file. The merged G13 tooling freezes the archive/container format,
+filename and compression parameters; Option A must retain and independently audit that profile.
+G12 records the SHA-256 of the complete `SHA256SUMS` bytes and the final container outside the
+bundle in the exact-SHA ledger only after all post-freeze gates pass, so the in-bundle digest graph
+is acyclic.
 
 Reproducibility means two independent builds from two fresh true remote depth-one checkouts of the
 same exact candidate commit, with a clean environment, identical documented Node/npm versions and
 `SOURCE_DATE_EPOCH` set to the recorded candidate time, produce byte-identical payload files,
-`PROVENANCE.json`, `SHA256SUMS` and final container. G12 records both whole-container SHA-256 values
-and rejects environmental paths, timestamps or nondeterministic ordering.
+`PROVENANCE.json`, `SHA256SUMS` and final container. The post-freeze G12 run compares both
+whole-container SHA-256 values and rejects environmental paths, timestamps or nondeterministic
+ordering; successful values become canonical only in the exact-SHA ledger after every gate passes.
 
 ### Exact candidate gates and disposable browser matrix
 
-Only after a separately authorized G13 candidate build exists may G12 run, on its exact candidate
-commit and delivered bytes:
+Only after the Task-Brief-only commit `C` freezes the sole Option A candidate may G12 run, on that
+exact commit and its delivered bytes:
 
 ```text
 npm ci
@@ -199,6 +218,12 @@ two-build reproducibility gate
 true remote depth-one checkout and exact-head CI
 current P0/P1 inventory with zero unresolved P0/P1
 ```
+
+Commit `C` and the tracked release documents remain `NOT RUN` because they cannot self-record later
+evidence without changing candidate identity. If and only if every item above and the browser
+matrix below passes at exact `C`, the owner-approved exact-SHA PR/check-run/control-tower ledger is
+the canonical `PASS verified` record. Any failure withdraws `C`; it is never repaired by another
+commit without a new owner decision.
 
 The Alpha browser record uses only synthetic deterministic inputs on the exact manifest-verified
 bundle and a static-only loopback no-API server with directory listing and API execution disabled.
@@ -232,11 +257,12 @@ history.
 
 The closed G1 decision does not promote another row. G2 remains `NOT RUN`; G3 remains `PARTIAL`; G5
 and G6 remain `NOT RUN`; G7 remains `BLOCKED`; G8 remains `PARTIAL`; G9 and G10 remain `BLOCKED`;
-G12 remains `NOT RUN`; G13 is `PARTIAL` because only the bounded local candidate-building phase is
-authorized. Real Legacy
+G12 remains `NOT RUN`; G13 is `PARTIAL` because its merged tooling and the bounded Option A
+repair/freeze authority are not by themselves a verified or published candidate. Real Legacy
 rescue and real parity/Shadow sign-off are deferred to RC, not waived and not `PASS`. The actual
 tag, GitHub Release, publication and any deployment still require separate later G13 authorization;
-G12 can verify only the immutable exact A3 candidate.
+G12 can verify only the immutable exact Option A commit `C`. The earlier `03ccf18...` evidence and
+any later squash remain distinct, noncandidate records.
 
 ## 5. Shortest honest V2 Alpha path
 
@@ -246,22 +272,27 @@ supported surface is **current macOS Chrome only**, and its evidence is explicit
 
 G2 real Legacy rescue and G3 real parity are deferred to RC. They remain `NOT RUN`/`PARTIAL`, are
 not waived and must never be called `PASS` for Alpha. The bounded local candidate-building phase is
-authorized and G13 is `PARTIAL`; G12, exact-object approval, tag, Release, publication, hosting and
-deployment remain pending separate later authority.
+authorized and G13 is `PARTIAL`. Option A authorizes the seventeen-path repair, review, `C` freeze and
+post-freeze G12 verification sequence, but G12 remains `NOT RUN`; exact-object approval, tag,
+Release, publication, hosting and deployment remain pending separate later authority.
 
 Dependency order:
 
 ```text
 M34 canonical roadmap merge
-→ separately authorized G13 versioned Alpha candidate and static-bundle/SHA-256-manifest build
-→ G12 exact candidate-head, artifact and current P0/P1 verification
+→ historical G13 tooling and candidate-building evidence at PR #61 Closure `03ccf18...`
+→ integration squash `57c2cdf...` as the exact pre-G12 source baseline, not candidate evidence
+→ owner-approved Option A seventeen-path repair and fresh source review
+→ Task-Brief-only commit `C` freezes the sole candidate while tracked G12 stays NOT RUN
+→ post-`C` exact builds, remote reproductions, browser matrix, CI and zero-P0/P1 verification
+→ exact-SHA PR/check-run/control-tower ledger records G12 only if every post-freeze gate passes
 → XiChuan9 exact-object approval
 → separately authorized G13 tag/Release/publication action
 ```
 
 This path permits no public deployment, real/private access, broader browser-support claim,
-artifact publication, tag or GitHub Release. M36 A3 permits only the bounded local version and
-candidate build after M34.
+artifact publication, tag or GitHub Release. Option A adds only the bounded repair/freeze and
+post-freeze verification sequence; it adds no publication or deployment authority.
 
 ## 6. Complete v2.0 path
 

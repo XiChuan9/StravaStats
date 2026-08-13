@@ -67,7 +67,7 @@ function demoFacade() {
     }));
     return Object.freeze({
         async initialize() {
-            return Object.freeze({ databaseVersion: 4, activityCount: 0 });
+            return Object.freeze({ databaseVersion: V2_DATABASE_VERSION, activityCount: 0 });
         },
         exportLibrary: unavailable,
         restoreBackup: unavailable,
