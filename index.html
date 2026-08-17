@@ -165,32 +165,81 @@
             </header>
 
             <!-- SETTINGS PANEL -->
-            <div id="settings-panel" class="settings-panel" style="display:none;">
-                <h4>Settings</h4>
-                <label>
-                    Units:
-                    <select id="units">
-                        <option value="metric">Metric</option>
-                        <option value="imperial">Imperial</option>
-                    </select>
-                </label>
-                <label>
-                    Age:
-                    <input type="number" id="age" min="0" value="25">
-                </label>
-                <label>
-                    Max HR:
-                    <input type="number" id="hr-max" min="100" max="230" value="190">
-                </label>
-                <label>
-                    Tab backgrounds:
-                    <input type="checkbox" id="bg-images-toggle">
-                </label>
-                <label>
-                    Dark mode:
-                    <input type="checkbox" id="dark-mode-toggle">
-                </label>
-                <button id="close-settings" aria-label="Close settings">Close</button>
+            <div id="settings-panel" class="settings-panel" style="display:none;" role="dialog"
+                aria-labelledby="settings-title">
+                <div class="settings-panel__header">
+                    <h4 id="settings-title">Settings</h4>
+                    <button id="close-settings" class="settings-panel__close" type="button"
+                        aria-label="Close settings">Close</button>
+                </div>
+
+                <section class="settings-section" aria-labelledby="display-settings-title">
+                    <h5 id="display-settings-title">Display</h5>
+                    <label>
+                        Units:
+                        <select id="units">
+                            <option value="metric">Metric</option>
+                            <option value="imperial">Imperial</option>
+                        </select>
+                    </label>
+                    <label>
+                        Age:
+                        <input type="number" id="age" min="0" value="25">
+                    </label>
+                    <label id="legacy-hr-max-setting" hidden>
+                        Max HR:
+                        <input type="number" id="legacy-hr-max" min="100" max="230" step="1" inputmode="numeric">
+                    </label>
+                    <label>
+                        Tab backgrounds:
+                        <input type="checkbox" id="bg-images-toggle">
+                    </label>
+                    <label>
+                        Dark mode:
+                        <input type="checkbox" id="dark-mode-toggle">
+                    </label>
+                </section>
+
+                <section id="analysis-profile-section" class="settings-section analysis-profile-settings" hidden
+                    aria-labelledby="analysis-profile-title">
+                    <h5 id="analysis-profile-title">Local Heart Rate Profile</h5>
+                    <p class="settings-help">Used only for local Canonical analysis. These health values stay in this browser.</p>
+                    <form id="analysis-profile-form" novalidate>
+                        <div class="analysis-profile-fields">
+                            <label for="hr-max">Max HR <span aria-hidden="true">*</span></label>
+                            <input type="number" id="hr-max" name="maxBpm" min="100" max="230" step="1"
+                                inputmode="numeric" required aria-describedby="analysis-profile-help">
+                            <label for="hr-rest">Resting HR</label>
+                            <input type="number" id="hr-rest" name="restingBpm" min="25" max="120" step="1"
+                                inputmode="numeric" placeholder="Optional">
+                            <label for="hr-threshold">Lactate threshold HR</label>
+                            <input type="number" id="hr-threshold" name="thresholdBpm" min="80" max="229" step="1"
+                                inputmode="numeric" placeholder="Optional">
+                        </div>
+                        <p id="analysis-profile-help" class="settings-help">Generate the standard 60%, 70%, 80% and 90% boundaries, then adjust them if needed.</p>
+                        <div class="analysis-profile-zone-heading">
+                            <strong>Five-zone boundaries</strong>
+                            <button id="analysis-profile-auto-zones" class="settings-secondary-button" type="button">Generate from max HR</button>
+                        </div>
+                        <div class="analysis-profile-zone-grid">
+                            <label for="hr-zone-bound-1">Z1 below</label>
+                            <input type="number" id="hr-zone-bound-1" name="zoneBoundary1" step="1" inputmode="numeric" required>
+                            <label for="hr-zone-bound-2">Z2 below</label>
+                            <input type="number" id="hr-zone-bound-2" name="zoneBoundary2" step="1" inputmode="numeric" required>
+                            <label for="hr-zone-bound-3">Z3 below</label>
+                            <input type="number" id="hr-zone-bound-3" name="zoneBoundary3" step="1" inputmode="numeric" required>
+                            <label for="hr-zone-bound-4">Z4 below</label>
+                            <input type="number" id="hr-zone-bound-4" name="zoneBoundary4" step="1" inputmode="numeric" required>
+                        </div>
+                        <p id="analysis-profile-zone-summary" class="analysis-profile-zone-summary" aria-live="polite"></p>
+                        <p id="analysis-profile-status" class="analysis-profile-status" role="status" aria-live="polite">Training profile is not configured.</p>
+                        <p id="analysis-profile-error" class="analysis-profile-error" role="alert" hidden></p>
+                        <div class="analysis-profile-actions">
+                            <button id="analysis-profile-save" type="submit">Save &amp; recompute</button>
+                            <button id="analysis-profile-reset" class="settings-danger-button" type="button">Reset profile</button>
+                        </div>
+                    </form>
+                </section>
             </div>
 
             <main>
@@ -557,6 +606,13 @@
                     <div id="range-selector" class="dashboard-range-selector"
                         aria-label="Dashboard time range selector"></div>
                     <div id="dashboard-topline" class="dashboard-topline" aria-live="polite"></div>
+                    <aside id="analysis-profile-notice" class="analysis-profile-notice" role="status" hidden>
+                        <div>
+                            <strong>Configure your local heart-rate profile</strong>
+                            <p>Personalized HR zones, HR VO₂max and readiness are unavailable. Distance, pace and generic load estimates remain available.</p>
+                        </div>
+                        <button id="analysis-profile-open-settings" type="button">Configure profile</button>
+                    </aside>
 
                     <div id="dashboard-summary" class="dashboard-summary-grid"></div>
 

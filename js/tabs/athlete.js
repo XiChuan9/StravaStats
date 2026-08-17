@@ -41,12 +41,16 @@ function createChartError() {
 export function selectTrendsMetadataContext(context = {}) {
     const athleteData = context?.athleteData;
     const zonesData = context?.zonesData;
+    const analysisProfileStatus = context?.analysisProfileStatus;
     return Object.freeze({
         athleteData: athleteData && typeof athleteData === 'object' && !Array.isArray(athleteData)
             ? athleteData
             : null,
         zonesData: zonesData && typeof zonesData === 'object' && !Array.isArray(zonesData)
             ? zonesData
+            : null,
+        analysisProfileStatus: ['configured', 'unconfigured'].includes(analysisProfileStatus)
+            ? analysisProfileStatus
             : null
     });
 }
@@ -86,11 +90,14 @@ export function renderTrendsTab(
     // Apply filtering using the unified helper
     const filteredActivities = filterActivities(allActivities, dateFilterFrom, dateFilterTo, sportFilter);
 
-    const { athleteData, zonesData } =
+    const { athleteData, zonesData, analysisProfileStatus } =
         selectTrendsMetadataContext(metadataContext);
 
     if (athleteData) renderAthleteProfile(athleteData);
-    if (zonesData) renderTrainingZones(zonesData);
+    renderTrainingZones(zonesData, {
+        localHeartRateProfile: analysisProfileStatus !== null,
+        analysisProfileStatus
+    });
 
     // Render panels & charts (order: summary, records, charts)
     renderAllTimeStats(filteredActivities);
@@ -1958,7 +1965,10 @@ export function renderAthleteProfile(athlete) {
     contentDiv.replaceChildren(...children, details);
 }
 
-export function renderTrainingZones(zones) {
+export function renderTrainingZones(zones, {
+    localHeartRateProfile = false,
+    analysisProfileStatus = null
+} = {}) {
     const container = document.getElementById('training-zones-card');
     if (!container) return;
     const contentDiv = container.querySelector('.zones-content');
@@ -1967,36 +1977,58 @@ export function renderTrainingZones(zones) {
     const groups = [];
 
     // Renderizar Zonas de Frecuencia Cardíaca (Versión Robusta)
-    if (zones.heart_rate && zones.heart_rate.zones && zones.heart_rate.custom_zones) {
+    if (zones?.heart_rate && zones.heart_rate.zones && zones.heart_rate.custom_zones) {
         const hrZones = zones.heart_rate.zones;
 
         // La API a veces devuelve la primera zona con min y max 0, la filtramos.
         // También nos aseguramos de que haya zonas válidas.
-        const validZones = hrZones.filter(z => (
-            Number.isFinite(z?.min)
-            && Number.isFinite(z?.max)
-            && z.max > 0
-            && z.max >= z.min
-        ));
+        const validZones = hrZones.filter((zone, index) => {
+            if (!Number.isFinite(zone?.min)) return false;
+            if (localHeartRateProfile && zone?.max === -1) {
+                return index === hrZones.length - 1;
+            }
+            return Number.isFinite(zone?.max)
+                && zone.max > 0
+                && zone.max >= zone.min;
+        });
 
         if (validZones.length > 0) {
+            const visualZones = validZones.map((zone, index) => {
+                if (!localHeartRateProfile || zone.max !== -1) {
+                    return { ...zone, visualMax: zone.max };
+                }
+                const priorMinimum = validZones[index - 1]?.min;
+                const inferredWidth = Number.isFinite(priorMinimum)
+                    ? Math.max(1, zone.min - priorMinimum)
+                    : 1;
+                return { ...zone, visualMax: zone.min + inferredWidth };
+            });
             // Calculamos el ancho total de las zonas para la proporcionalidad
-            const totalRange = validZones[validZones.length - 1].max - validZones[0].min;
+            const totalRange = visualZones[visualZones.length - 1].visualMax
+                - visualZones[0].min;
             if (Number.isFinite(totalRange) && totalRange > 0) {
                 // Generamos dinámicamente cada segmento de la barra
                 const zoneBar = document.createElement('div');
                 zoneBar.className = 'zone-bar';
-                validZones.forEach((zone, index) => {
-                    const zoneWidth = ((zone.max - zone.min) / totalRange) * 100;
+                visualZones.forEach((zone, index) => {
+                    const zoneWidth = ((zone.visualMax - zone.min) / totalRange) * 100;
                     if (!Number.isFinite(zoneWidth) || zoneWidth < 0) return;
                     const zoneNumber = index + 1;
-                    // Si es la última zona, el texto es "min+"
-                    const zoneText = (index === validZones.length - 1) ? `${zone.min}+` : zone.max;
+                    const openEnded = localHeartRateProfile && zone.max === -1;
+                    const legacyLastZone = !localHeartRateProfile
+                        && index === validZones.length - 1;
+                    const zoneText = openEnded || legacyLastZone
+                        ? `${zone.min}+`
+                        : zone.max;
 
                     const segment = document.createElement('div');
                     segment.className = `zone-segment hr-z${zoneNumber}`;
                     segment.style.flexBasis = `${zoneWidth}%`;
-                    segment.title = `Z${zoneNumber}: ${zone.min}-${zone.max}`;
+                    segment.title = localHeartRateProfile
+                        ? openEnded
+                            ? `Z${zoneNumber}: ≥${zone.min}`
+                            : `Z${zoneNumber}: ${zone.min}-${zone.max - 1}`
+                        : `Z${zoneNumber}: ${zone.min}-${zone.max}`;
                     segment.textContent = String(zoneText);
                     zoneBar.append(segment);
                 });
@@ -2011,7 +2043,7 @@ export function renderTrainingZones(zones) {
     }
 
     // Renderizar Zonas de Potencia (sin cambios, ya era robusto)
-    if (zones.power && zones.power.zones && zones.power.zones.length > 0) {
+    if (zones?.power && zones.power.zones && zones.power.zones.length > 0) {
         // Buscamos el FTP, que es el inicio de la Zona 4 (o la última zona si hay menos)
         const ftpZone = zones.power.zones.find(z => z.name === 'Z4') || zones.power.zones[zones.power.zones.length - 1];
         if (ftpZone) {
@@ -2032,7 +2064,9 @@ export function renderTrainingZones(zones) {
 
     if (groups.length === 0) {
         const empty = document.createElement('p');
-        empty.textContent = 'No custom training zones configured in your Strava profile.';
+        empty.textContent = localHeartRateProfile && analysisProfileStatus === 'unconfigured'
+            ? 'Configure your local heart rate profile to see personalized zones.'
+            : 'No custom training zones configured in your Strava profile.';
         groups.push(empty);
     }
     contentDiv.replaceChildren(...groups);

@@ -1117,7 +1117,8 @@ test('Trends metadata selection uses injected context without identity reads or 
             zonesData: null
         }), {
             athleteData: null,
-            zonesData: null
+            zonesData: null,
+            analysisProfileStatus: null
         });
 
         const realAthlete = { id: ATHLETE_ID, firstname: 'Synthetic' };
@@ -1800,10 +1801,15 @@ test('R7 Demo AI Coach capability performs zero consent, key, provider, history,
     assert.deepEqual(storage.operations, []);
 });
 
-test('R7 same-document Demo entry replaces and revokes the Real AI capability before loginWithDemo', async () => {
+test('R7 Demo entry revokes Real AI state and reloads into an isolated Demo document', async () => {
     const mainSource = await readFile(new URL('js/app/main.js', projectRoot), 'utf8');
     assert.match(
         mainSource,
-        /demoButton\.addEventListener\('click',\s*\(\)\s*=>\s*\{\s*aiCoachSession\.revoke\(\);\s*aiCoachActivitySnapshot = null;\s*aiCoachSession = createAICoachSession\(\{\s*sessionMode:\s*APP_SESSION_MODE\.DEMO\s*\}\);\s*loginWithDemo\(initializeApp\)/
+        /demoButton\.addEventListener\('click',\s*\(\)\s*=>\s*\{\s*aiCoachSession\.revoke\(\);\s*aiCoachActivitySnapshot = null;\s*loginWithDemo\(\(\) => \{\s*window\.location\.reload\(\);\s*\}\)/
     );
+    const handler = mainSource.slice(
+        mainSource.indexOf("if (demoButton) demoButton.addEventListener('click'"),
+        mainSource.indexOf('if (logoutButton)')
+    );
+    assert.doesNotMatch(handler, /initializeApp|sessionRepository|sessionAnalysisContext/);
 });

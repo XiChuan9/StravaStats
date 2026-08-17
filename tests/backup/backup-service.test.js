@@ -385,8 +385,23 @@ async function fullV5Library(indexedDB) {
 
 test('exports deterministic full archive, validates it, and restores into a fresh isolated factory', async () => {
     const sourceFactory = new IDBFactory();
+    const dashboardSettings = JSON.stringify({
+        measurementSystem: 'metric',
+        analysisProfile: {
+            schemaVersion: 1,
+            revision: 2,
+            heartRate: {
+                maxBpm: 200,
+                restingBpm: 50,
+                thresholdBpm: 172,
+                zoneMode: 'manual',
+                upperBoundsBpm: [118, 140, 162, 182]
+            }
+        },
+        hrMax: 200
+    });
     const sourceSettings = settingsAdapter({
-        dashboard_settings: '{"measurementSystem":"metric"}',
+        dashboard_settings: dashboardSettings,
         'gear-custom-opaque': '{"price":0}'
     });
     await initializedLibrary(sourceFactory);
@@ -415,8 +430,11 @@ test('exports deterministic full archive, validates it, and restores into a fres
         activityCount: 1,
         byteLength: first.byteLength
     });
-    assert.equal(targetSettings.values.get('dashboard_settings'),
-        '{"measurementSystem":"metric"}');
+    assert.equal(targetSettings.values.get('dashboard_settings'), dashboardSettings);
+    assert.deepEqual(
+        JSON.parse(targetSettings.values.get('dashboard_settings')).analysisProfile,
+        JSON.parse(dashboardSettings).analysisProfile
+    );
     assert.equal(targetSettings.values.get('gear-custom-opaque'), '{"price":0}');
     const restored = await target.exportLibrary();
     assert.equal(restored.activityCount, 1);

@@ -1,6 +1,10 @@
 import { isDemoMode } from '../../demo/index.js';
 import { getFeatureFlags } from '../../app/feature-flags.js';
 import {
+    DEMO_ANALYSIS_CONTEXT_V1,
+    readLocalAnalysisContext
+} from '../../app/analysis-profile.js';
+import {
     createRepository,
     REPOSITORY_SOURCE
 } from '../../repository/index.js';
@@ -167,6 +171,7 @@ export async function initializeBikePage({
     featureFlagsReader = getFeatureFlags,
     repositoryFactory = createRepository,
     sessionFactory = createDetailReadSession,
+    analysisContextReader = readLocalAnalysisContext,
     renderer = defaultRenderer,
     errorRenderer = renderBikePageError
 } = {}) {
@@ -185,6 +190,11 @@ export async function initializeBikePage({
         const repositoryMode = demo
             ? 'legacy'
             : repositoryModeFromFlags(featureFlagsReader());
+        const analysisContext = demo
+            ? DEMO_ANALYSIS_CONTEXT_V1
+            : repositoryMode === 'canonical'
+                ? analysisContextReader()
+                : null;
         const repository = repositoryFactory({
             sessionMode: demo ? 'demo' : 'real',
             mode: repositoryMode
@@ -200,12 +210,16 @@ export async function initializeBikePage({
         const detail = readExactRecord(bundle, BUNDLE_KEYS);
         if (detail === null) throw new TypeError('Invalid detail bundle.');
         const activity = readEnvelopeData(detail.activity);
+        const repositoryZones = readEnvelopeData(detail.zones, true);
         await renderer({
             activity,
             activitySource: readExactRecord(detail.activity, ENVELOPE_KEYS).source,
             streams: readEnvelopeData(detail.streams),
-            zones: readEnvelopeData(detail.zones, true),
+            zones: analysisContext === null
+                ? repositoryZones
+                : analysisContext.trainingZones,
             athlete: readEnvelopeData(detail.athlete, true),
+            analysisContext,
             activityId,
             mapLocationMode: demo ? 'demo' : 'real',
             weatherFeatureEnabled: !demo

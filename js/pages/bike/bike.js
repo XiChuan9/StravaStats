@@ -13,6 +13,11 @@ import {
     reduceAlignedStreamData,
     restoreStreamGapMask
 } from '../detail/stream-presentation.js';
+import {
+    calculateHeartRateZoneSeconds,
+    formatHeartRateZoneLabels,
+    readHeartRateZones
+} from '../detail/heart-rate-zone-presentation.js';
 
 // =====================================================
 // 1. CONFIGURATION
@@ -141,22 +146,6 @@ function calculateVariability(data, smoothingWindow = 0) {
     if (mean === 0) return '-';
     const sd = Math.sqrt(validData.map(x => Math.pow(x - mean, 2)).reduce((a, b) => a + b, 0) / (validData.length - 1));
     return `${((sd / mean) * 100).toFixed(1)}%`;
-}
-
-function calculateTimeInZones(heartrateStream, timeStream, zones) {
-    if (!heartrateStream || !timeStream || !zones || zones.length === 0) return [];
-    const timeInZones = Array(zones.length).fill(0);
-    for (let i = 1; i < heartrateStream.data.length; i++) {
-        const hr = heartrateStream.data[i];
-        if (hr === null) continue;
-        const deltaTime = timeStream.data[i] - timeStream.data[i - 1];
-        for (let j = 0; j < zones.length; j++) {
-            const zone = zones[j];
-            const max = zone.max === -1 ? Infinity : zone.max;
-            if (hr >= zone.min && hr < max) { timeInZones[j] += deltaTime; break; }
-        }
-    }
-    return timeInZones;
 }
 
 function createChart(canvasId, config) {
@@ -1118,7 +1107,7 @@ function renderCadenceSpeedChart(streams) {
 // 11. RENDERING — HR ZONES
 // =====================================================
 
-function renderHrZoneDistributionChart(streams, zones) {
+function renderHrZoneDistributionChart(streams, zones, analysisContext = null) {
     const canvas = document.getElementById('hr-zones-chart');
     const section = document.getElementById('hr-zones-section');
     if (!canvas || !section) return;
@@ -1128,14 +1117,31 @@ function renderHrZoneDistributionChart(streams, zones) {
     }
     section.style.display = '';
 
-    const configuredZones = zones?.heart_rate?.zones;
-    const hrZones = Array.isArray(configuredZones)
-        ? configuredZones.filter(zone => zone && typeof zone === 'object' && zone.max > 0)
-        : null;
-    if (!hrZones || hrZones.length === 0) return;
+    let message = section.querySelector?.('[data-analysis-profile-message]') ?? null;
+    const unconfigured = analysisContext?.status === 'unconfigured';
+    if (unconfigured && message === null && document?.createElement) {
+        message = document.createElement('p');
+        message.className = 'empty-state';
+        message.dataset.analysisProfileMessage = 'true';
+        message.textContent = 'Configure your local heart rate profile to see personalized zones.';
+        canvas.parentElement?.append(message);
+    }
+    canvas.hidden = unconfigured;
+    if (message) message.hidden = !unconfigured;
+    if (unconfigured) return;
 
-    const timeInZones = calculateTimeInZones(streams.heartrate, streams.time, hrZones);
-    const labels = hrZones.map((zone, i) => `Z${i + 1} (${zone.min}-${zone.max === -1 ? 'inf' : zone.max})`);
+    const hrZones = readHeartRateZones(zones);
+    if (hrZones.length === 0) return;
+
+    const timeInZones = calculateHeartRateZoneSeconds(
+        streams.heartrate,
+        streams.time,
+        hrZones
+    );
+    const labels = formatHeartRateZoneLabels(
+        hrZones,
+        analysisContext?.status === 'configured'
+    );
     const data = timeInZones.map(t => +(t / 60).toFixed(1));
     const gradientColors = ['#fde0e0', '#fababa', '#fa7a7a', '#f44336', '#b71c1c'];
 
@@ -1397,12 +1403,14 @@ function renderBestEfforts(bestEfforts) {
 // 14. RENDERING — BIKE CLASSIFIER
 // =====================================================
 
-function renderBikeClassifier(activity, streams, zones) {
+function renderBikeClassifier(activity, streams, zones, analysisContext = null) {
     const container = document.getElementById('bike-classifier-results');
     if (!container) return;
     if (typeof window.classifyBike !== 'function') { container.innerHTML = '<p>Classifier not loaded.</p>'; return; }
 
-    const classification = window.classifyBike(activity, streams, zones);
+    const classification = window.classifyBike(activity, streams, zones, {
+        exclusiveHeartRateZoneBounds: analysisContext?.status === 'configured'
+    });
     currentBikeClassification = classification;
     const results = classification?.top;
     if (!results || results.length === 0) { container.innerHTML = '<p>Could not classify bike type.</p>'; return; }
@@ -1529,7 +1537,7 @@ function initSmoothingControl() {
 // 16. MAIN INITIALIZATION
 // =====================================================
 
-export async function renderBikePage({ activity, streams, zones, athlete, activityId, activitySource, mapLocationMode, weatherFeatureEnabled }) {
+export async function renderBikePage({ activity, streams, zones, athlete, activityId, analysisContext = null, activitySource, mapLocationMode, weatherFeatureEnabled }) {
     const mapCoordinates = getActivityRouteCoordinates(activity, streams);
     moveAndHideCustomChartSection();
     weatherFeatureEnabledForPage = weatherFeatureEnabled === true;
@@ -1560,14 +1568,14 @@ export async function renderBikePage({ activity, streams, zones, athlete, activi
         renderPowerProfile(streamData, activityData);
         renderPowerCurveChart(streamData, activityData);
         renderCadenceSpeedChart(streamData);
-        renderHrZoneDistributionChart(streamData, zones);
+        renderHrZoneDistributionChart(streamData, zones, analysisContext);
         renderHrMinMaxAreaChart(initialSmoothed, currentSmoothingLevel);
         renderSpeedMinMaxAreaChart(initialSmoothed, currentSmoothingLevel);
         renderLaps(activityData.laps);
         renderLapsChart(activityData.laps);
         renderSegments(activityData.segment_efforts);
         renderBestEfforts(activityData.best_efforts);
-        renderBikeClassifier(activityData, streamData, zones);
+        renderBikeClassifier(activityData, streamData, zones, analysisContext);
         syncSideBySideContainers();
 
         initDynamicChartControls();

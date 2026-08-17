@@ -123,8 +123,8 @@ test('M23 R1 root summary renders persistent names and opaque IDs only through n
     assert.doesNotMatch(athlete, /createChartError\([^)]*error\.message/);
     assert.doesNotMatch(athlete, /console\.error\([^\n]*,\s*error\s*\)/);
     assert.match(athlete, /Error rendering chart\./);
-    assert.match(athlete, /Number\.isFinite\(z\?\.min\)/);
-    assert.match(athlete, /Number\.isFinite\(z\?\.max\)/);
+    assert.match(athlete, /Number\.isFinite\(zone\?\.min\)/);
+    assert.match(athlete, /Number\.isFinite\(zone\?\.max\)/);
     assert.match(athlete, /Number\.isFinite\(zoneWidth\)/);
 
     assert.doesNotMatch(maps, /bindPopup\s*\(\s*`/);
@@ -574,7 +574,7 @@ test('R7 main injects one frozen AI Coach session while the tab owns no provider
     assert.doesNotMatch(aiBoundarySource, /\?key=|Authorization/);
     assert.match(
         mainSource,
-        /demoButton\.addEventListener\('click',\s*\(\)\s*=>\s*\{\s*aiCoachSession\.revoke\(\);\s*aiCoachActivitySnapshot = null;\s*aiCoachSession = createAICoachSession\(\{\s*sessionMode:\s*APP_SESSION_MODE\.DEMO\s*\}\);\s*loginWithDemo\(initializeApp\)/
+        /demoButton\.addEventListener\('click',\s*\(\)\s*=>\s*\{\s*aiCoachSession\.revoke\(\);\s*aiCoachActivitySnapshot = null;\s*loginWithDemo\(\(\) => \{\s*window\.location\.reload\(\);\s*\}\)/
     );
     assert.match(mainSource, /function buildAICoachActivitySnapshot\(activities\)[\s\S]*?try\s*\{[\s\S]*?createActivitySnapshot\(\)[\s\S]*?builder\.add\([\s\S]*?builder\.finish\(\)[\s\S]*?catch\s*\{\s*return null/);
     assert.match(mainSource, /activeTabId === 'ai-chat-tab'[\s\S]*?aiCoachSession\.cancelPending\(\)/);
