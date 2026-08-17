@@ -41,16 +41,16 @@ function renderPoint(point, corePrefix) {
     if (point.cadence !== undefined) {
         fields.push(tag(c('Cadence'), escapeText(point.cadence)));
     }
-    const activityExtension = [];
-    if (point.speed !== undefined) {
-        activityExtension.push(tag('ae:Speed', escapeText(point.speed)));
-    }
-    if (point.runCadence !== undefined) {
-        activityExtension.push(tag('ae:RunCadence', escapeText(point.runCadence)));
-    }
-    if (point.power !== undefined) {
-        activityExtension.push(tag('ae:Watts', escapeText(point.power)));
-    }
+    const activityExtensionFields = {
+        Speed: point.speed,
+        RunCadence: point.runCadence,
+        Watts: point.power
+    };
+    const activityExtension = (point.alternateTpxOrder
+        ? ['RunCadence', 'Speed', 'Watts']
+        : ['Speed', 'RunCadence', 'Watts'])
+        .filter(local => activityExtensionFields[local] !== undefined)
+        .map(local => tag(`ae:${local}`, escapeText(activityExtensionFields[local])));
     const temperatureExtension = [];
     if (point.temperature !== undefined) {
         temperatureExtension.push(tag('tpe:atemp', escapeText(point.temperature)));
@@ -60,7 +60,10 @@ function renderPoint(point, corePrefix) {
     }
     const extensions = [];
     if (activityExtension.length > 0) {
-        extensions.push(tag('ae:TPX', activityExtension.join('')));
+        const cadenceSensor = point.cadenceSensor === undefined
+            ? ''
+            : ` CadenceSensor="${escapeText(point.cadenceSensor)}"`;
+        extensions.push(tag('ae:TPX', activityExtension.join(''), cadenceSensor));
     }
     if (temperatureExtension.length > 0) {
         extensions.push(tag('tpe:TrackPointExtension', temperatureExtension.join('')));
@@ -160,7 +163,10 @@ export function createSyntheticTcxActivity(options = {}) {
         ].join(''),
         ` Sport="${escapeText(options.sport ?? 'Running')}"`
     );
-    const rootChildren = tag(c('Activities'), activity)
+    const rootChildren = (options.rootCreator !== undefined
+        ? tag(c('Creator'), escapeText(options.rootCreator))
+        : '')
+        + tag(c('Activities'), activity)
         + (options.author ? tag(c('Author'), tag(c('Name'), 'Synthetic App')) : '');
     return `${options.xmlDeclaration ?? '<?xml version="1.0" encoding="UTF-8"?>'}`
         + tag(c('TrainingCenterDatabase'), rootChildren, rootAttributes);
