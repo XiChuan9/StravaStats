@@ -445,6 +445,34 @@ test('internal Retry inspection preserves the public service and report surfaces
     await core.close();
 });
 
+test('internal Retry inspection accepts an exact-hash duplicate without a second activity link', async () => {
+    const indexedDB = new IDBFactory();
+    const importStore = store(indexedDB);
+    const core = service(importStore);
+    await core.initialize();
+    const input = await artifact();
+
+    const first = await core.importArtifacts([input]);
+    assert.equal((await core.waitForJob(first.jobId)).status, 'completed');
+
+    const duplicate = await core.importArtifacts([input]);
+    const duplicateReport = await core.waitForJob(duplicate.jobId);
+    assert.equal(duplicateReport.status, 'completed');
+    assert.equal(duplicateReport.totals.skippedExactDuplicate, 1);
+
+    const catalog = await inspectImportServiceRetryJobs(core);
+    assert.equal(catalog.length, 2);
+    assert.deepEqual(catalog.map(entry => entry.eligibility), [
+        'not_eligible', 'not_eligible'
+    ]);
+    const duplicateEntry = catalog.find(entry => (
+        entry.report.totals.skippedExactDuplicate === 1
+    ));
+    assert.deepEqual(duplicateEntry?.report, duplicateReport);
+    assert.equal((await core.previewActivities()).total, 1);
+    await core.close();
+});
+
 test('internal Retry inspection rejects an entire failed job when retained bytes disappear', async () => {
     const indexedDB = new IDBFactory();
     const realStore = store(indexedDB);

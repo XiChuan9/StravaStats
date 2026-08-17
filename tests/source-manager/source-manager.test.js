@@ -5,6 +5,7 @@ import {
     planSourceFileBatches,
     preflightSourceFiles,
     sourceManagerReportItemCode,
+    sourceManagerHasViewableImportResults,
     SOURCE_MANAGER_LIMITS,
     SOURCE_MANAGER_SESSION_MODE
 } from '../../js/pages/source-manager/source-manager.js';
@@ -54,6 +55,41 @@ test('Source Manager constants freeze Real/Demo modes and existing file limits',
         maxGpxBytes: 16_777_216
     });
     assert.equal(Object.isFrozen(SOURCE_MANAGER_LIMITS), true);
+});
+
+test('View activities appears only for terminal imports with a viewable result', () => {
+    const empty = Object.freeze({
+        completed: 0,
+        reviewRequired: 0,
+        skippedExactDuplicate: 0,
+        failed: 1,
+        cancelled: 0
+    });
+    assert.equal(sourceManagerHasViewableImportResults('analyzing', empty), false);
+    assert.equal(sourceManagerHasViewableImportResults('failed', empty), false);
+    assert.equal(sourceManagerHasViewableImportResults('cancelled', {
+        ...empty,
+        failed: 0,
+        cancelled: 1
+    }), false);
+
+    for (const field of ['completed', 'reviewRequired', 'skippedExactDuplicate']) {
+        assert.equal(sourceManagerHasViewableImportResults('completed_with_warnings', {
+            ...empty,
+            [field]: 1
+        }), true, field);
+    }
+    assert.equal(sourceManagerHasViewableImportResults('cancelled', {
+        ...empty,
+        completed: 1,
+        failed: 0,
+        cancelled: 1
+    }), true, 'a cancelled batch may retain an already completed activity');
+    assert.equal(sourceManagerHasViewableImportResults('failed', {
+        ...empty,
+        skippedExactDuplicate: 1
+    }), true, 'a failed batch may still point to an existing exact duplicate');
+    assert.equal(sourceManagerHasViewableImportResults('completed', null), false);
 });
 
 test('CSV preflight uses anonymous labels, exact headers, row counts, and pipeline media', async () => {

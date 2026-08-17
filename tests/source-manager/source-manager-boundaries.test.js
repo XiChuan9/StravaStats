@@ -73,6 +73,10 @@ test('same-origin page has four source cards and complete accessible import cont
     assert.match(html, /id="import-alert"[^>]+aria-live="assertive"/);
     assert.match(html, /<progress[^>]+aria-label=/);
     assert.match(html, /id="cancel-import"/);
+    assert.match(
+        html,
+        /<a id="view-imported-activities" class="button" href="\/activities" hidden>View activities<\/a>/
+    );
     assert.match(html, /id="duplicate-review"[^>]+aria-labelledby=/);
     assert.match(html, /id="duplicate-review-dialog"[^>]+aria-labelledby=[^>]+aria-describedby=/);
     assert.match(html, /Confirm same activity/);

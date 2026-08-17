@@ -48,8 +48,8 @@ const BASE_TYPES = Object.freeze({
     0x90: Object.freeze({ id: 16, size: 8, kind: 'uint64z', invalid: 0n })
 });
 
-function field(name, baseTypeId, { array = false, scale = 1 } = {}) {
-    return Object.freeze({ name, baseTypeId, array, scale });
+function field(name, baseTypeId, { array = false, scale = 1, offset = 0 } = {}) {
+    return Object.freeze({ name, baseTypeId, array, scale, offset });
 }
 
 const MESSAGE_FIELDS = Object.freeze({
@@ -85,12 +85,14 @@ const MESSAGE_FIELDS = Object.freeze({
         253: field('timestamp', 6),
         0: field('positionLatitude', 5),
         1: field('positionLongitude', 5),
+        2: field('altitude', 4, { scale: 5, offset: 500 }),
         3: field('heartRate', 2),
         4: field('cadence', 2),
         5: field('distance', 6, { scale: 100 }),
         6: field('speed', 4, { scale: 1000 }),
         7: field('power', 4),
-        73: field('enhancedSpeed', 6, { scale: 1000 })
+        73: field('enhancedSpeed', 6, { scale: 1000 }),
+        78: field('enhancedAltitude', 6, { scale: 5, offset: 500 })
     }),
     21: Object.freeze({
         253: field('timestamp', 6),
@@ -153,6 +155,22 @@ const WARNING_DEFINITIONS = deepFreeze({
     FIT_EVENT_UNMAPPED: {
         path: '/events',
         message: 'A FIT event could not be mapped.'
+    },
+    FIT_EVENT_SEQUENCE_NORMALIZED: {
+        path: '/events',
+        message: 'Redundant or segmented FIT timer events were normalized.'
+    },
+    FIT_EVENT_TIME_BOUNDED: {
+        path: '/events',
+        message: 'A FIT event time was bounded to the activity duration.'
+    },
+    FIT_LAP_TIME_NORMALIZED: {
+        path: '/laps',
+        message: 'FIT lap timing was bounded to the activity and made non-overlapping.'
+    },
+    FIT_HEART_RATE_SAMPLE_IGNORED: {
+        path: '/streams/series',
+        message: 'An out-of-range FIT heart-rate sample was ignored.'
     }
 });
 
@@ -334,7 +352,7 @@ function decodeKnownField(bytes, offset, definition, profileField, littleEndian)
         ));
     }
     const scaled = values.map(value =>
-        value === null ? null : value / profileField.scale
+        value === null ? null : value / profileField.scale - profileField.offset
     );
     return profileField.array ? scaled : scaled[0];
 }
@@ -578,7 +596,7 @@ function mapSport(session, warnings) {
         const variant = subSport === 1 || subSport === 45
             ? 'indoor'
             : subSport === 3
-                ? 'trail'
+                ? 'trail-run'
                 : null;
         return { category: 'run', variant };
     }
@@ -586,7 +604,7 @@ function mapSport(session, warnings) {
         const variants = new Map([
             [6, 'indoor'],
             [7, 'road'],
-            [8, 'mountain'],
+            [8, 'mountain-bike'],
             [46, 'gravel'],
             [58, 'virtual']
         ]);
@@ -627,6 +645,8 @@ function foldRecord(target, source) {
     const fields = [
         'positionLatitude',
         'positionLongitude',
+        'altitude',
+        'enhancedAltitude',
         'heartRate',
         'cadence',
         'distance',
@@ -767,7 +787,7 @@ function expandHeartRateMessages(messages, sessionStart) {
     return [...points.values()];
 }
 
-function buildStreams(activityId, recordRows, hrMessages, sessionStart) {
+function buildStreams(activityId, recordRows, hrMessages, sessionStart, warnings) {
     const series = [];
     const addRecordSeries = (streamType, unit, selector) => {
         const values = recordRows.map(selector);
@@ -789,6 +809,10 @@ function buildStreams(activityId, recordRows, hrMessages, sessionStart) {
             row.positionLongitude * 180 / 2 ** 31
         ];
     });
+    addRecordSeries('altitude', 'm', row => {
+        if (typeof row.enhancedAltitude === 'number') return row.enhancedAltitude;
+        return typeof row.altitude === 'number' ? row.altitude : null;
+    });
     addRecordSeries('distance', 'm', row =>
         typeof row.distance === 'number' ? row.distance : null
     );
@@ -806,6 +830,15 @@ function buildStreams(activityId, recordRows, hrMessages, sessionStart) {
         }))
         : [];
     heartRatePoints.push(...expandHeartRateMessages(hrMessages, sessionStart));
+    for (const point of heartRatePoints) {
+        if (
+            typeof point.value === 'number'
+            && (point.value <= 0 || point.value > 300)
+        ) {
+            point.value = null;
+            addWarning(warnings, 'FIT_HEART_RATE_SAMPLE_IGNORED');
+        }
+    }
     heartRatePoints.sort((left, right) =>
         left.offset - right.offset || left.encounter - right.encounter
     );
@@ -837,40 +870,91 @@ function buildStreams(activityId, recordRows, hrMessages, sessionStart) {
     return { activityId, series };
 }
 
-function buildLaps(messages, activityId, sessionStart) {
+function buildLaps(messages, activityId, sessionStart, sessionElapsed, warnings) {
     if (messages.length > FIT_LIMITS.maxLaps) fail();
     const ordered = [...messages].sort((left, right) =>
         requireNumber(left.startTime) - requireNumber(right.startTime)
         || left.encounter - right.encounter
     );
-    return ordered.map((message, index) => {
+    const laps = [];
+    for (const message of ordered) {
         if (
             !has(message, 'startTime')
             || message.startTime === null
             || !has(message, 'totalElapsedTime')
             || message.totalElapsedTime === null
         ) fail();
+        const rawStart = requireNumber(message.startTime) - sessionStart;
+        const rawElapsed = requireNumber(message.totalElapsedTime);
+        const rawEnd = rawStart + rawElapsed;
+        if (
+            !Number.isFinite(rawStart)
+            || rawElapsed < 0
+            || !Number.isFinite(rawEnd)
+        ) fail();
+
+        const start = Math.max(0, rawStart);
+        const end = sessionElapsed === null
+            ? rawEnd
+            : Math.min(sessionElapsed, rawEnd);
+        if (end < start) {
+            addWarning(warnings, 'FIT_LAP_TIME_NORMALIZED');
+            continue;
+        }
+        const elapsed = end - start;
+        if (start !== rawStart || elapsed !== rawElapsed) {
+            addWarning(warnings, 'FIT_LAP_TIME_NORMALIZED');
+        }
         const lap = {
-            id: `${activityId}:lap:${index}`,
-            activityId,
-            index,
-            startOffsetSeconds: activityOffset(message.startTime, sessionStart),
-            elapsedTimeSeconds: requireNumber(message.totalElapsedTime)
+            startOffsetSeconds: start,
+            elapsedTimeSeconds: elapsed
         };
-        setOptional(lap, 'movingTimeSeconds', message, 'totalTimerTime');
+        if (has(message, 'totalTimerTime')) {
+            const rawMoving = message.totalTimerTime;
+            if (rawMoving === null) lap.movingTimeSeconds = null;
+            else {
+                const moving = requireNumber(rawMoving);
+                if (moving < 0) fail();
+                lap.movingTimeSeconds = Math.min(moving, elapsed);
+                if (lap.movingTimeSeconds !== moving) {
+                    addWarning(warnings, 'FIT_LAP_TIME_NORMALIZED');
+                }
+            }
+        }
         setOptional(lap, 'distanceMeters', message, 'totalDistance');
-        return lap;
-    });
+        const previous = laps.at(-1);
+        if (
+            previous
+            && lap.startOffsetSeconds
+                < previous.startOffsetSeconds + previous.elapsedTimeSeconds
+        ) {
+            previous.elapsedTimeSeconds = Math.max(
+                0,
+                lap.startOffsetSeconds - previous.startOffsetSeconds
+            );
+            if (
+                typeof previous.movingTimeSeconds === 'number'
+                && previous.movingTimeSeconds > previous.elapsedTimeSeconds
+            ) previous.movingTimeSeconds = previous.elapsedTimeSeconds;
+            addWarning(warnings, 'FIT_LAP_TIME_NORMALIZED');
+        }
+        laps.push(lap);
+    }
+    return laps.map((lap, index) => ({
+        id: `${activityId}:lap:${index}`,
+        activityId,
+        index,
+        ...lap
+    }));
 }
 
-function buildEvents(messages, activityId, sessionStart, warnings) {
+function buildEvents(messages, activityId, sessionStart, sessionElapsed, warnings) {
     if (messages.length > FIT_LIMITS.maxEvents) fail();
     const ordered = [...messages].sort((left, right) =>
         requireNumber(left.timestamp) - requireNumber(right.timestamp)
         || left.encounter - right.encounter
     );
-    let state = 'not-started';
-    return ordered.map((message, index) => {
+    for (const message of ordered) {
         if (
             !has(message, 'timestamp')
             || message.timestamp === null
@@ -879,6 +963,21 @@ function buildEvents(messages, activityId, sessionStart, warnings) {
             || !has(message, 'eventType')
             || message.eventType === null
         ) fail();
+    }
+    const hasLaterTimerStart = new Array(ordered.length).fill(false);
+    let laterTimerStart = false;
+    for (let index = ordered.length - 1; index >= 0; index -= 1) {
+        hasLaterTimerStart[index] = laterTimerStart;
+        const message = ordered[index];
+        if (message.event === 0 && message.eventType === 0) {
+            laterTimerStart = true;
+        }
+    }
+
+    let state = 'not-started';
+    const events = [];
+    for (let messageIndex = 0; messageIndex < ordered.length; messageIndex += 1) {
+        const message = ordered[messageIndex];
         let type;
         let sourceType;
         if (message.event === 0 && message.eventType === 0) {
@@ -888,15 +987,45 @@ function buildEvents(messages, activityId, sessionStart, warnings) {
             } else if (state === 'paused') {
                 type = 'resume';
                 state = 'active';
-            } else fail();
+            } else if (state === 'active') {
+                addWarning(warnings, 'FIT_EVENT_SEQUENCE_NORMALIZED');
+                continue;
+            } else {
+                type = 'unknown';
+                sourceType = 'fit-event';
+                addWarning(warnings, 'FIT_EVENT_SEQUENCE_NORMALIZED');
+            }
         } else if (message.event === 0 && message.eventType === 1) {
-            if (state !== 'active') fail();
-            type = 'pause';
-            state = 'paused';
+            if (state === 'active') {
+                type = 'pause';
+                state = 'paused';
+            } else if (state === 'paused') {
+                addWarning(warnings, 'FIT_EVENT_SEQUENCE_NORMALIZED');
+                continue;
+            } else {
+                type = 'unknown';
+                sourceType = 'fit-event';
+                addWarning(warnings, 'FIT_EVENT_SEQUENCE_NORMALIZED');
+            }
         } else if (message.event === 0 && message.eventType === 4) {
-            if (state !== 'active' && state !== 'paused') fail();
-            type = 'stop';
-            state = 'stopped';
+            if (state === 'active' && hasLaterTimerStart[messageIndex]) {
+                type = 'pause';
+                state = 'paused';
+                addWarning(warnings, 'FIT_EVENT_SEQUENCE_NORMALIZED');
+            } else if (
+                (state === 'active' || state === 'paused')
+                && !hasLaterTimerStart[messageIndex]
+            ) {
+                type = 'stop';
+                state = 'stopped';
+            } else if (state === 'paused' || state === 'stopped') {
+                addWarning(warnings, 'FIT_EVENT_SEQUENCE_NORMALIZED');
+                continue;
+            } else {
+                type = 'unknown';
+                sourceType = 'fit-event';
+                addWarning(warnings, 'FIT_EVENT_SEQUENCE_NORMALIZED');
+            }
         } else if (message.eventType === 3) {
             type = 'marker';
         } else {
@@ -904,16 +1033,26 @@ function buildEvents(messages, activityId, sessionStart, warnings) {
             sourceType = 'fit-event';
             addWarning(warnings, 'FIT_EVENT_UNMAPPED');
         }
+        const rawOffset = requireNumber(message.timestamp) - sessionStart;
+        if (!Number.isFinite(rawOffset)) fail();
+        const offsetSeconds = sessionElapsed === null
+            ? Math.max(0, rawOffset)
+            : Math.min(sessionElapsed, Math.max(0, rawOffset));
+        if (offsetSeconds !== rawOffset) {
+            addWarning(warnings, 'FIT_EVENT_TIME_BOUNDED');
+        }
+        const index = events.length;
         const event = {
             id: `${activityId}:event:${index}`,
             activityId,
             index,
             type,
-            offsetSeconds: activityOffset(message.timestamp, sessionStart)
+            offsetSeconds
         };
         if (sourceType) event.sourceType = sourceType;
-        return event;
-    });
+        events.push(event);
+    }
+    return events;
 }
 
 function buildDevices(messages, activityId, warnings) {
@@ -956,6 +1095,11 @@ function buildBundle(parsed) {
     if (fileId.type !== 4 || !has(session, 'startTime') || session.startTime === null) fail();
     const sessionStart = requireNumber(session.startTime);
     if (!Number.isSafeInteger(sessionStart) || sessionStart < 0) fail();
+    let sessionElapsed = null;
+    if (has(session, 'totalElapsedTime') && session.totalElapsedTime !== null) {
+        sessionElapsed = requireNumber(session.totalElapsedTime);
+        if (sessionElapsed < 0) fail();
+    }
     const identity = [
         safeIdentityPart(fileId.manufacturer),
         safeIdentityPart(fileId.product),
@@ -969,10 +1113,23 @@ function buildBundle(parsed) {
         activityId,
         recordRows,
         parsed.hrMessages,
-        sessionStart
+        sessionStart,
+        parsed.warnings
     );
-    const laps = buildLaps(parsed.laps, activityId, sessionStart);
-    const events = buildEvents(parsed.events, activityId, sessionStart, parsed.warnings);
+    const laps = buildLaps(
+        parsed.laps,
+        activityId,
+        sessionStart,
+        sessionElapsed,
+        parsed.warnings
+    );
+    const events = buildEvents(
+        parsed.events,
+        activityId,
+        sessionStart,
+        sessionElapsed,
+        parsed.warnings
+    );
     const devices = buildDevices(parsed.devices, activityId, parsed.warnings);
     const sport = mapSport(session, parsed.warnings);
     const streamTypes = new Set(streams.series.map(item => item.streamType));
@@ -982,6 +1139,9 @@ function buildBundle(parsed) {
     const activity = {
         schemaVersion: 1,
         id: activityId,
+        name: sport.category === 'other'
+            ? 'Imported Activity'
+            : `Imported ${sport.category[0].toUpperCase()}${sport.category.slice(1)}`,
         sportCategory: sport.category,
         sportVariant: sport.variant,
         startTimeUtc: fitTimestampToIso(sessionStart),
@@ -998,7 +1158,16 @@ function buildBundle(parsed) {
     setOptional(activity, 'movingTimeSeconds', session, 'totalTimerTime');
     setOptional(activity, 'elapsedTimeSeconds', session, 'totalElapsedTime');
     setOptional(activity, 'elevationGainMeters', session, 'totalAscent');
-    setOptional(activity, 'averageHeartRateBpm', session, 'averageHeartRate');
+    if (has(session, 'averageHeartRate')) {
+        const averageHeartRate = session.averageHeartRate;
+        if (
+            typeof averageHeartRate === 'number'
+            && (averageHeartRate <= 0 || averageHeartRate > 300)
+        ) {
+            activity.averageHeartRateBpm = null;
+            addWarning(parsed.warnings, 'FIT_HEART_RATE_SAMPLE_IGNORED');
+        } else activity.averageHeartRateBpm = averageHeartRate;
+    }
     setOptional(activity, 'averagePowerWatts', session, 'averagePower');
     setOptional(activity, 'averageCadence', session, 'averageCadence');
     if (has(session, 'poolLength')) {

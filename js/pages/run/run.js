@@ -186,6 +186,18 @@ function formatPace(speedInMps) {
     return formatPaceRun(1000 / speedInMps);
 }
 
+function formatElevationPerKm(activity, digits = 2) {
+    const distance = activity?.distance;
+    const elevation = activity?.total_elevation_gain;
+    if (
+        !Number.isFinite(distance)
+        || distance <= 0
+        || !Number.isFinite(elevation)
+    ) return null;
+    const value = elevation / (distance / 1000);
+    return Number.isFinite(value) ? value.toFixed(digits) : null;
+}
+
 /**
  * Decodes Strava polyline encoding to lat/lng coordinates
  */
@@ -833,9 +845,7 @@ function renderActivityStats(activity) {
     const duration = formatTime(activity.moving_time);
     const pace = formatPace(activity.average_speed);
     const elevation = activity.total_elevation_gain !== undefined ? activity.total_elevation_gain : '-';
-    const elevationPerKm = activity.distance > 0
-        ? (activity.total_elevation_gain / (activity.distance / 1000)).toFixed(2)
-        : '-';
+    const elevationPerKm = formatElevationPerKm(activity);
     const calories = activity.calories !== undefined && activity.calories !== null ? activity.calories : null;
     const hrAvg = activity.average_heartrate !== undefined && activity.average_heartrate !== null ? Math.round(activity.average_heartrate) : null;
     const hrMax = activity.max_heartrate !== undefined && activity.max_heartrate !== null ? Math.round(activity.max_heartrate) : null;
@@ -850,7 +860,10 @@ function renderActivityStats(activity) {
     pushField('Distance', `${distanceKm} km`);
     pushField('Pace', pace !== '-' && pace !== '—' ? pace : null);
     pushField('Elevation Gain', `${elevation} m`);
-    pushField('Elevation per Km', `${elevationPerKm} m`);
+    pushField(
+        'Elevation per Km',
+        elevationPerKm === null ? null : `${elevationPerKm} m`
+    );
     pushField('Calories', calories);
     pushField('HR Avg', hrAvg ? `${hrAvg} bpm` : null);
     pushField('HR Max', hrMax ? `${hrMax} bpm` : null);
@@ -870,9 +883,7 @@ function renderActivityStats(activity) {
 function renderAdvancedStats(activity) {
     if (!DOM.advanced) return;
 
-    const elevationPerKm = activity.distance > 0
-        ? (activity.total_elevation_gain / (activity.distance / 1000)).toFixed(2)
-        : '-';
+    const elevationPerKm = formatElevationPerKm(activity);
     const moveRatio = activity.moving_ratio !== null && activity.moving_ratio !== undefined
         ? `${(activity.moving_ratio * 100).toFixed(1)}%`
         : '-';
@@ -894,7 +905,10 @@ function renderAdvancedStats(activity) {
         fields.push(`<li><b>${label}:</b> ${value}</li>`);
     };
 
-    pushField('Elevation per Km', `${elevationPerKm} m`);
+    pushField(
+        'Elevation per Km',
+        elevationPerKm === null ? null : `${elevationPerKm} m`
+    );
     pushField('Move Ratio', moveRatio);
     pushField('Efficiency', efficiency);
     pushField('Effort', effort);

@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 
+import { readValidatedRouteGeometry } from '../../js/app/map-location-egress.js';
 import { CanonicalRepository } from '../../js/repository/canonical/canonical-repository.js';
 import {
     canonicalStreamTypesForLegacy,
@@ -309,15 +310,16 @@ test('detail projection preserves opaque IDs, null/zero, minimal laps, and align
         distance: { data: [0, 100, 200] },
         time: { data: [0, 30, 60] },
         heartrate: { data: [120, null, 140] },
+        latlng: { data: [[0, 0], [0, 0.001]] },
         watts: { data: [0, 150, 200] }
     });
-    assert.equal(Object.hasOwn(streams, 'latlng'), false);
     assert.equal(Object.isFrozen(streams), true);
     assert.equal(Object.isFrozen(streams.distance.data), true);
+    assert.equal(Object.isFrozen(streams.latlng.data), true);
     assert.deepEqual(stored, detailBundle());
 });
 
-test('detail stream projection maps physical types and degrades mismatched timelines', () => {
+test('detail stream projection maps physical types and preserves selected timelines', () => {
     assert.deepEqual(canonicalStreamTypesForLegacy([
         'distance',
         'time',
@@ -367,6 +369,90 @@ test('detail stream projection maps physical types and degrades mismatched timel
             heartrate: { data: [120, 130] }
         }
     );
+});
+
+test('detail stream projection aligns fractional chart timelines and preserves dense route geometry', () => {
+    const stored = detailBundle('independent-fit-timelines');
+    stored.streams.series = [
+        {
+            streamType: 'distance',
+            unit: 'm',
+            offsetsSeconds: [0, 1, 2],
+            values: [0, 100, 200]
+        },
+        {
+            streamType: 'heartRate',
+            unit: 'bpm',
+            offsetsSeconds: [0.5, 1.5, 1.5],
+            values: [121, 130, 131]
+        },
+        {
+            streamType: 'power',
+            unit: 'W',
+            offsetsSeconds: [0.25, 1.25],
+            values: [0, 210]
+        },
+        {
+            streamType: 'cadence',
+            unit: 'rpm',
+            offsetsSeconds: [1, 2],
+            values: [82, 84]
+        },
+        {
+            streamType: 'altitude',
+            unit: 'm',
+            offsetsSeconds: [0, 1, 2],
+            values: [-2, 0, 3]
+        },
+        {
+            streamType: 'position',
+            unit: 'wgs84',
+            offsetsSeconds: [0, 2],
+            values: [[0, 0], [0, 0.002]]
+        }
+    ];
+
+    const streams = projectCanonicalDetailStreams(stored, [
+        'distance',
+        'time',
+        'heartrate',
+        'watts',
+        'cadence',
+        'altitude',
+        'latlng'
+    ]);
+
+    assert.deepEqual(streams, {
+        distance: { data: [0, null, null, 100, null, null, null, 200] },
+        time: { data: [0, 0.25, 0.5, 1, 1.25, 1.5, 1.5, 2] },
+        heartrate: { data: [null, null, 121, null, null, 130, 131, null] },
+        watts: { data: [null, 0, null, null, 210, null, null, null] },
+        cadence: { data: [null, null, null, 82, null, null, null, 84] },
+        altitude: { data: [-2, null, null, 0, null, null, null, 3] },
+        latlng: { data: [[0, 0], [0, 0.002]] }
+    });
+    const pointBudget = stored.streams.series.reduce(
+        (total, value) => total + (
+            value.streamType === 'position' ? 0 : value.offsetsSeconds.length
+        ),
+        0
+    );
+    assert.ok(streams.time.data.length <= pointBudget);
+    for (const key of ['distance', 'heartrate', 'watts', 'cadence', 'altitude']) {
+        assert.equal(streams[key].data.length, streams.time.data.length);
+        assert.equal(Object.isFrozen(streams[key].data), true);
+    }
+    assert.equal(Object.isFrozen(streams.latlng.data), true);
+    assert.equal(streams.latlng.data.includes(null), false);
+    assert.deepEqual(
+        readValidatedRouteGeometry({}, streams),
+        [[0, 0], [0, 0.002]]
+    );
+    assert.deepEqual(
+        streams.heartrate.data.filter(value => value !== null),
+        [121, 130, 131]
+    );
+    assert.deepEqual(stored.streams.series[1].values, [121, 130, 131]);
 });
 
 test('detail projection rejects unsafe bundle and request shapes without getter execution', () => {
@@ -690,6 +776,7 @@ test('actual Canonical Store serves one projected local detail bundle', async ()
         distance: { data: [0, 100, 200] },
         time: { data: [0, 30, 60] },
         heartrate: { data: [120, null, 140] },
+        latlng: { data: [[0, 0], [0, 0.001]] },
         watts: { data: [0, 150, 200] }
     });
     await storage.close();

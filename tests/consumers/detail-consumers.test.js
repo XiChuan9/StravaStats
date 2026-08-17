@@ -1707,13 +1707,14 @@ test('four renderers degrade safely on empty streams without mutating bundle pay
         Object.getOwnPropertyDescriptor(globalThis, name)
     ]));
     let fetchAccesses = 0;
+    let activeStats = null;
     try {
         Object.defineProperty(globalThis, 'document', {
             configurable: true,
             value: {
                 title: '',
                 body: {},
-                getElementById: () => null,
+                getElementById: id => id === 'activity-stats' ? activeStats : null,
                 querySelector: () => null,
                 querySelectorAll: () => []
             }
@@ -1741,6 +1742,7 @@ test('four renderers degrade safely on empty streams without mutating bundle pay
             ['swim', 'renderSwimPage', 'Swim']
         ];
         for (const [directory, exportName, sportType] of cases) {
+            activeStats = directory === 'swim' ? null : { innerHTML: '' };
             const module = await import(
                 `../../js/pages/${directory}/${directory}.js?empty=${Date.now()}-${directory}`
             );
@@ -1770,6 +1772,28 @@ test('four renderers degrade safely on empty streams without mutating bundle pay
             });
             assert.deepEqual(activity, activityBefore, directory);
             assert.deepEqual(streams, streamsBefore, directory);
+            if (activeStats !== null) {
+                const missingElevationActivity = {
+                    ...activity,
+                    id: `missing-elevation-${directory}`,
+                    distance: 1000,
+                    moving_time: 300,
+                    elapsed_time: 300,
+                    average_speed: 1000 / 300
+                };
+                const missingElevationBefore = structuredClone(missingElevationActivity);
+                activeStats.innerHTML = '';
+                await module[exportName]({
+                    activity: missingElevationActivity,
+                    streams,
+                    zones: null,
+                    athlete: null,
+                    activityId: missingElevationActivity.id,
+                    weatherFeatureEnabled: false
+                });
+                assert.doesNotMatch(activeStats.innerHTML, /\b(?:NaN|Infinity)\b/, directory);
+                assert.deepEqual(missingElevationActivity, missingElevationBefore, directory);
+            }
         }
     } finally {
         for (const [name, descriptor] of originals) {

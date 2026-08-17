@@ -103,6 +103,18 @@ function formatSpeed(speedInMps) {
     return formatSpeedBike(speedInMps * 3.6);
 }
 
+function formatElevationPerKm(activity, digits = 1) {
+    const distance = activity?.distance;
+    const elevation = activity?.total_elevation_gain;
+    if (
+        !Number.isFinite(distance)
+        || distance <= 0
+        || !Number.isFinite(elevation)
+    ) return null;
+    const value = elevation / (distance / 1000);
+    return Number.isFinite(value) ? value.toFixed(digits) : null;
+}
+
 export function getActivityRouteCoordinates(activity, streams) {
     return readValidatedRouteGeometry(activity, streams);
 }
@@ -462,9 +474,10 @@ function renderActivityStats(activity, streams) {
     const avgSpeed = formatSpeed(activity.average_speed);
     const maxSpeed = formatSpeed(activity.max_speed);
     const elevation = activity.total_elevation_gain !== undefined ? activity.total_elevation_gain : '-';
-    const elevPerKm = activity.distance > 0
-        ? (activity.total_elevation_gain / (activity.distance / 1000)).toFixed(1) + ' m/km'
-        : '-';
+    const elevationPerKm = formatElevationPerKm(activity);
+    const elevPerKm = elevationPerKm === null
+        ? null
+        : `${elevationPerKm} m/km`;
     const calories = activity.calories !== undefined && activity.calories !== null ? activity.calories : null;
     const hrAvg = activity.average_heartrate !== undefined && activity.average_heartrate !== null ? Math.round(activity.average_heartrate) : null;
     const hrMax = activity.max_heartrate !== undefined && activity.max_heartrate !== null ? Math.round(activity.max_heartrate) : null;

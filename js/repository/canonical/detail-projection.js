@@ -207,6 +207,15 @@ function readSeries(values) {
             || offsets.length !== data.length
             || result.has(series.streamType)
         ) projectionFailure();
+        for (let index = 0; index < offsets.length; index += 1) {
+            const offset = offsets[index];
+            if (
+                typeof offset !== 'number'
+                || !Number.isFinite(offset)
+                || offset < 0
+                || (index > 0 && offset < offsets[index - 1])
+            ) projectionFailure();
+        }
         result.set(series.streamType, {
             offsets: cloneJson(offsets),
             data: cloneJson(data)
@@ -223,16 +232,64 @@ function sameTimeline(left, right) {
     return true;
 }
 
-function referenceSeries(series, requestedTypes) {
-    if (requestedTypes.includes('distance') && series.has('distance')) {
-        return series.get('distance');
+function unionTimeline(series) {
+    const ordered = [...series.entries()]
+        .sort(([left], [right]) => left < right ? -1 : (left > right ? 1 : 0))
+        .map(([, value]) => value);
+    const cursors = ordered.map(() => 0);
+    const timeline = [];
+
+    while (true) {
+        let hasNext = false;
+        let nextOffset;
+        for (let index = 0; index < ordered.length; index += 1) {
+            const offset = ordered[index].offsets[cursors[index]];
+            if (
+                offset !== undefined
+                && (!hasNext || offset < nextOffset)
+            ) {
+                hasNext = true;
+                nextOffset = offset;
+            }
+        }
+        if (!hasNext) break;
+
+        let occurrences = 0;
+        for (let index = 0; index < ordered.length; index += 1) {
+            const offsets = ordered[index].offsets;
+            const start = cursors[index];
+            let end = start;
+            while (end < offsets.length && offsets[end] === nextOffset) {
+                end += 1;
+            }
+            occurrences = Math.max(occurrences, end - start);
+            cursors[index] = end;
+        }
+        for (let index = 0; index < occurrences; index += 1) {
+            timeline.push(nextOffset);
+        }
     }
-    if (requestedTypes.includes('latlng') && series.has('position')) {
-        return series.get('position');
+
+    return Object.freeze(timeline);
+}
+
+function alignSeriesToTimeline(series, timeline) {
+    if (sameTimeline(series.offsets, timeline)) return series.data;
+    const aligned = [];
+    let sourceIndex = 0;
+    for (const offset of timeline) {
+        if (
+            sourceIndex < series.offsets.length
+            && series.offsets[sourceIndex] === offset
+        ) {
+            aligned.push(series.data[sourceIndex]);
+            sourceIndex += 1;
+        } else {
+            aligned.push(null);
+        }
     }
-    return [...series.entries()]
-        .sort(([left], [right]) => left < right ? -1 : (left > right ? 1 : 0))[0]?.[1]
-        ?? null;
+    if (sourceIndex !== series.offsets.length) projectionFailure();
+    return Object.freeze(aligned);
 }
 
 export function projectCanonicalDetailStreams(bundle, requestedTypes) {
@@ -251,23 +308,30 @@ export function projectCanonicalDetailStreams(bundle, requestedTypes) {
         const stored = series.get(canonicalType);
         if (stored !== undefined) selectedSeries.set(canonicalType, stored);
     }
-    const reference = referenceSeries(selectedSeries, values);
+    const position = selectedSeries.get('position') ?? null;
+    const chartSeries = new Map(selectedSeries);
+    chartSeries.delete('position');
+    const timeline = chartSeries.size > 0
+        ? unionTimeline(chartSeries)
+        : position?.offsets ?? null;
     const result = {};
     for (const type of values) {
         if (type === 'time') {
-            if (reference !== null) {
-                define(result, 'time', Object.freeze({ data: reference.offsets }));
+            if (timeline !== null) {
+                define(result, 'time', Object.freeze({ data: timeline }));
             }
             continue;
         }
         const canonicalType = LEGACY_TO_CANONICAL_STREAM.get(type);
         const stored = selectedSeries.get(canonicalType);
-        if (
-            stored !== undefined
-            && reference !== null
-            && sameTimeline(stored.offsets, reference.offsets)
-        ) {
+        if (canonicalType === 'position' && stored !== undefined) {
             define(result, type, Object.freeze({ data: stored.data }));
+            continue;
+        }
+        if (stored !== undefined && timeline !== null) {
+            define(result, type, Object.freeze({
+                data: alignSeriesToTimeline(stored, timeline)
+            }));
         }
     }
     return Object.freeze(result);

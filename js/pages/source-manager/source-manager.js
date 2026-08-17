@@ -150,7 +150,31 @@ const TERMINAL_ITEM_OUTCOMES = new Set([
     'failed_decode', 'failed_storage', 'cancelled'
 ]);
 
+const TERMINAL_SELECTION_OUTCOMES = new Set([
+    'completed', 'completed_with_warnings', 'failed', 'cancelled'
+]);
+
+const VIEWABLE_IMPORT_TOTAL_FIELDS = Object.freeze([
+    'completed', 'reviewRequired', 'skippedExactDuplicate'
+]);
+
 const MAX_VISIBLE_REPORT_ITEMS = 100;
+
+export function sourceManagerHasViewableImportResults(outcome, totals) {
+    try {
+        if (
+            !TERMINAL_SELECTION_OUTCOMES.has(outcome)
+            || totals === null
+            || typeof totals !== 'object'
+            || Array.isArray(totals)
+        ) return false;
+        return VIEWABLE_IMPORT_TOTAL_FIELDS.some(field => (
+            Number.isSafeInteger(totals[field]) && totals[field] > 0
+        ));
+    } catch {
+        return false;
+    }
+}
 
 function safeCode(error, fallback = 'IMPORT_FAILED') {
     try {
@@ -843,6 +867,7 @@ export function createSourceManagerPage({
         progressStatus: document.getElementById('progress-status'),
         cancelImport: document.getElementById('cancel-import'),
         startImport: document.getElementById('start-import'),
+        viewActivities: document.getElementById('view-imported-activities'),
         close: document.getElementById('dialog-close'),
         closeIcon: document.getElementById('dialog-close-icon'),
         live: document.getElementById('import-live'),
@@ -1379,6 +1404,14 @@ export function createSourceManagerPage({
         elements.live.textContent = `Import stage ${report.status}. ${aggregateCompleted} of ${selectionTotal} items complete.`;
     }
 
+    function renderViewActivities(outcome = null, totals = null) {
+        if (!elements.viewActivities) return;
+        elements.viewActivities.hidden = !sourceManagerHasViewableImportResults(
+            outcome,
+            totals
+        );
+    }
+
     async function refreshPublicReads() {
         const [preview, reports, reviews] = await Promise.all([
             importFacade.previewActivities(),
@@ -1403,6 +1436,7 @@ export function createSourceManagerPage({
         elements.progress.hidden = true;
         elements.startImport.disabled = true;
         elements.cancelImport.disabled = false;
+        renderViewActivities();
     }
 
     function closeDialog() {
@@ -1428,6 +1462,7 @@ export function createSourceManagerPage({
 
     async function acceptFiles(values) {
         elements.dialogError.hidden = true;
+        renderViewActivities();
         const plan = planSourceFileBatches(values);
         elements.selectionList.replaceChildren();
         if (!plan.ok) {
@@ -1482,6 +1517,7 @@ export function createSourceManagerPage({
         elements.startImport.disabled = true;
         elements.close.disabled = true;
         elements.closeIcon.disabled = true;
+        renderViewActivities();
         setSourceStatus(activeSource, 'importing');
         const terminalCounts = {
             completed: 0,
@@ -1569,6 +1605,7 @@ export function createSourceManagerPage({
                 terminalCounts.notStarted,
                 currentSelection.acceptedCount - processedAcceptedFiles
             );
+            renderViewActivities(outcome, terminalCounts);
             finishImportPerformanceSelection({ outcome, terminalCounts });
             activeJobId = null;
             importActive = false;

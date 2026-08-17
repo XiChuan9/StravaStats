@@ -125,6 +125,18 @@ function formatPace(speedInMps) {
     return formatPaceRun(1000 / speedInMps);
 }
 
+function formatElevationPerKm(activity, digits = 2) {
+    const distance = activity?.distance;
+    const elevation = activity?.total_elevation_gain;
+    if (
+        !Number.isFinite(distance)
+        || distance <= 0
+        || !Number.isFinite(elevation)
+    ) return null;
+    const value = elevation / (distance / 1000);
+    return Number.isFinite(value) ? value.toFixed(digits) : null;
+}
+
 export function getActivityRouteCoordinates(activity, streams) {
     return readValidatedRouteGeometry(activity, streams);
 }
@@ -765,9 +777,7 @@ function renderActivityStats(activity) {
     const duration = formatTime(activity.moving_time);
     const pace = formatPace(activity.average_speed);
     const elevation = activity.total_elevation_gain !== undefined ? activity.total_elevation_gain : '-';
-    const elevationPerKm = activity.distance > 0
-        ? (activity.total_elevation_gain / (activity.distance / 1000)).toFixed(2)
-        : '-';
+    const elevationPerKm = formatElevationPerKm(activity);
     const calories = activity.calories !== undefined ? activity.calories : '-';
     const hrAvg = activity.average_heartrate ? Math.round(activity.average_heartrate) : '-';
     const hrMax = activity.max_heartrate ? Math.round(activity.max_heartrate) : '-';
@@ -788,7 +798,7 @@ function renderActivityStats(activity) {
             <li><b>Distance:</b> ${distanceKm} km</li>
             <li><b>Pace:</b> ${pace}</li>
             <li><b>Elevation Gain:</b> ${elevation} m</li>
-            <li><b>Elevation per Km:</b> ${elevationPerKm} m</li>
+            <li><b>Elevation per Km:</b> ${elevationPerKm === null ? '–' : `${elevationPerKm} m`}</li>
             <li><b>Calories:</b> ${calories}</li>
             <li><b>HR Avg:</b> ${hrAvg} bpm</li>
             <li><b>HR Max:</b> ${hrMax} bpm</li>
@@ -809,9 +819,7 @@ function renderActivityStats(activity) {
 function renderAdvancedStats(activity) {
     if (!DOM.advanced) return;
 
-    const elevationPerKm = activity.distance > 0
-        ? (activity.total_elevation_gain / (activity.distance / 1000)).toFixed(2)
-        : '-';
+    const elevationPerKm = formatElevationPerKm(activity);
     const moveRatio = activity.moving_ratio !== null && activity.moving_ratio !== undefined
         ? `${(activity.moving_ratio * 100).toFixed(1)}%`
         : '-';
@@ -839,7 +847,7 @@ function renderAdvancedStats(activity) {
     DOM.advanced.innerHTML = `
         <h3>Advanced Stats</h3>
         <ul>
-            <li><b>Elevation per Km:</b> ${elevationPerKm} m</li>
+            <li><b>Elevation per Km:</b> ${elevationPerKm === null ? '–' : `${elevationPerKm} m`}</li>
             <li><b>Move Ratio:</b> ${moveRatio}</li>
             <li><b>Efficiency:</b> ${efficiency}</li>
             <li><b>Effort:</b> ${effort}</li>
