@@ -177,7 +177,7 @@ test('G1 selector derives the current exact tracked regular payload', async () =
       return { mode, type, object, path };
     });
   const selected = tool.selectPayloadPaths(records);
-  assert.equal(selected.length, 209);
+  assert.equal(selected.length, 211);
   assert.equal(selected[0].path, 'classifyBike.js');
   assert.equal(selected.at(-1).path, 'sw.js');
   assert.equal(selected.every(item => item.mode === '100644' && item.type === 'blob'), true);
