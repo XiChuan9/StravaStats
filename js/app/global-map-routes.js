@@ -10,6 +10,11 @@ export const GLOBAL_MAP_ROUTE_LIMITS = Object.freeze({
 });
 
 const EMPTY_ROUTE = Object.freeze([]);
+const COOPERATIVE_ROUTE_BATCH_SIZE = 4;
+
+function yieldToNextTask() {
+    return new Promise(resolve => setTimeout(resolve, 0));
+}
 
 function frozenEmptyRoutes(length) {
     return Object.freeze(Array.from({ length }, () => EMPTY_ROUTE));
@@ -321,12 +326,32 @@ export function createGlobalMapRouteSession(options = {}) {
         }
 
         let nextPending = 0;
+        let scheduledInBatch = 0;
+        let nextTaskPromise = null;
+
+        async function takePendingIndex() {
+            if (nextPending >= pending.length) return null;
+            if (scheduledInBatch >= COOPERATIVE_ROUTE_BATCH_SIZE) {
+                const scheduledTask = nextTaskPromise || yieldToNextTask();
+                nextTaskPromise = scheduledTask;
+                await scheduledTask;
+                if (nextTaskPromise === scheduledTask) {
+                    scheduledInBatch = 0;
+                    nextTaskPromise = null;
+                }
+                if (disposed || generation !== expectedGeneration) return null;
+            }
+            if (nextPending >= pending.length) return null;
+            const pendingOffset = nextPending;
+            nextPending += 1;
+            scheduledInBatch += 1;
+            return pending[pendingOffset];
+        }
+
         async function worker() {
             while (!disposed && generation === expectedGeneration) {
-                const pendingOffset = nextPending;
-                nextPending += 1;
-                if (pendingOffset >= pending.length) return;
-                const index = pending[pendingOffset];
+                const index = await takePendingIndex();
+                if (index === null) return;
                 const permitted = await acquirePermit(expectedGeneration);
                 if (!permitted) return;
                 let candidate;

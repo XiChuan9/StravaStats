@@ -29,6 +29,10 @@ async function nextTurn() {
     await new Promise(resolve => setImmediate(resolve));
 }
 
+async function drainMicrotasks() {
+    for (let index = 0; index < 50; index += 1) await Promise.resolve();
+}
+
 function assertFrozenResult(result) {
     assert.equal(Object.isFrozen(result), true);
     assert.equal(Object.isFrozen(result.routes), true);
@@ -439,6 +443,65 @@ test('hydrates 5,000 routes within the aggregate point budget and reopens entire
     assert.ok(maximumActive <= GLOBAL_MAP_ROUTE_LIMITS.concurrency);
     assertFrozenResult(first);
     assertFrozenResult(second);
+});
+
+test('cooperatively bounds immediately resolved route reads to four per browser task', async () => {
+    const reads = [];
+    const ids = Array.from({ length: 10 }, (_, index) => `route-${index}`);
+    const session = createGlobalMapRouteSession({
+        readRoute: async id => {
+            reads.push(id);
+            return route();
+        }
+    });
+
+    const load = session.load(ids);
+    await drainMicrotasks();
+    assert.deepEqual(reads, ids.slice(0, 4));
+
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await drainMicrotasks();
+    assert.deepEqual(reads, ids.slice(0, 8));
+
+    const result = await load;
+    assert.deepEqual(reads, ids);
+    assert.equal(result.status, 'ready');
+    assert.equal(result.routeCount, ids.length);
+    assertFrozenResult(result);
+});
+
+test('supersede and dispose stop cooperative batches before another route read starts', async () => {
+    const reads = [];
+    const session = createGlobalMapRouteSession({
+        readRoute: async id => {
+            reads.push(id);
+            return route();
+        }
+    });
+    const oldIds = Array.from({ length: 10 }, (_, index) => `old-${index}`);
+    const oldLoad = session.load(oldIds);
+    await drainMicrotasks();
+    assert.deepEqual(reads, oldIds.slice(0, 4));
+
+    const replacementLoad = session.load(['replacement']);
+    await drainMicrotasks();
+    assert.deepEqual(reads, [...oldIds.slice(0, 4), 'replacement']);
+    const [oldResult, replacementResult] = await Promise.all([oldLoad, replacementLoad]);
+    assert.equal(oldResult.status, 'superseded');
+    assert.equal(replacementResult.status, 'ready');
+    assert.deepEqual(reads, [...oldIds.slice(0, 4), 'replacement']);
+
+    const disposedIds = Array.from({ length: 10 }, (_, index) => `disposed-${index}`);
+    const disposedLoad = session.load(disposedIds);
+    await drainMicrotasks();
+    assert.deepEqual(reads.slice(-4), disposedIds.slice(0, 4));
+    session.dispose();
+    const disposedResult = await disposedLoad;
+    assert.equal(disposedResult.status, 'superseded');
+    assert.deepEqual(reads.slice(-4), disposedIds.slice(0, 4));
+    assertFrozenResult(oldResult);
+    assertFrozenResult(replacementResult);
+    assertFrozenResult(disposedResult);
 });
 
 test('target-six fallback preserves required extrema when an independent zero anchor fragments presentation', async () => {

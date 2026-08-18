@@ -214,7 +214,21 @@ function readCanonicalGlobalMapRoute(streams) {
     const keys = Object.keys(snapshot);
     if (keys.length === 0) return Object.freeze([]);
     if (keys.length !== 1 || keys[0] !== 'latlng') throw safeOperationalError();
-    const route = readValidatedRouteGeometry({}, snapshot);
+
+    const latlng = readPlainDataRecord(snapshot.latlng);
+    if (latlng === null || !Object.hasOwn(latlng, 'data')) throw safeOperationalError();
+    const samples = readDenseDataArray(latlng.data);
+    if (samples === null || samples.length === 0) throw safeOperationalError();
+
+    const presentSamples = [];
+    for (const sample of samples) {
+        if (sample !== null) presentSamples.push(sample);
+    }
+    if (presentSamples.length === 0) return Object.freeze([]);
+
+    const route = readValidatedRouteGeometry({}, {
+        latlng: { data: presentSamples }
+    });
     if (route.length === 0) throw safeOperationalError();
     return route;
 }

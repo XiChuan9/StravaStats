@@ -341,18 +341,48 @@ test('Demo and non-Canonical sessions cannot construct or invoke the global Map 
     assert.doesNotMatch(demoHandler, /GlobalMapRoute|loadCanonicalRoutes|getStreams/);
 });
 
-test('Canonical Map composition distinguishes absent latlng from malformed geometry', () => {
+test('Canonical Map composition drops explicit null GPS gaps without weakening geometry validation', () => {
     assert.deepEqual(readCanonicalGlobalMapRoute({}), []);
     assert.equal(Object.isFrozen(readCanonicalGlobalMapRoute({})), true);
     const route = readCanonicalGlobalMapRoute({
-        latlng: { data: [[0, 0], [1, 1]] }
+        latlng: { data: [[0, 0], null, [1, 1], null, [2, 2]] }
     });
-    assert.deepEqual(route, [[0, 0], [1, 1]]);
+    assert.deepEqual(route, [[0, 0], [1, 1], [2, 2]]);
     assert.equal(Object.isFrozen(route), true);
+    assert.equal(route.every(Object.isFrozen), true);
+
+    const allMissing = readCanonicalGlobalMapRoute({
+        latlng: { data: [null, null] }
+    });
+    assert.deepEqual(allMissing, []);
+    assert.equal(Object.isFrozen(allMissing), true);
+
     assert.throws(() => readCanonicalGlobalMapRoute({ latlng: { data: [] } }));
     assert.throws(() => readCanonicalGlobalMapRoute({ latlng: { data: [[NaN, 0]] } }));
+    assert.throws(() => readCanonicalGlobalMapRoute({ latlng: { data: [[0, 0], undefined] } }));
     assert.throws(() => readCanonicalGlobalMapRoute({ latlng: null }));
     assert.throws(() => readCanonicalGlobalMapRoute({ unexpected: {} }));
+
+    const sparseData = [[0, 0], [1, 1]];
+    delete sparseData[1];
+    assert.throws(() => readCanonicalGlobalMapRoute({ latlng: { data: sparseData } }));
+
+    const accessorData = [[0, 0], [1, 1]];
+    Object.defineProperty(accessorData, '1', {
+        enumerable: true,
+        configurable: true,
+        get() {
+            throw new Error('Synthetic accessor must not run');
+        }
+    });
+    assert.throws(() => readCanonicalGlobalMapRoute({ latlng: { data: accessorData } }));
+
+    const proxiedData = new Proxy([[0, 0]], {
+        getPrototypeOf() {
+            throw new Error('Synthetic proxy trap');
+        }
+    });
+    assert.throws(() => readCanonicalGlobalMapRoute({ latlng: { data: proxiedData } }));
 });
 
 function repositoryEnvelope(data, source = REPOSITORY_SOURCE.DEMO) {

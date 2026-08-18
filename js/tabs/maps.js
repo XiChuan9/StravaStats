@@ -43,6 +43,111 @@ function routeStatusCopy(result) {
     return MAP_ROUTE_STATUS_COPY[result?.status] || MAP_ROUTE_STATUS_COPY.failed;
 }
 
+function denseArrayLength(value) {
+    try {
+        if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) return null;
+        const lengthDescriptor = Object.getOwnPropertyDescriptor(value, 'length');
+        if (!lengthDescriptor || lengthDescriptor.enumerable || !Object.hasOwn(lengthDescriptor, 'value')) return null;
+        const length = lengthDescriptor.value;
+        if (!Number.isSafeInteger(length) || length < 0) return null;
+        const keys = Reflect.ownKeys(value);
+        if (keys.length !== length + 1 || keys.at(-1) !== 'length') return null;
+        for (let index = 0; index < length; index += 1) {
+            if (keys[index] !== String(index)) return null;
+            const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+            if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) return null;
+        }
+        return length;
+    } catch {
+        return null;
+    }
+}
+
+function authorizationPoint(candidate) {
+    const length = denseArrayLength(candidate);
+    if (length !== 2) return null;
+    try {
+        const latitude = Object.getOwnPropertyDescriptor(candidate, '0').value;
+        const longitude = Object.getOwnPropertyDescriptor(candidate, '1').value;
+        if (
+            typeof latitude !== 'number'
+            || typeof longitude !== 'number'
+            || !Number.isFinite(latitude)
+            || !Number.isFinite(longitude)
+            || latitude < -90
+            || latitude > 90
+            || longitude < -180
+            || longitude > 180
+        ) return null;
+        return [
+            Object.is(latitude, -0) ? 0 : latitude,
+            Object.is(longitude, -0) ? 0 : longitude
+        ];
+    } catch {
+        return null;
+    }
+}
+
+// Tile authorization only needs the actual points that define the latitude and
+// longitude extrema. Keeping the full route snapshot in the overlay closure
+// preserves the approved visualization without repeatedly validating and
+// serializing up to 30,000 coordinates before consent.
+export function createMapConsentGeometry(items) {
+    const itemCount = denseArrayLength(items);
+    if (itemCount === null) return Object.freeze([]);
+    let pointCount = 0;
+    let minLatitude = null;
+    let maxLatitude = null;
+    let minLongitude = null;
+    let maxLongitude = null;
+
+    function include(candidate) {
+        const point = authorizationPoint(candidate);
+        if (point === null) return false;
+        pointCount += 1;
+        if (minLatitude === null || point[0] < minLatitude[0]) minLatitude = point;
+        if (maxLatitude === null || point[0] > maxLatitude[0]) maxLatitude = point;
+        if (minLongitude === null || point[1] < minLongitude[1]) minLongitude = point;
+        if (maxLongitude === null || point[1] > maxLongitude[1]) maxLongitude = point;
+        return true;
+    }
+
+    try {
+        for (let itemIndex = 0; itemIndex < itemCount; itemIndex += 1) {
+            const item = Object.getOwnPropertyDescriptor(items, String(itemIndex)).value;
+            if (item === null || typeof item !== 'object' || Array.isArray(item)) return Object.freeze([]);
+            const routeDescriptor = Object.getOwnPropertyDescriptor(item, 'route');
+            if (!routeDescriptor?.enumerable || !Object.hasOwn(routeDescriptor, 'value')) return Object.freeze([]);
+            const route = routeDescriptor.value;
+            const routeLength = denseArrayLength(route);
+            if (routeLength === null) return Object.freeze([]);
+            if (routeLength > 0) {
+                for (let pointIndex = 0; pointIndex < routeLength; pointIndex += 1) {
+                    const point = Object.getOwnPropertyDescriptor(route, String(pointIndex)).value;
+                    if (!include(point)) return Object.freeze([]);
+                }
+                continue;
+            }
+            for (const key of ['start', 'end']) {
+                const descriptor = Object.getOwnPropertyDescriptor(item, key);
+                if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) return Object.freeze([]);
+                if (descriptor.value !== null && !include(descriptor.value)) return Object.freeze([]);
+            }
+        }
+    } catch {
+        return Object.freeze([]);
+    }
+
+    if (pointCount === 0) return Object.freeze([]);
+    const geometry = [];
+    for (const point of [minLatitude, maxLatitude, minLongitude, maxLongitude]) {
+        if (!geometry.some(existing => existing[0] === point[0] && existing[1] === point[1])) {
+            geometry.push(Object.freeze(point));
+        }
+    }
+    return Object.freeze(geometry);
+}
+
 export function renderMapTab(
     activities = [],
     dateFrom = null,
@@ -208,23 +313,13 @@ export function renderMapTab(
     }
 
     function authorizationCoordinates(items) {
-        const coordinates = [];
-        for (const item of items) {
-            if (item.route.length) {
-                for (const point of item.route) coordinates.push(point);
-            } else {
-                if (item.start) coordinates.push(item.start);
-                if (item.end) coordinates.push(item.end);
-            }
-        }
-        return coordinates;
+        return createMapConsentGeometry(items);
     }
 
     function presentSnapshot() {
         if (disposed) return;
         const items = sessionMode === 'demo' ? [] : currentItems;
         const view = viewSelect?.value || 'heat';
-        const coordinates = presentationCoordinates(items, view);
         const authorizedGeometry = authorizationCoordinates(items);
 
         mapBoundary.present({
@@ -235,6 +330,7 @@ export function renderMapTab(
             providerControlId: 'map-tiles',
             leaflet: globalThis.L,
             drawOverlay(map) {
+                const coordinates = presentationCoordinates(items, view);
                 const group = L.layerGroup().addTo(map);
                 if (view === 'heat' && typeof L.heatLayer === 'function') {
                     const factor = Number.parseFloat(densitySlider?.value) || 1.133;
@@ -287,7 +383,9 @@ export function renderMapTab(
         if (typeof loadCanonicalRoutes !== 'function') {
             currentItems = buildLegacyItems(visible);
             const routeCount = currentItems.filter(item => item.route.length > 0).length;
-            const pointCount = authorizationCoordinates(currentItems).length;
+            const pointCount = currentItems.reduce((sum, item) => (
+                sum + (item.route.length || Number(Boolean(item.start)) + Number(Boolean(item.end)))
+            ), 0);
             setStatus(
                 pointCount > 0
                     ? `Map data ready: ${routeCount} ${routeCount === 1 ? 'route' : 'routes'}, ${pointCount} ${pointCount === 1 ? 'point' : 'points'}.`
