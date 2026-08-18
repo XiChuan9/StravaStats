@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+        http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'nonce-pr15-bootstrap'; style-src 'unsafe-inline'; connect-src 'self'; frame-src 'self'; img-src data: 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'"
+    >
+    <title>PR-15 Local-first Bootstrap Browser Smoke</title>
+    <link rel="icon" href="data:,">
+</head>
+<body>
+    <h1>PR-15 Browser Smoke</h1>
+    <p id="status" role="status">Running</p>
+    <pre id="result"></pre>
+    <div id="frames"></div>
+
+    <script type="module" nonce="pr15-bootstrap">
+        import {
+            V2_DATABASE_NAME,
+            createCanonicalStore
+        } from '../../js/storage/index.js';
+        import {
+            LEGACY_ACTIVITY_KEY,
+            LEGACY_DB_NAME,
+            LEGACY_STORE_NAME
+        } from '../../js/services/legacy-cache/index.js';
+        import { clearDemoData, loadDemoData } from '../../js/demo/index.js';
+
+        const FIXED_NOW = Date.parse('2026-08-06T06:00:00.000Z');
+        const status = document.getElementById('status');
+        const output = document.getElementById('result');
+        const frames = document.getElementById('frames');
+        const observations = {
+            assertions: [],
+            rootResources: [],
+            externalHttp: 0,
+            provider: 0,
+            authorizationSourceMatches: 0,
+            parentRealmConsoleWarnings: 0,
+            parentRealmConsoleErrors: 0,
+            parentRealmRuntimeErrors: 0,
+            scenarios: []
+        };
+
+        function assert(condition, code) {
+            if (!condition) throw new Error(code);
+            observations.assertions.push(code);
+        }
+
+        function waitFor(check, code, timeoutMs = 20_000) {
+            const started = performance.now();
+            return new Promise((resolve, reject) => {
+                const tick = () => {
+                    try {
+                        if (check()) return resolve();
+                    } catch {
+                        // The next tick may observe a settled navigation.
+                    }
+                    if (performance.now() - started >= timeoutMs) {
+                        reject(new Error(code));
+                        return;
+                    }
+                    requestAnimationFrame(tick);
+                };
+                tick();
+            });
+        }
+
+        function deleteDatabase(name) {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.deleteDatabase(name);
+                request.onsuccess = () => resolve();
+                request.onerror = () => reject(new Error('TEST_DATABASE_DELETE_FAILED'));
+                request.onblocked = () => reject(new Error('TEST_DATABASE_DELETE_BLOCKED'));
+            });
+        }
+
+        async function resetSyntheticState() {
+            frames.replaceChildren();
+            clearDemoData(localStorage);
+            localStorage.removeItem('strava_tokens');
+            localStorage.removeItem(LEGACY_ACTIVITY_KEY);
+            localStorage.removeItem('strava_activities_timestamp');
+            localStorage.removeItem('strava_activities_version');
+            await deleteDatabase(V2_DATABASE_NAME);
+            await deleteDatabase(LEGACY_DB_NAME);
+        }
+
+        async function seedCanonical() {
+            const response = await fetch('../fixtures/synthetic/canonical/import-run-summary.json', {
+                cache: 'no-store',
+                credentials: 'omit'
+            });
+            assert(response.ok, 'SYNTHETIC_CANONICAL_FIXTURE_LOADED');
+            const bundle = await response.json();
+            const store = createCanonicalStore({
+                indexedDB,
+                IDBKeyRange,
+                now: () => FIXED_NOW,
+                applicationVersion: 'pr15-browser-smoke@1'
+            });
+            await store.initialize();
+            await store.putBundle(bundle);
+            await store.close();
+        }
+
+        function seedLegacy() {
+            const generated = loadDemoData({
+                storage: localStorage,
+                referenceDate: '2026-08-06',
+                now: FIXED_NOW
+            });
+            const activities = generated.activities.slice(0, 1);
+            clearDemoData(localStorage);
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(LEGACY_DB_NAME, 1);
+                request.onupgradeneeded = () => {
+                    request.result.createObjectStore(LEGACY_STORE_NAME, {
+                        keyPath: 'key'
+                    });
+                };
+                request.onerror = () => reject(new Error('LEGACY_SEED_OPEN_FAILED'));
+                request.onsuccess = () => {
+                    const database = request.result;
+                    const transaction = database.transaction(LEGACY_STORE_NAME, 'readwrite');
+                    transaction.objectStore(LEGACY_STORE_NAME).put({
+                        key: LEGACY_ACTIVITY_KEY,
+                        activities,
+                        timestamp: 0,
+                        cacheVersion: 'synthetic-stale-version'
+                    });
+                    transaction.oncomplete = () => {
+                        database.close();
+                        resolve();
+                    };
+                    transaction.onerror = () => {
+                        database.close();
+                        reject(new Error('LEGACY_SEED_WRITE_FAILED'));
+                    };
+                };
+            });
+        }
+
+        async function rootFrame(name) {
+            const frame = document.createElement('iframe');
+            frame.title = name;
+            frame.src = `../../?pr15=${encodeURIComponent(name)}`;
+            frames.append(frame);
+            await new Promise((resolve, reject) => {
+                frame.onload = resolve;
+                frame.onerror = reject;
+            });
+            return frame;
+        }
+
+        function collectResources(frame) {
+            for (const entry of frame.contentWindow.performance.getEntriesByType('resource')) {
+                let url;
+                try { url = new URL(entry.name); } catch { continue; }
+                observations.rootResources.push(url.origin === location.origin
+                    ? url.pathname
+                    : `${url.protocol}//${url.host}${url.pathname}`);
+                const providerHost = /(^|\.)(strava|garmin|coros|wahoo|polar)\.(com|net)$/i
+                    .test(url.hostname);
+                if (
+                    (url.origin === location.origin && url.pathname.startsWith('/api/'))
+                    || (url.origin !== location.origin && providerHost)
+                ) {
+                    observations.provider += 1;
+                }
+                if (/^https?:$/.test(url.protocol) && url.origin !== location.origin) {
+                    observations.externalHttp += 1;
+                }
+            }
+        }
+
+        async function scenarioFirstRun() {
+            await resetSyntheticState();
+            const frame = await rootFrame('empty');
+            await waitFor(
+                () => frame.contentWindow.location.pathname === '/source-manager.html',
+                'FIRST_RUN_NAVIGATION_TIMEOUT'
+            );
+            await waitFor(
+                () => !frame.contentDocument.getElementById('first-run').hidden,
+                'FIRST_RUN_UI_TIMEOUT'
+            );
+            assert(
+                frame.contentWindow.location.search === '?mode=real',
+                'FIRST_RUN_EXACT_SOURCE_MANAGER_ROUTE'
+            );
+            assert(
+                frame.contentDocument.getElementById('preview-total').textContent === '0 activities',
+                'FIRST_RUN_ZERO_PREVIEW'
+            );
+            collectResources(frame);
+            observations.scenarios.push('first-run');
+            frame.remove();
+            await new Promise(resolve => setTimeout(resolve, 0));
+        }
+
+        async function scenarioMalformedSettingsFirstRun() {
+            await resetSyntheticState();
+            localStorage.setItem('dashboard_settings', '{malformed');
+            const frame = await rootFrame('malformed-settings');
+            await waitFor(
+                () => frame.contentWindow.location.pathname === '/source-manager.html',
+                'MALFORMED_SETTINGS_FIRST_RUN_TIMEOUT'
+            );
+            assert(
+                frame.contentWindow.location.search === '?mode=real',
+                'MALFORMED_SETTINGS_DOES_NOT_PREEMPT_BOOTSTRAP'
+            );
+            localStorage.removeItem('dashboard_settings');
+            collectResources(frame);
+            observations.scenarios.push('malformed-settings');
+            frame.remove();
+            await new Promise(resolve => setTimeout(resolve, 0));
+        }
+
+        async function scenarioCanonicalShell() {
+            await resetSyntheticState();
+            await seedCanonical();
+            const frame = await rootFrame('canonical');
+            await waitFor(
+                () => !frame.contentDocument.getElementById('app-section').classList.contains('hidden'),
+                'CANONICAL_SHELL_TIMEOUT'
+            );
+            const doc = frame.contentDocument;
+            assert(
+                doc.getElementById('source-status').textContent.includes('Local Library ready'),
+                'CANONICAL_SAFE_SOURCE_STATUS'
+            );
+            assert(doc.getElementById('refresh-button').disabled, 'CANONICAL_NO_PROVIDER_REFRESH');
+            assert(
+                doc.getElementById('dashboard-topline').textContent.includes('Local Library is ready'),
+                'CANONICAL_SHELL_NOT_FALSE_CONSUMER_SUCCESS'
+            );
+            assert(
+                doc.getElementById('dashboard-summary').children.length === 0,
+                'CANONICAL_SUMMARY_CUTOVER_NOT_STARTED'
+            );
+            const consumerTabs = [...doc.querySelectorAll('.tab-link')];
+            assert(
+                consumerTabs.length > 0 && consumerTabs.every(link => (
+                    link.disabled && link.getAttribute('aria-disabled') === 'true'
+                )),
+                'CANONICAL_CONSUMER_TABS_INERT'
+            );
+            for (const link of consumerTabs) link.click();
+            frame.contentWindow.history.pushState({}, '', '/run');
+            frame.contentWindow.dispatchEvent(new PopStateEvent('popstate'));
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            assert(
+                doc.getElementById('dashboard-summary').children.length === 0,
+                'CANONICAL_INERT_TABS_DO_NOT_RENDER_EMPTY_SUCCESS'
+            );
+            assert(
+                !doc.getElementById('run-tab').classList.contains('active'),
+                'CANONICAL_HISTORY_CANNOT_RENDER_EMPTY_CONSUMER'
+            );
+            const sources = doc.getElementById('sources-button');
+            assert(
+                sources.getAttribute('href') === '/source-manager.html?mode=real'
+                && sources.getAttribute('aria-disabled') === null,
+                'CANONICAL_SOURCES_REMAINS_USABLE'
+            );
+            collectResources(frame);
+            observations.scenarios.push('canonical-shell');
+            frame.remove();
+            await new Promise(resolve => setTimeout(resolve, 0));
+        }
+
+        async function scenarioLegacyProviderAbsent() {
+            await resetSyntheticState();
+            await seedLegacy();
+            const providerBefore = observations.provider;
+            const frame = await rootFrame('legacy');
+            await waitFor(
+                () => !frame.contentDocument.getElementById('app-section').classList.contains('hidden'),
+                'LEGACY_DASHBOARD_TIMEOUT'
+            );
+            assert(
+                frame.contentDocument.getElementById('source-status').textContent.includes('Strava not connected'),
+                'LEGACY_OPTIONAL_STRAVA_STATUS'
+            );
+            collectResources(frame);
+            assert(
+                observations.provider === providerBefore,
+                'LEGACY_STARTUP_ZERO_PROVIDER_FETCH'
+            );
+            observations.scenarios.push('legacy-local');
+            frame.remove();
+            await new Promise(resolve => setTimeout(resolve, 0));
+        }
+
+        async function scenarioDemoIsolation() {
+            await resetSyntheticState();
+            await seedLegacy();
+            const before = await new Promise((resolve, reject) => {
+                const request = indexedDB.open(LEGACY_DB_NAME);
+                request.onerror = () => reject(new Error('LEGACY_SENTINEL_READ_FAILED'));
+                request.onsuccess = () => {
+                    const database = request.result;
+                    const get = database.transaction(LEGACY_STORE_NAME).objectStore(LEGACY_STORE_NAME).get(LEGACY_ACTIVITY_KEY);
+                    get.onsuccess = () => {
+                        database.close();
+                        resolve(JSON.stringify(get.result));
+                    };
+                    get.onerror = () => reject(new Error('LEGACY_SENTINEL_READ_FAILED'));
+                };
+            });
+            loadDemoData({
+                storage: localStorage,
+                referenceDate: '2026-08-06',
+                now: FIXED_NOW
+            });
+            const frame = await rootFrame('demo');
+            await waitFor(
+                () => !frame.contentDocument.getElementById('app-section').classList.contains('hidden'),
+                'DEMO_DASHBOARD_TIMEOUT'
+            );
+            assert(
+                frame.contentDocument.getElementById('source-status').textContent.includes('Demo Library'),
+                'DEMO_SOURCE_STATUS'
+            );
+            const after = await new Promise((resolve, reject) => {
+                const request = indexedDB.open(LEGACY_DB_NAME);
+                request.onerror = () => reject(new Error('LEGACY_SENTINEL_READ_FAILED'));
+                request.onsuccess = () => {
+                    const database = request.result;
+                    const get = database.transaction(LEGACY_STORE_NAME).objectStore(LEGACY_STORE_NAME).get(LEGACY_ACTIVITY_KEY);
+                    get.onsuccess = () => {
+                        database.close();
+                        resolve(JSON.stringify(get.result));
+                    };
+                    get.onerror = () => reject(new Error('LEGACY_SENTINEL_READ_FAILED'));
+                };
+            });
+            assert(before === after, 'DEMO_REAL_LEGACY_SENTINEL_UNCHANGED');
+            collectResources(frame);
+            observations.scenarios.push('demo');
+            frame.remove();
+            clearDemoData(localStorage);
+            await new Promise(resolve => setTimeout(resolve, 0));
+        }
+
+        async function auditSources() {
+            for (const path of [
+                '../../js/app/local-first-bootstrap.js',
+                '../../js/app/main.js'
+            ]) {
+                const response = await fetch(path, { cache: 'no-store', credentials: 'omit' });
+                assert(response.ok, 'PRODUCTION_SOURCE_AUDIT_LOADED');
+                const source = await response.text();
+                observations.authorizationSourceMatches += (
+                    source.match(/Authorization|Bearer\s|access_token\s*[:=]/g) || []
+                ).length;
+            }
+            assert(observations.authorizationSourceMatches === 0, 'BOOTSTRAP_SOURCE_NO_AUTHORIZATION');
+        }
+
+        addEventListener('error', () => { observations.parentRealmRuntimeErrors += 1; });
+        const originalWarn = console.warn;
+        const originalError = console.error;
+        console.warn = (...args) => {
+            observations.parentRealmConsoleWarnings += 1;
+            originalWarn(...args);
+        };
+        console.error = (...args) => {
+            observations.parentRealmConsoleErrors += 1;
+            originalError(...args);
+        };
+
+        try {
+            await auditSources();
+            await scenarioFirstRun();
+            await scenarioMalformedSettingsFirstRun();
+            await scenarioCanonicalShell();
+            await scenarioLegacyProviderAbsent();
+            await scenarioDemoIsolation();
+            const databases = typeof indexedDB.databases === 'function'
+                ? await indexedDB.databases()
+                : [];
+            const cacheKeys = typeof caches === 'object' ? await caches.keys() : [];
+            const registrations = navigator.serviceWorker
+                ? await navigator.serviceWorker.getRegistrations()
+                : [];
+            observations.indexedDb = databases.map(database => ({
+                name: database.name,
+                version: database.version
+            }));
+            observations.cacheKeys = cacheKeys;
+            observations.serviceWorkers = registrations.length;
+            observations.pass = true;
+            window.__PR15_BROWSER_RESULT__ = observations;
+            status.textContent = 'PASS';
+            output.textContent = JSON.stringify(observations, null, 2);
+        } catch (error) {
+            observations.pass = false;
+            observations.failure = error instanceof Error ? error.message : 'BROWSER_SMOKE_FAILED';
+            window.__PR15_BROWSER_RESULT__ = observations;
+            status.textContent = 'FAIL';
+            output.textContent = JSON.stringify(observations, null, 2);
+        } finally {
+            console.warn = originalWarn;
+            console.error = originalError;
+        }
+    </script>
+</body>
+</html>

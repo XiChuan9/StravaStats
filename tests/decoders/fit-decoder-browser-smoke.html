@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>FIT Decoder synthetic browser smoke</title>
+</head>
+<body>
+  <main>
+    <h1>FIT Decoder synthetic browser smoke</h1>
+    <output id="result">running</output>
+  </main>
+  <script type="module">
+    const output = document.querySelector('#result');
+    const safeCounts = async () => ({
+      localStorage: localStorage.length,
+      indexedDb: typeof indexedDB.databases === 'function'
+        ? (await indexedDB.databases()).length
+        : null,
+      caches: (await caches.keys()).length,
+      serviceWorkers: (await navigator.serviceWorker.getRegistrations()).length
+    });
+
+    const originalFetch = globalThis.fetch;
+    const OriginalWorker = globalThis.Worker;
+    let fetchCalls = 0;
+    let workerCalls = 0;
+    globalThis.fetch = () => {
+      fetchCalls += 1;
+      throw new Error('unexpected fetch');
+    };
+    globalThis.Worker = class {
+      constructor() {
+        workerCalls += 1;
+        throw new Error('unexpected Worker');
+      }
+    };
+
+    try {
+      const before = await safeCounts();
+      const [{ fitDecoder }, fixture] = await Promise.all([
+        import('../../js/decoders/fit/decoder.js'),
+        import('../fixtures/synthetic/fit/fit-fixture.js')
+      ]);
+      const cases = [
+        fixture.createSyntheticFitActivity(),
+        fixture.createSyntheticFitActivity({
+          includeHrMessage: true,
+          pauseResume: true,
+          corruptFileCrc: true
+        })
+      ];
+      const bundles = cases.map(bytes => fitDecoder.decode(
+        fixture.syntheticFitDescriptor(bytes)
+      ));
+      const expectCorrupted = descriptor => {
+        try {
+          fitDecoder.decode(descriptor);
+        } catch (error) {
+          if (error?.code === 'FILE_CORRUPTED') return;
+        }
+        throw new Error('descriptor did not fail closed');
+      };
+      let getterCalls = 0;
+      const accessorDescriptor = { mediaType: fitDecoder.mediaType };
+      Object.defineProperty(accessorDescriptor, 'content', {
+        enumerable: true,
+        get() {
+          getterCalls += 1;
+          return 'private-canary';
+        }
+      });
+      expectCorrupted(accessorDescriptor);
+      let proxyReflectionTraps = 0;
+      let proxyValueReads = 0;
+      const proxyDescriptor = new Proxy(
+        fixture.syntheticFitDescriptor(cases[0]),
+        {
+          getPrototypeOf(target) {
+            proxyReflectionTraps += 1;
+            return Reflect.getPrototypeOf(target);
+          },
+          ownKeys(target) {
+            proxyReflectionTraps += 1;
+            return Reflect.ownKeys(target);
+          },
+          getOwnPropertyDescriptor(target, key) {
+            proxyReflectionTraps += 1;
+            return Reflect.getOwnPropertyDescriptor(target, key);
+          },
+          get(target, key, receiver) {
+            proxyValueReads += 1;
+            return Reflect.get(target, key, receiver);
+          }
+        }
+      );
+      expectCorrupted(proxyDescriptor);
+      if (getterCalls !== 0 || proxyReflectionTraps === 0 || proxyValueReads !== 0) {
+        throw new Error('descriptor safety boundary mismatch');
+      }
+      const after = await safeCounts();
+      const result = {
+        ok: true,
+        activityCount: bundles.length,
+        seriesCount: bundles.reduce(
+          (total, bundle) => total + bundle.streams.series.length,
+          0
+        ),
+        lapCount: bundles.reduce(
+          (total, bundle) => total + bundle.laps.length,
+          0
+        ),
+        eventCount: bundles.reduce(
+          (total, bundle) => total + bundle.events.length,
+          0
+        ),
+        warningCount: bundles.reduce(
+          (total, bundle) => total + bundle.warnings.length,
+          0
+        ),
+        getterCalls,
+        proxyReflectionTraps,
+        proxyValueReads,
+        fetchCalls,
+        workerCalls,
+        before,
+        after
+      };
+      globalThis.__fitDecoderSmokeResult = result;
+      output.textContent = JSON.stringify(result);
+    } catch {
+      const result = { ok: false, code: 'FIT_BROWSER_SMOKE_FAILED' };
+      globalThis.__fitDecoderSmokeResult = result;
+      output.textContent = JSON.stringify(result);
+      document.documentElement.dataset.smoke = 'failed';
+    } finally {
+      globalThis.fetch = originalFetch;
+      globalThis.Worker = OriginalWorker;
+    }
+  </script>
+</body>
+</html>

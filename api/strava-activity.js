@@ -1,10 +1,10 @@
-import { getValidAccessToken, validateEnv } from './_shared.js';
+import { getValidAccessToken, logServerEvent, SERVER_API_EVENT, validateEnv } from './_shared.js';
 
 export default async function handler(req, res) {
     try {
         validateEnv();
-    } catch (e) {
-        return res.status(500).json({ error: e.message });
+    } catch {
+        return res.status(500).json({ error: 'Server configuration error: Strava environment variables are not set.' });
     }
 
     if (req.method !== 'GET') {
@@ -24,15 +24,15 @@ export default async function handler(req, res) {
         });
 
         if (!stravaResponse.ok) {
-            const errData = await stravaResponse.json();
-            return res.status(stravaResponse.status).json({ error: 'Failed to fetch activity from Strava', details: errData });
+            logServerEvent(SERVER_API_EVENT.ACTIVITY_FAILED);
+            return res.status(stravaResponse.status).json({ error: 'Failed to fetch activity from Strava' });
         }
 
         const activity = await stravaResponse.json();
         return res.status(200).json({ activity, tokens: updatedTokens });
 
-    } catch (error) {
-        console.error('Error in /api/strava-activity:', error.message);
-        return res.status(500).json({ error: error.message });
+    } catch {
+        logServerEvent(SERVER_API_EVENT.ACTIVITY_FAILED);
+        return res.status(500).json({ error: 'Internal Server Error' });
     }
 }

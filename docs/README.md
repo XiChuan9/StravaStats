@@ -1,117 +1,84 @@
-# StravaStats v2 文档中心
+# StravaStats V2 documentation
 
-| 字段 | 内容 |
+| Field | Value |
 | --- | --- |
-| Status | Active |
-| Owner | XiChuan9 |
-| Created | 2026-07-28 |
-| Last updated | 2026-07-28 |
-| Code baseline | `8b16ebe1a706f1713602ab5266e47000caf31a17` |
+| Status | Unverified local Alpha candidate-building head; not a public Alpha, Beta, Release Candidate, or production release |
+| Exact implementation baseline | `integration/v2@eb0b6695b5dbf618877ff794dbc76935babeb793` |
+| Package metadata | `2.0.0-alpha.1` (G13 `PARTIAL`; G12 `NOT RUN`; no tag, GitHub Release, publication, hosting or deployment) |
+| Current authoritative roadmap | [V2 release gates](./engineering/release-gates.md) |
+| Historical evidence | [PR-24 point-in-time ledger and supplement](./tasks/pr-24-release-documentation.md#superseding-current-tree-ledger) |
 
-## 1. 目的
+This directory contains durable product, architecture, migration, testing, and per-PR evidence for
+the local-first V2 migration. Accepted ADRs, the PRD, engineering plan and release gates remain the
+authority hierarchy. Historical `Proposed` status or an older baseline SHA in a durable record is
+not automatically current release evidence.
 
-本目录是 StravaStats v2 的长期事实来源，用于保存产品边界、工程规则、架构决策、测试策略、迁移保护和单个 PR 的执行证据。聊天记录、临时提示词和代码注释可以提供背景，但不能替代这里的正式资料。
+## Current V2 guides
 
-StravaStats v2 的目标是把当前依赖 Strava API 的仪表盘渐进迁移为本地优先、来源中立的运动数据分析应用，同时保留 Dashboard、Run、Bike、Swim、Activities、Activity Detail、Run Plus 和 NSM 的现有行为。
+- [Migration Guide](./guides/migration-guide.md) — physical isolation, First-run, modes, V6, and
+  non-destructive rollback.
+- [Backup Guide](./guides/backup-guide.md) — exact-current format 3/V6 backup, frozen format 1/V4
+  and format 2/V5 restore profiles, 256 MiB bound, and protected recovery statuses.
+- [Known Limitations](./guides/known-limitations.md) — blockers, unverified matrices, and deferred
+  product capabilities.
+- [Privacy Guide](./guides/privacy-guide.md) — local data, Diagnostics versus Backup, external
+  boundaries, and synthetic evidence rules.
+- [Troubleshooting](./guides/troubleshooting.md) — executable non-destructive recovery steps and
+  safe error codes.
+- [Repository changelog](../CHANGELOG.md) — merged V2 work grouped by milestone, with no invented
+  tag, publication date, or deployment.
 
-## 2. 事实来源优先级
+The Privacy Guide's pre-M34 R3 `BLOCKED` status sentence is superseded for release status only by
+the Accepted [release-gates.md](./engineering/release-gates.md) roadmap. Its operational privacy and
+incident-handling rules remain current; M34's five-path limit does not authorize editing that guide.
 
-资料冲突时按以下顺序处理：
+The exact current tree includes deterministic R3-R11 privacy/network hardening, D3 Service Worker
+code lifecycle, C1-C4 Source Manager authorization/identity/provider/recovery contracts, and
+explicit Retry for eligible failed local imports. These are bounded code/test facts, not evidence
+that every release environment is complete.
 
-1. 数据安全、隐私和非破坏性迁移约束；
-2. `Accepted` 状态的 ADR；
-3. [产品需求文档](./product/stravastats-v2-prd.md)；
-4. [工程开发计划](./engineering/v2-development-plan.md)；
-5. 当前 PR 的 Task Brief；
-6. 已验证的当前运行时行为；
-7. 旧文档、代码注释和历史讨论。
+Use the [current authoritative release roadmap](./engineering/release-gates.md) for the exact
+remaining Alpha and full-`v2.0.0` paths, owner dispositions, evidence classes and non-`PASS` rows.
+PR-24 remains historical and must not be used as the live gate inventory.
 
-Task Brief 可以缩小某个 PR 的范围，但不能静默推翻 ADR、PRD 或数据安全约束。若实现需要改变已接受的架构决策，必须暂停任务并提交新的 ADR 或修订提案。
+## Authority and engineering
 
-## 3. 文档地图
+- [Product requirements](./product/stravastats-v2-prd.md)
+- [V2 development plan](./engineering/v2-development-plan.md)
+- [Release gates](./engineering/release-gates.md)
+- [Architecture overview](./architecture/overview.md)
+- [Git/worktree workflow](./engineering/git-worktree-workflow.md)
 
-### 产品
+## Accepted architecture decisions
 
-- [StravaStats v2 PRD](./product/stravastats-v2-prd.md)
+- [ADR-0001: Canonical Activity](./architecture/adr/0001-canonical-activity.md)
+- [ADR-0002: Stream model](./architecture/adr/0002-stream-model.md)
+- [ADR-0003: Repository boundary](./architecture/adr/0003-repository-boundary.md)
+- [ADR-0004: Import Pipeline](./architecture/adr/0004-import-pipeline.md)
+- [ADR-0005: Analysis versioning](./architecture/adr/0005-analysis-versioning.md)
+- [ADR-0006: Source provenance](./architecture/adr/0006-source-provenance.md)
 
-### 工程
+All six are Accepted. Acceptance of a contract does not assert that production release gates,
+cross-browser tests, deployment, Service Worker rollout, or real-data validation are complete.
 
-- [V2 工程开发计划](./engineering/v2-development-plan.md)
-- [Git 与 Worktree 工作流](./engineering/git-worktree-workflow.md)
-- [Release Gates](./engineering/release-gates.md)
+## Migration and rollback records
 
-### 架构
+- [IndexedDB V2 record](./migrations/indexeddb-v2.md)
+- [Legacy cache rescue record](./migrations/legacy-cache-rescue.md)
+- [Rollback plan](./migrations/rollback-plan.md)
 
-- [V2 架构总览](./architecture/overview.md)
-- [ADR-0001：Canonical Activity](./architecture/adr/0001-canonical-activity.md)
-- [ADR-0002：Stream Model](./architecture/adr/0002-stream-model.md)
-- [ADR-0003：Repository Boundary](./architecture/adr/0003-repository-boundary.md)
-- [ADR-0004：Import Pipeline](./architecture/adr/0004-import-pipeline.md)
-- [ADR-0005：Analysis Versioning](./architecture/adr/0005-analysis-versioning.md)
-- [ADR-0006：Source Provenance](./architecture/adr/0006-source-provenance.md)
+The records above preserve historical decisions and task updates. Use the current
+[Migration Guide](./guides/migration-guide.md) and [Backup Guide](./guides/backup-guide.md) for
+operator steps.
 
-### 测试
+## Testing and PR evidence
 
-- [测试策略](./testing/test-strategy.md)
-- [Fixture Policy](./testing/fixture-policy.md)
-- [回归矩阵](./testing/regression-matrix.md)
+- [Test strategy](./testing/test-strategy.md)
+- [Regression matrix](./testing/regression-matrix.md)
+- [Fixture policy](./testing/fixture-policy.md)
+- [Task Brief index](./tasks/README.md)
+- [PR-24 historical release-gate ledger](./tasks/pr-24-release-documentation.md)
 
-### 迁移
-
-- [Legacy Cache Rescue](./migrations/legacy-cache-rescue.md)
-- [IndexedDB v2](./migrations/indexeddb-v2.md)
-- [回滚计划](./migrations/rollback-plan.md)
-
-### 执行任务
-
-- [Task Brief 规则和模板](./tasks/README.md)
-- [TASK-0000：V2 文档与治理基线](./tasks/0000-v2-documentation-baseline.md)
-- [PR-00：Repository Safety](./tasks/pr-00-repository-safety.md)
-
-### 基线证据
-
-- [基线资料规则](./baseline/README.md)
-- [V1 基线摘要](./baseline/baseline-summary.md)
-
-## 4. 文档状态
-
-| 状态 | 含义 |
-| --- | --- |
-| `Proposed` | 尚未正式确认，不得作为已冻结实现强制执行 |
-| `Accepted` | 已确认的决策；变更需要新 ADR 或正式修订 |
-| `Active` | 当前有效并持续维护的规则或计划 |
-| `Deprecated` | 仍保留供参考，但不再指导新开发 |
-| `Superseded` | 已被另一份明确链接的文档替代 |
-| `Completed` | 任务已经交付并附有完成证据 |
-
-当前六份 ADR 均为 `Proposed`，计划在 PR-02 Canonical Contracts 中结合可执行 Contract 和测试进行确认。
-
-## 5. 当前基线事实
-
-- 当前稳定代码基线：`8b16ebe1a706f1713602ab5266e47000caf31a17`；
-- 当前应用仍以 Strava API 和 Legacy Cache 为主要数据路径；
-- Legacy IndexedDB：`strava-dashboard-cache`，数据库版本 `1`；
-- 当前只有 `npm run check:syntax`，尚无 `npm test` 和 CI；
-- V2 正式代码开发必须先完成 PR-00 Repository Safety；
-- 在旧缓存可导出和验证之前，不得启动 IndexedDB v2 数据迁移。
-
-## 6. 文档维护规则
-
-- PRD 维护产品目标、范围和验收，不记录逐文件实现步骤；
-- Architecture Overview 说明组件关系，不复制完整 schema；
-- ADR 记录“为什么这样决定”，接受后不就地改写历史；
-- Development Plan 维护 PR 顺序和依赖；
-- Task Brief 只描述一个 PR，通常在开工前创建；
-- Release Gates 记录可验证门禁，不把计划中的检查伪装成已通过；
-- Migration 文档必须随数据库或数据生命周期修改同步更新；
-- 每个重要结论应链接到 PR、测试或验证证据。
-
-## 7. 现有 V1 资料
-
-以下根目录文档描述当前实现，暂时作为 V1 参考：
-
-- [`README.md`](../README.md)
-- [`TECHNICAL_GUIDE.md`](../TECHNICAL_GUIDE.md)
-- [`LOCAL_SETUP.md`](../LOCAL_SETUP.md)
-
-若它们与本目录的 V2 目标冲突，应理解为“当前实现”与“目标架构”的差异，而不是自动覆盖 V2 决策。
+Task Brief statuses capture their point-in-time workflow. A merged first-parent integration commit
+is stronger evidence of inclusion than stale phrases such as “Draft” or “Ready handoff pending” in
+an older Task Brief. Neither fact is production release authorization.

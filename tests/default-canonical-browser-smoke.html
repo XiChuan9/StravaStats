@@ -1,0 +1,685 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+        http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'nonce-pr23-default'; style-src 'unsafe-inline'; connect-src 'self'; frame-src 'self'; worker-src 'self'; img-src data: 'self'; object-src 'none'; base-uri 'none'"
+    >
+    <link rel="icon" href="data:,">
+    <title>PR-23 Default Canonical Browser Smoke</title>
+    <style>
+        body { font: 14px/1.5 system-ui, sans-serif; margin: 24px; }
+        pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+    </style>
+</head>
+<body data-status="running">
+    <h1>PR-23 Default Canonical Browser Smoke</h1>
+    <p id="status" role="status">Running deterministic disposable-origin gates.</p>
+    <pre id="result">{"status":"running"}</pre>
+    <div id="frames" hidden></div>
+
+    <script type="module" nonce="pr23-default">
+        import {
+            V2_DATABASE_NAME,
+            createCanonicalStore
+        } from '../js/storage/index.js';
+        import {
+            LEGACY_ACTIVITY_KEY,
+            LEGACY_DB_NAME,
+            LEGACY_STORE_NAME
+        } from '../js/services/legacy-cache/index.js';
+        import { clearDemoData, loadDemoData } from '../js/demo/index.js';
+
+        const FIXED_NOW = Date.parse('2026-08-07T08:00:00.000Z');
+        const OPAQUE_ID = '0007/opaque ?#%';
+        const status = document.getElementById('status');
+        const output = document.getElementById('result');
+        const frames = document.getElementById('frames');
+        const assertions = [];
+        const observations = {
+            assertions,
+            scenarios: [],
+            externalResources: [],
+            providerRequests: 0,
+            authorizationRequests: 0,
+            runtimeErrors: 0,
+            consoleErrors: 0,
+            detailError: null,
+            routePlan: ['/dashboard', '/html/activity-router.html', '/html/run.html', '/run-plus', '/run-plus/nsm']
+        };
+        let frameSequence = 0;
+        const installers = new Map();
+
+        function assert(condition, code) {
+            if (!condition) throw new Error(code);
+            assertions.push(code);
+        }
+
+        function waitFor(check, code, timeoutMs = 20_000) {
+            const started = performance.now();
+            return new Promise((resolve, reject) => {
+                const tick = () => {
+                    try {
+                        if (check()) return resolve();
+                    } catch {
+                        // A navigation or asynchronous render may still be settling.
+                    }
+                    if (performance.now() - started >= timeoutMs) {
+                        reject(new Error(code));
+                        return;
+                    }
+                    requestAnimationFrame(tick);
+                };
+                tick();
+            });
+        }
+
+        function deleteDatabase(name) {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.deleteDatabase(name);
+                request.onsuccess = () => resolve();
+                request.onerror = () => reject(new Error('SYNTHETIC_DATABASE_DELETE_FAILED'));
+                request.onblocked = () => reject(new Error('SYNTHETIC_DATABASE_DELETE_BLOCKED'));
+            });
+        }
+
+        async function resetSyntheticOrigin() {
+            frames.replaceChildren();
+            await new Promise(resolve => setTimeout(resolve, 0));
+            clearDemoData(localStorage);
+            for (const key of [
+                'strava_tokens',
+                LEGACY_ACTIVITY_KEY,
+                'strava_activities_timestamp',
+                'strava_activities_version',
+                'dashboard_settings',
+                'dashboard_filters'
+            ]) localStorage.removeItem(key);
+            await deleteDatabase(V2_DATABASE_NAME);
+            await deleteDatabase(LEGACY_DB_NAME);
+        }
+
+        function canonicalBundle() {
+            return {
+                schemaVersion: 1,
+                activity: {
+                    schemaVersion: 1,
+                    id: OPAQUE_ID,
+                    sportCategory: 'run',
+                    sportVariant: 'road',
+                    startTimeUtc: '2026-08-07T06:00:00.000Z',
+                    timeZone: { ianaName: null, utcOffsetMinutes: 0 },
+                    capabilities: {
+                        hasGps: true,
+                        hasHeartRate: false,
+                        hasPower: false,
+                        hasCadence: false,
+                        hasLaps: true
+                    },
+                    name: 'Synthetic opaque run',
+                    distanceMeters: 5000,
+                    movingTimeSeconds: 1500,
+                    elapsedTimeSeconds: 1530,
+                    elevationGainMeters: 0
+                },
+                streams: {
+                    activityId: OPAQUE_ID,
+                    series: [
+                        { streamType: 'distance', unit: 'm', offsetsSeconds: [0, 750, 1500], values: [0, 2500, 5000] },
+                        { streamType: 'position', unit: 'wgs84', offsetsSeconds: [0, 750, 1500], values: [[1, 1], [1, 1.001], [1.001, 1.001]] },
+                        { streamType: 'speed', unit: 'm/s', offsetsSeconds: [0, 750, 1500], values: [0, 3.3, 3.4] }
+                    ]
+                },
+                laps: [{
+                    id: 'synthetic-lap:opaque:0',
+                    activityId: OPAQUE_ID,
+                    index: 0,
+                    startOffsetSeconds: 0,
+                    elapsedTimeSeconds: 1530,
+                    movingTimeSeconds: 1500,
+                    distanceMeters: 5000
+                }],
+                events: [],
+                sources: [{
+                    id: 'synthetic-source:pr23',
+                    activityId: OPAQUE_ID,
+                    provider: 'synthetic',
+                    externalId: null,
+                    rawArtifactId: null,
+                    acquisitionMethod: 'synthetic-browser-test',
+                    deviceId: null,
+                    importedAt: '2026-08-07T06:01:00.000Z'
+                }],
+                devices: [],
+                warnings: [],
+                versionMetadata: {
+                    schemaVersion: 1,
+                    parserVersion: 'synthetic-pr23@1',
+                    normalizerVersion: 'synthetic-pr23@1',
+                    analysisVersion: null,
+                    settingsVersion: null,
+                    inputHash: null
+                }
+            };
+        }
+
+        async function seedCanonical() {
+            const store = createCanonicalStore({
+                indexedDB,
+                IDBKeyRange,
+                now: () => FIXED_NOW,
+                applicationVersion: 'pr23-default-canonical-browser@1'
+            });
+            await store.initialize();
+            const result = await store.putBundle(canonicalBundle());
+            assert(result.status === 'committed', 'SYNTHETIC_CANONICAL_COMMITTED');
+            await store.close();
+        }
+
+        function seedLegacy() {
+            const generated = loadDemoData({
+                storage: localStorage,
+                referenceDate: '2026-08-07',
+                now: FIXED_NOW
+            });
+            const activities = generated.activities.slice(0, 1);
+            clearDemoData(localStorage);
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(LEGACY_DB_NAME, 1);
+                request.onupgradeneeded = () => request.result.createObjectStore(
+                    LEGACY_STORE_NAME,
+                    { keyPath: 'key' }
+                );
+                request.onerror = () => reject(new Error('SYNTHETIC_LEGACY_OPEN_FAILED'));
+                request.onsuccess = () => {
+                    const database = request.result;
+                    const transaction = database.transaction(LEGACY_STORE_NAME, 'readwrite');
+                    transaction.objectStore(LEGACY_STORE_NAME).put({
+                        key: LEGACY_ACTIVITY_KEY,
+                        activities,
+                        timestamp: FIXED_NOW,
+                        cacheVersion: 'synthetic-pr23'
+                    });
+                    transaction.oncomplete = () => {
+                        database.close();
+                        resolve();
+                    };
+                    transaction.onerror = () => {
+                        database.close();
+                        reject(new Error('SYNTHETIC_LEGACY_WRITE_FAILED'));
+                    };
+                };
+            });
+        }
+
+        function readLegacySentinel() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(LEGACY_DB_NAME);
+                request.onerror = () => reject(new Error('SYNTHETIC_LEGACY_READ_FAILED'));
+                request.onsuccess = () => {
+                    const database = request.result;
+                    const get = database.transaction(LEGACY_STORE_NAME)
+                        .objectStore(LEGACY_STORE_NAME)
+                        .get(LEGACY_ACTIVITY_KEY);
+                    get.onsuccess = () => {
+                        database.close();
+                        resolve(JSON.stringify(get.result));
+                    };
+                    get.onerror = () => {
+                        database.close();
+                        reject(new Error('SYNTHETIC_LEGACY_READ_FAILED'));
+                    };
+                };
+            });
+        }
+
+        async function canonicalSentinel() {
+            const store = createCanonicalStore({
+                indexedDB,
+                IDBKeyRange,
+                now: () => FIXED_NOW,
+                applicationVersion: 'pr23-default-canonical-browser@1'
+            });
+            await store.initialize();
+            const values = await store.listActivities({ limit: 10 });
+            await store.close();
+            return JSON.stringify(values.map(value => ({ id: value.id, distanceMeters: value.distanceMeters })));
+        }
+
+        function isProviderOrApi(value, base) {
+            try {
+                const url = new URL(String(value?.url ?? value), base);
+                return (
+                    (url.origin === location.origin && url.pathname.startsWith('/api/'))
+                    || /(^|\.)(strava|garmin|coros|wahoo|polar)\.(com|net)$/i.test(url.hostname)
+                );
+            } catch {
+                return true;
+            }
+        }
+
+        function installChild(child, configuration) {
+            const observation = configuration.observation;
+            if (configuration.flags !== null) {
+                Object.defineProperty(child, '__STRAVASTATS_FEATURE_FLAGS__', {
+                    configurable: false,
+                    enumerable: false,
+                    writable: false,
+                    value: child.JSON.parse(JSON.stringify(configuration.flags))
+                });
+            }
+            class SyntheticChart {
+                static getChart() { return null; }
+                constructor(_target, config = {}) {
+                    this.data = config.data ?? {};
+                    this.options = config.options ?? {};
+                }
+                destroy() {}
+                update() {}
+                getDatasetMeta() { return { hidden: false }; }
+                isDatasetVisible() { return true; }
+                setDatasetVisibility() {}
+            }
+            const mapLayer = () => ({
+                addTo() { return this; },
+                addLayer() { return this; },
+                clearLayers() { return this; },
+                fitBounds() { return this; },
+                setView() { return this; }
+            });
+            child.Chart = SyntheticChart;
+            child.CalHeatmap = class { paint() { return Promise.resolve(); } destroy() {} };
+            child.alert = message => observation.alerts.push(String(message));
+            child.L = {
+                map: mapLayer,
+                layerGroup: mapLayer,
+                tileLayer: mapLayer,
+                heatLayer: mapLayer,
+                polyline: mapLayer,
+                circleMarker: mapLayer,
+                latLngBounds: () => ({ isValid: () => false })
+            };
+            try {
+                Object.defineProperty(child.navigator, 'onLine', { configurable: true, value: false });
+            } catch { /* The provider boundary remains blocked independently. */ }
+            if (child.navigator.serviceWorker?.register) {
+                child.navigator.serviceWorker.register = async () => ({ scope: location.origin });
+            }
+            const childFetch = child.fetch.bind(child);
+            child.fetch = (input, init) => {
+                const target = new child.URL(String(input?.url ?? input), child.location.href);
+                const authorization = new child.Headers(init?.headers ?? input?.headers)
+                    .has('Authorization');
+                if (authorization) observations.authorizationRequests += 1;
+                if (isProviderOrApi(target, child.location.href)) {
+                    observations.providerRequests += 1;
+                    return Promise.reject(new Error('SYNTHETIC_PROVIDER_OFFLINE'));
+                }
+                if (target.origin !== location.origin && /^https?:$/.test(target.protocol)) {
+                    observations.externalResources.push(`${target.protocol}//${target.host}${target.pathname}`);
+                }
+                observation.network.push({ path: target.pathname, authorization });
+                return childFetch(input, init);
+            };
+            const getItem = child.Storage.prototype.getItem;
+            child.Storage.prototype.getItem = function (key) {
+                observation.storageReads.push(String(key));
+                return getItem.call(this, key);
+            };
+            const open = child.indexedDB.open.bind(child.indexedDB);
+            child.indexedDB.open = function (name, version) {
+                observation.databaseOpens.push(String(name));
+                return version === undefined ? open(name) : open(name, version);
+            };
+            const warn = child.console.warn.bind(child.console);
+            const error = child.console.error.bind(child.console);
+            child.console.warn = (...args) => {
+                observation.consoleWarnings += 1;
+                warn(...args);
+            };
+            child.console.error = (...args) => {
+                observation.consoleErrors += 1;
+                observations.consoleErrors += 1;
+                error(...args);
+            };
+            child.addEventListener('error', event => {
+                if (!(event instanceof child.ErrorEvent)) return;
+                observation.runtimeErrors += 1;
+                observations.runtimeErrors += 1;
+            }, true);
+            child.addEventListener('unhandledrejection', () => {
+                observation.runtimeErrors += 1;
+                observations.runtimeErrors += 1;
+            });
+            observation.installed = true;
+        }
+
+        globalThis.__PR23_INSTALL_CHILD__ = (child, token) => {
+            const configuration = installers.get(token);
+            if (!configuration) throw new Error('SYNTHETIC_CONFIGURATION_MISSING');
+            installChild(child, configuration);
+        };
+
+        function sanitizeDocument(source, entryPattern) {
+            const scriptPattern = new RegExp('<scr' + 'ipt\\b[\\s\\S]*?<\\/scr' + 'ipt>', 'gi');
+            const linkPattern = new RegExp('<link\\b[^>]*href=["\']https?:\\/\\/[^>]*>', 'gi');
+            return source
+                .replace(scriptPattern, script => entryPattern.test(script) ? script : '')
+                .replace(linkPattern, '');
+        }
+
+        async function servedFrame({
+            name,
+            path,
+            entryPattern,
+            flags = null,
+            runner = ''
+        }) {
+            const token = `pr23-${frameSequence += 1}`;
+            const observation = {
+                installed: false,
+                databaseOpens: [],
+                storageReads: [],
+                network: [],
+                consoleWarnings: 0,
+                consoleErrors: 0,
+                runtimeErrors: 0,
+                alerts: []
+            };
+            installers.set(token, { flags, observation });
+            const response = await fetch(path, { cache: 'no-store', credentials: 'omit' });
+            assert(response.ok, `SERVED_DOCUMENT_${name.toUpperCase()}`);
+            let source = sanitizeDocument(await response.text(), entryPattern);
+            if (runner) {
+                source = source.replace(
+                    "script-src 'self';",
+                    "script-src 'self' 'nonce-pr23-default';"
+                );
+            }
+            const prelude = '<scr' + 'ipt nonce="pr23-default">'
+                + `parent.__PR23_INSTALL_CHILD__(window, ${JSON.stringify(token)});`
+                + '</scr' + 'ipt>';
+            source = source.replace('<head>', `<head>${prelude}`);
+            if (runner) source = source.replace('</body>', `${runner}</body>`);
+            const frame = document.createElement('iframe');
+            frame.title = `PR-23 ${name}`;
+            frame.srcdoc = source;
+            frames.append(frame);
+            await waitFor(() => observation.installed, `INSTRUMENTATION_${name.toUpperCase()}`);
+            installers.delete(token);
+            return { frame, observation };
+        }
+
+        const fullFlags = mode => ({
+            dataRepositoryMode: mode,
+            localImportEnabled: false,
+            canonicalShadowWriteEnabled: mode === 'shadow'
+        });
+
+        async function rootScenario(name, flags = null) {
+            return servedFrame({
+                name,
+                path: '/',
+                entryPattern: /src=["']\/js\/main\.js["']/,
+                flags
+            });
+        }
+
+        function assertSafeIo(observation, code, { zeroTokenRead = true } = {}) {
+            assert(
+                observation.network.every(value => !value.authorization),
+                `${code}_NO_AUTHORIZATION`
+            );
+            if (zeroTokenRead) {
+                assert(
+                    observation.storageReads.every(key => !/token|authorization/i.test(key)),
+                    `${code}_NO_TOKEN_READ`
+                );
+            }
+            assert(observation.runtimeErrors === 0, `${code}_ZERO_RUNTIME_ERRORS`);
+            assert(observation.consoleErrors === 0, `${code}_ZERO_CONSOLE_ERRORS`);
+        }
+
+        async function scenarioEmptyDefault() {
+            await resetSyntheticOrigin();
+            const { frame, observation } = await rootScenario('empty-default');
+            await waitFor(
+                () => frame.contentWindow.location.pathname === '/source-manager.html',
+                'EMPTY_CANONICAL_FIRST_RUN'
+            );
+            assert(frame.contentWindow.location.search === '?mode=real', 'EMPTY_CANONICAL_EXACT_REAL_SOURCE_MANAGER');
+            await waitFor(
+                () => !frame.contentDocument.getElementById('first-run')?.hidden,
+                'EMPTY_CANONICAL_FIRST_RUN_UI'
+            );
+            assert(
+                observation.databaseOpens.length > 0
+                && observation.databaseOpens.every(name => name === V2_DATABASE_NAME),
+                'EMPTY_CANONICAL_ONLY_V2_DATABASE'
+            );
+            assert(
+                !observation.storageReads.includes('strava_tokens'),
+                'EMPTY_CANONICAL_NO_TOKEN_READ'
+            );
+            assert(
+                observation.network.every(value => !value.authorization),
+                'EMPTY_CANONICAL_NO_AUTHORIZATION'
+            );
+            assert(observation.runtimeErrors === 0, 'EMPTY_CANONICAL_ZERO_RUNTIME_ERRORS');
+            assert(observation.consoleErrors === 0, 'EMPTY_CANONICAL_ZERO_CONSOLE_ERRORS');
+            assert(observation.providerRequests === undefined || observations.providerRequests === 0, 'EMPTY_ZERO_PROVIDER');
+            frame.remove();
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            const {
+                frame: sourceManagerFrame,
+                observation: sourceManagerObservation
+            } = await servedFrame({
+                name: 'empty-source-manager',
+                path: '/source-manager.html?mode=real',
+                entryPattern: /a^/,
+                runner: '<scr' + 'ipt type="module" nonce="pr23-default">'
+                    + 'const entry=await import("/js/app/source-manager.js");'
+                    + 'window.__PR23_SOURCE_MANAGER_RESULT__=await entry.startSourceManager({'
+                    + 'document,location:{search:"?mode=real"},indexedDB,IDBKeyRange,crypto,Worker});'
+                    + '</scr' + 'ipt>'
+            });
+            await waitFor(
+                () => sourceManagerFrame.contentWindow.__PR23_SOURCE_MANAGER_RESULT__?.status === 'ready'
+                    && !sourceManagerFrame.contentDocument.getElementById('first-run')?.hidden,
+                'EMPTY_SOURCE_MANAGER_FIRST_RUN_UI'
+            );
+            assert(
+                sourceManagerFrame.contentDocument.getElementById('session-label')?.textContent
+                    === 'Real local library',
+                'EMPTY_SOURCE_MANAGER_EXACT_REAL_MODE'
+            );
+            assert(
+                sourceManagerObservation.databaseOpens.length > 0
+                && sourceManagerObservation.databaseOpens.every(name => name === V2_DATABASE_NAME),
+                'EMPTY_SOURCE_MANAGER_ONLY_V2_DATABASE'
+            );
+            assert(
+                !sourceManagerObservation.storageReads.includes('strava_tokens'),
+                'EMPTY_SOURCE_MANAGER_NO_TOKEN_READ'
+            );
+            assert(
+                sourceManagerObservation.network.every(value => !value.authorization),
+                'EMPTY_SOURCE_MANAGER_NO_AUTHORIZATION'
+            );
+            assert(
+                sourceManagerObservation.runtimeErrors === 0,
+                'EMPTY_SOURCE_MANAGER_ZERO_RUNTIME_ERRORS'
+            );
+            assert(
+                sourceManagerObservation.consoleErrors === 0,
+                'EMPTY_SOURCE_MANAGER_ZERO_CONSOLE_ERRORS'
+            );
+            observations.scenarios.push('empty-default');
+            sourceManagerFrame.remove();
+        }
+
+        async function scenarioDefaultCanonical() {
+            await resetSyntheticOrigin();
+            await seedCanonical();
+            localStorage.setItem('dashboard_settings', JSON.stringify({ units: 'metric', hrMax: 0 }));
+            const { frame, observation } = await rootScenario('default-canonical');
+            await waitFor(
+                () => !frame.contentDocument.getElementById('app-section')?.classList.contains('hidden'),
+                'DEFAULT_CANONICAL_V2_ONLY'
+            );
+            const text = frame.contentDocument.body.textContent;
+            assert(text.includes('Canonical summaries'), 'DEFAULT_CANONICAL_SOURCE_STATUS');
+            assert(text.includes('0.0') || text.includes('0'), 'MISSING_NULL_REAL_ZERO_PRESERVED');
+            assert(observation.databaseOpens.length > 0, 'DEFAULT_CANONICAL_DATABASE_OPEN');
+            assert(
+                observation.databaseOpens.every(name => name === V2_DATABASE_NAME),
+                'DEFAULT_CANONICAL_ZERO_LEGACY_DATABASE'
+            );
+            assertSafeIo(observation, 'DEFAULT_CANONICAL');
+            assert(observations.providerRequests === 0, 'PROVIDER_OFFLINE_LOCAL_CANONICAL');
+            observations.scenarios.push('default-canonical');
+            frame.remove();
+        }
+
+        async function scenarioRollback(mode, code) {
+            await resetSyntheticOrigin();
+            await seedCanonical();
+            await seedLegacy();
+            localStorage.setItem('dashboard_settings', JSON.stringify({ units: 'metric', hrMax: 0 }));
+            const beforeCanonical = await canonicalSentinel();
+            const beforeLegacy = await readLegacySentinel();
+            const beforeSettings = localStorage.getItem('dashboard_settings');
+            const { frame, observation } = await rootScenario(`${mode}-rollback`, fullFlags(mode));
+            await waitFor(
+                () => !frame.contentDocument.getElementById('app-section')?.classList.contains('hidden'),
+                `${code}_DASHBOARD`
+            );
+            assertSafeIo(observation, code, { zeroTokenRead: false });
+            frame.remove();
+            await new Promise(resolve => setTimeout(resolve, 0));
+            assert(await canonicalSentinel() === beforeCanonical, `${code}_CANONICAL_UNCHANGED`);
+            assert(await readLegacySentinel() === beforeLegacy, `${code}_LEGACY_UNCHANGED`);
+            assert(localStorage.getItem('dashboard_settings') === beforeSettings, `${code}_SETTINGS_UNCHANGED`);
+            assertions.push(`${code}_NON_DESTRUCTIVE`);
+            observations.scenarios.push(`${mode}-rollback`);
+        }
+
+        async function scenarioDemo() {
+            await resetSyntheticOrigin();
+            await seedCanonical();
+            await seedLegacy();
+            const canonicalBefore = await canonicalSentinel();
+            const legacyBefore = await readLegacySentinel();
+            loadDemoData({ storage: localStorage, referenceDate: '2026-08-07', now: FIXED_NOW });
+            const { frame, observation } = await rootScenario('demo', fullFlags('canonical'));
+            await waitFor(
+                () => frame.contentDocument.getElementById('source-status')?.textContent.includes('Demo Library'),
+                'DEMO_PRECEDENCE'
+            );
+            assert(observation.databaseOpens.length === 0, 'DEMO_PRECEDENCE_ZERO_REAL_DATABASE');
+            assertSafeIo(observation, 'DEMO', { zeroTokenRead: false });
+            frame.remove();
+            await new Promise(resolve => setTimeout(resolve, 0));
+            assert(await canonicalSentinel() === canonicalBefore, 'DEMO_CANONICAL_UNCHANGED');
+            assert(await readLegacySentinel() === legacyBefore, 'DEMO_LEGACY_UNCHANGED');
+            observations.scenarios.push('demo');
+        }
+
+        async function scenarioDefaultDetail() {
+            await resetSyntheticOrigin();
+            await seedCanonical();
+            const runner = '<scr' + 'ipt type="module" nonce="pr23-default">'
+                + 'const add=document.addEventListener.bind(document);'
+                + 'document.addEventListener=(type,...args)=>type==="DOMContentLoaded"?undefined:add(type,...args);'
+                + 'const entry=await import("/js/pages/run/index.js");'
+                + 'const sessions=await import("/js/pages/detail/detail-read-session.js");'
+                + 'document.addEventListener=add;'
+                + `window.__PR23_DETAIL_RESULT__=await entry.initializeRunPage({search:${JSON.stringify(`?id=${encodeURIComponent(OPAQUE_ID)}`)},sessionFactory:options=>{const session=sessions.createDetailReadSession(options);return{load:async()=>{try{return await session.load();}catch(error){window.__PR23_DETAIL_ERROR__={name:error?.name,code:error?.code};throw error;}}};},renderer:async input=>{try{document.getElementById("activity-page-title").textContent=JSON.stringify({id:input.activity.id,distance:input.activity.distance,name:input.activity.name,source:input.activitySource});}catch(error){window.__PR23_DETAIL_ERROR__={name:error?.name,code:"DETAIL_RENDER_FAILED"};throw error;}},errorRenderer:()=>{window.__PR23_DETAIL_ERROR__??={name:"PageError",code:"DETAIL_LOAD_FAILED"};}});`
+                + '</scr' + 'ipt>';
+            const { frame, observation } = await servedFrame({
+                name: 'default-canonical-detail',
+                path: '/html/run.html',
+                entryPattern: /a^/,
+                flags: null,
+                runner
+            });
+            await waitFor(
+                () => typeof frame.contentWindow.__PR23_DETAIL_RESULT__ === 'boolean',
+                'DEFAULT_CANONICAL_DETAIL'
+            );
+            observations.detailError = frame.contentWindow.__PR23_DETAIL_ERROR__ ?? null;
+            assert(frame.contentWindow.__PR23_DETAIL_RESULT__ === true, 'DEFAULT_CANONICAL_DETAIL_SUCCESS');
+            assert(
+                frame.contentDocument.getElementById('activity-page-title')?.textContent.includes(OPAQUE_ID),
+                'DEFAULT_CANONICAL_DETAIL_DOM'
+            );
+            assert(observation.databaseOpens.every(name => name === V2_DATABASE_NAME), 'DETAIL_ZERO_LEGACY_DATABASE');
+            assertSafeIo(observation, 'DETAIL');
+            observations.scenarios.push('default-detail');
+            frame.remove();
+        }
+
+        async function run() {
+            assert(
+                location.hostname === '127.0.0.1' || location.hostname === 'localhost',
+                'DISPOSABLE_LOOPBACK_ORIGIN_REQUIRED'
+            );
+            assert(
+                new URLSearchParams(location.search).get('synthetic') === 'pr23',
+                'EXPLICIT_SYNTHETIC_MODE_REQUIRED'
+            );
+            assert(typeof indexedDB.databases === 'function', 'INDEXEDDB_ENUMERATION_REQUIRED');
+            const initialResources = performance.getEntriesByType('resource').map(value => value.name);
+            assert(
+                initialResources.every(value => new URL(value, location.href).origin === location.origin),
+                'EXTERNAL_RESOURCE_BASELINE'
+            );
+
+            await scenarioEmptyDefault();
+            await scenarioDefaultCanonical();
+            await scenarioRollback('legacy', 'LEGACY_ROLLBACK');
+            await scenarioRollback('shadow', 'SHADOW_ROLLBACK');
+            await scenarioDemo();
+            await scenarioDefaultDetail();
+
+            assert(assertions.includes('LEGACY_ROLLBACK_NON_DESTRUCTIVE'), 'LEGACY_ROLLBACK_NON_DESTRUCTIVE');
+            assert(assertions.includes('SHADOW_ROLLBACK_NON_DESTRUCTIVE'), 'SHADOW_ROLLBACK_NON_DESTRUCTIVE');
+            assert(assertions.includes('DEFAULT_CANONICAL_DETAIL_SUCCESS'), 'DEFAULT_CANONICAL_DETAIL');
+            assert(observations.authorizationRequests === 0, 'NO_TOKEN_OR_AUTHORIZATION_READ');
+            assert(observations.providerRequests === 0, 'ZERO_PROVIDER_REQUESTS');
+            assert((await canonicalSentinel()).includes(OPAQUE_ID), 'OPAQUE_ID_PRESERVED');
+
+            globalThis.__PR23_DEFAULT_CANONICAL_RESULT__ = observations;
+            globalThis.__PR23_ACTUAL_ROUTE_PLAN__ = Object.freeze({
+                defaultMode: 'canonical',
+                routes: Object.freeze(['/dashboard', '/html/activity-router.html', '/html/run.html', '/run-plus', '/run-plus/nsm']),
+                modes: Object.freeze(['default', 'canonical', 'legacy', 'shadow', 'demo']),
+                requiresActualServedNavigation: true
+            });
+            document.body.dataset.status = 'passed';
+            status.textContent = 'Passed deterministic gates; continue actual /run-plus and /run-plus/nsm navigation.';
+            output.textContent = JSON.stringify({
+                status: 'passed',
+                observations,
+                actualRoutePlan: globalThis.__PR23_ACTUAL_ROUTE_PLAN__
+            }, null, 2);
+        }
+
+        run().catch(error => {
+            document.body.dataset.status = 'failed';
+            status.textContent = 'Failed';
+            output.textContent = JSON.stringify({
+                status: 'failed',
+                error: {
+                    name: error instanceof Error ? error.name : 'UnknownError',
+                    code: error instanceof Error ? error.message : 'PR23_BROWSER_GATE_FAILED'
+                },
+                observations
+            }, null, 2);
+        });
+    </script>
+</body>
+</html>

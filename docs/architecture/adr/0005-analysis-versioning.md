@@ -1,20 +1,24 @@
-# ADR-0005：分析结果版本化与失效
+# ADR-0005：VersionMetadata 与分析版本边界
 
 | 字段 | 内容 |
 | --- | --- |
-| Status | Proposed |
+| Status | Accepted |
 | Date | 2026-07-28 |
+| Accepted date | 2026-07-30 |
 | Decision owners | XiChuan9 |
-| Target decision PR | PR-02 / Analysis v2 |
-| Related ADRs | [ADR-0001](./0001-canonical-activity.md)、[ADR-0002](./0002-stream-model.md) |
+| Decision scope | PR-02 已实现并验证的 VersionMetadata 字段合同 |
+| Related documents | [PR-02 Task Brief](../../tasks/pr-02-canonical-contracts.md)、[ADR-0001](./0001-canonical-activity.md)、[ADR-0002](./0002-stream-model.md)、[ADR-0004](./0004-import-pipeline.md) |
+
+> Accepted decision does not mean downstream implementation is complete.
 
 ## Context
 
-原始文件只应解析一次，但分析结果不能被视为永久有效。Parser 修复、运动类型修正、FTP/最大心率/区间变化、Streams 补充和算法升级都可能要求重新计算。如果只使用一个全局 cache version，将无法判断具体哪些活动和分析结果失效。
+Parser、Normalizer、设置和算法变化可能要求不同范围的重新计算。单一全局 cache
+version 无法表达这些职责，但 PR-02 也不应提前实现 hash、失效图或 snapshot 生命周期。
 
-## Decision
+## Accepted decision
 
-分析与数据版本分开记录：
+PR-02 接受 `VersionMetadata` 的六个公共字段：
 
 ```text
 schemaVersion
@@ -25,95 +29,38 @@ settingsVersion
 inputHash
 ```
 
-每个 `AnalysisSnapshot` 至少包含：
+- `versionMetadata` object 是 `ImportedActivityBundle` 必填字段；
+- `schemaVersion` 必填，第一版只接受整数 `1`；
+- 其余五项 optional；如存在，必须为 `null` 或 non-empty string；
+- bundle、activity 与 versionMetadata 的 `schemaVersion` 必须一致；
+- unsupported version fail closed；
+- validator 不计算 hash，也不修改或填充 metadata；
+- PR-02 不冻结 `inputHash` 的 canonicalization。
 
-```text
-activityId
-analysisType
-inputHash
-algorithmVersion
-status
-createdAt
-result
-error/warnings
-```
+六个字段名称表达未来版本职责，但不证明相应 producer 或 invalidation runtime 已存在。
 
-状态：
+## Deferred downstream work
 
-```text
-missing
-queued
-running
-valid
-stale
-failed
-```
+以下仍由后续 Analysis、Storage 或 Import PR 决定：
 
-### Stale 触发条件
+- `AnalysisSnapshot` shape、状态、持久化和读取策略；
+- input hash 算法与 canonical serialization；
+- stale dependency graph、重算 queue 和失败恢复；
+- parser/normalizer/analysis/settings version 的生成与映射；
+- snapshot retention、清理、容量、UI stale 标识和 rollback。
 
-- Activity 或 Streams 更新；
-- Parser/Normalizer 版本变化；
-- 运动类型被修正；
-- FTP、最大心率、zones 或相关设置变化；
-- Analysis Algorithm 版本变化；
-- 新增历史活动影响 CTL/ATL/TSB 等时间线结果；
-- 来源合并改变了被选用的输入。
-
-### 读取规则
-
-- Repository/Analysis Service 优先返回 `valid` snapshot；
-- 版本或 input hash 不一致时标记 `stale`；
-- stale 可以暂时展示，但 UI 必须明确标识；
-- 重算失败不得删除最后一个可解释结果；
-- 旧 snapshot 保留到清理策略明确执行。
-
-### PR 边界
-
-数据来源迁移、Repository 切换和分析算法改动不得放在同一 PR。算法变化需要自己的版本、测试和回归说明。
+旧 snapshot shape、state 与 stale trigger 清单是 future candidate，当前不具约束力。
 
 ## Consequences
 
-### Positive
+- bundle 可以携带稳定的版本职责字段并校验 schema 一致性；
+- hash 和失效策略保持可演进，不被 PR-02 的占位实现锁定；
+- 后续实现必须补齐可复现性、存储和回退证据。
 
-- 只重算受影响的数据；
-- 结果可以追踪和复现；
-- 算法升级与数据迁移解耦；
-- 失败后仍保留最后已知结果；
-- 支持比较新旧算法。
+## Validation evidence
 
-### Negative
-
-- 需要 input hash、依赖图和清理策略；
-- 时间线分析可能需要批量失效；
-- 存储多个 snapshot 增加容量；
-- 设置变更影响范围必须明确定义。
-
-## Alternatives considered
-
-### 每次页面打开全部重算
-
-拒绝。性能差、不可复现、页面逻辑复杂。
-
-### 只有单一全局 CACHE_VERSION
-
-拒绝。会造成过度失效或错误复用。
-
-### 算法升级时删除旧结果
-
-拒绝。无法比较、诊断和回退。
-
-## Open questions
-
-- input hash 的规范序列化格式；
-- 时间线指标依赖范围；
-- stale 结果的 UI 表达；
-- snapshot 保留与容量清理策略；
-- 哪些设置进入 settingsVersion。
-
-## Validation
-
-- 相同输入和版本复用 snapshot；
-- 改变 FTP 只失效依赖 FTP 的分析；
-- 补充 HR stream 会使相关分析 stale；
-- 新增历史活动会失效受影响的时间线；
-- 重算失败时旧结果仍可查看且标记状态。
+- bundle tests 覆盖六字段、optional null/string、空字符串拒绝、unsupported version
+  和三层 schema mismatch；
+- validator 结果不包含或计算 input hash，不产生 normalized bundle；
+- Node 最小 bundle validation 通过；浏览器 dynamic import 保持 Not run；
+- 自动化门禁记录在 [Task Brief](../../tasks/pr-02-canonical-contracts.md)。

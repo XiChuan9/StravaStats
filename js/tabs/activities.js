@@ -7,6 +7,25 @@ const BIKE_TYPES = new Set(['Ride', 'VirtualRide', 'GravelRide', 'MountainBikeRi
 function sportEmoji(type) { return utils.sportEmoji(type); }
 function getType(a) { return (a.sport_type || a.type || 'Unknown').trim(); }
 
+function createActivityLink(activity) {
+    const label = activity?.name || '—';
+    const activityId = typeof activity?.id === 'string' && activity.id.length > 0
+        ? activity.id
+        : (Number.isSafeInteger(activity?.id) && activity.id >= 0 ? String(activity.id) : null);
+    if (activityId === null) {
+        return document.createTextNode(label);
+    }
+    const params = new URLSearchParams();
+    params.set('id', activityId);
+    const link = document.createElement('a');
+    link.className = 'act-name-link';
+    link.href = `/html/activity-router.html?${params.toString()}`;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = label;
+    return link;
+}
+
 // ─── Formatters ───────────────────────────────────────────────────────────────
 function fmtPaceSpeed(act) {
     if (!act.distance || !act.moving_time) return '–';
@@ -397,7 +416,7 @@ const COLUMNS = [
     },
     {
         key: 'name', label: 'Name',
-        format: (v, a) => `<a class="act-name-link" href="/html/activity-router.html?id=${a.id}" target="_blank">${v || '—'}</a>`,
+        format: v => v || '—',
         csv: (v) => v || ''
     },
     {
@@ -505,6 +524,8 @@ export function renderActivitiesTab(allActivities) {
     }
     const state = tableEl._actState;
     const allColumns = [...COLUMNS, ...inferExtraColumns(allActivities)];
+    state.allActivities = allActivities;
+    state.allColumns = allColumns;
 
     // ── Build filter UI once ──────────────────────────────────────────────────
     if (filterEl && !filterEl._built) {
@@ -538,9 +559,7 @@ export function renderActivitiesTab(allActivities) {
             <div class="act-filter-row">
                 <label class="act-filter-label">
                     Sport
-                    <select id="flt-type" multiple size="${Math.min(8, Math.max(4, types.length))}">
-                        ${types.map(t => `<option value="${t}">${sportEmoji(t)} ${t} (${typeCounts[t]})</option>`).join('')}
-                    </select>
+                    <select id="flt-type" multiple size="${Math.min(8, Math.max(4, types.length))}"></select>
                 </label>
                 <label class="act-filter-label">
                     Name
@@ -643,6 +662,13 @@ export function renderActivitiesTab(allActivities) {
             'flt-power-min', 'flt-power-max', 'flt-tss-min', 'flt-tss-max'];
 
         const typeSelect = document.getElementById('flt-type');
+        const typeOptions = types.map(type => {
+            const option = document.createElement('option');
+            option.value = type;
+            option.textContent = `${sportEmoji(type)} ${type} (${typeCounts[type]})`;
+            return option;
+        });
+        typeSelect.replaceChildren(...typeOptions);
         Array.from(typeSelect.options).forEach(opt => { opt.selected = true; });
 
         function readAndRender() {
@@ -702,7 +728,7 @@ export function renderActivitiesTab(allActivities) {
 
         function ensureValidSelection() {
             const selected = new Set(state.selectedCols || []);
-            const known = allColumns.filter(c => selected.has(c.key)).map(c => c.key);
+            const known = state.allColumns.filter(c => selected.has(c.key)).map(c => c.key);
             if (known.length === 0) return [COLUMNS[0].key];
             return known;
         }
@@ -711,16 +737,21 @@ export function renderActivitiesTab(allActivities) {
             const panel = document.getElementById('act-col-editor');
             if (!panel) return;
             const selected = new Set(ensureValidSelection());
-            panel.innerHTML = `
-                <div class="act-col-editor-grid">
-                    ${allColumns.map(col => `
-                        <label class="act-col-option">
-                            <input type="checkbox" data-col-key="${col.key}" ${selected.has(col.key) ? 'checked' : ''}>
-                            <span>${col.label}</span>
-                        </label>
-                    `).join('')}
-                </div>
-            `;
+            const grid = document.createElement('div');
+            grid.className = 'act-col-editor-grid';
+            for (const col of state.allColumns) {
+                const label = document.createElement('label');
+                label.className = 'act-col-option';
+                const input = document.createElement('input');
+                input.type = 'checkbox';
+                input.dataset.colKey = col.key;
+                input.checked = selected.has(col.key);
+                const text = document.createElement('span');
+                text.textContent = col.label;
+                label.append(input, text);
+                grid.append(label);
+            }
+            panel.replaceChildren(grid);
         }
 
         const editBtn = document.getElementById('act-edit-cols');
@@ -802,37 +833,69 @@ export function renderActivitiesTab(allActivities) {
 
     // ── Render table ──────────────────────────────────────────────────────────
     function render() {
-        const filtered = applyFilters(allActivities);
+        const filtered = applyFilters(state.allActivities);
         const groupedRows = aggregateByPeriod(filtered, state.groupBy);
         const grouped = state.groupBy !== 'none';
         const sorted = applySort(groupedRows, grouped);
         state.visibleActivities = sorted;
         const selectedCols = new Set(state.selectedCols && state.selectedCols.length ? state.selectedCols : COLUMNS.map(c => c.key));
-        const visibleColumns = allColumns.filter(c => selectedCols.has(c.key));
+        const visibleColumns = state.allColumns.filter(c => selectedCols.has(c.key));
         if (visibleColumns.length === 0) visibleColumns.push(COLUMNS[0]);
         if (!visibleColumns.some(c => c.key === state.sortCol)) {
             state.sortCol = visibleColumns[0].key;
         }
         const { sortCol, sortDir } = state;
 
-        const theadHtml = `<thead><tr>
-            ${visibleColumns.map(c => {
-            const active = sortCol === c.key;
+        const thead = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+        for (const column of visibleColumns) {
+            const active = sortCol === column.key;
             const arrow = active ? (sortDir === 'desc' ? ' ▼' : ' ▲') : '';
-            return `<th class="sortable${active ? ' act-sort-active' : ''}" data-col="${c.key}">${c.label}${arrow}</th>`;
-        }).join('')}
-        </tr></thead>`;
+            const header = document.createElement('th');
+            header.className = `sortable${active ? ' act-sort-active' : ''}`;
+            header.dataset.col = column.key;
+            header.textContent = `${column.label}${arrow}`;
+            headerRow.append(header);
+        }
+        thead.append(headerRow);
 
-        const emptyRow = `<tr><td colspan="${visibleColumns.length}" class="act-empty">
-            ${grouped ? 'No grouped periods match the current filters' : 'No activities match the current filters'}</td></tr>`;
-
-        const tbodyHtml = `<tbody>${sorted.length === 0 ? emptyRow : sorted.map(act => `
-            <tr>
-                ${visibleColumns.map(col => `<td>${groupedCellValue(act, col, state.metricMode, state.textMode)}</td>`).join('')}
-            </tr>`).join('')}
-        </tbody>`;
-
-        tableEl.innerHTML = theadHtml + tbodyHtml;
+        const tbody = document.createElement('tbody');
+        if (sorted.length === 0) {
+            const emptyRow = document.createElement('tr');
+            const emptyCell = document.createElement('td');
+            emptyCell.colSpan = visibleColumns.length;
+            emptyCell.className = 'act-empty';
+            emptyCell.textContent = grouped
+                ? 'No grouped periods match the current filters'
+                : 'No activities match the current filters';
+            emptyRow.append(emptyCell);
+            tbody.append(emptyRow);
+        } else {
+            for (const activity of sorted) {
+                const row = document.createElement('tr');
+                for (const column of visibleColumns) {
+                    const cell = document.createElement('td');
+                    if (!grouped && column.key === 'name') {
+                        cell.append(createActivityLink(activity));
+                    } else if (!grouped && column.key === 'type') {
+                        const type = getType(activity);
+                        const typeLabel = document.createElement('small');
+                        typeLabel.textContent = type;
+                        cell.append(document.createTextNode(`${sportEmoji(type)} `), typeLabel);
+                    } else {
+                        cell.innerHTML = groupedCellValue(
+                            activity,
+                            column,
+                            state.metricMode,
+                            state.textMode
+                        );
+                    }
+                    row.append(cell);
+                }
+                tbody.append(row);
+            }
+        }
+        tableEl.replaceChildren(thead, tbody);
 
         // Sort click handlers
         tableEl.querySelectorAll('th.sortable').forEach(th => {
@@ -849,7 +912,7 @@ export function renderActivitiesTab(allActivities) {
             counterEl.innerHTML = `
                 <span>${grouped
                     ? `${sorted.length} groups / ${filtered.length} activities`
-                    : `${sorted.length} / ${allActivities.length} activities`}</span>
+                    : `${sorted.length} / ${state.allActivities.length} activities`}</span>
                 <button id="act-export-csv" class="act-export-btn" type="button">Download CSV</button>
             `;
 

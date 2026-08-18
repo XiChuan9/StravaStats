@@ -1,109 +1,276 @@
 /**
  * Demo Mode Controller
- * Handles loading and managing demo data in localStorage
+ *
+ * Demo data is intentionally isolated from the real Local Library. Every
+ * storage read, write, and cleanup in this module is limited to the explicit
+ * namespace below.
  */
 
-import { generateDemoData, generateDemoAthlete, generateDemoZones } from './generator.js';
+import {
+    DEFAULT_DEMO_SEED,
+    generateDemoData,
+    generateDemoAthlete,
+    generateDemoZones,
+} from './generator.js';
 
 export const DEMO_MODE_KEY = 'strava_demo_mode';
+export const DEMO_ACTIVITIES_KEY = 'strava_demo_activities';
+export const DEMO_ATHLETE_KEY = 'strava_demo_athlete_data';
+export const DEMO_TRAINING_ZONES_KEY = 'strava_demo_training_zones';
+export const DEMO_GEARS_KEY = 'strava_demo_gears';
+export const DEMO_ATHLETE_TIMESTAMP_KEY =
+    'strava_demo_athlete_data_timestamp';
+export const DEMO_TRAINING_ZONES_TIMESTAMP_KEY =
+    'strava_demo_training_zones_timestamp';
+export const DEMO_GEARS_TIMESTAMP_KEY = 'strava_demo_gears_timestamp';
 export const DEMO_TOKENS_KEY = 'strava_tokens_demo';
 
-export function isDemoMode() {
-    return localStorage.getItem(DEMO_MODE_KEY) === 'true';
+export const DEMO_STORAGE_KEYS = Object.freeze([
+    DEMO_MODE_KEY,
+    DEMO_ACTIVITIES_KEY,
+    DEMO_ATHLETE_KEY,
+    DEMO_TRAINING_ZONES_KEY,
+    DEMO_GEARS_KEY,
+    DEMO_ATHLETE_TIMESTAMP_KEY,
+    DEMO_TRAINING_ZONES_TIMESTAMP_KEY,
+    DEMO_GEARS_TIMESTAMP_KEY,
+    DEMO_TOKENS_KEY
+]);
+
+export const DEMO_STORAGE_ERROR = Object.freeze({
+    READ_FAILED: 'DEMO_STORAGE_READ_FAILED',
+    WRITE_FAILED: 'DEMO_STORAGE_WRITE_FAILED',
+    CLEAR_FAILED: 'DEMO_STORAGE_CLEAR_FAILED'
+});
+
+export class DemoStorageError extends Error {
+    constructor(code, { rollbackFailed = false } = {}) {
+        super('Demo storage operation failed.');
+        this.name = 'DemoStorageError';
+        this.code = code;
+        this.rollbackFailed = rollbackFailed;
+    }
 }
 
-export function setDemoMode(enabled) {
+function requireStorage(storage) {
+    if (
+        !storage
+        || typeof storage.getItem !== 'function'
+        || typeof storage.setItem !== 'function'
+        || typeof storage.removeItem !== 'function'
+    ) {
+        throw new TypeError('A storage dependency is required.');
+    }
+    return storage;
+}
+
+function normalizeNow(now) {
+    const value = new Date(now);
+    if (Number.isNaN(value.getTime())) {
+        throw new TypeError('now must be a valid date value');
+    }
+    return value.getTime();
+}
+
+function readDemoJson(key, fallback, storage) {
+    const target = requireStorage(storage);
+    try {
+        const raw = target.getItem(key);
+        if (raw === null) return fallback;
+        return JSON.parse(raw);
+    } catch {
+        return fallback;
+    }
+}
+
+function writeDemoEntries(entries, storage) {
+    const target = requireStorage(storage);
+    const previous = new Map();
+
+    try {
+        for (const [key] of entries) {
+            previous.set(key, target.getItem(key));
+        }
+    } catch {
+        throw new DemoStorageError(DEMO_STORAGE_ERROR.READ_FAILED);
+    }
+
+    const attempted = [];
+    try {
+        for (const [key, value] of entries) {
+            attempted.push(key);
+            target.setItem(key, value);
+        }
+    } catch {
+        let rollbackFailed = false;
+        for (const key of [...attempted].reverse()) {
+            try {
+                const priorValue = previous.get(key);
+                if (priorValue === null) {
+                    target.removeItem(key);
+                } else {
+                    target.setItem(key, priorValue);
+                }
+            } catch {
+                rollbackFailed = true;
+            }
+        }
+        throw new DemoStorageError(DEMO_STORAGE_ERROR.WRITE_FAILED, {
+            rollbackFailed
+        });
+    }
+}
+
+export function getDemoReferenceDate(now = new Date()) {
+    const referenceDate = new Date(now);
+    if (Number.isNaN(referenceDate.getTime())) {
+        throw new TypeError('now must be a valid date value');
+    }
+
+    referenceDate.setUTCHours(12, 0, 0, 0);
+    return referenceDate.toISOString();
+}
+
+export function isDemoMode(storage = globalThis.localStorage) {
+    try {
+        return requireStorage(storage).getItem(DEMO_MODE_KEY) === 'true';
+    } catch {
+        return false;
+    }
+}
+
+export function setDemoMode(enabled, storage = globalThis.localStorage) {
+    const target = requireStorage(storage);
     if (enabled) {
-        localStorage.setItem(DEMO_MODE_KEY, 'true');
+        target.setItem(DEMO_MODE_KEY, 'true');
     } else {
-        localStorage.removeItem(DEMO_MODE_KEY);
+        target.removeItem(DEMO_MODE_KEY);
     }
 }
 
 /**
- * Load demo data into localStorage (mimics Strava API responses)
+ * Generate and atomically install a deterministic Demo namespace.
+ *
+ * If a write fails, only Demo keys attempted by this call are restored to
+ * their exact prior values. Real Local Library keys are never inspected.
  */
-export function loadDemoData() {
-    // Generate all demo data
-    const activities = generateDemoData();
-    const athlete = generateDemoAthlete();
+export function loadDemoData({
+    now = new Date(),
+    referenceDate = getDemoReferenceDate(now),
+    storage = globalThis.localStorage
+} = {}) {
+    const nowMs = normalizeNow(now);
+    const activities = generateDemoData({ referenceDate });
+    const athlete = generateDemoAthlete(referenceDate);
     const zones = generateDemoZones();
     const gears = [...(athlete?.shoes || []), ...(athlete?.bikes || [])];
-
-    // Store in localStorage (same structure as real API)
-    localStorage.setItem('strava_demo_activities', JSON.stringify(activities));
-    localStorage.setItem('strava_athlete_data', JSON.stringify(athlete));
-    localStorage.setItem('strava_training_zones', JSON.stringify(zones));
-    localStorage.setItem('strava_gears', JSON.stringify(gears));
-
-    // Set timestamps to appear fresh
-    const now = Date.now();
-    localStorage.setItem('strava_athlete_data_timestamp', String(now));
-    localStorage.setItem('strava_training_zones_timestamp', String(now));
-    localStorage.setItem('strava_gears_timestamp', String(now));
-
-    // Set demo token (fake but valid structure)
+    const tokenSuffix = DEFAULT_DEMO_SEED.toString(36);
     const demoTokens = {
-        access_token: 'demo_token_' + Math.random().toString(36),
-        refresh_token: 'demo_refresh_' + Math.random().toString(36),
-        expires_at: Math.floor(Date.now() / 1000) + 21600, // 6h from now
+        access_token: `demo_token_${tokenSuffix}`,
+        refresh_token: `demo_refresh_${tokenSuffix}`,
+        expires_at: Math.floor(nowMs / 1000) + 21600
     };
-    localStorage.setItem('strava_tokens', JSON.stringify(demoTokens));
+    const timestamp = String(nowMs);
 
-    // Enable demo mode
-    setDemoMode(true);
+    writeDemoEntries([
+        [DEMO_ACTIVITIES_KEY, JSON.stringify(activities)],
+        [DEMO_ATHLETE_KEY, JSON.stringify(athlete)],
+        [DEMO_TRAINING_ZONES_KEY, JSON.stringify(zones)],
+        [DEMO_GEARS_KEY, JSON.stringify(gears)],
+        [DEMO_ATHLETE_TIMESTAMP_KEY, timestamp],
+        [DEMO_TRAINING_ZONES_TIMESTAMP_KEY, timestamp],
+        [DEMO_GEARS_TIMESTAMP_KEY, timestamp],
+        [DEMO_TOKENS_KEY, JSON.stringify(demoTokens)],
+        [DEMO_MODE_KEY, 'true']
+    ], storage);
 
-    return { activities, athlete, zones, gears };
+    return {
+        activities,
+        athlete,
+        zones,
+        gears,
+        demoTokens
+    };
 }
 
 /**
- * Clear demo data and exit demo mode
+ * Remove only the frozen Demo namespace.
  */
-export function clearDemoData() {
-    localStorage.removeItem('strava_demo_mode');
-    localStorage.removeItem('strava_demo_activities');
-    localStorage.removeItem('strava_tokens');
-    localStorage.removeItem('strava_athlete_data');
-    localStorage.removeItem('strava_training_zones');
-    localStorage.removeItem('strava_gears');
-    localStorage.removeItem('strava_athlete_data_timestamp');
-    localStorage.removeItem('strava_training_zones_timestamp');
-    localStorage.removeItem('strava_gears_timestamp');
-}
+export function clearDemoData(storage = globalThis.localStorage) {
+    const target = requireStorage(storage);
+    let failed = false;
 
-/**
- * Get activities from demo storage
- * (Used by api.js to return demo activities instead of calling real API)
- */
-export function getDemoActivities() {
-    const stored = localStorage.getItem('strava_demo_activities');
-    if (!stored) {
-        return [];
-    }
-    return JSON.parse(stored);
-}
-
-export function getDemoGears(athlete = null) {
-    const cached = localStorage.getItem('strava_gears');
-    if (cached) {
+    for (const key of DEMO_STORAGE_KEYS) {
         try {
-            return JSON.parse(cached);
-        } catch (_e) {
-            // ignore malformed cache and fallback
+            target.removeItem(key);
+        } catch {
+            failed = true;
         }
     }
 
-    const srcAthlete = athlete || JSON.parse(localStorage.getItem('strava_athlete_data') || 'null');
-    if (!srcAthlete) return [];
+    if (failed) {
+        throw new DemoStorageError(DEMO_STORAGE_ERROR.CLEAR_FAILED);
+    }
+    return Object.freeze({ status: 'success' });
+}
 
-    return [...(srcAthlete.shoes || []), ...(srcAthlete.bikes || [])];
+export function getDemoActivities(storage = globalThis.localStorage) {
+    const activities = readDemoJson(DEMO_ACTIVITIES_KEY, [], storage);
+    return Array.isArray(activities) ? activities : [];
+}
+
+export function getDemoAthlete(storage = globalThis.localStorage) {
+    const athlete = readDemoJson(DEMO_ATHLETE_KEY, null, storage);
+    return athlete && typeof athlete === 'object' && !Array.isArray(athlete)
+        ? athlete
+        : null;
+}
+
+export function getDemoTrainingZones(storage = globalThis.localStorage) {
+    const zones = readDemoJson(DEMO_TRAINING_ZONES_KEY, null, storage);
+    return zones && typeof zones === 'object' && !Array.isArray(zones)
+        ? zones
+        : null;
+}
+
+export function getDemoGears(storage = globalThis.localStorage) {
+    const gears = readDemoJson(DEMO_GEARS_KEY, [], storage);
+    return Array.isArray(gears) ? gears : [];
+}
+
+export function getDemoTokens(storage = globalThis.localStorage) {
+    const tokens = readDemoJson(DEMO_TOKENS_KEY, null, storage);
+    if (
+        !tokens
+        || typeof tokens !== 'object'
+        || Array.isArray(tokens)
+        || typeof tokens.access_token !== 'string'
+        || tokens.access_token.length === 0
+        || !Number.isFinite(tokens.expires_at)
+    ) {
+        return null;
+    }
+    return tokens;
+}
+
+export function setDemoGears(
+    gears,
+    {
+        now = new Date(),
+        storage = globalThis.localStorage
+    } = {}
+) {
+    const normalized = Array.isArray(gears) ? gears : [];
+    writeDemoEntries([
+        [DEMO_GEARS_KEY, JSON.stringify(normalized)],
+        [DEMO_GEARS_TIMESTAMP_KEY, String(normalizeNow(now))]
+    ], storage);
+    return normalized;
 }
 
 /**
- * Inject demo mode check into API calls
- * This is done in api.js by checking isDemoMode() before fetch
+ * Report whether the Demo namespace is active.
  */
 export function setupDemoModeInterceptor() {
-    // This is called from main.js after auth.js to setup demo mode if enabled
     return isDemoMode();
 }

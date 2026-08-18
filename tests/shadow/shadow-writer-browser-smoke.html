@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'nonce-pr06-shadow'; style-src 'nonce-pr06-shadow'; connect-src 'self'; object-src 'none'; base-uri 'none'">
+    <title>PR-06 Shadow Writer Browser Smoke</title>
+    <style nonce="pr06-shadow">
+        body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem; color: #172033; }
+        main { max-width: 70rem; margin: auto; }
+        #status { padding: 1rem; border: 2px solid #64748b; border-radius: .5rem; }
+        [data-status="passed"] #status { border-color: #15803d; background: #f0fdf4; }
+        [data-status="failed"] #status { border-color: #b91c1c; background: #fef2f2; }
+        pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+    </style>
+</head>
+<body data-status="running">
+<main>
+    <h1>PR-06 Shadow Writer Browser Smoke</h1>
+    <p id="status">Running native ESM and IndexedDB gates…</p>
+    <pre id="result"></pre>
+</main>
+<script type="module" nonce="pr06-shadow">
+const SAFE_STAGE_KEY = 'pr06-shadow-browser-stage';
+const SAFE_FIRST_ENV_KEY = 'pr06-shadow-first-environment';
+const SENTINEL_NAME = 'synthetic-shadow-legacy-sentinel';
+const SENTINEL_STORE = 'entries';
+const metrics = {
+    fetch: 0,
+    xhr: 0,
+    webSocket: 0,
+    authorization: 0,
+    providerApi: 0,
+    consoleError: 0,
+    consoleWarning: 0,
+    uncaught: 0,
+    unhandled: 0
+};
+const originalFetch = globalThis.fetch;
+const OriginalXhr = globalThis.XMLHttpRequest;
+const OriginalWebSocket = globalThis.WebSocket;
+const originalConsoleError = console.error;
+const originalConsoleWarn = console.warn;
+
+function endpoint(value) {
+    try { return new URL(value, location.href); } catch { return null; }
+}
+
+function inspectHeaders(headers) {
+    try {
+        const normalized = new Headers(headers);
+        if (normalized.has('authorization')) metrics.authorization += 1;
+    } catch {
+        metrics.authorization += 1;
+    }
+}
+
+globalThis.fetch = async function monitoredFetch(input, init) {
+    metrics.fetch += 1;
+    inspectHeaders(init?.headers);
+    try {
+        if (input instanceof Request) inspectHeaders(input.headers);
+    } catch {
+        metrics.authorization += 1;
+    }
+    const url = endpoint(typeof input === 'string' ? input : input?.url);
+    if (url?.pathname.startsWith('/api/strava-')) metrics.providerApi += 1;
+    return originalFetch.call(this, input, init);
+};
+
+if (OriginalXhr) {
+    class MonitoredXhr extends OriginalXhr {
+        open(method, url, ...rest) {
+            metrics.xhr += 1;
+            const parsed = endpoint(url);
+            if (parsed?.pathname.startsWith('/api/strava-')) metrics.providerApi += 1;
+            return super.open(method, url, ...rest);
+        }
+        setRequestHeader(name, value) {
+            if (String(name).toLowerCase() === 'authorization') metrics.authorization += 1;
+            return super.setRequestHeader(name, value);
+        }
+    }
+    globalThis.XMLHttpRequest = MonitoredXhr;
+}
+
+if (OriginalWebSocket) {
+    globalThis.WebSocket = class MonitoredWebSocket extends OriginalWebSocket {
+        constructor(...args) {
+            metrics.webSocket += 1;
+            super(...args);
+        }
+    };
+}
+
+console.error = (...args) => {
+    metrics.consoleError += 1;
+    return originalConsoleError.apply(console, args);
+};
+console.warn = (...args) => {
+    metrics.consoleWarning += 1;
+    return originalConsoleWarn.apply(console, args);
+};
+addEventListener('error', () => { metrics.uncaught += 1; });
+addEventListener('unhandledrejection', () => { metrics.unhandled += 1; });
+
+function requireGate(condition, code) {
+    if (!condition) throw new Error(code);
+}
+
+function requestResult(request) {
+    return new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(new Error('IDB_REQUEST_FAILED'));
+    });
+}
+
+function transactionDone(transaction) {
+    return new Promise((resolve, reject) => {
+        transaction.oncomplete = () => resolve();
+        transaction.onabort = () => reject(new Error('IDB_TRANSACTION_ABORTED'));
+        transaction.onerror = () => {};
+    });
+}
+
+async function openSentinel() {
+    const request = indexedDB.open(SENTINEL_NAME, 3);
+    request.onupgradeneeded = () => {
+        const store = request.result.createObjectStore(SENTINEL_STORE, { keyPath: 'key' });
+        store.createIndex('byKind', 'kind');
+        store.add({ key: 'sentinel', kind: 'synthetic', value: 'stable' });
+    };
+    return requestResult(request);
+}
+
+async function sentinelSnapshot() {
+    const database = await openSentinel();
+    const transaction = database.transaction(SENTINEL_STORE, 'readonly');
+    const done = transactionDone(transaction);
+    const record = await requestResult(transaction.objectStore(SENTINEL_STORE).get('sentinel'));
+    await done;
+    const bytes = new TextEncoder().encode(JSON.stringify(record));
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    const hash = [...new Uint8Array(digest)]
+        .map(value => value.toString(16).padStart(2, '0'))
+        .join('');
+    const snapshot = {
+        version: database.version,
+        stores: [...database.objectStoreNames],
+        count: record ? 1 : 0,
+        hash
+    };
+    database.close();
+    return snapshot;
+}
+
+async function inspectV2() {
+    const request = indexedDB.open('strava-stats-v2');
+    const database = await requestResult(request);
+    const transaction = database.transaction('activities', 'readonly');
+    const done = transactionDone(transaction);
+    const count = await requestResult(transaction.objectStore('activities').count());
+    await done;
+    const result = {
+        version: database.version,
+        stores: [...database.objectStoreNames],
+        activityCount: count
+    };
+    database.close();
+    return result;
+}
+
+async function environmentSnapshot() {
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const resources = performance.getEntriesByType('resource')
+        .map(entry => endpoint(entry.name))
+        .filter(Boolean);
+    const externalHttp = resources.filter(url => (
+        (url.protocol === 'http:' || url.protocol === 'https:')
+        && url.origin !== location.origin
+    )).length;
+    const providerResources = resources.filter(url => url.pathname.startsWith('/api/strava-')).length;
+    const serviceWorkers = 'serviceWorker' in navigator
+        ? (await navigator.serviceWorker.getRegistrations()).length
+        : 0;
+    const cacheStorage = 'caches' in globalThis ? (await caches.keys()).length : 0;
+    return {
+        externalHttp,
+        providerResources,
+        fetch: metrics.fetch,
+        xhr: metrics.xhr,
+        webSocket: metrics.webSocket,
+        authorization: metrics.authorization,
+        providerApi: metrics.providerApi,
+        consoleError: metrics.consoleError,
+        consoleWarning: metrics.consoleWarning,
+        uncaught: metrics.uncaught,
+        unhandled: metrics.unhandled,
+        serviceWorkers,
+        cacheStorage
+    };
+}
+
+function assertZeroEnvironment(snapshot) {
+    for (const value of Object.values(snapshot)) requireGate(value === 0, 'ENVIRONMENT_NOT_ZERO');
+}
+
+function syntheticActivity() {
+    return {
+        id: 'synthetic-browser-shadow-001',
+        sport_type: 'Run',
+        type: 'Run',
+        start_date: '2026-08-05T06:00:00Z',
+        utc_offset: 0,
+        name: 'Synthetic Browser Activity',
+        distance: 0,
+        moving_time: 60,
+        elapsed_time: 70,
+        average_heartrate: null,
+        average_watts: 0,
+        gear_id: null,
+        map: { summary_polyline: '' }
+    };
+}
+
+async function run() {
+    const stage = sessionStorage.getItem(SAFE_STAGE_KEY) || 'first';
+    const gates = [];
+    const gate = (name, condition) => {
+        requireGate(condition, name);
+        gates.push(name);
+    };
+    const initialInventory = await indexedDB.databases();
+    if (stage === 'first') {
+        gate('fresh-v2-absent', !initialInventory.some(item => item.name === 'strava-stats-v2'));
+    }
+    const sentinelBefore = await sentinelSnapshot();
+    gate('sentinel-shape', sentinelBefore.version === 3 && sentinelBefore.count === 1);
+
+    globalThis.__STRAVASTATS_FEATURE_FLAGS__ = {
+        dataRepositoryMode: 'shadow',
+        canonicalShadowWriteEnabled: true
+    };
+    const main = await import('/js/app/main.js');
+    const shadow = await import('/js/shadow/index.js');
+    gate('native-esm-import', typeof main.createSummaryRepositorySession === 'function');
+    const activities = [syntheticActivity()];
+    const factoryOptions = [];
+    const session = main.createSummaryRepositorySession({
+        sessionMode: main.APP_SESSION_MODE.REAL,
+        repositoryFactory(options) {
+            factoryOptions.push(options);
+            return {
+                async listActivities() {
+                    return { data: activities, source: 'network', warnings: [], partial: false };
+                },
+                async getActivity() { throw new Error('NOT_USED'); },
+                async getStreams() { throw new Error('NOT_USED'); },
+                async getAthlete() { throw new Error('NOT_USED'); },
+                async getZones() { throw new Error('NOT_USED'); },
+                async getGears() { throw new Error('NOT_USED'); }
+            };
+        }
+    });
+    const legacyResult = await session.listActivities({ refresh: true });
+    gate('legacy-return-identity', legacyResult.data === activities);
+    gate('legacy-mode-fixed', factoryOptions.length === 1 && factoryOptions[0].mode === 'legacy');
+    const exported = await shadow.flushApplicationShadowWrites();
+    const report = JSON.parse(exported);
+    gate('report-redacted', !exported.includes('synthetic-browser-shadow-001'));
+    gate('report-fields', Object.keys(report.fields).join(',') === [
+        'activityCount', 'opaqueId', 'distance', 'movingTime', 'elapsedTime',
+        'date', 'sportType', 'heartRate', 'power', 'gear'
+    ].join(','));
+    gate(stage === 'first' ? 'committed' : 'already-present',
+        stage === 'first' ? report.totals.committed === 1 : report.totals.alreadyPresent === 1);
+    const v2 = await inspectV2();
+    gate('v2-schema', v2.version === 1 && v2.stores.length === 8 && v2.activityCount === 1);
+    const sentinelAfter = await sentinelSnapshot();
+    gate('sentinel-preserved', JSON.stringify(sentinelAfter) === JSON.stringify(sentinelBefore));
+    await shadow.closeApplicationShadowWriter();
+    gate('writer-close', true);
+
+    const environment = await environmentSnapshot();
+    assertZeroEnvironment(environment);
+    gate(stage === 'first' ? 'environment-first-load' : 'environment-reload', true);
+
+    if (stage === 'first') {
+        sessionStorage.setItem(SAFE_FIRST_ENV_KEY, JSON.stringify(environment));
+        sessionStorage.setItem(SAFE_STAGE_KEY, 'reload');
+        location.reload();
+        return;
+    }
+
+    const firstEnvironment = JSON.parse(sessionStorage.getItem(SAFE_FIRST_ENV_KEY));
+    assertZeroEnvironment(firstEnvironment);
+    const aggregate = Object.fromEntries(Object.keys(environment).map(key => [
+        key,
+        environment[key] + firstEnvironment[key]
+    ]));
+    assertZeroEnvironment(aggregate);
+    gate('environment-cross-reload-total', true);
+    sessionStorage.removeItem(SAFE_STAGE_KEY);
+    sessionStorage.removeItem(SAFE_FIRST_ENV_KEY);
+    document.body.dataset.status = 'passed';
+    document.getElementById('status').textContent = 'Passed';
+    document.getElementById('result').textContent = JSON.stringify({
+        status: 'passed',
+        gateCount: gates.length,
+        databaseVersion: v2.version,
+        storeCount: v2.stores.length,
+        activityCount: v2.activityCount,
+        sentinelVersion: sentinelAfter.version,
+        sentinelStoreCount: sentinelAfter.stores.length,
+        sentinelCount: sentinelAfter.count,
+        firstEnvironment,
+        reloadEnvironment: environment,
+        aggregateEnvironment: aggregate
+    }, null, 2);
+}
+
+addEventListener('load', () => {
+    run().catch(() => {
+        document.body.dataset.status = 'failed';
+        document.getElementById('status').textContent = 'Failed';
+        document.getElementById('result').textContent = JSON.stringify({ status: 'failed' });
+    });
+}, { once: true });
+</script>
+</body>
+</html>

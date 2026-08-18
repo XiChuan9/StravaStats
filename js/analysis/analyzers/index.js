@@ -12,21 +12,18 @@ export { GravelMTBAnalyzer } from './gravel-mtb.js';
 /**
  * Factory function to get appropriate analyzer for sport type
  */
-export function getAnalyzerForSport(sport_type, track) {
-    console.log(`🏃 Loading analyzer for sport: ${sport_type}...`);
+export function getAnalyzerForSport(sport_type, track, config = {}) {
     const type = (sport_type || '').toLowerCase();
 
     if (type.includes('run')) {
         if (type.includes('trail')) {
             return import('./trail-run.js').then(m => {
-                const analyzer = new m.TrailRunAnalyzer(track);
-                console.log(`✅ Analyzer loaded: TrailRunAnalyzer`);
+                const analyzer = new m.TrailRunAnalyzer(track, config);
                 return analyzer;
             });
         }
         return import('./running.js').then(m => {
-            const analyzer = new m.RunningAnalyzer(track);
-            console.log(`✅ Analyzer loaded: RunningAnalyzer`);
+            const analyzer = new m.RunningAnalyzer(track, config);
             return analyzer;
         });
     }
@@ -34,29 +31,25 @@ export function getAnalyzerForSport(sport_type, track) {
     if (type.includes('ride') || type.includes('bike') || type.includes('mtb')) {
         if (type.includes('gravel') || type.includes('mtb') || type.includes('mountainbike')) {
             return import('./gravel-mtb.js').then(m => {
-                const analyzer = new m.GravelMTBAnalyzer(track);
-                console.log(`✅ Analyzer loaded: GravelMTBAnalyzer`);
+                const analyzer = new m.GravelMTBAnalyzer(track, config);
                 return analyzer;
             });
         }
         return import('./cycling.js').then(m => {
-            const analyzer = new m.CyclingAnalyzer(track);
-            console.log(`✅ Analyzer loaded: CyclingAnalyzer`);
+            const analyzer = new m.CyclingAnalyzer(track, config);
             return analyzer;
         });
     }
 
     if (type.includes('hike')) {
         return import('./hiking.js').then(m => {
-            const analyzer = new m.HikingAnalyzer(track);
-            console.log(`✅ Analyzer loaded: HikingAnalyzer`);
+            const analyzer = new m.HikingAnalyzer(track, config);
             return analyzer;
         });
     }
 
     return import('./base-analyzer.js').then(m => {
-        const analyzer = new m.BaseAnalyzer(track);
-        console.log(`✅ Analyzer loaded: BaseAnalyzer`);
+        const analyzer = new m.BaseAnalyzer(track, config);
         return analyzer;
     });
 }

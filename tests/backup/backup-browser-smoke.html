@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta
+        http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'nonce-pr42-backup'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-src http:; object-src 'none'; base-uri 'none'; form-action 'none'"
+    >
+    <title>PR-42 portable connection backup browser smoke</title>
+    <style>
+        body { font: 16px system-ui; margin: 2rem; }
+        [data-state="passed"] { color: #176b37; }
+        [data-state="failed"] { color: #9b1c1c; }
+    </style>
+</head>
+<body>
+    <h1>PR-42 portable connection backup</h1>
+    <p id="status" data-state="running">Preparing deterministic synthetic V5 data.</p>
+    <a id="download" hidden>Download deterministic backup</a>
+    <section id="restore-controls" hidden>
+        <label for="restore-bytes">Synthetic archive bytes</label>
+        <textarea id="restore-bytes" rows="4"></textarea>
+        <button id="restore">Restore in this isolated origin</button>
+    </section>
+    <pre id="result"></pre>
+    <script type="module" nonce="pr42-backup">
+        import { createBackupService } from '../../js/backup/index.js';
+        import {
+            createCanonicalStore,
+            createSourceConnectionStore
+        } from '../../js/storage/index.js';
+
+        const FIXED_TIME = Date.parse('2026-08-07T05:06:07.008Z');
+        const ACTIVITY_ID = 'browser:opaque/001?#';
+        const status = document.getElementById('status');
+        const result = document.getElementById('result');
+        const download = document.getElementById('download');
+        const restoreControls = document.getElementById('restore-controls');
+        const restoreBytes = document.getElementById('restore-bytes');
+        const restoreButton = document.getElementById('restore');
+        let fetchAttempts = 0;
+        globalThis.fetch = () => {
+            fetchAttempts += 1;
+            return Promise.reject(new Error('Synthetic offline browser gate.'));
+        };
+
+        function externalResourceCount() {
+            return performance.getEntriesByType('resource').filter(entry => {
+                try {
+                    const url = new URL(entry.name);
+                    return (
+                        (url.protocol === 'http:' || url.protocol === 'https:')
+                        && url.origin !== location.origin
+                    );
+                } catch {
+                    return true;
+                }
+            }).length;
+        }
+
+        function environment() {
+            return Object.freeze({
+                externalHttp: externalResourceCount(),
+                fetchAttempts
+            });
+        }
+
+        function bundle() {
+            return {
+                schemaVersion: 1,
+                activity: {
+                    schemaVersion: 1,
+                    id: ACTIVITY_ID,
+                    sportCategory: 'run',
+                    sportVariant: null,
+                    startTimeUtc: '2026-08-07T04:00:00.000Z',
+                    timeZone: { ianaName: 'Etc/UTC', utcOffsetMinutes: 0 },
+                    capabilities: {
+                        hasGps: false,
+                        hasHeartRate: false,
+                        hasPower: false,
+                        hasCadence: false,
+                        hasLaps: true
+                    },
+                    name: 'Deterministic browser activity',
+                    distanceMeters: 10_000,
+                    movingTimeSeconds: 3_000,
+                    elapsedTimeSeconds: 3_000,
+                    elevationGainMeters: 0,
+                    extensions: { missingMarker: null, positiveZero: 0, negativeZero: -0 }
+                },
+                streams: { activityId: ACTIVITY_ID, series: [] },
+                laps: [{
+                    id: `${ACTIVITY_ID}:lap:0`,
+                    activityId: ACTIVITY_ID,
+                    index: 0,
+                    startOffsetSeconds: 0,
+                    elapsedTimeSeconds: 3_000
+                }],
+                events: [],
+                sources: [{
+                    id: `${ACTIVITY_ID}:source`,
+                    activityId: ACTIVITY_ID,
+                    provider: 'synthetic-provider',
+                    externalId: null,
+                    rawArtifactId: null,
+                    acquisitionMethod: 'local-file',
+                    deviceId: null,
+                    importedAt: '2026-08-07T04:00:00.000Z'
+                }],
+                devices: [],
+                warnings: [],
+                versionMetadata: {
+                    schemaVersion: 1,
+                    parserVersion: 'browser-test@1',
+                    normalizerVersion: 'browser-test@1',
+                    analysisVersion: null,
+                    settingsVersion: 'browser-test@1',
+                    inputHash: null
+                }
+            };
+        }
+
+        function backupService() {
+            return createBackupService({
+                indexedDB,
+                IDBKeyRange,
+                crypto,
+                now: () => FIXED_TIME,
+                applicationVersion: 'pr42-browser@1',
+                settingsReader: () => {
+                    const settings = {};
+                    for (const key of ['dashboard_settings', 'training_goals']) {
+                        const value = localStorage.getItem(key);
+                        if (value !== null) settings[key] = value;
+                    }
+                    return settings;
+                },
+                settingsWriter: (key, value) => localStorage.setItem(key, value)
+            });
+        }
+
+        function decodeBase64(value) {
+            const binary = atob(value);
+            return Uint8Array.from(binary, character => character.charCodeAt(0));
+        }
+
+        async function runRestore(archiveBase64) {
+            const archive = new Blob([decodeBase64(archiveBase64)], {
+                type: 'application/zip'
+            });
+            const service = backupService();
+            const restored = await service.restoreBackup(archive);
+            const repeated = await service.restoreBackup(archive);
+            const cancellation = new AbortController();
+            cancellation.abort();
+            let cancellationCode = null;
+            try {
+                await service.validateBackup(archive, { signal: cancellation.signal });
+            } catch (error) {
+                cancellationCode = error.code;
+            }
+            await service.close();
+            const connections = createSourceConnectionStore({
+                indexedDB,
+                IDBKeyRange,
+                now: () => FIXED_TIME,
+                applicationVersion: 'pr42-browser@1'
+            });
+            await connections.initialize();
+            const connection = await connections.getConnection('strava');
+            await connections.close();
+            const network = environment();
+            if (network.externalHttp !== 0 || network.fetchAttempts !== 0) {
+                throw new Error('Synthetic offline boundary failed.');
+            }
+            return Object.freeze({
+                status: 'passed',
+                mode: 'restore',
+                restoreStatus: restored.status,
+                repeatStatus: repeated.status,
+                restoredConnectionStatus: connection?.status,
+                restoredConnectionErrorCode: connection?.errorCode,
+                cancellationCode,
+                network
+            });
+        }
+
+        async function run() {
+            if (typeof window.__restoreBytesBase64 === 'string') {
+                return runRestore(window.__restoreBytesBase64);
+            }
+            const beforeDatabases = typeof indexedDB.databases === 'function'
+                ? await indexedDB.databases()
+                : [];
+            const beforeCaches = await caches.keys();
+            const beforeWorkers = await navigator.serviceWorker.getRegistrations();
+            const storage = createCanonicalStore({
+                indexedDB,
+                IDBKeyRange,
+                now: () => FIXED_TIME,
+                applicationVersion: 'pr42-browser@1'
+            });
+            await storage.initialize();
+            await storage.putBundle(bundle());
+            const connections = createSourceConnectionStore({
+                indexedDB,
+                IDBKeyRange,
+                now: () => FIXED_TIME,
+                applicationVersion: 'pr42-browser@1'
+            });
+            await connections.initialize();
+            await connections.createConnection({
+                id: 'source-connection:strava',
+                provider: 'strava',
+                subjectId: '424242',
+                status: 'connected',
+                lastSyncAt: null,
+                errorCode: null,
+                revision: 1
+            });
+            localStorage.setItem('dashboard_settings', '{"units":"metric"}');
+            localStorage.setItem('training_goals', '{"weeklyDistance":0}');
+            const service = backupService();
+            const exported = await service.exportLibrary();
+            const validated = await service.validateBackup(exported.blob);
+            const archiveBytes = new Uint8Array(await exported.blob.arrayBuffer());
+            let archiveBinary = '';
+            for (let offset = 0; offset < archiveBytes.length; offset += 32_768) {
+                archiveBinary += String.fromCharCode(
+                    ...archiveBytes.subarray(offset, offset + 32_768)
+                );
+            }
+            window.__backupBytesBase64 = btoa(archiveBinary);
+            download.href = URL.createObjectURL(exported.blob);
+            download.download = exported.filename;
+            download.hidden = false;
+            await service.close();
+            await connections.close();
+            await storage.close();
+            const afterDatabases = typeof indexedDB.databases === 'function'
+                ? await indexedDB.databases()
+                : [];
+            const afterCaches = await caches.keys();
+            const afterWorkers = await navigator.serviceWorker.getRegistrations();
+            const network = environment();
+            if (network.externalHttp !== 0 || network.fetchAttempts !== 0) {
+                throw new Error('Synthetic offline boundary failed.');
+            }
+            return Object.freeze({
+                status: 'passed',
+                mode: 'export',
+                byteLength: exported.byteLength,
+                activityCount: validated.activityCount,
+                beforeDatabaseNames: beforeDatabases.map(value => value.name).sort(),
+                afterDatabaseNames: afterDatabases.map(value => value.name).sort(),
+                beforeCacheCount: beforeCaches.length,
+                afterCacheCount: afterCaches.length,
+                beforeWorkerCount: beforeWorkers.length,
+                afterWorkerCount: afterWorkers.length,
+                network
+            });
+        }
+
+        function localRestoreOrigin(value) {
+            try {
+                const url = new URL(value);
+                return url.protocol === 'http:'
+                    && (url.hostname === '127.0.0.1' || url.hostname === 'localhost')
+                    ? url.origin
+                    : null;
+            } catch {
+                return null;
+            }
+        }
+
+        async function runPaired() {
+            const exported = await run();
+            const restoreOrigin = localRestoreOrigin(
+                new URL(location.href).searchParams.get('restoreOrigin')
+            );
+            if (restoreOrigin === null) return exported;
+            const frame = document.createElement('iframe');
+            frame.hidden = true;
+            frame.src = `${restoreOrigin}${location.pathname}?mode=restore&sourceOrigin=${encodeURIComponent(location.origin)}`;
+            const restored = await new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    removeEventListener('message', onMessage);
+                    reject(new Error('Synthetic restore evidence timed out.'));
+                }, 30_000);
+                function onMessage(event) {
+                    if (
+                        event.origin !== restoreOrigin
+                        || event.source !== frame.contentWindow
+                        || event.data?.type !== 'PR42_RESTORE_RESULT'
+                    ) return;
+                    clearTimeout(timeout);
+                    removeEventListener('message', onMessage);
+                    resolve(event.data.observation);
+                }
+                addEventListener('message', onMessage);
+                frame.addEventListener('load', () => {
+                    frame.contentWindow.postMessage({
+                        type: 'PR42_RESTORE_BYTES',
+                        bytes: window.__backupBytesBase64
+                    }, restoreOrigin);
+                }, { once: true });
+                document.body.append(frame);
+            });
+            if (restored?.status !== 'passed') {
+                throw new Error('Synthetic restore evidence failed.');
+            }
+            return Object.freeze({ ...exported, restore: restored });
+        }
+
+        function passed(observation) {
+            window.__backupSmoke = observation;
+            status.dataset.state = 'passed';
+            status.textContent = 'Synthetic backup is ready.';
+            result.textContent = JSON.stringify(observation, null, 2);
+        }
+
+        function failed() {
+            window.__backupSmoke = Object.freeze({ status: 'failed', code: 'BROWSER_SMOKE_FAILED' });
+            status.dataset.state = 'failed';
+            status.textContent = 'Browser smoke failed safely.';
+        }
+
+        const parameters = new URL(location.href).searchParams;
+        if (parameters.get('mode') === 'restore') {
+            restoreControls.hidden = false;
+            status.textContent = 'Waiting for deterministic synthetic archive bytes.';
+            const sourceOrigin = localRestoreOrigin(parameters.get('sourceOrigin'));
+            if (sourceOrigin !== null) {
+                addEventListener('message', event => {
+                    if (
+                        event.origin !== sourceOrigin
+                        || event.source !== parent
+                        || event.data?.type !== 'PR42_RESTORE_BYTES'
+                        || typeof event.data.bytes !== 'string'
+                    ) return;
+                    runRestore(event.data.bytes).then(observation => {
+                        passed(observation);
+                        parent.postMessage({
+                            type: 'PR42_RESTORE_RESULT',
+                            observation
+                        }, sourceOrigin);
+                    }).catch(failed);
+                }, { once: true });
+            }
+            restoreButton.addEventListener('click', () => {
+                restoreButton.disabled = true;
+                runRestore(restoreBytes.value).then(passed).catch(failed);
+            }, { once: true });
+        } else {
+            runPaired().then(passed).catch(failed);
+        }
+    </script>
+</body>
+</html>

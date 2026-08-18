@@ -62,7 +62,18 @@ export class BaseAnalyzer {
     /**
      * Calculate HR zones
      */
-    _calculateHRZones(maxHR = 195) {
+    _calculateHRZones(maxHR = undefined) {
+        const contextStatus = this.config.analysis_context_status;
+        if (contextStatus === 'unconfigured') {
+            this.result.hr_zones = null;
+            this.result.hr_zones_profile_status = 'unconfigured';
+            return;
+        }
+
+        const configuredZones = contextStatus === 'configured' ? this.config.hr_zones : null;
+        const effectiveMaxHR = contextStatus === 'configured'
+            ? maxHR ?? this.config.max_hr ?? 195
+            : maxHR ?? 195;
         const zones = {
             Z1: 0, // 50-60% white
             Z2: 0, // 60-70% blue
@@ -76,14 +87,26 @@ export class BaseAnalyzer {
 
         for (const point of this.track.points) {
             if (point.heart_rate && point.heart_rate > 0) {
-                const pct = (point.heart_rate / maxHR) * 100;
                 totalHR++;
 
-                if (pct < 60) counts.Z1++;
-                else if (pct < 70) counts.Z2++;
-                else if (pct < 80) counts.Z3++;
-                else if (pct < 90) counts.Z4++;
-                else counts.Z5++;
+                if (Array.isArray(configuredZones)) {
+                    const zoneIndex = configuredZones.findIndex(zone => (
+                        point.heart_rate >= zone.minBpm
+                        && (
+                            zone.maxBpmExclusive === null
+                            || point.heart_rate < zone.maxBpmExclusive
+                        )
+                    ));
+                    const zoneKey = `Z${Math.min(Math.max(zoneIndex + 1, 1), 5)}`;
+                    counts[zoneKey]++;
+                } else {
+                    const pct = (point.heart_rate / effectiveMaxHR) * 100;
+                    if (pct < 60) counts.Z1++;
+                    else if (pct < 70) counts.Z2++;
+                    else if (pct < 80) counts.Z3++;
+                    else if (pct < 90) counts.Z4++;
+                    else counts.Z5++;
+                }
             }
         }
 
@@ -97,6 +120,9 @@ export class BaseAnalyzer {
         }
 
         this.result.hr_zones = zones;
+        if (contextStatus === 'configured') {
+            this.result.hr_zones_profile_status = 'configured';
+        }
     }
 
     /**

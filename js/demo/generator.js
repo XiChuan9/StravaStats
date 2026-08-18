@@ -5,6 +5,25 @@
 
 import { DEMO_POLYLINES } from './polylines.js';
 
+export const DEFAULT_DEMO_SEED = 20260728;
+const DEMO_ATHLETE_ID = 'demo-athlete-0001';
+export const DEFAULT_DEMO_REFERENCE_DATE = '2026-07-28T12:00:00.000Z';
+
+function createSeededRandom(seed) {
+    let state = Number(seed) >>> 0;
+    if (state === 0) state = DEFAULT_DEMO_SEED;
+
+    return () => {
+        state += 0x6D2B79F5;
+        let value = state;
+        value = Math.imul(value ^ (value >>> 15), value | 1);
+        value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+        return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+let demoRandom = createSeededRandom(DEFAULT_DEMO_SEED);
+
 const ACTIVITY_TYPES = [
     // MUCHO
     { type: 'Run', sport: 'Run', ratio: 0.18, distRange: [3, 25], speedRange: [10, 16] },
@@ -135,11 +154,11 @@ const SPANISH_CITIES = [
 const SWIM_POOL_LENGTHS_METERS = [20, 25, 50];
 
 function randomBetween(min, max) {
-    return Math.random() * (max - min) + min;
+    return demoRandom() * (max - min) + min;
 }
 
 function randomInt(min, max) {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
+    return Math.floor(demoRandom() * (max - min + 1)) + min;
 }
 
 function clamp(value, min, max) {
@@ -150,8 +169,8 @@ function sampleNormal(mean, stdDev) {
     // Box-Muller transform
     let u = 0;
     let v = 0;
-    while (u === 0) u = Math.random();
-    while (v === 0) v = Math.random();
+    while (u === 0) u = demoRandom();
+    while (v === 0) v = demoRandom();
     return mean + stdDev * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
 
@@ -164,7 +183,7 @@ function sampleStat(statDef, fallbackMin, fallbackMax) {
 }
 
 function getRandomCity() {
-    return SPANISH_CITIES[Math.floor(Math.random() * SPANISH_CITIES.length)];
+    return SPANISH_CITIES[Math.floor(demoRandom() * SPANISH_CITIES.length)];
 }
 
 function getRandomGear(type) {
@@ -180,10 +199,10 @@ function getRandomGear(type) {
     return GEAR_LIST.find(g => g.type === 'Shoes') || null;
 }
 
-function generateDate(daysAgo) {
-    const d = new Date();
-    d.setDate(d.getDate() - daysAgo);
-    d.setHours(randomInt(6, 20), randomInt(0, 59), 0, 0);
+function generateDate(daysAgo, referenceDate) {
+    const d = new Date(referenceDate);
+    d.setUTCDate(d.getUTCDate() - daysAgo);
+    d.setUTCHours(randomInt(6, 20), randomInt(0, 59), 0, 0);
     return d;
 }
 
@@ -202,11 +221,11 @@ function generatePolyline(activityType) {
     }
 
     const candidates = DEMO_POLYLINES[category] || DEMO_POLYLINES.Run;
-    return candidates[Math.floor(Math.random() * candidates.length)];
+    return candidates[Math.floor(demoRandom() * candidates.length)];
 }
 
 function generateWeatherData(dateObj) {
-    const month = dateObj.getMonth();
+    const month = dateObj.getUTCMonth();
     // Rough seasonal patterns for Spain
     let tempBase = 15;
     if (month >= 5 && month <= 8) tempBase = 28;
@@ -216,7 +235,7 @@ function generateWeatherData(dateObj) {
     const temp = Math.round(tempBase + randomBetween(-5, 5));
     const humidity = randomInt(30, 85);
     const windSpeed = randomBetween(0, 20);
-    const rainfall = Math.random() > 0.8 ? randomBetween(0.5, 10) : 0;
+    const rainfall = demoRandom() > 0.8 ? randomBetween(0.5, 10) : 0;
     const pressure = randomBetween(1010, 1030);
     const cloudCover = randomInt(0, 100);
     const condition = rainfall > 2 ? 'Rain' : cloudCover > 70 ? 'Overcast' : 'Clear';
@@ -245,7 +264,7 @@ function generateDistanceKm(activityConfig, statModel) {
     }
 
     // 10% → distancia random sin ajustar
-    const randomSwim = Math.random() < 0.10;
+    const randomSwim = demoRandom() < 0.10;
     if (randomSwim) {
         return baseDistance;
     }
@@ -319,22 +338,31 @@ function generateStreams(distance, movingTime, elevation) {
     return streams;
 }
 
-export function generateDemoData() {
+export function generateDemoData({
+    seed = DEFAULT_DEMO_SEED,
+    referenceDate = DEFAULT_DEMO_REFERENCE_DATE,
+} = {}) {
+    demoRandom = createSeededRandom(seed);
+    const referenceTimestamp = new Date(referenceDate);
+    if (Number.isNaN(referenceTimestamp.getTime())) {
+        throw new TypeError('referenceDate must be a valid date value');
+    }
+
     const activities = [];
     const totalActivities = 500;
     const daysSpan = 730; // ~2 years of data
 
     for (let i = 0; i < totalActivities; i++) {
         const daysAgo = randomInt(0, daysSpan);
-        const dateObj = generateDate(daysAgo);
+        const dateObj = generateDate(daysAgo, referenceTimestamp);
         const dateStr = dateObj.toISOString();
         const dateLocal = dateObj.toISOString().split('T')[0] + 'T' +
-            String(dateObj.getHours()).padStart(2, '0') + ':' +
-            String(dateObj.getMinutes()).padStart(2, '0') + ':00';
+            String(dateObj.getUTCHours()).padStart(2, '0') + ':' +
+            String(dateObj.getUTCMinutes()).padStart(2, '0') + ':00';
 
         // Pick activity type based on ratio
         let actType = 'Run';
-        const r = Math.random();
+        const r = demoRandom();
         let cumRatio = 0;
         for (const at of ACTIVITY_TYPES) {
             cumRatio += at.ratio;
@@ -358,11 +386,11 @@ export function generateDemoData() {
         const streams = generateStreams(distance, movingTime, elevation);
 
         const activity = {
-            id: 1000000 + i,
+            id: `demo-activity-${i}`,
             resource_state: 2,
             external_id: `demo_${i}`,
-            upload_id: 10000000 + i,
-            athlete: { id: 66914681, resource_state: 1 },
+            upload_id: `demo-upload-${i}`,
+            athlete: { id: DEMO_ATHLETE_ID, resource_state: 1 },
             name: formatActivityName(actType, distance),
             description: `Demo activity ${i + 1}`,
             distance: Math.round(distance * 1000),
@@ -393,7 +421,7 @@ export function generateDemoData() {
             average_cadence: randomInt(170, 185),
             average_temp: weather.temperature,
             gear_id: gear?.id || null,
-            kilojoules: Math.round(movingTime * (1.5 + Math.random())),
+            kilojoules: Math.round(movingTime * (1.5 + demoRandom())),
             suffer_score: randomInt(50, 300),
 
             // Map and polyline data
@@ -423,19 +451,18 @@ export function generateDemoData() {
                 distance: Math.round(distance * 1000),
             } : null,
             from_accepted_tag: false,
-            upload_id: null,
             average_watts: ['Ride', 'MountainBikeRide', 'WeightTraining'].includes(actType)
                 ? Math.round(sampleStat(statModel?.avgWatts, 120, 340))
                 : null,
             weighted_average_watts: ['Ride', 'MountainBikeRide', 'WeightTraining'].includes(actType)
                 ? Math.round(sampleStat(statModel?.weightedWatts, 130, 360))
                 : null,
-            device_watts: ['Ride', 'MountainBikeRide', 'WeightTraining'].includes(actType) ? Math.random() > 0.5 : false,
+            device_watts: ['Ride', 'MountainBikeRide', 'WeightTraining'].includes(actType) ? demoRandom() > 0.5 : false,
             max_watts: ['Ride', 'MountainBikeRide', 'WeightTraining'].includes(actType)
                 ? Math.round(sampleStat(statModel?.maxWatts, 280, 900))
                 : null,
-            calories: Math.round(movingTime * 8 + Math.random() * 200),
-            has_kudos: Math.random() > 0.7,
+            calories: Math.round(movingTime * 8 + demoRandom() * 200),
+            has_kudos: demoRandom() > 0.7,
             kudos_count: randomInt(0, 20),
             comment_count: randomInt(0, 5),
             athlete_count: randomInt(1, 5),
@@ -454,23 +481,28 @@ export function generateDemoData() {
     return activities;
 }
 
-export function generateDemoAthlete() {
+export function generateDemoAthlete(referenceDate = DEFAULT_DEMO_REFERENCE_DATE) {
+    const updatedAt = new Date(referenceDate);
+    if (Number.isNaN(updatedAt.getTime())) {
+        throw new TypeError('referenceDate must be a valid date value');
+    }
+
     return {
-        id: 66914681,
-        username: 'demo_user',
+        id: DEMO_ATHLETE_ID,
+        username: 'demo-athlete',
         firstname: 'Demo',
-        lastname: 'Runner',
+        lastname: 'Synthetic',
         city: 'Madrid',
         state: 'Madrid',
         country: 'Spain',
         sex: 'M',
         summit: false,
         created_at: '2015-01-01T00:00:00Z',
-        updated_at: new Date().toISOString(),
+        updated_at: updatedAt.toISOString(),
         badge_type_id: 1,
         weight: 70,
-        profile_medium: 'https://dgalywyr863hv.cloudfront.net/pictures/athletes/big.jpg',
-        profile: 'https://dgalywyr863hv.cloudfront.net/pictures/athletes/large.jpg',
+        profile_medium: '/icon-sport.svg',
+        profile: '/icon-sport.svg',
         friend: null,
         follower: null,
         follower_count: 125,

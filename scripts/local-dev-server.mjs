@@ -1,13 +1,10 @@
-// Local dev only: corporate proxies use self-signed CA certs that Node.js doesn't trust.
-// This flag is safe here because this file is never executed in production (Vercel runs the
-// api/ handlers directly). Never set this in production code.
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-
 import { createServer } from 'node:http';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, realpath, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+
+import { logServerEvent, SERVER_API_EVENT } from '../api/_shared.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,6 +28,66 @@ const mimeTypes = new Map([
   ['.ico', 'image/x-icon'],
   ['.txt', 'text/plain; charset=utf-8'],
   ['.xml', 'application/xml; charset=utf-8']
+]);
+
+const spaRoutes = new Set([
+  '/',
+  '/run',
+  '/run-plus',
+  '/run-plus/nsm',
+  '/dashboard',
+  '/bike',
+  '/swim',
+  '/trends',
+  '/planner',
+  '/gear',
+  '/activities',
+  '/calendar',
+  '/weather',
+  '/map',
+  '/wrapped',
+  '/ai-coach'
+]);
+
+const publicRootFiles = new Set([
+  '/index.html',
+  '/diagnostics.html',
+  '/source-manager.html',
+  '/storage-backup.html',
+  '/theme-preview.html',
+  '/manifest.json',
+  '/sw.js',
+  '/icon-sport.svg',
+  '/classifyBike.js',
+  '/classifyRun.js'
+]);
+
+const publicDirectoryExtensions = new Map([
+  ['html', new Set(['.html'])],
+  ['js', new Set(['.js', '.mjs'])],
+  ['styles', new Set(['.css'])],
+  ['media', new Set(['.svg', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico'])]
+]);
+
+const blockedPathSegments = new Set([
+  '.git',
+  '.github',
+  'api',
+  'docs',
+  'node_modules',
+  'scripts',
+  'tests'
+]);
+
+const blockedFileNames = new Set([
+  'agents.md',
+  'bun.lock',
+  'bun.lockb',
+  'npm-shrinkwrap.json',
+  'package-lock.json',
+  'package.json',
+  'pnpm-lock.yaml',
+  'yarn.lock'
 ]);
 
 function parseEnvValue(value) {
@@ -175,63 +232,174 @@ async function handleApi(req, res, url) {
     if (!apiRes.ended) {
       res.end();
     }
-  } catch (error) {
-    console.error(`[api:${apiName}]`, error);
+  } catch {
+    logServerEvent(SERVER_API_EVENT.LOCAL_HANDLER_FAILED);
     if (!res.writableEnded) {
       res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ error: error.message || 'Internal Server Error' }));
+      res.end(JSON.stringify({ error: 'Internal Server Error' }));
     }
   }
 }
 
-async function serveFile(res, filePath) {
-  const resolvedPath = path.resolve(filePath);
-  if (!resolvedPath.startsWith(rootDir)) {
-    res.writeHead(403);
-    res.end('Forbidden');
+function sendStaticText(req, res, statusCode, body) {
+  const bodyLength = Buffer.byteLength(body);
+  res.writeHead(statusCode, {
+    'content-type': 'text/plain; charset=utf-8',
+    'content-length': bodyLength
+  });
+  res.end(req.method === 'HEAD' ? undefined : body);
+}
+
+function isPathInsideRoot(filePath) {
+  const relativePath = path.relative(rootDir, filePath);
+  return relativePath !== ''
+    && !relativePath.startsWith(`..${path.sep}`)
+    && relativePath !== '..'
+    && !path.isAbsolute(relativePath);
+}
+
+function hasSafeStaticPathSegments(pathname) {
+  if (
+    !pathname.startsWith('/')
+    || pathname.includes('\0')
+    || pathname.includes('\\')
+  ) {
+    return false;
+  }
+
+  if (pathname === '/') return true;
+
+  const segments = pathname.slice(1).split('/');
+  return segments.every(segment => {
+    const lowerCaseSegment = segment.toLowerCase();
+    return segment !== ''
+      && segment !== '.'
+      && segment !== '..'
+      && !segment.startsWith('.')
+      && !blockedPathSegments.has(lowerCaseSegment)
+      && !blockedFileNames.has(lowerCaseSegment);
+  });
+}
+
+function isPublicStaticPath(pathname) {
+  if (!hasSafeStaticPathSegments(pathname)) return false;
+  if (publicRootFiles.has(pathname)) return true;
+
+  const segments = pathname.slice(1).split('/');
+  const [topLevelDirectory, ...remainingSegments] = segments;
+  const allowedExtensions = publicDirectoryExtensions.get(topLevelDirectory);
+
+  if (!allowedExtensions || remainingSegments.length === 0) return false;
+
+  const extension = path.posix.extname(remainingSegments.at(-1)).toLowerCase();
+  return allowedExtensions.has(extension);
+}
+
+function decodeStaticPathname(requestTarget) {
+  if (typeof requestTarget !== 'string' || !requestTarget.startsWith('/')) return null;
+
+  const queryIndex = requestTarget.indexOf('?');
+  const rawPathname = queryIndex === -1
+    ? requestTarget
+    : requestTarget.slice(0, queryIndex);
+
+  try {
+    const pathname = decodeURIComponent(rawPathname);
+    return hasSafeStaticPathSegments(pathname) ? pathname : null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveStaticPath(requestTarget) {
+  const decodedPathname = decodeStaticPathname(requestTarget);
+  if (decodedPathname === null) return null;
+
+  if (spaRoutes.has(decodedPathname)) {
+    return path.join(rootDir, 'index.html');
+  }
+
+  if (!isPublicStaticPath(decodedPathname)) return null;
+
+  const resolvedPath = path.resolve(rootDir, decodedPathname.slice(1));
+  return isPathInsideRoot(resolvedPath) ? resolvedPath : null;
+}
+
+async function serveFile(req, res, filePath) {
+  if (filePath === null) {
+    sendStaticText(req, res, 404, 'Not Found');
     return;
   }
 
   try {
+    const resolvedPath = await realpath(filePath);
+    const relativePath = path.relative(rootDir, resolvedPath);
+    const publicPathname = `/${relativePath.split(path.sep).join('/')}`;
+
+    if (!isPathInsideRoot(resolvedPath) || !isPublicStaticPath(publicPathname)) {
+      sendStaticText(req, res, 404, 'Not Found');
+      return;
+    }
+
     const fileStat = await stat(resolvedPath);
     if (!fileStat.isFile()) throw new Error('Not a file');
 
-    const data = await readFile(resolvedPath);
     const contentType = mimeTypes.get(path.extname(resolvedPath).toLowerCase()) || 'application/octet-stream';
-    res.writeHead(200, { 'content-type': contentType });
+    const headers = {
+      'content-type': contentType,
+      'content-length': fileStat.size
+    };
+
+    if (req.method === 'HEAD') {
+      res.writeHead(200, headers);
+      res.end();
+      return;
+    }
+
+    const data = await readFile(resolvedPath);
+    res.writeHead(200, headers);
     res.end(data);
   } catch {
-    res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
-    res.end('Not Found');
+    sendStaticText(req, res, 404, 'Not Found');
   }
 }
 
-function resolveStaticPath(url) {
-  const decodedPathname = decodeURIComponent(url.pathname);
+export function createLocalDevServer() {
+  return createServer(async (req, res) => {
+    try {
+      const url = new URL(req.url, `http://${req.headers.host || `localhost:${port}`}`);
 
-  if (
-    decodedPathname === '/' ||
-    decodedPathname.match(/^\/(run|run-plus(?:\/nsm)?|dashboard|bike|swim|trends|planner|gear|activities|calendar|weather|map|wrapped|ai-coach)$/)
-  ) {
-    return path.join(rootDir, 'index.html');
-  }
+      if (url.pathname.startsWith('/api/')) {
+        await handleApi(req, res, url);
+        return;
+      }
 
-  return path.join(rootDir, decodedPathname);
+      await serveFile(req, res, resolveStaticPath(req.url));
+    } catch {
+      logServerEvent(SERVER_API_EVENT.LOCAL_HANDLER_FAILED);
+      if (!res.writableEnded) {
+        res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'Internal Server Error' }));
+      }
+    }
+  });
 }
 
-await loadEnv();
+async function startLocalDevServer() {
+  // Local dev only: corporate proxies use self-signed CA certs that Node.js doesn't trust.
+  // Vercel runs the API handlers directly, so this is never set by the production runtime.
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+  await loadEnv();
 
-const server = createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host || `localhost:${port}`}`);
+  const server = createLocalDevServer();
+  server.listen(port, '127.0.0.1', () => {
+    console.log(`Local dev server ready at http://127.0.0.1:${port}`);
+  });
+}
 
-  if (url.pathname.startsWith('/api/')) {
-    await handleApi(req, res, url);
-    return;
-  }
+const isDirectExecution = process.argv[1]
+  && path.resolve(process.argv[1]) === __filename;
 
-  await serveFile(res, resolveStaticPath(url));
-});
-
-server.listen(port, '127.0.0.1', () => {
-  console.log(`Local dev server ready at http://127.0.0.1:${port}`);
-});
+if (isDirectExecution) {
+  await startLocalDevServer();
+}

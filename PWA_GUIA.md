@@ -358,7 +358,8 @@ This document describes, tab by tab, everything currently shown by the applicati
 
 - Sport selector.
 - Visualization mode (density heatmap or route polylines).
-- Map tile provider (OpenStreetMap, Carto Light/Dark, satellite, etc.).
+- OpenStreetMap tile status. External tiles begin denied and require the per-map action
+  **“Load approximate OpenStreetMap tiles for this map”**.
 - From/to date range.
 - Heatmap intensity, radius, and blur sliders.
 - Color-by-sport toggle for the routes mode.
@@ -368,12 +369,17 @@ This document describes, tab by tab, everything currently shown by the applicati
 - Full-screen Leaflet map with two render modes:
   - Density heatmap using Leaflet.heat over decoded route points.
   - Route polylines decoded client-side from each activity's `map.summary_polyline`.
+- Leaflet and Leaflet.heat are exact-version-pinned, integrity checked, and served same-origin;
+  there is no runtime CDN fallback.
+- When authorized in Real mode, the base layer is restricted to the initially approved coarse
+  OpenStreetMap envelope at zoom 11 or lower. Permission lasts only for that map in that document.
+- Demo and maps without valid local GPS show a local state and make no tile-location request.
 - Hover/click popups with activity name and date.
 
 ### Actions
 
 - Switch between heatmap and route modes.
-- Change the tile layer.
+- Load or revoke the coarse OpenStreetMap base layer for the current map.
 - Apply the sport or date filters and re-render the layer.
 - Tune heatmap parameters live.
 - Click a route to open its activity detail page.
@@ -409,30 +415,38 @@ This document describes, tab by tab, everything currently shown by the applicati
 
 ### Inputs
 
-- User-provided Gemini API key (stored in `localStorage('gemini_api_key')`).
-- Free-form chat prompt.
+- User-provided Gemini API key, kept only in current-page memory.
+- Free-form current prompt, limited to 4,000 code units.
 - Starter suggestion buttons rendered above the input.
 
 ### Context used by the assistant
 
-- Global training summary (totals, active days, sport mix).
-- Sport breakdown.
-- PB-like stats from the historical run catalog.
-- Gear summary including current health for shoes and bikes.
-- Recent activities and recent monthly volume series.
+- Two relative windows: `recent_28_days` and `previous_28_days`.
+- Closed sport category and activity count.
+- Distance, moving-time, and elevation aggregates rounded to 1 km, 15 minutes, and 100 m, with
+  valid-sample counts and `null` when no valid sample exists.
+- No names, IDs, dates, gear, PBs, route/GPS, Tokens, heart rate, power, raw activity/streams, or
+  previous chat messages.
 
 ### Views
 
-- Persistent chat transcript stored in `localStorage('ai_chat_history')`.
+- Exact Google Gemini destination/field disclosure and a minimized-value preview before each send.
+- Current-page-memory transcript only, bounded to 12 messages/64 KiB; provider response text is
+  bounded to 16,384 code units.
 - Distinct styling for user and assistant messages.
-- API-key entry banner shown until a key is configured.
+- Memory-only API-key entry banner shown until a key is configured.
 
 ### Actions
 
-- Enter or update the Gemini API key.
+- Enter or forget the in-memory Gemini API key.
 - Click a starter suggestion to seed the prompt.
-- Send a prompt; the request is made browser-side directly against the Gemini Flash preview endpoint.
-- Clear chat history.
+- Preview every request and choose `Send this request to Google Gemini` or cancel; no consent is
+  persisted. An authorized request goes directly to the frozen Gemini Flash preview endpoint with
+  the key in `x-goog-api-key`, `store: false`, a four-second abortable timeout, and no retry.
+- Cancel an in-flight request, revoke AI access, or clear the in-memory conversation.
+- Use `Review previously saved AI data` for separate explicit copy-key, delete-key, or
+  delete-history actions. Normal AI Coach rendering/sending never reads or changes the inherited
+  `gemini_api_key` and `ai_chat_history` localStorage records. Demo performs zero AI I/O.
 
 ## Cross-app settings
 

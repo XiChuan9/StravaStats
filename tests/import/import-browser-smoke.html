@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta
+        http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'nonce-pr09-import-smoke'; connect-src 'self'; img-src data:; style-src 'unsafe-inline'; object-src 'none'; base-uri 'none'; worker-src 'self'"
+    >
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="data:,">
+    <title>PR-09 Strava ZIP browser smoke</title>
+    <style>
+        body { font-family: system-ui, sans-serif; margin: 2rem; }
+        [data-status="passed"] { color: #126b31; }
+        [data-status="failed"] { color: #9d1c1c; }
+        pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+    </style>
+</head>
+<body data-status="running">
+    <main>
+        <h1>PR-09 Strava ZIP browser smoke</h1>
+        <p id="state" data-testid="state">running</p>
+        <pre id="summary" data-testid="summary">{"status":"running"}</pre>
+    </main>
+    <script type="module" nonce="pr09-import-smoke">
+        const V2_NAME = 'strava-stats-v2';
+        const SENTINEL_NAME = 'synthetic-pr09-legacy-like-sentinel';
+        const RELOAD_KEY = 'pr09-import-browser-reload';
+        const FIRST_RESULT_KEY = 'pr09-import-browser-first-result';
+        const MEDIA_TYPE = 'application/zip;profile=strava-archive;base64';
+        const EXPECTED_STORES = [
+            'activities', 'activitySources', 'devices', 'events', 'importItems',
+            'importJobs', 'laps', 'metadata', 'migrations', 'rawArtifacts',
+            'streamSeries'
+        ];
+        const stateElement = document.querySelector('#state');
+        const summaryElement = document.querySelector('#summary');
+        const phase = sessionStorage.getItem(RELOAD_KEY) === 'first-complete'
+            ? 'reload'
+            : 'first-load';
+        const metrics = {
+            authorizationAttempts: 0,
+            consoleErrors: 0,
+            consoleWarnings: 0,
+            externalFetch: 0,
+            externalResources: 0,
+            providerEndpoints: 0,
+            uncaught: 0,
+            unhandled: 0,
+            xhr: 0,
+            webSocket: 0
+        };
+        const gates = [];
+        let failureCode = 'UNCLASSIFIED';
+        let service;
+
+        const encoder = new TextEncoder();
+        const crcTable = Array.from({ length: 256 }, (_, index) => {
+            let value = index;
+            for (let bit = 0; bit < 8; bit += 1) {
+                value = (value >>> 1) ^ ((value & 1) ? 0xedb88320 : 0);
+            }
+            return value >>> 0;
+        });
+
+        function crc32(bytes) {
+            let crc = 0xffffffff;
+            for (const byte of bytes) {
+                crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+            }
+            return (crc ^ 0xffffffff) >>> 0;
+        }
+
+        function u16(value) {
+            return Uint8Array.of(value & 0xff, (value >>> 8) & 0xff);
+        }
+
+        function u32(value) {
+            return Uint8Array.of(
+                value & 0xff,
+                (value >>> 8) & 0xff,
+                (value >>> 16) & 0xff,
+                (value >>> 24) & 0xff
+            );
+        }
+
+        function join(parts) {
+            const output = new Uint8Array(
+                parts.reduce((total, part) => total + part.byteLength, 0)
+            );
+            let offset = 0;
+            for (const part of parts) {
+                output.set(part, offset);
+                offset += part.byteLength;
+            }
+            return output;
+        }
+
+        function syntheticZipBytes() {
+            const csv = [
+                'Activity ID,Activity Date,Activity Type,Activity Name,Elapsed Time,Moving Time,Distance,Activity Filename',
+                '00042,2026-07-01T01:02:03Z,Run,Synthetic Browser Run,3600,3500,10.5,activities/browser-run.fit',
+                'alpha/beta,2026-07-02T02:03:04Z,Ride,"Quoted, Browser Ride",4200,4000,25.25,activities/browser-ride.gpx',
+                ''
+            ].join('\n');
+            const sources = [
+                { name: 'activities.csv', content: encoder.encode(csv), directory: false },
+                { name: 'activities/', content: new Uint8Array(), directory: true },
+                { name: 'activities/browser-run.fit', content: encoder.encode('synthetic opaque fit bytes'), directory: false },
+                { name: 'activities/browser-ride.gpx', content: encoder.encode('synthetic opaque gpx bytes'), directory: false }
+            ];
+            const locals = [];
+            const central = [];
+            let localOffset = 0;
+            for (const source of sources) {
+                const name = encoder.encode(source.name);
+                const checksum = crc32(source.content);
+                const local = join([
+                    u32(0x04034b50), u16(10), u16(0x0800), u16(0),
+                    u16(0), u16(0), u32(checksum),
+                    u32(source.content.byteLength), u32(source.content.byteLength),
+                    u16(name.byteLength), u16(0), name, source.content
+                ]);
+                const mode = source.directory ? 0o040755 : 0o100644;
+                central.push(join([
+                    u32(0x02014b50), u16(0x0314), u16(10), u16(0x0800),
+                    u16(0), u16(0), u16(0), u32(checksum),
+                    u32(source.content.byteLength), u32(source.content.byteLength),
+                    u16(name.byteLength), u16(0), u16(0), u16(0), u16(0),
+                    u32((mode << 16) | (source.directory ? 0x10 : 0)),
+                    u32(localOffset), name
+                ]));
+                locals.push(local);
+                localOffset += local.byteLength;
+            }
+            const centralBytes = join(central);
+            return join([
+                ...locals,
+                centralBytes,
+                u32(0x06054b50), u16(0), u16(0),
+                u16(sources.length), u16(sources.length),
+                u32(centralBytes.byteLength), u32(localOffset), u16(0)
+            ]);
+        }
+
+        function base64(bytes) {
+            let binary = '';
+            for (let offset = 0; offset < bytes.byteLength; offset += 32768) {
+                binary += String.fromCharCode(...bytes.subarray(
+                    offset,
+                    Math.min(bytes.byteLength, offset + 32768)
+                ));
+            }
+            return btoa(binary);
+        }
+
+        console.error = () => { metrics.consoleErrors += 1; };
+        console.warn = () => { metrics.consoleWarnings += 1; };
+        addEventListener('error', event => {
+            metrics.uncaught += 1;
+            event.preventDefault();
+        });
+        addEventListener('unhandledrejection', event => {
+            metrics.unhandled += 1;
+            event.preventDefault();
+        });
+        const nativeFetch = globalThis.fetch.bind(globalThis);
+        globalThis.fetch = (input, init) => {
+            const url = new URL(
+                typeof input === 'string' ? input : input.url,
+                location.href
+            );
+            try {
+                const headers = new Headers(init?.headers);
+                if (headers.has('authorization')) metrics.authorizationAttempts += 1;
+            } catch {
+                metrics.authorizationAttempts += 1;
+            }
+            if (url.origin !== location.origin) {
+                metrics.externalFetch += 1;
+                return Promise.reject(new TypeError('blocked'));
+            }
+            return nativeFetch(input, init);
+        };
+        XMLHttpRequest.prototype.open = function () {
+            metrics.xhr += 1;
+            throw new DOMException('blocked', 'SecurityError');
+        };
+        globalThis.WebSocket = class BlockedWebSocket {
+            constructor() {
+                metrics.webSocket += 1;
+                throw new DOMException('blocked', 'SecurityError');
+            }
+        };
+
+        function assert(condition, code) {
+            if (!condition) {
+                failureCode = code;
+                throw new Error(code);
+            }
+        }
+
+        async function gate(name, callback) {
+            await callback();
+            gates.push(name);
+        }
+
+        function requestResult(request) {
+            return new Promise((resolve, reject) => {
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = event => {
+                    event.preventDefault();
+                    reject(request.error);
+                };
+            });
+        }
+
+        function transactionDone(transaction) {
+            return new Promise((resolve, reject) => {
+                transaction.oncomplete = resolve;
+                transaction.onabort = () => reject(transaction.error);
+                transaction.onerror = event => event.preventDefault();
+            });
+        }
+
+        function openDatabase(name, version, upgrade) {
+            return new Promise((resolve, reject) => {
+                const request = version === undefined
+                    ? indexedDB.open(name)
+                    : indexedDB.open(name, version);
+                request.onupgradeneeded = event => {
+                    upgrade?.(request.result, request.transaction, event);
+                };
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = event => {
+                    event.preventDefault();
+                    reject(request.error);
+                };
+            });
+        }
+
+        async function ensureSentinel() {
+            const database = await openDatabase(SENTINEL_NAME, 1, db => {
+                db.createObjectStore('syntheticRecords', { keyPath: 'id' }).add({
+                    id: 'synthetic-sentinel',
+                    values: [null, 0, 'value']
+                });
+            });
+            database.close();
+        }
+
+        async function sentinelSnapshot() {
+            const database = await openDatabase(SENTINEL_NAME);
+            const transaction = database.transaction('syntheticRecords', 'readonly');
+            const records = await requestResult(
+                transaction.objectStore('syntheticRecords').getAll()
+            );
+            await transactionDone(transaction);
+            database.close();
+            const digest = await crypto.subtle.digest(
+                'SHA-256',
+                new TextEncoder().encode(JSON.stringify(records))
+            );
+            return {
+                version: 1,
+                stores: ['syntheticRecords'],
+                recordCount: records.length,
+                byteHash: [...new Uint8Array(digest)]
+                    .map(value => value.toString(16).padStart(2, '0'))
+                    .join('')
+            };
+        }
+
+        async function inspectV2() {
+            const database = await openDatabase(V2_NAME);
+            const stores = Array.from(database.objectStoreNames).sort();
+            const transaction = database.transaction(stores, 'readonly');
+            const counts = {};
+            const indexes = {};
+            for (const name of stores) {
+                const objectStore = transaction.objectStore(name);
+                counts[name] = await requestResult(objectStore.count());
+                indexes[name] = Array.from(objectStore.indexNames).sort();
+            }
+            const artifacts = await requestResult(
+                transaction.objectStore('rawArtifacts').getAll()
+            );
+            const sha256LookupCount = artifacts.length === 0
+                ? 0
+                : (await requestResult(
+                    transaction.objectStore('rawArtifacts')
+                        .index('bySha256')
+                        .getAll(artifacts[0].sha256)
+                )).length;
+            await transactionDone(transaction);
+            const version = database.version;
+            database.close();
+            return { version, stores, indexes, counts, sha256LookupCount };
+        }
+
+        try {
+            const [
+                { createImportStore },
+                importModule
+            ] =
+                await Promise.all([
+                    import('../../js/storage/index.js'),
+                    import('../../js/import/index.js')
+                ]);
+            const zipBytes = syntheticZipBytes();
+            const syntheticFile = new File([zipBytes], 'synthetic-strava-archive.zip', {
+                type: 'application/zip'
+            });
+            const content = base64(new Uint8Array(await syntheticFile.arrayBuffer()));
+            assert(content.length > 0, 'zip-file-read');
+            await ensureSentinel();
+            const sentinelBefore = await sentinelSnapshot();
+            let idSequence = 0;
+            const importStore = createImportStore({
+                indexedDB,
+                IDBKeyRange,
+                now: () => Date.parse('2026-08-05T03:04:05.006Z'),
+                applicationVersion: 'pr09-browser-smoke@1'
+            });
+            const nativeWorker = new Worker(
+                new URL('../../js/import/synthetic-import-worker.js', import.meta.url),
+                { type: 'module' }
+            );
+            service = importModule.createImportService({
+                importStore,
+                worker: importModule.createBrowserImportWorker(nativeWorker),
+                crypto,
+                createId: kind => `browser-${phase}-${kind}-${++idSequence}`
+            });
+            await gate('initialize', () => service.initialize());
+            await gate('crc-failure-before-job', async () => {
+                const jobsBefore = (await importStore.listImportJobs()).length;
+                const corrupted = new Uint8Array(zipBytes);
+                corrupted[30 + encoder.encode('activities.csv').byteLength] ^= 0x01;
+                let code = null;
+                try {
+                    await service.importArtifacts([{
+                        mediaType: MEDIA_TYPE,
+                        content: base64(corrupted)
+                    }]);
+                } catch (error) {
+                    code = error?.code;
+                }
+                assert(code === 'ZIP_CRC_MISMATCH', 'crc-code');
+                assert(
+                    (await importStore.listImportJobs()).length === jobsBefore,
+                    'crc-no-job'
+                );
+            });
+
+            let report;
+            if (phase === 'first-load') {
+                await gate('strava-zip-import', async () => {
+                    const run = await service.importArtifacts([{
+                        mediaType: MEDIA_TYPE,
+                        content
+                    }]);
+                    report = await service.waitForJob(run.jobId);
+                });
+                assert(report.status === 'completed_with_warnings', 'first-report');
+                assert(
+                    report.totals.total === 2
+                    && report.totals.completed === 2,
+                    'first-row-items'
+                );
+                sessionStorage.setItem(RELOAD_KEY, 'first-complete');
+            } else {
+                await gate('persistent-import-log', async () => {
+                    const jobs = await importStore.listImportJobs();
+                    assert(jobs.length === 1, 'persistent-job-count');
+                    report = await service.getReport(jobs[0].id);
+                });
+                assert(report.status === 'completed_with_warnings', 'reload-report');
+                await gate('exact-duplicate', async () => {
+                    const run = await service.importArtifacts([{
+                        mediaType: MEDIA_TYPE,
+                        content
+                    }]);
+                    report = await service.waitForJob(run.jobId);
+                });
+                assert(
+                    report.totals.skippedExactDuplicate === 2,
+                    'duplicate-report'
+                );
+            }
+
+            const preview = await service.previewActivities();
+            assert(preview.total === 2, 'preview-total');
+            assert(
+                preview.bySportCategory.length === 2
+                && preview.bySportCategory[0].sportCategory === 'ride'
+                && preview.bySportCategory[0].count === 1
+                && preview.bySportCategory[1].sportCategory === 'run'
+                && preview.bySportCategory[1].count === 1,
+                'preview-sport'
+            );
+            const v2 = await inspectV2();
+            assert(v2.version === 2, 'v2-version');
+            assert(JSON.stringify(v2.stores) === JSON.stringify(EXPECTED_STORES), 'stores');
+            assert(v2.sha256LookupCount === 1, 'sha-index');
+            assert(v2.counts.activities === 2, 'summary-activity-count');
+            assert(v2.counts.rawArtifacts === 2, 'row-artifact-count');
+            assert(
+                v2.counts.importJobs === (phase === 'first-load' ? 1 : 2),
+                'job-count'
+            );
+            assert(
+                v2.counts.importItems === (phase === 'first-load' ? 2 : 4),
+                'item-count'
+            );
+            const sentinelAfter = await sentinelSnapshot();
+            assert(
+                JSON.stringify(sentinelAfter) === JSON.stringify(sentinelBefore),
+                'legacy-unaffected'
+            );
+            const jobs = await importStore.listImportJobs();
+            await service.close();
+            service = null;
+
+            const resources = performance.getEntriesByType('resource')
+                .map(entry => new URL(entry.name, location.href));
+            metrics.externalResources = resources
+                .filter(url => url.origin !== location.origin).length;
+            metrics.providerEndpoints = resources
+                .filter(url => /strava\.com|\/api\//i.test(url.href)).length;
+            const serviceWorkers = 'serviceWorker' in navigator
+                ? (await navigator.serviceWorker.getRegistrations()).length
+                : 0;
+            const cacheEntries = 'caches' in globalThis
+                ? (await caches.keys()).length
+                : 0;
+            assert(Object.values(metrics).every(value => value === 0), 'metrics');
+            assert(serviceWorkers === 0, 'service-workers');
+            assert(cacheEntries === 0, 'cache-storage');
+            const phaseResult = {
+                phase,
+                gates,
+                report: {
+                    status: report.status,
+                    totals: report.totals
+                },
+                preview,
+                v2,
+                importLogCount: jobs.length,
+                legacyUnchanged: true,
+                metrics,
+                serviceWorkers,
+                cacheEntries
+            };
+            if (phase === 'first-load') {
+                sessionStorage.setItem(
+                    FIRST_RESULT_KEY,
+                    JSON.stringify(phaseResult)
+                );
+                document.body.dataset.status = 'reloading';
+                stateElement.textContent = 'reloading:first-load-complete';
+                summaryElement.textContent = JSON.stringify({
+                    status: 'reloading',
+                    firstLoad: phaseResult
+                }, null, 2);
+                location.reload();
+            } else {
+                const firstLoad = JSON.parse(
+                    sessionStorage.getItem(FIRST_RESULT_KEY) || 'null'
+                );
+                assert(firstLoad?.phase === 'first-load', 'first-result-persisted');
+                assert(
+                    Object.values(firstLoad.metrics).every(value => value === 0),
+                    'first-result-metrics'
+                );
+                const aggregateMetrics = {};
+                for (const name of Object.keys(metrics)) {
+                    aggregateMetrics[name] = firstLoad.metrics[name] + metrics[name];
+                }
+                const aggregateEnvironment = {
+                    metrics: aggregateMetrics,
+                    serviceWorkers: firstLoad.serviceWorkers + serviceWorkers,
+                    cacheEntries: firstLoad.cacheEntries + cacheEntries
+                };
+                assert(
+                    Object.values(aggregateMetrics).every(value => value === 0),
+                    'aggregate-metrics'
+                );
+                assert(
+                    aggregateEnvironment.serviceWorkers === 0,
+                    'aggregate-workers'
+                );
+                assert(
+                    aggregateEnvironment.cacheEntries === 0,
+                    'aggregate-caches'
+                );
+                const summary = {
+                    status: 'passed',
+                    phase: 'reload',
+                    firstLoad,
+                    reload: phaseResult,
+                    aggregateEnvironment
+                };
+                document.body.dataset.status = 'passed';
+                stateElement.textContent = 'passed:reload';
+                summaryElement.textContent = JSON.stringify(summary, null, 2);
+                globalThis.__PR09_BROWSER_RESULT__ = summary;
+            }
+        } catch {
+            if (service) await service.close().catch(() => {});
+            const summary = {
+                status: 'failed',
+                phase,
+                gateCount: gates.length,
+                failureCode,
+                metrics
+            };
+            document.body.dataset.status = 'failed';
+            stateElement.textContent = `failed:${phase}`;
+            summaryElement.textContent = JSON.stringify(summary, null, 2);
+            globalThis.__PR09_BROWSER_RESULT__ = summary;
+        }
+    </script>
+</body>
+</html>

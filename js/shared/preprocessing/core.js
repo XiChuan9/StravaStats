@@ -1,105 +1,11 @@
 // js/preprocessing.js
-import { rollingMean, calculateEnvironmentalDifficulty } from '../utils/index.js';
+import { rollingMean } from '../utils/index.js';
 
 // ===================================================================
 // CONFIGURACIÓN
 // ===================================================================
 const SUFFER_TO_TSS = 1;
 const MAX_HR_DEFAULT = 190;
-
-// Indoor swim correction for a known historical pool length misconfiguration
-// (recorded as 25m, actual 20m) for a specific athlete and date window.
-const INDOOR_SWIM_DISTANCE_CORRECTION = 20 / 25;
-const INDOOR_SWIM_CORRECTION_TAG = 'piscina-20m';
-const INDOOR_SWIM_CORRECTION_CUTOFF = '2025-08-19';
-const TARGET_ATHLETE_ID = 66914681;
-
-function normalizeText(value) {
-    return String(value || '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .trim()
-        .toLowerCase();
-}
-
-function isTargetAthleteAlexGascon(userProfile = {}) {
-    let profile = userProfile || {};
-
-    // Fallback to cached athlete profile if API athlete fetch was unavailable.
-    if ((!profile.firstname && !profile.lastname && !profile.username) && typeof localStorage !== 'undefined') {
-        try {
-            const cached = JSON.parse(localStorage.getItem('strava_athlete_data') || 'null');
-            if (cached) profile = cached;
-        } catch (_err) {
-            // ignore malformed cache
-        }
-    }
-
-    const first = normalizeText(profile.firstname);
-    const last = normalizeText(profile.lastname);
-    const fullName = `${first} ${last}`.trim();
-    const username = normalizeText(profile.username);
-    const athleteId = Number(profile.id);
-
-    return athleteId === TARGET_ATHLETE_ID || fullName === 'alex gascon' || username === 'gascn_alex' || username === 'alexgasconn' || username === 'alexgascon';
-}
-
-function isDateOnOrBeforeCutoff(activity, cutoffIsoDate) {
-    const datePart = String(activity?.start_date_local || activity?.start_date || '').slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return false;
-    return datePart <= cutoffIsoDate;
-}
-
-function isIndoorPoolSwim(activity) {
-    const sportType = String(activity?.sport_type || activity?.type || '');
-    if (!/swim/i.test(sportType) || /openwater/i.test(sportType)) return false;
-
-    if (activity?.trainer === true) return true;
-
-    const hasStartLatLng = Array.isArray(activity?.start_latlng) && activity.start_latlng.length === 2;
-    return !hasStartLatLng;
-}
-
-function addTag(activity, tag) {
-    if (!Array.isArray(activity.tags)) {
-        activity.tags = [];
-    }
-    if (!activity.tags.includes(tag)) {
-        activity.tags.push(tag);
-    }
-}
-
-function applyIndoorSwimPool20mCorrection(activities, userProfile = {}) {
-    if (!isTargetAthleteAlexGascon(userProfile)) {
-        return;
-    }
-
-    activities.forEach(activity => {
-        if (!isIndoorPoolSwim(activity)) return;
-        if (!isDateOnOrBeforeCutoff(activity, INDOOR_SWIM_CORRECTION_CUTOFF)) return;
-
-        const originalDistance = Number(activity.distance) || 0;
-        const originalMovingTime = Number(activity.moving_time) || 0;
-
-        if (originalDistance > 0) {
-            activity.distance = Math.max(1, Math.round(originalDistance * INDOOR_SWIM_DISTANCE_CORRECTION));
-        }
-
-        if (originalMovingTime > 0 && activity.distance > 0) {
-            // Recompute speed from corrected distance to keep pace coherent everywhere.
-            activity.average_speed = activity.distance / originalMovingTime;
-        } else if (Number(activity.average_speed) > 0) {
-            activity.average_speed = Number(activity.average_speed) * INDOOR_SWIM_DISTANCE_CORRECTION;
-        }
-
-        if (Number(activity.max_speed) > 0) {
-            activity.max_speed = Number(activity.max_speed) * INDOOR_SWIM_DISTANCE_CORRECTION;
-        }
-
-        activity.pool_length = 20;
-        addTag(activity, INDOOR_SWIM_CORRECTION_TAG);
-    });
-}
 
 // ===================================================================
 // Pool length estimation for all swim activities
@@ -143,77 +49,6 @@ function estimatePoolLengths(activities) {
             a.pool_length = candidates[0];
         }
     });
-}
-
-// ===================================================================
-// WEATHER API FUNCTION
-// ===================================================================
-function numericSafe(v) {
-    return v === null || v === undefined || isNaN(v) ? 0 : Number(v);
-}
-
-const WEATHER_REQUEST_TIMEOUT_MS = 4000; // abort individual request after 4 s
-const WEATHER_TOTAL_TIMEOUT_MS = 12000;  // stop fetching weather after 12 s total
-
-function isDemoModeFromStorage() {
-    if (typeof localStorage === 'undefined') return false;
-    return localStorage.getItem('strava_demo_mode') === 'true';
-}
-
-async function getWeatherForRun(run) {
-    if (!run.start_latlng || run.start_latlng.length < 2) {
-        return null;
-    }
-
-    const [lat, lon] = run.start_latlng;
-    const start = new Date(run.start_date_local);
-    const dateStr = start.toISOString().split("T")[0];
-
-    const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,precipitation,wind_speed_10m,wind_direction_10m,weathercode,cloudcover,surface_pressure,relativehumidity_2m&start_date=${dateStr}&end_date=${dateStr}&timezone=auto`;
-
-    const controller = new AbortController();
-    const timerId = setTimeout(() => controller.abort(), WEATHER_REQUEST_TIMEOUT_MS);
-
-    try {
-        const res = await fetch(url, { signal: controller.signal });
-        clearTimeout(timerId);
-        if (!res.ok) throw new Error(`HTTP ${res.status} - ${res.statusText}`);
-        const data = await res.json();
-
-        if (!data.hourly || !data.hourly.time || !data.hourly.time.length) {
-            return null;
-        }
-
-        const hour = start.getHours();
-        let idx = data.hourly.time.findIndex(t => new Date(t).getHours() === hour);
-
-        if (idx === -1) {
-            idx = Math.min(hour, data.hourly.time.length - 1);
-        }
-
-        const weather = {
-            temperature: numericSafe(data.hourly.temperature_2m[idx]),
-            precipitation: numericSafe(data.hourly.precipitation[idx]),
-            wind_speed: numericSafe(data.hourly.wind_speed_10m[idx]),
-            wind_direction: numericSafe(data.hourly.wind_direction_10m[idx]),
-            weather_code: data.hourly.weathercode ? data.hourly.weathercode[idx] : null,
-            humidity: numericSafe(data.hourly.relativehumidity_2m ? data.hourly.relativehumidity_2m[idx] : null),
-            cloudcover: numericSafe(data.hourly.cloudcover ? data.hourly.cloudcover[idx] : null),
-            pressure: numericSafe(data.hourly.surface_pressure ? data.hourly.surface_pressure[idx] : null),
-        };
-
-        const difficulty = calculateEnvironmentalDifficulty({ weather });
-
-        return { ...weather, difficulty };
-
-    } catch (err) {
-        clearTimeout(timerId);
-        // AbortError means timeout — silent skip; log other errors
-        if (err.name !== 'AbortError') {
-            console.warn(`Weather fetch for ${run.name} (${dateStr}) failed:`, err);
-        }
-        return null;
-    }
 }
 
 // ===================================================================
@@ -309,11 +144,27 @@ function hrZoneIntensity(avgHR, hrZones) {
     return ZONE_WEIGHTS[ZONE_WEIGHTS.length - 1];
 }
 
-function calculateTSS(activity, maxHr = MAX_HR_DEFAULT, hrZones = null) {
+function setTssEstimateMetadata(activity, contextStatus, method) {
+    if (contextStatus === 'legacy') return;
+
+    activity.tss_profile_status = contextStatus;
+    activity.tss_estimate_scope = (
+        contextStatus === 'configured'
+        && (method === 'heartrate' || method === 'heartrate_zones')
+    ) ? 'personalized' : 'general';
+}
+
+function calculateTSS(
+    activity,
+    maxHr = MAX_HR_DEFAULT,
+    hrZones = null,
+    { heartRateEnabled = true, contextStatus = 'legacy' } = {}
+) {
     const minutes = (activity.moving_time || 0) / 60;
     if (minutes <= 0) {
         activity.tss = 0;
         activity.tss_method = 'none';
+        setTssEstimateMetadata(activity, contextStatus, 'none');
         return 0;
     }
 
@@ -330,7 +181,7 @@ function calculateTSS(activity, maxHr = MAX_HR_DEFAULT, hrZones = null) {
     }
 
     // --- Secondary: HR-based using athlete zones when available ---
-    if (method === 'none' && activity.average_heartrate > 0) {
+    if (heartRateEnabled && method === 'none' && activity.average_heartrate > 0) {
         const zoneIF = hrZoneIntensity(activity.average_heartrate, hrZones);
         if (zoneIF !== null) {
             // Zone-weighted: the zoneIF already represents an IF²-equivalent
@@ -357,7 +208,7 @@ function calculateTSS(activity, maxHr = MAX_HR_DEFAULT, hrZones = null) {
     }
 
     // Long low-intensity correction: taper down beyond 4 h at low IF
-    if (hours > 4 && activity.average_heartrate > 0) {
+    if (heartRateEnabled && hours > 4 && activity.average_heartrate > 0) {
         const hrRatio = activity.average_heartrate / maxHr;
         if (hrRatio < 0.7) {
             tss *= Math.max(0.7, 1 - 0.05 * (hours - 4));
@@ -367,15 +218,27 @@ function calculateTSS(activity, maxHr = MAX_HR_DEFAULT, hrZones = null) {
     if (isNaN(tss)) tss = 0;
     activity.tss = +tss.toFixed(2);
     activity.tss_method = method;
+    setTssEstimateMetadata(activity, contextStatus, method);
     return activity.tss;
 }
 
 // ===================================================================
 // 2. VO₂max: solo running (ACSM + HR)
 // ===================================================================
-function computeVO2max(activity, maxHr = MAX_HR_DEFAULT) {
+function computeVO2max(
+    activity,
+    maxHr = MAX_HR_DEFAULT,
+    { requireHeartRate = false, contextStatus = 'legacy' } = {}
+) {
     if (activity.type !== 'Run' || !activity.distance || activity.moving_time < 600) {
         activity.vo2max = null;
+        return;
+    }
+
+    if (contextStatus === 'unconfigured' || (requireHeartRate && !(activity.average_heartrate > 0))) {
+        activity.vo2max = null;
+        activity.vo2max_profile_status = contextStatus;
+        activity.vo2max_estimate_scope = 'unavailable';
         return;
     }
 
@@ -385,63 +248,30 @@ function computeVO2max(activity, maxHr = MAX_HR_DEFAULT) {
     const vo2max = vo2 / hrFraction;
 
     activity.vo2max = (vo2max > 25 && vo2max < 90) ? +vo2max.toFixed(2) : null;
+    if (contextStatus !== 'legacy') {
+        activity.vo2max_profile_status = contextStatus;
+        activity.vo2max_estimate_scope = activity.vo2max === null ? 'unavailable' : 'personalized';
+    }
 }
 
 // ===================================================================
-// 3. Agrupar por día (con weather para runs)
+// 3. Group by day without external enrichment
 // ===================================================================
-async function groupByDay(activities) {
+async function groupByDay(activities, heartRateConfig) {
     const daily = {};
-    const runs = activities.filter(a => a.type === 'Run' && a.start_latlng);
-
-    // Demo data already includes synthetic weather fields and should avoid network/weather logs.
-    if (isDemoModeFromStorage()) {
-        activities.forEach(a => {
-            const date = a.start_date_local?.split('T')[0];
-            if (!date) return;
-
-            computeVO2max(a);
-
-            if (!daily[date]) {
-                daily[date] = { tss: 0, count: 0 };
-            }
-            daily[date].tss += a.tss;
-            daily[date].count += 1;
-        });
-        return daily;
-    }
-
-    // Fetch weather in batches with a hard total-time cap
-    const batches = 5;
-    const weatherStart = Date.now();
-    for (let i = 0; i < runs.length; i += batches) {
-        if (Date.now() - weatherStart > WEATHER_TOTAL_TIMEOUT_MS) {
-            console.warn(`[Weather] Total timeout reached after ${WEATHER_TOTAL_TIMEOUT_MS}ms — skipping remaining ${runs.length - i} runs`);
-            break;
-        }
-        const batch = runs.slice(i, i + batches);
-        const weatherPromises = batch.map(run => getWeatherForRun(run));
-        const weatherResults = await Promise.all(weatherPromises);
-
-        batch.forEach((run, idx) => {
-            const weather = weatherResults[idx];
-            if (weather) {
-                run.weather = weather;
-                run.difficulty = weather.difficulty;
-            } else {
-                run.difficulty = 0; // default
-            }
-        });
-
-        // Sleep to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 100));
-    }
 
     activities.forEach(a => {
         const date = a.start_date_local?.split('T')[0];
         if (!date) return;
 
-        computeVO2max(a);
+        if (heartRateConfig.contextStatus === 'legacy') {
+            computeVO2max(a);
+        } else {
+            computeVO2max(a, heartRateConfig.maxHr, {
+                requireHeartRate: true,
+                contextStatus: heartRateConfig.contextStatus
+            });
+        }
 
         if (!daily[date]) {
             daily[date] = { tss: 0, count: 0 };
@@ -582,8 +412,15 @@ function getRecoverySportFactor(activity) {
     return RECOVERY_SPORT_FACTORS[sport] ?? 1.0;
 }
 
-function getRecoveryHrZone(avgHr, maxHr) {
+function getRecoveryHrZone(avgHr, maxHr, hrZones = null) {
     if (!avgHr || !maxHr || avgHr <= 0 || maxHr <= 0) return 3; // default Z3
+    if (Array.isArray(hrZones) && hrZones.length > 0) {
+        const index = hrZones.findIndex(zone => {
+            const zoneMax = zone.max === -1 ? Infinity : zone.max;
+            return avgHr >= zone.min && avgHr < zoneMax;
+        });
+        if (index >= 0) return Math.min(index + 1, 5);
+    }
     const pct = avgHr / maxHr;
     if (pct < 0.60) return 1;
     if (pct < 0.70) return 2;
@@ -592,7 +429,12 @@ function getRecoveryHrZone(avgHr, maxHr) {
     return 5;
 }
 
-function calculateRecoveryHours(activity, maxHr = MAX_HR_DEFAULT) {
+function calculateRecoveryHours(
+    activity,
+    maxHr = MAX_HR_DEFAULT,
+    hrZones = null,
+    { heartRateEnabled = true } = {}
+) {
     if (!activity) return 4;
 
     const tss = activity.tss || 30; // fallback
@@ -601,8 +443,8 @@ function calculateRecoveryHours(activity, maxHr = MAX_HR_DEFAULT) {
     const tsb = activity.tsb ?? null;
 
     const sf = getRecoverySportFactor(activity);
-    const zone = getRecoveryHrZone(avgHr, maxHr);
-    const hm = RECOVERY_HR_ZONE_MULTIPLIERS[zone];
+    const zone = heartRateEnabled ? getRecoveryHrZone(avgHr, maxHr, hrZones) : null;
+    const hm = zone === null ? 1 : RECOVERY_HR_ZONE_MULTIPLIERS[zone];
     const df = Math.sqrt(durHours);
 
     let raw = (tss * sf * hm * df) / 10;
@@ -616,11 +458,41 @@ function calculateRecoveryHours(activity, maxHr = MAX_HR_DEFAULT) {
     return Math.round(Math.min(Math.max(raw, 4), 96));
 }
 
-function calculateDailyRecovery(activitiesArray) {
+function calculateDailyRecovery(activitiesArray, heartRateConfig) {
     if (!activitiesArray || !activitiesArray.length) return 0;
-    if (activitiesArray.length === 1) return calculateRecoveryHours(activitiesArray[0]);
+    if (heartRateConfig.contextStatus === 'legacy') {
+        if (activitiesArray.length === 1) return calculateRecoveryHours(activitiesArray[0]);
 
-    const hours = activitiesArray.map(a => calculateRecoveryHours(a));
+        const legacyHours = activitiesArray.map(a => calculateRecoveryHours(a));
+        const legacyMax = Math.max(...legacyHours);
+        const legacyRest = legacyHours.filter(hours => hours !== legacyMax);
+        const legacyCombined = legacyMax * 0.7 + (
+            legacyRest.length > 0
+                ? legacyRest.reduce((sum, hours) => sum + hours, 0) * 0.3
+                : 0
+        );
+        const legacyPenalty = 1.0 + (legacyHours.length - 1) * 0.12;
+        return Math.round(Math.min(legacyCombined * legacyPenalty, 96));
+    }
+
+    const options = {
+        heartRateEnabled: heartRateConfig.contextStatus !== 'unconfigured'
+    };
+    if (activitiesArray.length === 1) {
+        return calculateRecoveryHours(
+            activitiesArray[0],
+            heartRateConfig.maxHr,
+            heartRateConfig.hrZones,
+            options
+        );
+    }
+
+    const hours = activitiesArray.map(a => calculateRecoveryHours(
+        a,
+        heartRateConfig.maxHr,
+        heartRateConfig.hrZones,
+        options
+    ));
     const maxH = Math.max(...hours);
     const rest = hours.filter(h => h !== maxH);
     const combined = maxH * 0.7 + (rest.length > 0 ? rest.reduce((s, h) => s + h, 0) * 0.3 : 0);
@@ -628,7 +500,7 @@ function calculateDailyRecovery(activitiesArray) {
     return Math.round(Math.min(combined * penalty, 96));
 }
 
-function calculateRecoveryHoursSeries(activities, dates) {
+function calculateRecoveryHoursSeries(activities, dates, heartRateConfig) {
     const dailyMap = {};
 
     // Initialize daily buckets
@@ -646,7 +518,7 @@ function calculateRecoveryHoursSeries(activities, dates) {
 
     // Calculate daily recovery for each date
     const recoveryHours = dates.map(date => {
-        return calculateDailyRecovery(dailyMap[date]);
+        return calculateDailyRecovery(dailyMap[date], heartRateConfig);
     });
 
     return recoveryHours;
@@ -688,7 +560,7 @@ function computeEfficiencyFields(activity) {
     return { efficiency: null, method: null };
 }
 
-function assignMetrics(activities, dates, pmc, injuryRisk, recoveryHours) {
+function assignMetrics(activities, dates, pmc, injuryRisk, recoveryHours, heartRateConfig) {
     const map = Object.fromEntries(dates.map((d, i) => [d, i]));
 
     activities.forEach(a => {
@@ -700,6 +572,13 @@ function assignMetrics(activities, dates, pmc, injuryRisk, recoveryHours) {
             a.tsb = +pmc.tsb[i].toFixed(1);
             a.injuryRisk = +injuryRisk[i].toFixed(3); // 3 decimales para precisión
             a.recovery_hours = recoveryHours[i] ?? 4;
+            if (heartRateConfig.contextStatus !== 'legacy') {
+                a.recovery_profile_status = heartRateConfig.contextStatus;
+                a.recovery_estimate_scope = (
+                    heartRateConfig.contextStatus === 'configured'
+                    && a.average_heartrate > 0
+                ) ? 'personalized' : 'general';
+            }
         } else {
             a.atl = a.ctl = a.tsb = a.injuryRisk = a.recovery_hours = null;
         }
@@ -714,39 +593,95 @@ function assignMetrics(activities, dates, pmc, injuryRisk, recoveryHours) {
     });
 }
 
+function projectContextHeartRateZones(zones) {
+    if (!Array.isArray(zones) || zones.length !== 5) return null;
+
+    const projected = zones.map(zone => ({
+        min: zone?.minBpm,
+        max: zone?.maxBpmExclusive === null ? -1 : zone?.maxBpmExclusive
+    }));
+    const valid = projected.every((zone, index) => (
+        Number.isInteger(zone.min)
+        && zone.min >= 1
+        && (zone.max === -1 || (Number.isInteger(zone.max) && zone.max > zone.min))
+        && (index === 0
+            ? zone.min === 1
+            : zone.min === projected[index - 1].max)
+        && (index < projected.length - 1 || zone.max === -1)
+    ));
+    return valid ? projected : null;
+}
+
+function resolveHeartRateConfig(userProfile, zones, analysisContext) {
+    if (analysisContext === undefined) {
+        // Legacy behavior is deliberately unchanged when no V2 context is supplied.
+        let maxHr = MAX_HR_DEFAULT;
+        let hrZones = null;
+
+        if (zones?.heart_rate?.zones) {
+            hrZones = zones.heart_rate.zones;
+            const lastZoneMax = hrZones[hrZones.length - 1]?.max;
+            if (lastZoneMax && lastZoneMax > 0 && lastZoneMax !== -1) {
+                maxHr = lastZoneMax;
+            }
+        }
+        if (userProfile.max_hr) maxHr = userProfile.max_hr;
+
+        return { contextStatus: 'legacy', maxHr, hrZones };
+    }
+
+    const maxHr = analysisContext?.heartRate?.maxBpm;
+    const hrZones = projectContextHeartRateZones(analysisContext?.heartRate?.zones);
+    if (
+        analysisContext?.status === 'configured'
+        && Number.isInteger(maxHr)
+        && maxHr >= 100
+        && maxHr <= 230
+        && hrZones
+        && hrZones.every(zone => (
+            zone.min <= maxHr
+            && (zone.max === -1 || zone.max <= maxHr)
+        ))
+    ) {
+        return { contextStatus: 'configured', maxHr, hrZones };
+    }
+
+    // Explicit but absent/malformed context is fail-closed for Canonical data.
+    return { contextStatus: 'unconfigured', maxHr: null, hrZones: null };
+}
+
 // ===================================================================
 // 8. Pipeline principal
 // ===================================================================
-export async function preprocessActivities(activities, userProfile = {}, zones = null, gears = null) {
+export async function preprocessActivities(
+    activities,
+    userProfile = {},
+    zones = null,
+    gears = null,
+    analysisContext = undefined
+) {
     if (!activities?.length) return [];
-
-    applyIndoorSwimPool20mCorrection(activities, userProfile);
     estimatePoolLengths(activities);
 
-    // Derive maxHR from zones if available (last zone's max), fallback to profile, then default
-    let maxHr = MAX_HR_DEFAULT;
-    let hrZones = null;
+    const heartRateConfig = resolveHeartRateConfig(userProfile, zones, analysisContext);
 
-    if (zones?.heart_rate?.zones) {
-        hrZones = zones.heart_rate.zones;
-        const lastZoneMax = hrZones[hrZones.length - 1]?.max;
-        if (lastZoneMax && lastZoneMax > 0 && lastZoneMax !== -1) {
-            maxHr = lastZoneMax;
+    activities.forEach(a => calculateTSS(
+        a,
+        heartRateConfig.maxHr,
+        heartRateConfig.hrZones,
+        {
+            heartRateEnabled: heartRateConfig.contextStatus !== 'unconfigured',
+            contextStatus: heartRateConfig.contextStatus
         }
-    }
-    if (userProfile.max_hr) {
-        maxHr = userProfile.max_hr;
-    }
+    ));
 
-    activities.forEach(a => calculateTSS(a, maxHr, hrZones));
-
-    const daily = await groupByDay(activities);
+    const daily = await groupByDay(activities, heartRateConfig);
     const { dates, tssValues } = getTimeSeries(daily);
     const pmc = calculatePMC(tssValues);
     const injuryRisk = calculateInjuryRiskImproved(pmc.tsb, pmc.rampRate, pmc.atl, pmc.tssSeries);
-    const recoveryHours = calculateRecoveryHoursSeries(activities, dates);
+    const recoveryHours = calculateRecoveryHoursSeries(activities, dates, heartRateConfig);
 
-    assignMetrics(activities, dates, pmc, injuryRisk, recoveryHours);
+    assignMetrics(activities, dates, pmc, injuryRisk, recoveryHours, heartRateConfig);
 
     return activities;
 }

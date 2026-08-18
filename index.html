@@ -4,6 +4,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="no-referrer">
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'sha256-V0E36HdCyl2OK6QWJ4U+RZgN5YKsgn0YZF5FEgjCQPU='; script-src-attr 'unsafe-hashes' 'sha256-wkr/FC/hPJLXBEn10vyaIxd0odM6Aoh1F1xlw5kDNYY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://archive-api.open-meteo.com https://generativelanguage.googleapis.com https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
     <meta name="theme-color" content="#FC5200">
     <meta name="description"
         content="StravaStats — Advanced sports analytics dashboard for runners, cyclists and swimmers. Track performance, predict race times, analyze trends.">
@@ -32,22 +35,21 @@
     <link rel="icon" type="image/svg+xml" href="/icon-sport.svg">
     <link rel="apple-touch-icon" href="/icon-sport.svg">
 
-    <!-- D3 & Cal-Heatmap -->
-    <script src="https://d3js.org/d3.v7.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/cal-heatmap@4.2.2/dist/cal-heatmap.min.js"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cal-heatmap@4.2.2/dist/cal-heatmap.css">
+    <!-- Local, versioned visualization runtime -->
+    <script src="/js/vendor/d3-7.9.0.min.js" integrity="sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i" crossorigin="anonymous"></script>
+    <script src="/js/vendor/cal-heatmap-4.2.2.min.js" integrity="sha384-u6mWlT25qeWOoRQiqXuzYVkUZPu34+SHGP5MJB5FTBu1q4C1HGfjDC6UZZvtN1lt" crossorigin="anonymous"></script>
+    <link rel="stylesheet" href="/styles/vendor/cal-heatmap-4.2.2.css" integrity="sha384-CqhcQLOCMzvuMykgRLOtzD9FJW+nHHcILVVDD6EjiRjc3Ecn71ZKehgvlHUnK5q+" crossorigin="anonymous">
 
     <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script
-        src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix"></script>
+    <script src="/js/vendor/chart-4.5.0.umd.min.js" integrity="sha384-XcdcwHqIPULERb2yDEM4R0XaQKU3YnDsrTmjACBZyfdVVqjh6xQ4/DCMd7XLcA6Y" crossorigin="anonymous"></script>
+    <script src="/js/vendor/chartjs-adapter-date-fns-3.0.0.bundle.min.js" integrity="sha384-cVMg8E3QFwTvGCDuK+ET4PD341jF3W8nO1auiXfuZNQkzbUUiBGLsIQUE+b1mxws" crossorigin="anonymous"></script>
+    <script src="/js/vendor/chartjs-chart-matrix-3.0.0.min.js" integrity="sha384-rJ/i5dnMG9QpsJqCMvR1ItW0deXppx40qBosSeiEI3hb9B8msI7j0D22p2rp010u" crossorigin="anonymous"></script>
 
 
     <!-- Leaflet + Leaflet.heat -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+    <link rel="stylesheet" href="/styles/vendor/leaflet-1.9.4.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous">
+    <script src="/js/vendor/leaflet-1.9.4.min.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
+    <script src="/js/vendor/leaflet-heat-0.2.0.min.js" integrity="sha384-mFKkGiGvT5vo1fEyGCD3hshDdKmW3wzXW/x+fWriYJArD0R3gawT6lMvLboM22c0" crossorigin="anonymous"></script>
 
     <!-- CSS Framework & Components (Load in order) -->
     <link rel="stylesheet" href="/styles/colors.css">
@@ -67,38 +69,10 @@
     <link rel="stylesheet" href="/styles/weather.css">
     <link rel="stylesheet" href="/styles/map.css">
     <link rel="stylesheet" href="/styles/run-plus.css">
-
-
-
-    <!-- Analytics -->
-    <script>(function (w, d, s, l, i) {
-            w[l] = w[l] || []; w[l].push({
-                'gtm.start':
-                    new Date().getTime(), event: 'gtm.js'
-            }); var f = d.getElementsByTagName(s)[0],
-                j = d.createElement(s), dl = l != 'dataLayer' ? '&l=' + l : ''; j.async = true; j.src =
-                    'https://www.googletagmanager.com/gtm.js?id=' + i + dl; f.parentNode.insertBefore(j, f);
-        })(window, document, 'script', 'dataLayer', 'GTM-N7K8NCB5');</script>
-
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-H12FLB7QEC"></script>
-    <script>
-        window.dataLayer = window.dataLayer || [];
-        function gtag() { dataLayer.push(arguments); }
-        gtag('js', new Date());
-
-        gtag('config', 'G-H12FLB7QEC');
-    </script>
-
-    <script defer src="/_vercel/insights/script.js"></script>
 </head>
 
 
 <body>
-    <!-- Google Tag Manager (noscript) -->
-    <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-N7K8NCB5" height="0" width="0"
-            style="display:none;visibility:hidden"></iframe></noscript>
-    <!-- End Google Tag Manager (noscript) -->
-
     <div class="container">
         <!-- LOGIN SECTION -->
         <div id="login-section">
@@ -112,8 +86,15 @@
                     style="flex: 1; min-width: 200px; background-color: #666;">Try Demo</button>
             </div>
             <div class="privacy-policy" style="margin-top:1em; font-size:0.85em; color:#888; line-height:1.5;">
-                <strong>Privacy Notice:</strong> Your Strava data is processed in your browser only.
-                Nothing is stored or sent to any server.
+                <strong>Privacy Notice:</strong> Your activity library is stored locally in your browser by default.
+                Only explicit actions or consents may contact external services for Strava provider operations,
+                Weather, AI Coach, or OpenStreetMap tiles, each under its existing separate disclosure.
+            </div>
+            <div id="local-first-error" role="alert" hidden
+                style="margin-top:1rem; padding:1rem; border:1px solid #b91c1c; border-radius:8px; color:#7f1d1d;">
+                <strong>Local Library unavailable</strong>
+                <p>The local library could not be checked safely. No data was changed.</p>
+                <a href="/source-manager.html?mode=real">Open Sources for recovery options</a>
             </div>
         </div>
 
@@ -147,6 +128,11 @@
                         Coach<span class="tab-wip-badge">SOON</span></button>
                 </nav>
                 <nav class="top-bar__actions">
+                    <span id="source-status" role="status" aria-live="polite"
+                        style="font-size:0.75rem; white-space:nowrap; color:var(--text-medium);">Local Library: checking</span>
+                    <a id="sources-button" class="action-btn" href="/source-manager.html?mode=real"
+                        aria-label="Open Sources" title="Sources"
+                        style="width:auto; padding:0 0.65rem; text-decoration:none;">Sources</a>
                     <button id="settings-button" class="action-btn" aria-label="Open settings" title="Settings">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -166,8 +152,8 @@
                     <button id="kofi-button" class="action-btn" aria-label="Support the project" title="Support ☕">
                         ☕
                     </button>
-                    <button id="logout-button" class="action-btn action-btn--danger" aria-label="Log out"
-                        title="Log out">
+                    <button id="logout-button" class="action-btn action-btn--danger"
+                        aria-label="Disconnect Strava" title="Disconnect Strava">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
@@ -179,32 +165,81 @@
             </header>
 
             <!-- SETTINGS PANEL -->
-            <div id="settings-panel" class="settings-panel" style="display:none;">
-                <h4>Settings</h4>
-                <label>
-                    Units:
-                    <select id="units">
-                        <option value="metric">Metric</option>
-                        <option value="imperial">Imperial</option>
-                    </select>
-                </label>
-                <label>
-                    Age:
-                    <input type="number" id="age" min="0" value="25">
-                </label>
-                <label>
-                    Max HR:
-                    <input type="number" id="hr-max" min="100" max="230" value="190">
-                </label>
-                <label>
-                    Tab backgrounds:
-                    <input type="checkbox" id="bg-images-toggle">
-                </label>
-                <label>
-                    Dark mode:
-                    <input type="checkbox" id="dark-mode-toggle">
-                </label>
-                <button id="close-settings" aria-label="Close settings">Close</button>
+            <div id="settings-panel" class="settings-panel" style="display:none;" role="dialog"
+                aria-labelledby="settings-title">
+                <div class="settings-panel__header">
+                    <h4 id="settings-title">Settings</h4>
+                    <button id="close-settings" class="settings-panel__close" type="button"
+                        aria-label="Close settings">Close</button>
+                </div>
+
+                <section class="settings-section" aria-labelledby="display-settings-title">
+                    <h5 id="display-settings-title">Display</h5>
+                    <label>
+                        Units:
+                        <select id="units">
+                            <option value="metric">Metric</option>
+                            <option value="imperial">Imperial</option>
+                        </select>
+                    </label>
+                    <label>
+                        Age:
+                        <input type="number" id="age" min="0" value="25">
+                    </label>
+                    <label id="legacy-hr-max-setting" hidden>
+                        Max HR:
+                        <input type="number" id="legacy-hr-max" min="100" max="230" step="1" inputmode="numeric">
+                    </label>
+                    <label>
+                        Tab backgrounds:
+                        <input type="checkbox" id="bg-images-toggle">
+                    </label>
+                    <label>
+                        Dark mode:
+                        <input type="checkbox" id="dark-mode-toggle">
+                    </label>
+                </section>
+
+                <section id="analysis-profile-section" class="settings-section analysis-profile-settings" hidden
+                    aria-labelledby="analysis-profile-title">
+                    <h5 id="analysis-profile-title">Local Heart Rate Profile</h5>
+                    <p class="settings-help">Used only for local Canonical analysis. These health values stay in this browser.</p>
+                    <form id="analysis-profile-form" novalidate>
+                        <div class="analysis-profile-fields">
+                            <label for="hr-max">Max HR <span aria-hidden="true">*</span></label>
+                            <input type="number" id="hr-max" name="maxBpm" min="100" max="230" step="1"
+                                inputmode="numeric" required aria-describedby="analysis-profile-help">
+                            <label for="hr-rest">Resting HR</label>
+                            <input type="number" id="hr-rest" name="restingBpm" min="25" max="120" step="1"
+                                inputmode="numeric" placeholder="Optional">
+                            <label for="hr-threshold">Lactate threshold HR</label>
+                            <input type="number" id="hr-threshold" name="thresholdBpm" min="80" max="229" step="1"
+                                inputmode="numeric" placeholder="Optional">
+                        </div>
+                        <p id="analysis-profile-help" class="settings-help">Generate the standard 60%, 70%, 80% and 90% boundaries, then adjust them if needed.</p>
+                        <div class="analysis-profile-zone-heading">
+                            <strong>Five-zone boundaries</strong>
+                            <button id="analysis-profile-auto-zones" class="settings-secondary-button" type="button">Generate from max HR</button>
+                        </div>
+                        <div class="analysis-profile-zone-grid">
+                            <label for="hr-zone-bound-1">Z1 below</label>
+                            <input type="number" id="hr-zone-bound-1" name="zoneBoundary1" step="1" inputmode="numeric" required>
+                            <label for="hr-zone-bound-2">Z2 below</label>
+                            <input type="number" id="hr-zone-bound-2" name="zoneBoundary2" step="1" inputmode="numeric" required>
+                            <label for="hr-zone-bound-3">Z3 below</label>
+                            <input type="number" id="hr-zone-bound-3" name="zoneBoundary3" step="1" inputmode="numeric" required>
+                            <label for="hr-zone-bound-4">Z4 below</label>
+                            <input type="number" id="hr-zone-bound-4" name="zoneBoundary4" step="1" inputmode="numeric" required>
+                        </div>
+                        <p id="analysis-profile-zone-summary" class="analysis-profile-zone-summary" aria-live="polite"></p>
+                        <p id="analysis-profile-status" class="analysis-profile-status" role="status" aria-live="polite">Training profile is not configured.</p>
+                        <p id="analysis-profile-error" class="analysis-profile-error" role="alert" hidden></p>
+                        <div class="analysis-profile-actions">
+                            <button id="analysis-profile-save" type="submit">Save &amp; recompute</button>
+                            <button id="analysis-profile-reset" class="settings-danger-button" type="button">Reset profile</button>
+                        </div>
+                    </form>
+                </section>
             </div>
 
             <main>
@@ -571,6 +606,13 @@
                     <div id="range-selector" class="dashboard-range-selector"
                         aria-label="Dashboard time range selector"></div>
                     <div id="dashboard-topline" class="dashboard-topline" aria-live="polite"></div>
+                    <aside id="analysis-profile-notice" class="analysis-profile-notice" role="status" hidden>
+                        <div>
+                            <strong>Configure your local heart-rate profile</strong>
+                            <p>Personalized HR zones, HR VO₂max and readiness are unavailable. Distance, pace and generic load estimates remain available.</p>
+                        </div>
+                        <button id="analysis-profile-open-settings" type="button">Configure profile</button>
+                    </aside>
 
                     <div id="dashboard-summary" class="dashboard-summary-grid"></div>
 
@@ -917,10 +959,8 @@
                     <!-- CALCULADORA VDOT -->
                     <div class="chart-container" id="calculator-container">
                         <h3>VDOT Race Time Calculator</h3>
-                        <p>Powered by <a href="https://vdoto2.com/" target="_blank">VDOT O2</a>.</p>
-                        <div class="iframe-responsive-container">
-                            <iframe src='https://vdoto2.com/calculator/embed' frameborder='0'></iframe>
-                        </div>
+                        <p>The calculator opens only when you choose to visit VDOT O2.</p>
+                        <a href="https://vdoto2.com/" target="_blank" rel="noopener noreferrer">Open VDOT O2 calculator</a>
                     </div>
 
                 </div>
@@ -1180,8 +1220,8 @@
                 <div id="ai-chat-tab" class="tab-content"></div>
 
                 <!-- Llibreria per exportar captura -->
-                <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-                <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+                <script src="/js/vendor/html2canvas-1.4.1.min.js" integrity="sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H" crossorigin="anonymous"></script>
+                <script src="/js/vendor/jspdf-2.5.1.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
 
 
 

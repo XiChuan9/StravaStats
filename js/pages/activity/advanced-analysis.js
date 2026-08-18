@@ -3,52 +3,25 @@
  * Bridges new analysis engine with activity page UI
  */
 
-import { analyzeActivity } from '../analysis/index.js';
-import { GPXExporter, CSVExporter, JSONExporter } from '../analysis/export/index.js';
+import { analyzeActivity } from '../../analysis/index.js';
+import { GPXExporter, CSVExporter, JSONExporter } from '../../analysis/export/index.js';
 
 export class AdvancedActivityAnalyzer {
-    constructor(activity_id) {
+    constructor(
+        activity_id,
+        metadata,
+        streams,
+        analysis = analyzeActivity,
+        analysisContext = null
+    ) {
         this.activity_id = activity_id;
-        this.metadata = null;
-        this.streams = null;
+        this.metadata = structuredClone(metadata);
+        this.streams = structuredClone(streams);
+        this.analysis = analysis;
+        this.analysis_context = analysisContext === null
+            ? null
+            : structuredClone(analysisContext);
         this.analysis_result = null;
-    }
-
-    /**
-     * Fetch activity metadata and streams from API
-     */
-    async fetchActivityData() {
-        try {
-            console.log(`📥 Fetching activity ${this.activity_id}...`);
-
-            // Fetch activity metadata
-            const activityRes = await fetch(`/api/strava-activity?id=${this.activity_id}`);
-            if (!activityRes.ok) throw new Error('Failed to fetch activity');
-            const activityData = await activityRes.json();
-            this.metadata = activityData.activity;
-
-            // Determine required streams based on sport type
-            const streamTypes = this._getRequiredStreams(this.metadata.sport_type || this.metadata.type);
-
-            // Fetch streams
-            const streamsRes = await fetch(
-                `/api/strava-streams?id=${this.activity_id}&type=${encodeURIComponent(streamTypes.join(','))}`
-            );
-            if (!streamsRes.ok) throw new Error('Failed to fetch streams');
-            const streamsData = await streamsRes.json();
-            this.streams = streamsData.streams;
-
-            console.log(`✅ Activity data fetched:`);
-            console.log(`   - Sport: ${this.metadata.sport_type}`);
-            console.log(`   - Distance: ${(this.metadata.distance / 1000).toFixed(1)}km`);
-            console.log(`   - Duration: ${Math.round(this.metadata.moving_time / 60)}min`);
-            console.log(`   - Streams collected: ${Object.keys(this.streams).join(', ')}`);
-            return { metadata: this.metadata, streams: this.streams };
-
-        } catch (error) {
-            console.error('❌ Error fetching activity data:', error);
-            throw error;
-        }
     }
 
     /**
@@ -56,53 +29,21 @@ export class AdvancedActivityAnalyzer {
      */
     async analyze(mode = 'normal', athlete_profile = null) {
         if (!this.metadata || !this.streams) {
-            throw new Error('Activity data not loaded. Call fetchActivityData() first');
+            throw new Error('Activity data is unavailable');
         }
-
-        try {
-            console.log(`🚀 Starting ${mode} analysis...`);
-            this.analysis_result = await analyzeActivity(
-                this.activity_id,
-                this.metadata,
-                this.streams,
-                athlete_profile,
-                mode
-            );
-
-            console.log('✅ Analysis complete');
-            return this.analysis_result;
-
-        } catch (error) {
-            console.error('❌ Analysis failed:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Get required streams for sport type
-     */
-    _getRequiredStreams(sport_type) {
-        const baseStreams = ['time', 'latlng', 'distance', 'altitude', 'velocity_smooth', 'grade_smooth', 'moving'];
-
-        const sport = (sport_type || '').toLowerCase();
-
-        if (sport.includes('run')) {
-            return [...baseStreams, 'heartrate', 'cadence'];
-        }
-
-        if (sport.includes('ride') || sport.includes('bike')) {
-            return [...baseStreams, 'heartrate', 'cadence', 'watts'];
-        }
-
-        if (sport.includes('hike') || sport.includes('walk')) {
-            return [...baseStreams, 'heartrate'];
-        }
-
-        if (sport.includes('swim') || sport.includes('water')) {
-            return [...baseStreams];
-        }
-
-        return baseStreams;
+        const effectiveProfile = athlete_profile ?? (
+            this.analysis_context === null
+                ? null
+                : { analysisContext: structuredClone(this.analysis_context) }
+        );
+        this.analysis_result = await this.analysis(
+            this.activity_id,
+            this.metadata,
+            this.streams,
+            effectiveProfile,
+            mode
+        );
+        return this.analysis_result;
     }
 
     /**
@@ -258,7 +199,7 @@ export let currentActivityAnalyzer = null;
 /**
  * Initialize analyzer for current activity
  */
-export async function initializeActivityAnalyzer(activity_id) {
-    currentActivityAnalyzer = new AdvancedActivityAnalyzer(activity_id);
+export async function initializeActivityAnalyzer(activity_id, metadata, streams) {
+    currentActivityAnalyzer = new AdvancedActivityAnalyzer(activity_id, metadata, streams);
     return currentActivityAnalyzer;
 }
