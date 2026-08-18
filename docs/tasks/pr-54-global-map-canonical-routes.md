@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Approved; implementation and verification in progress |
+| Status | Implemented and locally verified |
 | Base checkpoint | `af81271` |
 | Feature branch | `codex/v2-global-map-canonical-routes` |
 | Data migration | None |
@@ -50,7 +50,7 @@ evidence.
   minimum/maximum longitude points. Full-resolution Canonical streams remain
   untouched for detail pages.
 - The in-memory LRU stores reduced geometries only and is capped at 30,000
-  points. Valid no-GPS results are cached; failures are retried. Activity
+  points and 5,000 entries. Valid no-GPS results are cached; failures are retried. Activity
   refresh, Repository/session/mode replacement, pagehide, clear, and dispose
   invalidate it. Analysis-profile recomputation does not.
 - Canonical start/end points come from the reduced route first/last values.
@@ -58,9 +58,18 @@ evidence.
 - Local routes may be read before consent, but no Leaflet/tile work or external
   request occurs until the existing exact OSM action is clicked. Filter or
   geometry changes revoke old consent; visual-only controls retain it.
+- Explicit `null` gaps in an otherwise valid stored position stream are omitted
+  at the composition boundary. Other malformed samples fail that activity
+  closed. Before consent, the external-map boundary receives only the true
+  latitude/longitude extrema needed to prove the same approved bounds; the
+  complete reduced route is expanded only after the user grants consent.
+- Route reads retain concurrency two and cooperatively yield after every four
+  scheduled activities so a large immediately-resolved local set cannot form
+  one unbounded browser task.
 - Map loading, ready, partial, empty, failed, and limit states use an
-  `aria-live` status and fixed copy. Counts may be shown; coordinates and IDs
-  may not.
+  `aria-live` status and fixed copy. The status node is created once by the Map
+  consumer because the accepted root-document privacy hash freezes
+  `index.html`. Counts may be shown; coordinates and IDs may not.
 
 ## Allowed paths
 
@@ -122,4 +131,45 @@ not authorized in this task and must remain `NOT RUN`.
 
 ## Verification
 
-Pending implementation.
+Local implementation checkpoints:
+
+- `fa43633` — Canonical route-session, composition, Map consumer, synthetic
+  browser/performance coverage, release payload update, and limitations.
+- `65698fe` — null-gap normalization, cooperative scheduling, consent-envelope
+  minimization, and isolated long-task evidence hardening.
+
+Automated verification used exact Node `24.19.0` and npm `11.17.0`:
+
+- `npm ci`: PASS; dependency and lock files were unchanged by the follow-up.
+- Final focused Map/composition/Demo/privacy review set: 104/104 PASS.
+- `npm run check:syntax`: PASS (295 files).
+- `npm run check:privacy`: PASS.
+- `npm test`: PASS (2,041/2,041).
+- `npm audit`: PASS (0 known vulnerabilities).
+- `git diff --check`: PASS.
+
+Actual-served synthetic browser evidence passed the 13-gate summary harness.
+The isolated Global Map performance phase loaded 5,000 routes into exactly
+30,000 display points with 5,000 first reads, zero repeat reads, maximum local
+read concurrency two, zero external requests, and no observed 100 ms long task.
+The pre-consent OSM boundary made zero tile requests.
+
+Authorized private evidence remained off Git and counts-only. Production
+decoders and Canonical validation passed 1,771/1,771 FIT and 691/691 TCX files;
+the one unrelated CSV was explicitly unsupported. The browser imported all
+2,462 supported files in six bounded selections. The resulting Canonical Map
+loaded 2,452 routes, reported 10 activities without a route and zero route-read
+failures, exposed the OSM consent action, and made zero OSM or other app-origin
+external requests before consent. Dashboard, Run, Run Plus, Trends, and one
+representative detail page remained usable without runtime errors or invalid
+numbers. No real-map consent was clicked and no screenshot, identifier,
+coordinate, filename, date, or health value was retained.
+
+On that large private library, one cold Map load took about 31.5 seconds and
+included an observed 182 ms browser long task while full IndexedDB streams were
+being cloned. This does not invalidate the isolated 5,000-route computation
+gate, but it is a disclosed first-load responsiveness limitation; repeat views
+reuse the in-memory reduced-route cache.
+
+GitHub push, PR creation, exact-head GitHub CI, Alpha candidate build, merge,
+and deployment remain `NOT RUN` by scope.

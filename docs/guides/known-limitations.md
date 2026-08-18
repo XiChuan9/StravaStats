@@ -129,6 +129,12 @@ external-service evidence was run for release.
 
 - The 5,000-activity and 200,000-point gates passed in the disclosed synthetic Chromium and Node
   environments.
+- Canonical Global Map hydration is lazy and proportional to the visible activity count. In the
+  authorized counts-only 2,462-file browser smoke, the cold local load took about 31.5 seconds and
+  included an observed 182 ms long task while IndexedDB returned full position streams; repeated
+  views in the same page session reuse the bounded reduced-route cache. This hardware/library
+  observation is not evidence of data loss or an external request, but cold-load responsiveness
+  remains an optimization target.
 - 10,000 activities and 1,000 FIT throughput are record-only. The waiver through 2026-11-12 keeps
   the rows `PARTIAL`, not `PASS`; a representative real-hardware budget task is due before expiry.
 - Browser Chart, Leaflet, and Canonical Store measurements disclose recording stubs. They do not
