@@ -56,6 +56,7 @@
             <input id="map-heat-radius">
             <input id="map-heat-blur">
             <input id="map-color-by-sport" type="checkbox">
+            <p id="map-route-status" role="status" aria-live="polite"></p>
             <div id="global-map"></div>
         </div>
     </section>
@@ -640,10 +641,14 @@
                 start_date_local: '2026-01-02T06:00:00.000Z',
                 start_latlng: [1, 2],
                 end_latlng: [3, 4]
-            }]);
+            }], null, null, { sessionMode: 'real' });
             const visualization = document.getElementById('map-visualization');
             visualization.value = 'points';
             visualization.dispatchEvent(new Event('change', { bubbles: true }));
+            const consent = Array.from(document.querySelectorAll('#global-map button'))
+                .find(button => button.textContent === 'Load approximate OpenStreetMap tiles for this map');
+            requireGate(consent instanceof HTMLButtonElement);
+            consent.click();
             const sportOption = Array.from(document.getElementById('map-sport-filter').options)
                 .find(option => option.value === DOM_XSS_CANARY);
             requireGate(sportOption?.textContent === DOM_XSS_CANARY);
@@ -659,6 +664,87 @@
                 finiteTrainingZoneStyles: ['50%', '50%'],
                 leafletPopupUsesDom: true,
                 canaryExecutions: 0
+            };
+        });
+
+        await gate('canonicalGlobalMapRouteBoundary', async () => {
+            requireGate(modules !== null);
+            const routeLoads = [];
+            const networkStart = observations.pageNetwork.length;
+            const canonicalActivities = [
+                {
+                    id: 'canonical-map-run',
+                    type: 'Run',
+                    sport_type: 'Run',
+                    name: 'Synthetic Canonical Run',
+                    start_date_local: '2026-02-01T06:00:00.000Z'
+                },
+                {
+                    id: 'canonical-map-ride',
+                    type: 'Ride',
+                    sport_type: 'Ride',
+                    name: 'Synthetic Canonical Ride',
+                    start_date_local: '2026-03-01T06:00:00.000Z'
+                }
+            ];
+            const routesById = new Map([
+                ['canonical-map-run', Object.freeze([Object.freeze([10, 20]), Object.freeze([11, 21])])],
+                ['canonical-map-ride', Object.freeze([Object.freeze([30, 40]), Object.freeze([31, 41])])]
+            ]);
+            const loadCanonicalRoutes = async ids => {
+                routeLoads.push([...ids]);
+                const routes = Object.freeze(ids.map(id => routesById.get(id) || Object.freeze([])));
+                return Object.freeze({
+                    status: routes.some(route => route.length > 0) ? 'ready' : 'empty',
+                    routes,
+                    routeCount: routes.filter(route => route.length > 0).length,
+                    unavailableCount: routes.filter(route => route.length === 0).length,
+                    failedCount: 0,
+                    pointCount: routes.reduce((sum, route) => sum + route.length, 0)
+                });
+            };
+
+            const cleanupCanonicalMap = modules.mapsModule.renderMapTab(canonicalActivities, null, null, {
+                sessionMode: 'real',
+                loadCanonicalRoutes
+            });
+            requireGate(typeof cleanupCanonicalMap === 'function');
+            await new Promise(resolve => setTimeout(resolve, 0));
+            requireGate(JSON.stringify(routeLoads) === JSON.stringify([
+                ['canonical-map-run', 'canonical-map-ride']
+            ]));
+            requireGate(document.getElementById('map-route-status')?.dataset.state === 'ready');
+            requireGate(document.getElementById('map-route-status')?.textContent === 'Local routes ready: 2 routes, 4 points.');
+            requireGate(Array.from(document.querySelectorAll('#global-map button')).some(button => (
+                button.textContent === 'Load approximate OpenStreetMap tiles for this map'
+            )));
+
+            document.getElementById('map-visualization').value = 'routes';
+            document.getElementById('map-visualization').dispatchEvent(new Event('change', { bubbles: true }));
+            requireGate(routeLoads.length === 1);
+            document.getElementById('map-sport-filter').value = 'Run';
+            document.getElementById('map-sport-filter').dispatchEvent(new Event('change', { bubbles: true }));
+            await new Promise(resolve => setTimeout(resolve, 0));
+            requireGate(JSON.stringify(routeLoads.at(-1)) === JSON.stringify(['canonical-map-run']));
+            requireGate(document.getElementById('map-route-status')?.textContent === 'Local routes ready: 1 route, 2 points.');
+            requireGate(document.querySelectorAll('#map-route-status').length === 1);
+            requireGate(observations.pageNetwork.length === networkStart);
+            const loadsBeforeCleanup = routeLoads.length;
+            cleanupCanonicalMap();
+            document.getElementById('map-sport-filter').value = 'Ride';
+            document.getElementById('map-sport-filter').dispatchEvent(new Event('change', { bubbles: true }));
+            await new Promise(resolve => setTimeout(resolve, 0));
+            requireGate(routeLoads.length === loadsBeforeCleanup);
+            const staleConsent = Array.from(document.querySelectorAll('#global-map button'))
+                .find(button => button.textContent === 'Load approximate OpenStreetMap tiles for this map');
+            staleConsent?.click();
+            requireGate(observations.pageNetwork.length === networkStart);
+            return {
+                initialActivities: 2,
+                filteredActivities: 1,
+                routeLoads: routeLoads.length,
+                externalRequestsBeforeConsent: 0,
+                cleanupRevoked: true
             };
         });
 

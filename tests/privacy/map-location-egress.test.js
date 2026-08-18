@@ -565,6 +565,33 @@ test('production integration injects mode and leaves no dormant provider seam', 
     assert.doesNotMatch(gear, /push\(\.\.\.item\.route\)/);
 });
 
+test('Canonical global routes remain behind the app-owned reader and existing consent boundary', async () => {
+    const [main, maps, html] = await Promise.all([
+        source('js/app/main.js'),
+        source('js/tabs/maps.js'),
+        source('index.html')
+    ]);
+    assert.match(main, /createGlobalMapRouteSession\(\{[\s\S]*?readRoute\(activityId\)/);
+    assert.match(main, /getStreams\(activityId, \{\s*types: \['latlng'\]\s*\}\)/);
+    assert.match(main, /return readCanonicalGlobalMapRoute\(streamLoad\.data\)/);
+    assert.match(main, /if \(keys\.length === 0\) return Object\.freeze\(\[\]\)/);
+    assert.match(main, /if \(keys\.length !== 1 \|\| keys\[0\] !== 'latlng'\) throw safeOperationalError\(\)/);
+    assert.match(main, /if \(route\.length === 0\) throw safeOperationalError\(\)/);
+    assert.match(maps, /loadCanonicalRoutes = null/);
+    assert.match(maps, /mapBoundary\.present\(\{/);
+    assert.match(maps, /providerControlId: 'map-tiles'/);
+    assert.match(maps, /authorizationCoordinates\(items\)/);
+    assert.match(maps, /revisionKey: String\(geometryRevision\)/);
+    assert.match(html, /id="global-map"[^>]*role="region"/);
+    assert.match(maps, /statusElement\.setAttribute\('aria-live', 'polite'\)/);
+
+    for (const value of [main, maps]) {
+        assert.doesNotMatch(value, /tile\.openstreetmap\.org|basemaps\.cartocdn|stamen-tiles/);
+    }
+    assert.doesNotMatch(maps, /\bfetch\s*\(|XMLHttpRequest|WebSocket|indexedDB|localStorage|sessionStorage/);
+    assert.doesNotMatch(maps, /console\.(?:log|warn|error)/);
+});
+
 test('the browser harness freezes interception-before-import and zero real external requests', async () => {
     const harness = await source('tests/consumers/map-location-consent-browser-smoke.html');
     assert.match(harness, /globalThis\.fetch\s*=\s*interceptedFetch[\s\S]*?await import\(/);

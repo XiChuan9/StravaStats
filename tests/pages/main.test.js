@@ -8,6 +8,7 @@ const source = path => readFile(new URL(path, projectRoot), 'utf8');
 const [
     html,
     main,
+    maps,
     runPlus,
     dashboard,
     planner,
@@ -18,6 +19,7 @@ const [
 ] = await Promise.all([
     source('index.html'),
     source('js/app/main.js'),
+    source('js/tabs/maps.js'),
     source('js/tabs/run-plus.js'),
     source('js/tabs/dashboard.js'),
     source('js/tabs/planner.js'),
@@ -143,4 +145,48 @@ test('Run Plus consumes the injected context and Canonical unconfigured state ca
     assert.ok(body.indexOf("analysisContext?.status === 'unconfigured'") < body.indexOf('getDashboardHrMax()'));
     assert.match(body, /value: null/);
     assert.match(runPlus, /Training profile required/);
+});
+
+test('Global Map lazily composes Canonical latlng reads and keeps other modes on summary geometry', () => {
+    assert.match(html, /id="global-map"[^>]*role="region"/);
+    assert.match(main, /import \{ createGlobalMapRouteSession \} from '\.\/global-map-routes\.js'/);
+    assert.match(main, /sessionActivitySource !== REPOSITORY_SOURCE\.CANONICAL[\s\S]*?return null/);
+    assert.match(main, /activeSessionMode !== APP_SESSION_MODE\.REAL[\s\S]*?sessionActivitySource !== REPOSITORY_SOURCE\.CANONICAL/);
+    assert.match(
+        main,
+        /repository\.getStreams\(activityId, \{\s*types: \['latlng'\]\s*\}\)/
+    );
+    assert.match(main, /return readCanonicalGlobalMapRoute\(streamLoad\.data\)/);
+    assert.match(main, /if \(keys\.length === 0\) return Object\.freeze\(\[\]\)/);
+    assert.match(main, /if \(keys\.length !== 1 \|\| keys\[0\] !== 'latlng'\) throw safeOperationalError\(\)/);
+    assert.match(main, /if \(route\.length === 0\) throw safeOperationalError\(\)/);
+    assert.match(main, /loadCanonicalRoutes: getCanonicalMapRouteLoader\(\)/);
+    assert.match(
+        main,
+        /disposeGlobalMapView\(\);\s*clearGlobalMapRouteSession\(\);[\s\S]*?refresh: true/
+    );
+    assert.match(main, /window\.addEventListener\('pagehide', disposeGlobalMapState/);
+    assert.match(
+        main,
+        /function renderGlobalMapView\(\)[\s\S]*?disposeGlobalMapView\(\)[\s\S]*?globalMapViewCleanup = typeof cleanup === 'function'/
+    );
+    assert.match(
+        main,
+        /function disposeGlobalMapState\(\)[\s\S]*?disposeGlobalMapView\(\);\s*disposeGlobalMapRouteSession\(\)/
+    );
+
+    const recomputeStart = main.indexOf('async function recomputeCanonicalAnalysisViews()');
+    const recomputeEnd = main.indexOf('async function handleAnalysisProfileSave', recomputeStart);
+    assert.doesNotMatch(main.slice(recomputeStart, recomputeEnd), /GlobalMapRouteSession/);
+
+    assert.match(maps, /typeof loadCanonicalRoutes !== 'function'/);
+    assert.match(maps, /visible\.map\(activity => activity\.id\)/);
+    assert.match(maps, /start: route\[0\] \|\| null/);
+    assert.match(maps, /end: route\.at\(-1\) \|\| null/);
+    assert.match(maps, /activeMapRenderCleanup\?\.\(\)/);
+    assert.match(maps, /removeEventListener\(eventName, listener\)/);
+    assert.match(maps, /void reloadRoutes\(\);\s*return cleanup/);
+    assert.match(maps, /if \(!statusElement\) \{/);
+    assert.match(maps, /statusElement\.setAttribute\('role', 'status'\)/);
+    assert.match(maps, /statusElement\.setAttribute\('aria-live', 'polite'\)/);
 });

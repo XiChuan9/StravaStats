@@ -36,6 +36,7 @@ import {
     REPOSITORY_WARNING_CODE
 } from '../../js/repository/index.js';
 import { createAICoachSession } from '../../js/app/ai-coach-egress.js';
+import { readValidatedRouteGeometry } from '../../js/app/map-location-egress.js';
 
 const FIXED_NOW = '2026-07-29T08:30:00.000Z';
 const FIXED_NOW_MS = Date.parse(FIXED_NOW);
@@ -279,6 +280,7 @@ function compileSummaryBoundary(source) {
         'APP_SESSION_MODE',
         'getFeatureFlags',
         'getApplicationShadowWriter',
+        'readValidatedRouteGeometry',
         `"use strict";${boundarySource};return {
             establishSummaryRepositorySession,
             requireSummaryRepositorySession,
@@ -290,7 +292,8 @@ function compileSummaryBoundary(source) {
             applySummarySessionGearLoad,
             buildSessionGearNameMap,
             createRunPlusRenderOptions,
-            selectPreprocessingAthlete
+            selectPreprocessingAthlete,
+            readCanonicalGlobalMapRoute
         };`
     )(
         () => {
@@ -300,7 +303,8 @@ function compileSummaryBoundary(source) {
         REPOSITORY_WARNING_CODE,
         Object.freeze({ DEMO: 'demo', REAL: 'real' }),
         () => Object.freeze({ dataRepositoryMode: 'legacy' }),
-        () => null
+        () => null,
+        readValidatedRouteGeometry
     );
 }
 
@@ -315,8 +319,41 @@ const {
     applySummarySessionGearLoad,
     buildSessionGearNameMap,
     createRunPlusRenderOptions,
-    selectPreprocessingAthlete
+    selectPreprocessingAthlete,
+    readCanonicalGlobalMapRoute
 } = compileSummaryBoundary(mainSource);
+
+test('Demo and non-Canonical sessions cannot construct or invoke the global Map route reader', () => {
+    const start = mainSource.indexOf('function getCanonicalMapRouteLoader()');
+    const end = mainSource.indexOf("window.addEventListener('pagehide'", start);
+    assert.notEqual(start, -1);
+    assert.notEqual(end, -1);
+    const body = mainSource.slice(start, end);
+    assert.match(body, /activeSessionMode !== APP_SESSION_MODE\.REAL/);
+    assert.match(body, /sessionActivitySource !== REPOSITORY_SOURCE\.CANONICAL/);
+    assert.ok(body.indexOf('return null') < body.indexOf('createGlobalMapRouteSession'));
+    assert.match(body, /getStreams\(activityId, \{\s*types: \['latlng'\]\s*\}\)/);
+
+    const demoHandler = mainSource.slice(
+        mainSource.indexOf("if (demoButton) demoButton.addEventListener('click'"),
+        mainSource.indexOf("if (logoutButton)")
+    );
+    assert.doesNotMatch(demoHandler, /GlobalMapRoute|loadCanonicalRoutes|getStreams/);
+});
+
+test('Canonical Map composition distinguishes absent latlng from malformed geometry', () => {
+    assert.deepEqual(readCanonicalGlobalMapRoute({}), []);
+    assert.equal(Object.isFrozen(readCanonicalGlobalMapRoute({})), true);
+    const route = readCanonicalGlobalMapRoute({
+        latlng: { data: [[0, 0], [1, 1]] }
+    });
+    assert.deepEqual(route, [[0, 0], [1, 1]]);
+    assert.equal(Object.isFrozen(route), true);
+    assert.throws(() => readCanonicalGlobalMapRoute({ latlng: { data: [] } }));
+    assert.throws(() => readCanonicalGlobalMapRoute({ latlng: { data: [[NaN, 0]] } }));
+    assert.throws(() => readCanonicalGlobalMapRoute({ latlng: null }));
+    assert.throws(() => readCanonicalGlobalMapRoute({ unexpected: {} }));
+});
 
 function repositoryEnvelope(data, source = REPOSITORY_SOURCE.DEMO) {
     return {

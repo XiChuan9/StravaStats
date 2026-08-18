@@ -133,6 +133,28 @@ test('M23 R1 root summary renders persistent names and opaque IDs only through n
     assert.match(activities, /document\.createElement\('small'\)/);
 });
 
+test('Global Map filters before Canonical loading and reuses one route snapshot for visual controls', () => {
+    const maps = tabSources.get('js/tabs/maps.js');
+    const reloadStart = maps.indexOf('async function reloadRoutes()');
+    const reloadEnd = maps.indexOf("listen(applyButton, 'click'", reloadStart);
+    assert.notEqual(reloadStart, -1);
+    assert.notEqual(reloadEnd, -1);
+    const reload = maps.slice(reloadStart, reloadEnd);
+
+    assert.ok(reload.indexOf('const visible = visibleActivities()') < reload.indexOf('loadCanonicalRoutes('));
+    assert.match(reload, /loadCanonicalRoutes\(visible\.map\(activity => activity\.id\)\)/);
+    assert.match(maps, /listen\(applyButton, 'click', reloadRoutes\)/);
+    assert.match(maps, /listen\(sportSel, 'change', reloadRoutes\)/);
+    assert.match(maps, /listen\(viewSelect, 'change', presentSnapshot\)/);
+    assert.match(maps, /listen\(densitySlider, 'input', presentSnapshot\)/);
+    assert.match(maps, /listen\(radiusSlider, 'input', presentSnapshot\)/);
+    assert.match(maps, /listen\(blurSlider, 'input', presentSnapshot\)/);
+    assert.match(maps, /listen\(colorBySport, 'change', presentSnapshot\)/);
+    assert.match(maps, /result\?\.status === 'superseded'/);
+    assert.match(maps, /Too many activities to map at once/);
+    assert.doesNotMatch(maps, /Repository|createRepository|indexedDB/);
+});
+
 test('main obtains provider-owned data only through the Repository public entry', () => {
     assert.match(
         mainSource,

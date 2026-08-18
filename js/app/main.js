@@ -47,6 +47,8 @@ import {
     DEMO_ANALYSIS_CONTEXT_V1,
     generatePercentMaxUpperBounds
 } from './analysis-profile.js';
+import { createGlobalMapRouteSession } from './global-map-routes.js';
+import { readValidatedRouteGeometry } from './map-location-egress.js';
 
 export const APP_SESSION_MODE = Object.freeze({
     DEMO: 'demo',
@@ -204,6 +206,17 @@ function inspectDenseDataArray(value, collectValues = false) {
 
 function readDenseDataArray(value) {
     return inspectDenseDataArray(value, true)?.values ?? null;
+}
+
+function readCanonicalGlobalMapRoute(streams) {
+    const snapshot = readPlainDataRecord(streams);
+    if (snapshot === null) throw safeOperationalError();
+    const keys = Object.keys(snapshot);
+    if (keys.length === 0) return Object.freeze([]);
+    if (keys.length !== 1 || keys[0] !== 'latlng') throw safeOperationalError();
+    const route = readValidatedRouteGeometry({}, snapshot);
+    if (route.length === 0) throw safeOperationalError();
+    return route;
 }
 
 function snapshotRunPlusAnalysisContext(value) {
@@ -799,6 +812,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let allActivities = [];
     let activeSessionMode = null;
     let sessionRepository = null;
+    let sessionActivitySource = null;
+    let globalMapRouteSession = null;
+    let globalMapViewCleanup = null;
     const documentSessionMode = (() => {
         try {
             return isDemoMode()
@@ -851,9 +867,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'calendar-tab': { render: () => renderCalendarTab(allActivities) },
         'weather-tab': { render: () => renderWeatherTab(allActivities, { sessionMode: activeSessionMode }) },
         'map-tab': {
-            render: () => renderMapTab(allActivities, dateFilterFrom, dateFilterTo, {
-                sessionMode: activeSessionMode
-            }),
+            render: renderGlobalMapView,
             usesFilters: true
         },
         'wrapped-tab': { render: () => renderWrappedTab(allActivities) },
@@ -1422,6 +1436,66 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    function disposeGlobalMapRouteSession() {
+        globalMapRouteSession?.dispose();
+        globalMapRouteSession = null;
+    }
+
+    function disposeGlobalMapView() {
+        globalMapViewCleanup?.();
+        globalMapViewCleanup = null;
+    }
+
+    function disposeGlobalMapState() {
+        disposeGlobalMapView();
+        disposeGlobalMapRouteSession();
+    }
+
+    function clearGlobalMapRouteSession() {
+        globalMapRouteSession?.clear();
+    }
+
+    function setSessionActivitySource(source) {
+        if (sessionActivitySource !== source) disposeGlobalMapState();
+        sessionActivitySource = source;
+    }
+
+    function renderGlobalMapView() {
+        disposeGlobalMapView();
+        const cleanup = renderMapTab(allActivities, dateFilterFrom, dateFilterTo, {
+            sessionMode: activeSessionMode,
+            loadCanonicalRoutes: getCanonicalMapRouteLoader()
+        });
+        globalMapViewCleanup = typeof cleanup === 'function' ? cleanup : null;
+    }
+
+    function getCanonicalMapRouteLoader() {
+        if (
+            activeSessionMode !== APP_SESSION_MODE.REAL
+            || sessionActivitySource !== REPOSITORY_SOURCE.CANONICAL
+        ) {
+            return null;
+        }
+        if (globalMapRouteSession === null) {
+            const repository = requireSummaryRepositorySession(
+                activeSessionMode,
+                sessionRepository
+            );
+            globalMapRouteSession = createGlobalMapRouteSession({
+                async readRoute(activityId) {
+                    const streamLoad = await repository.getStreams(activityId, {
+                        types: ['latlng']
+                    });
+                    return readCanonicalGlobalMapRoute(streamLoad.data);
+                }
+            });
+        }
+        const routeSession = globalMapRouteSession;
+        return activityIds => routeSession.load(activityIds);
+    }
+
+    window.addEventListener('pagehide', disposeGlobalMapState, { once: true });
+
     function getRunPlusRenderOptions() {
         return createRunPlusRenderOptions({
             sessionRepository: requireSummaryRepositorySession(
@@ -1469,7 +1543,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function activateTab(tabId, { updateUrl = false, replaceUrl = false } = {}) {
         if (!consumerRenderingEnabled) return;
         if (tabId === activeTabId) {
-            if (tabId === 'run-plus-tab' && tabConfig[tabId]) {
+            if ((tabId === 'run-plus-tab' || tabId === 'map-tab') && tabConfig[tabId]) {
+                renderedTabs.add(tabId);
                 requestAnimationFrame(() => tabConfig[tabId].render());
             } else if (tabId === 'ai-chat-tab'
                 && !renderedTabs.has(tabId)
@@ -1739,6 +1814,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- INITIALIZATION ---
     async function initializeApp(tokenData, localActivities = null) {
         const localOnly = localActivities !== null;
+        disposeGlobalMapState();
+        sessionActivitySource = null;
         sessionAthlete = null;
         sessionZones = null;
         sessionGears = resetSummarySessionGears();
@@ -1795,6 +1872,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 selectedActivityLoad = activityLoad;
             }
             const activityLoad = selectedActivityLoad;
+            setSessionActivitySource(activityLoad.source);
             const activities = activityLoad.data;
             if (
                 activityLoad.source === REPOSITORY_SOURCE.CANONICAL
@@ -1943,6 +2021,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function refreshActivities() {
         const sessionMode = activeSessionMode;
+        disposeGlobalMapView();
+        clearGlobalMapRouteSession();
         const canonicalRefresh = sessionMode === APP_SESSION_MODE.REAL
             && getFeatureFlags().dataRepositoryMode === 'canonical';
         sessionAthlete = null;
@@ -1969,6 +2049,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 sessionRepository: repository,
                 refresh: true
             });
+            setSessionActivitySource(activityLoad.source);
             const activities = activityLoad.data;
             const metadata = await loadRefreshAthleteAndZones(repository);
             const athlete = metadata.athlete;
