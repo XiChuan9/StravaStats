@@ -361,16 +361,21 @@ test('weather, zones, and Swim athlete behavior stays behind injected boundaries
     for (const relativePath of [
         'js/pages/activity/activity.js',
         'js/pages/run/run.js',
-        'js/pages/bike/bike.js'
+        'js/pages/bike/bike.js',
+        'js/pages/swim/swim.js'
     ]) {
         assert.match(
             rendererSources.get(relativePath),
-            /configuredZones\s*=\s*zones\?\.heart_rate\?\.zones[\s\S]*Array\.isArray\(configuredZones\)/,
+            /readHeartRateZones\(zones\)/,
+            relativePath
+        );
+        assert.doesNotMatch(
+            rendererSources.get(relativePath),
+            /filter\([^\n]*zone\.max\s*>\s*0/,
             relativePath
         );
     }
     const swimSource = rendererSources.get('js/pages/swim/swim.js');
-    assert.match(swimSource, /zones\?\.heart_rate\?\.zones/);
     assert.match(swimSource, /const activityData = structuredClone\(activity\)/);
     assert.equal(swimSource.includes(['TARGET', 'ATHLETE', 'ID'].join('_')), false);
     assert.equal(swimSource.includes(['maybeCorrect', 'IndoorSwim'].join('')), false);
@@ -384,7 +389,10 @@ test('detail classifiers receive injected Repository zones and have no provider 
     const bikeSource = rendererSources.get('js/pages/bike/bike.js');
     assert.match(genericSource, /classifyRun\(activityData, streamData, zones\)/);
     assert.match(runSource, /classifyRun\(activityData, streamData, zones\)/);
-    assert.match(bikeSource, /classifyBike\(activity, streams, zones\)/);
+    assert.match(
+        bikeSource,
+        /classifyBike\(activity, streams, zones, \{\s*exclusiveHeartRateZoneBounds: analysisContext\?\.status === 'configured'\s*\}\)/
+    );
 
     for (const relativePath of [
         'classifyRun.js',
@@ -425,7 +433,9 @@ test('Advanced default adapter uses static UI methods and instance-free export b
 test('Advanced Analysis consumes injected bundle data and contains no provider I/O', () => {
     assert.match(advancedSource, /from\s*['"]\.\.\/\.\.\/analysis\/index\.js['"]/);
     assert.match(advancedSource, /from\s*['"]\.\.\/\.\.\/analysis\/export\/index\.js['"]/);
-    assert.match(advancedSource, /constructor\(activity_id, metadata, streams,/);
+    assert.match(advancedSource, /constructor\(\s*activity_id,\s*metadata,\s*streams,/);
+    assert.match(advancedSource, /analysisContext\s*=\s*null/);
+    assert.match(advancedSource, /effectiveProfile[\s\S]*analysis_context/);
     for (const prohibited of [
         /fetchActivityData/,
         /\/api\/strava-/,
@@ -438,7 +448,7 @@ test('Advanced Analysis consumes injected bundle data and contains no provider I
     const genericSource = rendererSources.get('js/pages/activity/activity.js');
     assert.match(
         genericSource,
-        /new\s+AdvancedActivityAnalyzer\(activityId, activity, streams\)/
+        /new\s+AdvancedActivityAnalyzer\(\s*activityId,\s*activity,\s*streams,\s*undefined,\s*analysisContext\s*\)/
     );
     assert.doesNotMatch(genericSource, /fetchActivityData/);
     assert.doesNotMatch(genericSource, /error\.message|console\.error/);

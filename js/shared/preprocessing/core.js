@@ -144,11 +144,27 @@ function hrZoneIntensity(avgHR, hrZones) {
     return ZONE_WEIGHTS[ZONE_WEIGHTS.length - 1];
 }
 
-function calculateTSS(activity, maxHr = MAX_HR_DEFAULT, hrZones = null) {
+function setTssEstimateMetadata(activity, contextStatus, method) {
+    if (contextStatus === 'legacy') return;
+
+    activity.tss_profile_status = contextStatus;
+    activity.tss_estimate_scope = (
+        contextStatus === 'configured'
+        && (method === 'heartrate' || method === 'heartrate_zones')
+    ) ? 'personalized' : 'general';
+}
+
+function calculateTSS(
+    activity,
+    maxHr = MAX_HR_DEFAULT,
+    hrZones = null,
+    { heartRateEnabled = true, contextStatus = 'legacy' } = {}
+) {
     const minutes = (activity.moving_time || 0) / 60;
     if (minutes <= 0) {
         activity.tss = 0;
         activity.tss_method = 'none';
+        setTssEstimateMetadata(activity, contextStatus, 'none');
         return 0;
     }
 
@@ -165,7 +181,7 @@ function calculateTSS(activity, maxHr = MAX_HR_DEFAULT, hrZones = null) {
     }
 
     // --- Secondary: HR-based using athlete zones when available ---
-    if (method === 'none' && activity.average_heartrate > 0) {
+    if (heartRateEnabled && method === 'none' && activity.average_heartrate > 0) {
         const zoneIF = hrZoneIntensity(activity.average_heartrate, hrZones);
         if (zoneIF !== null) {
             // Zone-weighted: the zoneIF already represents an IF²-equivalent
@@ -192,7 +208,7 @@ function calculateTSS(activity, maxHr = MAX_HR_DEFAULT, hrZones = null) {
     }
 
     // Long low-intensity correction: taper down beyond 4 h at low IF
-    if (hours > 4 && activity.average_heartrate > 0) {
+    if (heartRateEnabled && hours > 4 && activity.average_heartrate > 0) {
         const hrRatio = activity.average_heartrate / maxHr;
         if (hrRatio < 0.7) {
             tss *= Math.max(0.7, 1 - 0.05 * (hours - 4));
@@ -202,15 +218,27 @@ function calculateTSS(activity, maxHr = MAX_HR_DEFAULT, hrZones = null) {
     if (isNaN(tss)) tss = 0;
     activity.tss = +tss.toFixed(2);
     activity.tss_method = method;
+    setTssEstimateMetadata(activity, contextStatus, method);
     return activity.tss;
 }
 
 // ===================================================================
 // 2. VO₂max: solo running (ACSM + HR)
 // ===================================================================
-function computeVO2max(activity, maxHr = MAX_HR_DEFAULT) {
+function computeVO2max(
+    activity,
+    maxHr = MAX_HR_DEFAULT,
+    { requireHeartRate = false, contextStatus = 'legacy' } = {}
+) {
     if (activity.type !== 'Run' || !activity.distance || activity.moving_time < 600) {
         activity.vo2max = null;
+        return;
+    }
+
+    if (contextStatus === 'unconfigured' || (requireHeartRate && !(activity.average_heartrate > 0))) {
+        activity.vo2max = null;
+        activity.vo2max_profile_status = contextStatus;
+        activity.vo2max_estimate_scope = 'unavailable';
         return;
     }
 
@@ -220,19 +248,30 @@ function computeVO2max(activity, maxHr = MAX_HR_DEFAULT) {
     const vo2max = vo2 / hrFraction;
 
     activity.vo2max = (vo2max > 25 && vo2max < 90) ? +vo2max.toFixed(2) : null;
+    if (contextStatus !== 'legacy') {
+        activity.vo2max_profile_status = contextStatus;
+        activity.vo2max_estimate_scope = activity.vo2max === null ? 'unavailable' : 'personalized';
+    }
 }
 
 // ===================================================================
 // 3. Group by day without external enrichment
 // ===================================================================
-async function groupByDay(activities) {
+async function groupByDay(activities, heartRateConfig) {
     const daily = {};
 
     activities.forEach(a => {
         const date = a.start_date_local?.split('T')[0];
         if (!date) return;
 
-        computeVO2max(a);
+        if (heartRateConfig.contextStatus === 'legacy') {
+            computeVO2max(a);
+        } else {
+            computeVO2max(a, heartRateConfig.maxHr, {
+                requireHeartRate: true,
+                contextStatus: heartRateConfig.contextStatus
+            });
+        }
 
         if (!daily[date]) {
             daily[date] = { tss: 0, count: 0 };
@@ -373,8 +412,15 @@ function getRecoverySportFactor(activity) {
     return RECOVERY_SPORT_FACTORS[sport] ?? 1.0;
 }
 
-function getRecoveryHrZone(avgHr, maxHr) {
+function getRecoveryHrZone(avgHr, maxHr, hrZones = null) {
     if (!avgHr || !maxHr || avgHr <= 0 || maxHr <= 0) return 3; // default Z3
+    if (Array.isArray(hrZones) && hrZones.length > 0) {
+        const index = hrZones.findIndex(zone => {
+            const zoneMax = zone.max === -1 ? Infinity : zone.max;
+            return avgHr >= zone.min && avgHr < zoneMax;
+        });
+        if (index >= 0) return Math.min(index + 1, 5);
+    }
     const pct = avgHr / maxHr;
     if (pct < 0.60) return 1;
     if (pct < 0.70) return 2;
@@ -383,7 +429,12 @@ function getRecoveryHrZone(avgHr, maxHr) {
     return 5;
 }
 
-function calculateRecoveryHours(activity, maxHr = MAX_HR_DEFAULT) {
+function calculateRecoveryHours(
+    activity,
+    maxHr = MAX_HR_DEFAULT,
+    hrZones = null,
+    { heartRateEnabled = true } = {}
+) {
     if (!activity) return 4;
 
     const tss = activity.tss || 30; // fallback
@@ -392,8 +443,8 @@ function calculateRecoveryHours(activity, maxHr = MAX_HR_DEFAULT) {
     const tsb = activity.tsb ?? null;
 
     const sf = getRecoverySportFactor(activity);
-    const zone = getRecoveryHrZone(avgHr, maxHr);
-    const hm = RECOVERY_HR_ZONE_MULTIPLIERS[zone];
+    const zone = heartRateEnabled ? getRecoveryHrZone(avgHr, maxHr, hrZones) : null;
+    const hm = zone === null ? 1 : RECOVERY_HR_ZONE_MULTIPLIERS[zone];
     const df = Math.sqrt(durHours);
 
     let raw = (tss * sf * hm * df) / 10;
@@ -407,11 +458,41 @@ function calculateRecoveryHours(activity, maxHr = MAX_HR_DEFAULT) {
     return Math.round(Math.min(Math.max(raw, 4), 96));
 }
 
-function calculateDailyRecovery(activitiesArray) {
+function calculateDailyRecovery(activitiesArray, heartRateConfig) {
     if (!activitiesArray || !activitiesArray.length) return 0;
-    if (activitiesArray.length === 1) return calculateRecoveryHours(activitiesArray[0]);
+    if (heartRateConfig.contextStatus === 'legacy') {
+        if (activitiesArray.length === 1) return calculateRecoveryHours(activitiesArray[0]);
 
-    const hours = activitiesArray.map(a => calculateRecoveryHours(a));
+        const legacyHours = activitiesArray.map(a => calculateRecoveryHours(a));
+        const legacyMax = Math.max(...legacyHours);
+        const legacyRest = legacyHours.filter(hours => hours !== legacyMax);
+        const legacyCombined = legacyMax * 0.7 + (
+            legacyRest.length > 0
+                ? legacyRest.reduce((sum, hours) => sum + hours, 0) * 0.3
+                : 0
+        );
+        const legacyPenalty = 1.0 + (legacyHours.length - 1) * 0.12;
+        return Math.round(Math.min(legacyCombined * legacyPenalty, 96));
+    }
+
+    const options = {
+        heartRateEnabled: heartRateConfig.contextStatus !== 'unconfigured'
+    };
+    if (activitiesArray.length === 1) {
+        return calculateRecoveryHours(
+            activitiesArray[0],
+            heartRateConfig.maxHr,
+            heartRateConfig.hrZones,
+            options
+        );
+    }
+
+    const hours = activitiesArray.map(a => calculateRecoveryHours(
+        a,
+        heartRateConfig.maxHr,
+        heartRateConfig.hrZones,
+        options
+    ));
     const maxH = Math.max(...hours);
     const rest = hours.filter(h => h !== maxH);
     const combined = maxH * 0.7 + (rest.length > 0 ? rest.reduce((s, h) => s + h, 0) * 0.3 : 0);
@@ -419,7 +500,7 @@ function calculateDailyRecovery(activitiesArray) {
     return Math.round(Math.min(combined * penalty, 96));
 }
 
-function calculateRecoveryHoursSeries(activities, dates) {
+function calculateRecoveryHoursSeries(activities, dates, heartRateConfig) {
     const dailyMap = {};
 
     // Initialize daily buckets
@@ -437,7 +518,7 @@ function calculateRecoveryHoursSeries(activities, dates) {
 
     // Calculate daily recovery for each date
     const recoveryHours = dates.map(date => {
-        return calculateDailyRecovery(dailyMap[date]);
+        return calculateDailyRecovery(dailyMap[date], heartRateConfig);
     });
 
     return recoveryHours;
@@ -479,7 +560,7 @@ function computeEfficiencyFields(activity) {
     return { efficiency: null, method: null };
 }
 
-function assignMetrics(activities, dates, pmc, injuryRisk, recoveryHours) {
+function assignMetrics(activities, dates, pmc, injuryRisk, recoveryHours, heartRateConfig) {
     const map = Object.fromEntries(dates.map((d, i) => [d, i]));
 
     activities.forEach(a => {
@@ -491,6 +572,13 @@ function assignMetrics(activities, dates, pmc, injuryRisk, recoveryHours) {
             a.tsb = +pmc.tsb[i].toFixed(1);
             a.injuryRisk = +injuryRisk[i].toFixed(3); // 3 decimales para precisión
             a.recovery_hours = recoveryHours[i] ?? 4;
+            if (heartRateConfig.contextStatus !== 'legacy') {
+                a.recovery_profile_status = heartRateConfig.contextStatus;
+                a.recovery_estimate_scope = (
+                    heartRateConfig.contextStatus === 'configured'
+                    && a.average_heartrate > 0
+                ) ? 'personalized' : 'general';
+            }
         } else {
             a.atl = a.ctl = a.tsb = a.injuryRisk = a.recovery_hours = null;
         }
@@ -505,37 +593,95 @@ function assignMetrics(activities, dates, pmc, injuryRisk, recoveryHours) {
     });
 }
 
+function projectContextHeartRateZones(zones) {
+    if (!Array.isArray(zones) || zones.length !== 5) return null;
+
+    const projected = zones.map(zone => ({
+        min: zone?.minBpm,
+        max: zone?.maxBpmExclusive === null ? -1 : zone?.maxBpmExclusive
+    }));
+    const valid = projected.every((zone, index) => (
+        Number.isInteger(zone.min)
+        && zone.min >= 1
+        && (zone.max === -1 || (Number.isInteger(zone.max) && zone.max > zone.min))
+        && (index === 0
+            ? zone.min === 1
+            : zone.min === projected[index - 1].max)
+        && (index < projected.length - 1 || zone.max === -1)
+    ));
+    return valid ? projected : null;
+}
+
+function resolveHeartRateConfig(userProfile, zones, analysisContext) {
+    if (analysisContext === undefined) {
+        // Legacy behavior is deliberately unchanged when no V2 context is supplied.
+        let maxHr = MAX_HR_DEFAULT;
+        let hrZones = null;
+
+        if (zones?.heart_rate?.zones) {
+            hrZones = zones.heart_rate.zones;
+            const lastZoneMax = hrZones[hrZones.length - 1]?.max;
+            if (lastZoneMax && lastZoneMax > 0 && lastZoneMax !== -1) {
+                maxHr = lastZoneMax;
+            }
+        }
+        if (userProfile.max_hr) maxHr = userProfile.max_hr;
+
+        return { contextStatus: 'legacy', maxHr, hrZones };
+    }
+
+    const maxHr = analysisContext?.heartRate?.maxBpm;
+    const hrZones = projectContextHeartRateZones(analysisContext?.heartRate?.zones);
+    if (
+        analysisContext?.status === 'configured'
+        && Number.isInteger(maxHr)
+        && maxHr >= 100
+        && maxHr <= 230
+        && hrZones
+        && hrZones.every(zone => (
+            zone.min <= maxHr
+            && (zone.max === -1 || zone.max <= maxHr)
+        ))
+    ) {
+        return { contextStatus: 'configured', maxHr, hrZones };
+    }
+
+    // Explicit but absent/malformed context is fail-closed for Canonical data.
+    return { contextStatus: 'unconfigured', maxHr: null, hrZones: null };
+}
+
 // ===================================================================
 // 8. Pipeline principal
 // ===================================================================
-export async function preprocessActivities(activities, userProfile = {}, zones = null, gears = null) {
+export async function preprocessActivities(
+    activities,
+    userProfile = {},
+    zones = null,
+    gears = null,
+    analysisContext = undefined
+) {
     if (!activities?.length) return [];
     estimatePoolLengths(activities);
 
-    // Derive maxHR from zones if available (last zone's max), fallback to profile, then default
-    let maxHr = MAX_HR_DEFAULT;
-    let hrZones = null;
+    const heartRateConfig = resolveHeartRateConfig(userProfile, zones, analysisContext);
 
-    if (zones?.heart_rate?.zones) {
-        hrZones = zones.heart_rate.zones;
-        const lastZoneMax = hrZones[hrZones.length - 1]?.max;
-        if (lastZoneMax && lastZoneMax > 0 && lastZoneMax !== -1) {
-            maxHr = lastZoneMax;
+    activities.forEach(a => calculateTSS(
+        a,
+        heartRateConfig.maxHr,
+        heartRateConfig.hrZones,
+        {
+            heartRateEnabled: heartRateConfig.contextStatus !== 'unconfigured',
+            contextStatus: heartRateConfig.contextStatus
         }
-    }
-    if (userProfile.max_hr) {
-        maxHr = userProfile.max_hr;
-    }
+    ));
 
-    activities.forEach(a => calculateTSS(a, maxHr, hrZones));
-
-    const daily = await groupByDay(activities);
+    const daily = await groupByDay(activities, heartRateConfig);
     const { dates, tssValues } = getTimeSeries(daily);
     const pmc = calculatePMC(tssValues);
     const injuryRisk = calculateInjuryRiskImproved(pmc.tsb, pmc.rampRate, pmc.atl, pmc.tssSeries);
-    const recoveryHours = calculateRecoveryHoursSeries(activities, dates);
+    const recoveryHours = calculateRecoveryHoursSeries(activities, dates, heartRateConfig);
 
-    assignMetrics(activities, dates, pmc, injuryRisk, recoveryHours);
+    assignMetrics(activities, dates, pmc, injuryRisk, recoveryHours, heartRateConfig);
 
     return activities;
 }

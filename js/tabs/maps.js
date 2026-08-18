@@ -4,7 +4,15 @@ import {
     readValidatedRouteGeometry
 } from '../app/map-location-egress.js';
 
-let activeMapBoundary = null;
+let activeMapRenderCleanup = null;
+
+const MAP_ROUTE_STATUS_COPY = Object.freeze({
+    loading: 'Loading local routes…',
+    demo: 'Demo maps stay local. External map tiles are disabled.',
+    empty: 'No local routes are available for the current filters.',
+    failed: 'Local routes could not be loaded. Try the filters again.',
+    'limit-exceeded': 'Too many activities to map at once. Narrow the date or sport filters to 5,000 activities or fewer.'
+});
 
 function activityRoute(activity) {
     return readValidatedRouteGeometry(activity, null, { allowTopLevelPolyline: true });
@@ -22,14 +30,137 @@ function createMapPopup(activity, { end = false } = {}) {
     return popup;
 }
 
-export function renderMapTab(activities = [], dateFrom = null, dateTo = null, { sessionMode } = {}) {
+function routeStatusCopy(result) {
+    if (result?.status === 'ready') {
+        const routeLabel = result.routeCount === 1 ? 'route' : 'routes';
+        const pointLabel = result.pointCount === 1 ? 'point' : 'points';
+        return `Local routes ready: ${result.routeCount} ${routeLabel}, ${result.pointCount} ${pointLabel}.`;
+    }
+    if (result?.status === 'partial') {
+        const routeLabel = result.routeCount === 1 ? 'route' : 'routes';
+        return `Local routes ready with gaps: ${result.routeCount} ${routeLabel}, ${result.unavailableCount} unavailable, ${result.failedCount} failed.`;
+    }
+    return MAP_ROUTE_STATUS_COPY[result?.status] || MAP_ROUTE_STATUS_COPY.failed;
+}
+
+function denseArrayLength(value) {
+    try {
+        if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) return null;
+        const lengthDescriptor = Object.getOwnPropertyDescriptor(value, 'length');
+        if (!lengthDescriptor || lengthDescriptor.enumerable || !Object.hasOwn(lengthDescriptor, 'value')) return null;
+        const length = lengthDescriptor.value;
+        if (!Number.isSafeInteger(length) || length < 0) return null;
+        const keys = Reflect.ownKeys(value);
+        if (keys.length !== length + 1 || keys.at(-1) !== 'length') return null;
+        for (let index = 0; index < length; index += 1) {
+            if (keys[index] !== String(index)) return null;
+            const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+            if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) return null;
+        }
+        return length;
+    } catch {
+        return null;
+    }
+}
+
+function authorizationPoint(candidate) {
+    const length = denseArrayLength(candidate);
+    if (length !== 2) return null;
+    try {
+        const latitude = Object.getOwnPropertyDescriptor(candidate, '0').value;
+        const longitude = Object.getOwnPropertyDescriptor(candidate, '1').value;
+        if (
+            typeof latitude !== 'number'
+            || typeof longitude !== 'number'
+            || !Number.isFinite(latitude)
+            || !Number.isFinite(longitude)
+            || latitude < -90
+            || latitude > 90
+            || longitude < -180
+            || longitude > 180
+        ) return null;
+        return [
+            Object.is(latitude, -0) ? 0 : latitude,
+            Object.is(longitude, -0) ? 0 : longitude
+        ];
+    } catch {
+        return null;
+    }
+}
+
+// Tile authorization only needs the actual points that define the latitude and
+// longitude extrema. Keeping the full route snapshot in the overlay closure
+// preserves the approved visualization without repeatedly validating and
+// serializing up to 30,000 coordinates before consent.
+export function createMapConsentGeometry(items) {
+    const itemCount = denseArrayLength(items);
+    if (itemCount === null) return Object.freeze([]);
+    let pointCount = 0;
+    let minLatitude = null;
+    let maxLatitude = null;
+    let minLongitude = null;
+    let maxLongitude = null;
+
+    function include(candidate) {
+        const point = authorizationPoint(candidate);
+        if (point === null) return false;
+        pointCount += 1;
+        if (minLatitude === null || point[0] < minLatitude[0]) minLatitude = point;
+        if (maxLatitude === null || point[0] > maxLatitude[0]) maxLatitude = point;
+        if (minLongitude === null || point[1] < minLongitude[1]) minLongitude = point;
+        if (maxLongitude === null || point[1] > maxLongitude[1]) maxLongitude = point;
+        return true;
+    }
+
+    try {
+        for (let itemIndex = 0; itemIndex < itemCount; itemIndex += 1) {
+            const item = Object.getOwnPropertyDescriptor(items, String(itemIndex)).value;
+            if (item === null || typeof item !== 'object' || Array.isArray(item)) return Object.freeze([]);
+            const routeDescriptor = Object.getOwnPropertyDescriptor(item, 'route');
+            if (!routeDescriptor?.enumerable || !Object.hasOwn(routeDescriptor, 'value')) return Object.freeze([]);
+            const route = routeDescriptor.value;
+            const routeLength = denseArrayLength(route);
+            if (routeLength === null) return Object.freeze([]);
+            if (routeLength > 0) {
+                for (let pointIndex = 0; pointIndex < routeLength; pointIndex += 1) {
+                    const point = Object.getOwnPropertyDescriptor(route, String(pointIndex)).value;
+                    if (!include(point)) return Object.freeze([]);
+                }
+                continue;
+            }
+            for (const key of ['start', 'end']) {
+                const descriptor = Object.getOwnPropertyDescriptor(item, key);
+                if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) return Object.freeze([]);
+                if (descriptor.value !== null && !include(descriptor.value)) return Object.freeze([]);
+            }
+        }
+    } catch {
+        return Object.freeze([]);
+    }
+
+    if (pointCount === 0) return Object.freeze([]);
+    const geometry = [];
+    for (const point of [minLatitude, maxLatitude, minLongitude, maxLongitude]) {
+        if (!geometry.some(existing => existing[0] === point[0] && existing[1] === point[1])) {
+            geometry.push(Object.freeze(point));
+        }
+    }
+    return Object.freeze(geometry);
+}
+
+export function renderMapTab(
+    activities = [],
+    dateFrom = null,
+    dateTo = null,
+    { sessionMode, loadCanonicalRoutes = null } = {}
+) {
     const container = document.getElementById('map-tab');
     const mapElement = document.getElementById('global-map');
     if (!container || !mapElement) return;
 
-    activeMapBoundary?.dispose();
-    activeMapBoundary = createMapLocationBoundary({ sessionMode });
+    activeMapRenderCleanup?.();
 
+    const mapBoundary = createMapLocationBoundary({ sessionMode });
     const dateFromInput = document.getElementById('map-date-from');
     const dateToInput = document.getElementById('map-date-to');
     const applyButton = document.getElementById('map-apply-date');
@@ -40,6 +171,45 @@ export function renderMapTab(activities = [], dateFrom = null, dateTo = null, { 
     const radiusSlider = document.getElementById('map-heat-radius');
     const blurSlider = document.getElementById('map-heat-blur');
     const colorBySport = document.getElementById('map-color-by-sport');
+    let statusElement = document.getElementById('map-route-status');
+    if (!statusElement) {
+        statusElement = document.createElement('p');
+        statusElement.id = 'map-route-status';
+        statusElement.setAttribute('role', 'status');
+        statusElement.setAttribute('aria-live', 'polite');
+        statusElement.dataset.state = 'idle';
+        statusElement.textContent = 'Local routes load when this tab opens.';
+        mapElement.before(statusElement);
+    }
+    const listeners = [];
+    let disposed = false;
+    let loadGeneration = 0;
+    let geometryRevision = 0;
+    let currentItems = [];
+
+    const cleanup = () => {
+        if (disposed) return;
+        disposed = true;
+        loadGeneration += 1;
+        for (const [element, eventName, listener] of listeners) {
+            element.removeEventListener(eventName, listener);
+        }
+        listeners.length = 0;
+        mapBoundary.dispose();
+    };
+    activeMapRenderCleanup = cleanup;
+
+    function listen(element, eventName, listener) {
+        if (!element) return;
+        element.addEventListener(eventName, listener);
+        listeners.push([element, eventName, listener]);
+    }
+
+    function setStatus(text, state) {
+        if (!statusElement) return;
+        statusElement.textContent = text;
+        statusElement.dataset.state = state;
+    }
 
     const typeColors = {
         Run: '#e31a1c',
@@ -78,6 +248,7 @@ export function renderMapTab(activities = [], dateFrom = null, dateTo = null, { 
 
     function parseDate(value) {
         if (typeof value !== 'string') return null;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
         const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value);
         return match ? `${match[3]}-${match[2]}-${match[1]}` : null;
     }
@@ -87,59 +258,79 @@ export function renderMapTab(activities = [], dateFrom = null, dateTo = null, { 
         const to = parseDate(dateToInput?.value);
         return activities.filter(activity => {
             if (!activity || typeof activity !== 'object') return false;
-            const localDate = typeof activity.start_date_local === 'string'
-                ? activity.start_date_local.split('T')[0]
-                : null;
-            if (from && localDate && localDate < from) return false;
-            if (to && localDate && localDate > to) return false;
+            const sourceDate = typeof activity.start_date_local === 'string'
+                ? activity.start_date_local
+                : typeof activity.start_date === 'string'
+                    ? activity.start_date
+                    : null;
+            const localDate = sourceDate?.split('T')[0] || null;
+            if (from && (!localDate || localDate < from)) return false;
+            if (to && (!localDate || localDate > to)) return false;
             const sport = String(activity.sport_type || activity.type || 'Unknown').trim();
             return !sportSel?.value || sportSel.value === 'all' || sport === sportSel.value;
         });
     }
 
-    function buildItems() {
-        return visibleActivities().map(activity => {
+    function buildLegacyItems(visible) {
+        return visible.map(activity => {
             const route = activityRoute(activity);
-            const start = activityPoint(activity, 'start_latlng');
+            const start = activityPoint(activity, 'start_latlng') || route[0] || null;
             const explicitEnd = activityPoint(activity, 'end_latlng');
             const end = explicitEnd || route.at(-1) || null;
             return { activity, route, start, end };
         });
     }
 
-    function render() {
-        const items = sessionMode === 'demo' ? [] : buildItems();
-        const view = viewSelect?.value || 'heat';
+    function buildCanonicalItems(visible, routes) {
+        return visible.map((activity, index) => {
+            const route = routes[index] || [];
+            return {
+                activity,
+                route,
+                start: route[0] || null,
+                end: route.at(-1) || null
+            };
+        });
+    }
+
+    function presentationCoordinates(items, view) {
         const coordinates = [];
         for (const item of items) {
             if (view === 'heat') {
                 if (item.route.length) {
                     for (const point of item.route) coordinates.push(point);
+                } else if (item.start) {
+                    coordinates.push(item.start);
                 }
-                else if (item.start) coordinates.push(item.start);
-            } else if (view === 'routes' && item.route.length) {
+            } else if (view === 'routes') {
                 for (const point of item.route) coordinates.push(point);
             } else {
                 if (item.start) coordinates.push(item.start);
                 if (item.end) coordinates.push(item.end);
             }
         }
+        return coordinates;
+    }
 
-        const revisionKey = [
-            dateFromInput?.value || '',
-            dateToInput?.value || '',
-            sportSel?.value || 'all',
-            view
-        ].join('|');
+    function authorizationCoordinates(items) {
+        return createMapConsentGeometry(items);
+    }
 
-        activeMapBoundary.present({
+    function presentSnapshot() {
+        if (disposed) return;
+        const items = sessionMode === 'demo' ? [] : currentItems;
+        const view = viewSelect?.value || 'heat';
+        const authorizedGeometry = authorizationCoordinates(items);
+
+        mapBoundary.present({
             container: mapElement,
-            coordinates,
-            revisionKey,
+            coordinates: authorizedGeometry,
+            revisionKey: String(geometryRevision),
             aggregate: true,
             providerControlId: 'map-tiles',
             leaflet: globalThis.L,
             drawOverlay(map) {
+                const coordinates = presentationCoordinates(items, view);
                 const group = L.layerGroup().addTo(map);
                 if (view === 'heat' && typeof L.heatLayer === 'function') {
                     const factor = Number.parseFloat(densitySlider?.value) || 1.133;
@@ -158,7 +349,7 @@ export function renderMapTab(activities = [], dateFrom = null, dateTo = null, { 
                         const polyline = L.polyline(item.route, { color, weight: 3, opacity: 0.8, smoothFactor: 1 });
                         polyline.activity = item.activity;
                         polyline.addTo(group);
-                    } else {
+                    } else if (view === 'points') {
                         if (item.start) {
                             const popup = createMapPopup(item.activity);
                             L.circleMarker(item.start, { radius: 5, color, fillColor: color, fillOpacity: 0.9 })
@@ -176,8 +367,61 @@ export function renderMapTab(activities = [], dateFrom = null, dateTo = null, { 
         });
     }
 
-    applyButton?.addEventListener('click', render);
-    resetButton?.addEventListener('click', () => {
+    async function reloadRoutes() {
+        if (disposed) return;
+        const generation = ++loadGeneration;
+        const visible = visibleActivities();
+        geometryRevision += 1;
+
+        if (sessionMode === 'demo') {
+            currentItems = [];
+            setStatus(MAP_ROUTE_STATUS_COPY.demo, 'demo');
+            presentSnapshot();
+            return;
+        }
+
+        if (typeof loadCanonicalRoutes !== 'function') {
+            currentItems = buildLegacyItems(visible);
+            const routeCount = currentItems.filter(item => item.route.length > 0).length;
+            const pointCount = currentItems.reduce((sum, item) => (
+                sum + (item.route.length || Number(Boolean(item.start)) + Number(Boolean(item.end)))
+            ), 0);
+            setStatus(
+                pointCount > 0
+                    ? `Map data ready: ${routeCount} ${routeCount === 1 ? 'route' : 'routes'}, ${pointCount} ${pointCount === 1 ? 'point' : 'points'}.`
+                    : MAP_ROUTE_STATUS_COPY.empty,
+                pointCount > 0 ? 'ready' : 'empty'
+            );
+            presentSnapshot();
+            return;
+        }
+
+        currentItems = [];
+        setStatus(MAP_ROUTE_STATUS_COPY.loading, 'loading');
+        mapBoundary.present({
+            container: mapElement,
+            coordinates: [],
+            revisionKey: String(geometryRevision),
+            aggregate: true,
+            providerControlId: 'map-tiles',
+            unavailableCopy: MAP_ROUTE_STATUS_COPY.loading
+        });
+
+        let result;
+        try {
+            result = await loadCanonicalRoutes(visible.map(activity => activity.id));
+        } catch {
+            result = null;
+        }
+        if (disposed || generation !== loadGeneration || result?.status === 'superseded') return;
+
+        currentItems = buildCanonicalItems(visible, result?.routes || []);
+        setStatus(routeStatusCopy(result), result?.status || 'failed');
+        presentSnapshot();
+    }
+
+    listen(applyButton, 'click', reloadRoutes);
+    listen(resetButton, 'click', () => {
         if (dateFromInput) dateFromInput.value = '';
         if (dateToInput) dateToInput.value = '';
         if (sportSel) sportSel.value = 'all';
@@ -186,15 +430,16 @@ export function renderMapTab(activities = [], dateFrom = null, dateTo = null, { 
         if (radiusSlider) radiusSlider.value = '8';
         if (blurSlider) blurSlider.value = '14';
         if (colorBySport) colorBySport.checked = false;
-        render();
+        reloadRoutes();
     });
-    sportSel?.addEventListener('change', render);
-    viewSelect?.addEventListener('change', render);
-    densitySlider?.addEventListener('input', render);
-    radiusSlider?.addEventListener('input', render);
-    blurSlider?.addEventListener('input', render);
-    colorBySport?.addEventListener('change', render);
-    render();
+    listen(sportSel, 'change', reloadRoutes);
+    listen(viewSelect, 'change', presentSnapshot);
+    listen(densitySlider, 'input', presentSnapshot);
+    listen(radiusSlider, 'input', presentSnapshot);
+    listen(blurSlider, 'input', presentSnapshot);
+    listen(colorBySport, 'change', presentSnapshot);
+    void reloadRoutes();
+    return cleanup;
 }
 
 export default { renderMapTab };

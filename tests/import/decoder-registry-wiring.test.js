@@ -265,8 +265,8 @@ test('PR-14 keeps public/schema/runtime boundaries and decoder sources frozen', 
         'normalizeImportedActivity', 'syntheticJsonDecoder'
     ]);
     const frozenHashes = new Map([
-        ['js/decoders/fit/decoder.js', 'f21961f5b417db97f5ac4abeb5a3365107ae03891d87dde106a5fcf91f29059b'],
-        ['js/decoders/tcx/decoder.js', '6e5c03f190fa12500d6d1042800272e817c02ab8fb5e5b288fd05f78153cd868'],
+        ['js/decoders/fit/decoder.js', '4553f274d365bb032768aaeb203dacf7f7cca18b7f7208dd26dc3b28eacc43fe'],
+        ['js/decoders/tcx/decoder.js', 'e94c8164b0d153fef988934e4455b4edbb5b8c978e789cadd416b470eee977ce'],
         ['js/decoders/gpx/decoder.js', 'cb84f3d86c5d6d7cbfa5425b190573d0fab094a7d1ce9124f6231905f1ca664f']
     ]);
     for (const [path, expected] of frozenHashes) {

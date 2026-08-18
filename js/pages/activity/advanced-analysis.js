@@ -7,11 +7,20 @@ import { analyzeActivity } from '../../analysis/index.js';
 import { GPXExporter, CSVExporter, JSONExporter } from '../../analysis/export/index.js';
 
 export class AdvancedActivityAnalyzer {
-    constructor(activity_id, metadata, streams, analysis = analyzeActivity) {
+    constructor(
+        activity_id,
+        metadata,
+        streams,
+        analysis = analyzeActivity,
+        analysisContext = null
+    ) {
         this.activity_id = activity_id;
         this.metadata = structuredClone(metadata);
         this.streams = structuredClone(streams);
         this.analysis = analysis;
+        this.analysis_context = analysisContext === null
+            ? null
+            : structuredClone(analysisContext);
         this.analysis_result = null;
     }
 
@@ -22,11 +31,16 @@ export class AdvancedActivityAnalyzer {
         if (!this.metadata || !this.streams) {
             throw new Error('Activity data is unavailable');
         }
+        const effectiveProfile = athlete_profile ?? (
+            this.analysis_context === null
+                ? null
+                : { analysisContext: structuredClone(this.analysis_context) }
+        );
         this.analysis_result = await this.analysis(
             this.activity_id,
             this.metadata,
             this.streams,
-            athlete_profile,
+            effectiveProfile,
             mode
         );
         return this.analysis_result;

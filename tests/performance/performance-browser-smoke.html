@@ -19,6 +19,10 @@
             prepareStreamChartPresentation,
             prepareStreamMapPresentation
         } from '../../js/pages/detail/stream-presentation.js';
+        import {
+            GLOBAL_MAP_ROUTE_LIMITS,
+            createGlobalMapRouteSession
+        } from '../../js/app/global-map-routes.js';
 
         const ACTIVITY_COUNTS = Object.freeze([5_000, 10_000]);
         const POINT_COUNT = 200_000;
@@ -30,6 +34,13 @@
             'REPOSITORY_5K_P95',
             'ACTIVITIES_5K_P95',
             'STARTUP_STREAM_READ',
+            'GLOBAL_MAP_STATUS',
+            'GLOBAL_MAP_CONCURRENCY',
+            'GLOBAL_MAP_POINT_CAP',
+            'GLOBAL_MAP_ROUTE_CAP',
+            'GLOBAL_MAP_REPEAT_READ',
+            'GLOBAL_MAP_EXTERNAL_REQUEST',
+            'GLOBAL_MAP_LONG_TASK_CAP',
             'CHART_ALIGNMENT',
             'CHART_CAP',
             'MAP_CAP',
@@ -46,9 +57,13 @@
             uncaught: 0,
             unhandled: 0,
             longTasks: [],
+            longTaskEntries: [],
             chartPointMaximum: 0,
             mapPointMaximum: 0,
             mapLayers: 0,
+            globalMapReads: 0,
+            globalMapActiveReads: 0,
+            globalMapMaximumActiveReads: 0,
             startupGetStreams: 0,
             workerRequests: 0,
             repositoryPageReads: 0,
@@ -177,6 +192,158 @@
             let observer = null;
             let currentStage = 'modules';
             try {
+                if (typeof PerformanceObserver === 'function') {
+                    try {
+                        observer = new PerformanceObserver(list => {
+                            for (const entry of list.getEntries()) {
+                                runtime.longTasks.push(entry.duration);
+                                runtime.longTaskEntries.push(Object.freeze({
+                                    startTime: entry.startTime,
+                                    duration: entry.duration
+                                }));
+                            }
+                        });
+                        observer.observe({ type: 'longtask' });
+                    } catch { observer = null; }
+                }
+                await secondAnimationFrame();
+                await new Promise(resolve => setTimeout(resolve, 0));
+                runtime.longTasks.length = 0;
+                runtime.longTaskEntries.length = 0;
+                await new Promise(resolve => setTimeout(resolve, 0));
+
+                currentStage = 'global-map-5k';
+                document.getElementById('summary').textContent = 'Running 5,000-activity global Map hydration gate.';
+                const globalMapIds = Array.from(
+                    { length: GLOBAL_MAP_ROUTE_LIMITS.maxActivityCount },
+                    (_, index) => `map-${String(index).padStart(5, '0')}`
+                );
+                const globalMapSession = createGlobalMapRouteSession({
+                    readRoute: async id => {
+                        runtime.globalMapReads += 1;
+                        runtime.globalMapActiveReads += 1;
+                        runtime.globalMapMaximumActiveReads = Math.max(
+                            runtime.globalMapMaximumActiveReads,
+                            runtime.globalMapActiveReads
+                        );
+                        try {
+                            if (runtime.globalMapReads % 25 === 0) {
+                                await new Promise(resolve => setTimeout(resolve, 0));
+                            } else {
+                                await Promise.resolve();
+                            }
+                            const offset = Number(id.slice(4)) % 100;
+                            const shift = offset / 1_000;
+                            return [
+                                [10 + shift, 20 + shift],
+                                [-80 + shift, 22 + shift],
+                                [80 - shift, 23 + shift],
+                                [14 + shift, -170 + shift],
+                                [15 + shift, 170 - shift],
+                                [0, 24 + shift],
+                                [16 + shift, 25 + shift],
+                                [17 + shift, 26 + shift],
+                                [18 + shift, 27 + shift],
+                                [19 + shift, 28 + shift],
+                                [20 + shift, 29 + shift],
+                                [11 + shift, 21 + shift]
+                            ];
+                        } finally {
+                            runtime.globalMapActiveReads -= 1;
+                        }
+                    }
+                });
+                const globalMapExternalBefore = performance.getEntriesByType('resource')
+                    .filter(entry => new URL(entry.name).origin !== location.origin)
+                    .length;
+                await new Promise(resolve => setTimeout(resolve, 0));
+                const globalMapStarted = performance.now();
+                const globalMapResult = await globalMapSession.load(globalMapIds);
+                const globalMapHydrationEnded = performance.now();
+                const globalMapHydrationMs = performance.now() - globalMapStarted;
+                invariant(globalMapResult.status === 'ready', 'GLOBAL_MAP_STATUS');
+                invariant(
+                    runtime.globalMapReads === globalMapIds.length
+                    && globalMapResult.routes.length === globalMapIds.length
+                    && globalMapResult.routeCount === globalMapIds.length,
+                    'GLOBAL_MAP_STATUS'
+                );
+                invariant(
+                    runtime.globalMapMaximumActiveReads <= GLOBAL_MAP_ROUTE_LIMITS.concurrency,
+                    'GLOBAL_MAP_CONCURRENCY'
+                );
+                invariant(
+                    globalMapResult.pointCount === GLOBAL_MAP_ROUTE_LIMITS.maxPointCount,
+                    'GLOBAL_MAP_POINT_CAP'
+                );
+                invariant(
+                    globalMapResult.routes.every(route => (
+                        route.length === GLOBAL_MAP_ROUTE_LIMITS.minimumTargetPoints
+                    )),
+                    'GLOBAL_MAP_ROUTE_CAP'
+                );
+                const globalMapReadCount = runtime.globalMapReads;
+                const globalMapCachedStarted = performance.now();
+                const globalMapCachedResult = await globalMapSession.load(globalMapIds);
+                const globalMapCachedEnded = performance.now();
+                invariant(globalMapCachedResult.status === 'ready', 'GLOBAL_MAP_STATUS');
+                invariant(runtime.globalMapReads === globalMapReadCount, 'GLOBAL_MAP_REPEAT_READ');
+                invariant(
+                    globalMapCachedResult.pointCount <= GLOBAL_MAP_ROUTE_LIMITS.maxPointCount,
+                    'GLOBAL_MAP_POINT_CAP'
+                );
+                const globalMapExternalRequests = performance.getEntriesByType('resource')
+                    .filter(entry => new URL(entry.name).origin !== location.origin)
+                    .length - globalMapExternalBefore;
+                invariant(globalMapExternalRequests === 0, 'GLOBAL_MAP_EXTERNAL_REQUEST');
+                globalMapSession.dispose();
+                await secondAnimationFrame();
+                const maximumPhaseLongTask = (
+                    started,
+                    ended,
+                    entries = runtime.longTaskEntries
+                ) => {
+                    const values = entries
+                        .filter(entry => (
+                            entry.startTime < ended
+                            && entry.startTime + entry.duration > started
+                        ))
+                        .map(entry => entry.duration);
+                    return values.length ? Math.max(...values) : 0;
+                };
+                invariant(
+                    maximumPhaseLongTask(100, 200, [{ startTime: 99, duration: 150 }]) === 150,
+                    'GLOBAL_MAP_LONG_TASK_CAP'
+                );
+                const globalMapHydrationMaximumLongTask = maximumPhaseLongTask(
+                    globalMapStarted,
+                    globalMapHydrationEnded
+                );
+                const globalMapCachedMaximumLongTask = maximumPhaseLongTask(
+                    globalMapCachedStarted,
+                    globalMapCachedEnded
+                );
+                const globalMapMaximumLongTask = Math.max(
+                    globalMapHydrationMaximumLongTask,
+                    globalMapCachedMaximumLongTask
+                );
+                globalThis.__PR54_GLOBAL_MAP_PERFORMANCE_EVIDENCE__ = Object.freeze({
+                    status: globalMapMaximumLongTask < 100 ? 'passed' : 'failed',
+                    activities: globalMapIds.length,
+                    routeCount: globalMapResult.routeCount,
+                    pointCount: globalMapResult.pointCount,
+                    hydrationMs: globalMapHydrationMs,
+                    reads: runtime.globalMapReads,
+                    maximumConcurrentReads: runtime.globalMapMaximumActiveReads,
+                    repeatedLoadReads: runtime.globalMapReads - globalMapReadCount,
+                    externalRequests: globalMapExternalRequests,
+                    hydrationMaximumLongTask: globalMapHydrationMaximumLongTask,
+                    cachedMaximumLongTask: globalMapCachedMaximumLongTask,
+                    maximumLongTask: globalMapMaximumLongTask
+                });
+                invariant(globalMapMaximumLongTask < 100, 'GLOBAL_MAP_LONG_TASK_CAP');
+
+                currentStage = 'modules';
                 document.getElementById('summary').textContent = 'Loading local performance modules.';
                 Object.defineProperty(globalThis, '__STRAVASTATS_FEATURE_FLAGS__', {
                     configurable: true,
@@ -276,6 +443,8 @@
                 const activityStats = stats(activitySamples);
                 const repositoryEnvelopeP95Ms = repositoryStats.p95Ms;
                 const activitiesSecondRafP95Ms = activityStats.p95Ms;
+
+                currentStage = 'thresholds';
                 invariant(repositoryEnvelopeP95Ms <= 1_000, 'REPOSITORY_5K_P95');
                 invariant(activitiesSecondRafP95Ms <= 1_500, 'ACTIVITIES_5K_P95');
                 invariant(runtime.startupGetStreams === 0, 'STARTUP_STREAM_READ');
@@ -300,15 +469,10 @@
                 series[1][90_000] = null;
                 series[1][90_001] = null;
 
-                if (typeof PerformanceObserver === 'function') {
-                    try {
-                        observer = new PerformanceObserver(list => {
-                            for (const entry of list.getEntries()) runtime.longTasks.push(entry.duration);
-                        });
-                        observer.observe({ type: 'longtask' });
-                    } catch { observer = null; }
-                }
-
+                await secondAnimationFrame();
+                runtime.longTasks.length = 0;
+                runtime.longTaskEntries.length = 0;
+                const streamPerformanceStarted = performance.now();
                 const streamSamples = [];
                 for (let repetition = 0; repetition < REPETITIONS; repetition += 1) {
                     const started = performance.now();
@@ -326,9 +490,13 @@
                 }
 
                 await secondAnimationFrame();
+                const streamPerformanceEnded = performance.now();
                 observer?.disconnect();
                 const streamStats = stats(streamSamples);
-                const maximumLongTask = runtime.longTasks.length ? Math.max(...runtime.longTasks) : 0;
+                const maximumLongTask = maximumPhaseLongTask(
+                    streamPerformanceStarted,
+                    streamPerformanceEnded
+                );
                 invariant(runtime.chartPointMaximum <= 1_000, 'CHART_CAP');
                 invariant(runtime.mapPointMaximum <= 2_000, 'MAP_CAP');
                 invariant(runtime.mapLayers <= 2_000, 'MAP_LAYER_CAP');
@@ -377,6 +545,17 @@
                         mapPointMaximum: runtime.mapPointMaximum,
                         mapLayers: runtime.mapLayers,
                         maximumLongTask
+                    },
+                    globalMap: {
+                        activities: globalMapIds.length,
+                        routeCount: globalMapResult.routeCount,
+                        pointCount: globalMapResult.pointCount,
+                        hydrationMs: globalMapHydrationMs,
+                        reads: runtime.globalMapReads,
+                        maximumConcurrentReads: runtime.globalMapMaximumActiveReads,
+                        repeatedLoadReads: runtime.globalMapReads - globalMapReadCount,
+                        externalRequests: globalMapExternalRequests,
+                        maximumLongTask: globalMapMaximumLongTask
                     },
                     startupGetStreams: runtime.startupGetStreams,
                     startupBoundary: [

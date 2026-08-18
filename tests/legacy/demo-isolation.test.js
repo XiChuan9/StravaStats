@@ -36,6 +36,7 @@ import {
     REPOSITORY_WARNING_CODE
 } from '../../js/repository/index.js';
 import { createAICoachSession } from '../../js/app/ai-coach-egress.js';
+import { readValidatedRouteGeometry } from '../../js/app/map-location-egress.js';
 
 const FIXED_NOW = '2026-07-29T08:30:00.000Z';
 const FIXED_NOW_MS = Date.parse(FIXED_NOW);
@@ -279,6 +280,7 @@ function compileSummaryBoundary(source) {
         'APP_SESSION_MODE',
         'getFeatureFlags',
         'getApplicationShadowWriter',
+        'readValidatedRouteGeometry',
         `"use strict";${boundarySource};return {
             establishSummaryRepositorySession,
             requireSummaryRepositorySession,
@@ -290,7 +292,8 @@ function compileSummaryBoundary(source) {
             applySummarySessionGearLoad,
             buildSessionGearNameMap,
             createRunPlusRenderOptions,
-            selectPreprocessingAthlete
+            selectPreprocessingAthlete,
+            readCanonicalGlobalMapRoute
         };`
     )(
         () => {
@@ -300,7 +303,8 @@ function compileSummaryBoundary(source) {
         REPOSITORY_WARNING_CODE,
         Object.freeze({ DEMO: 'demo', REAL: 'real' }),
         () => Object.freeze({ dataRepositoryMode: 'legacy' }),
-        () => null
+        () => null,
+        readValidatedRouteGeometry
     );
 }
 
@@ -315,8 +319,71 @@ const {
     applySummarySessionGearLoad,
     buildSessionGearNameMap,
     createRunPlusRenderOptions,
-    selectPreprocessingAthlete
+    selectPreprocessingAthlete,
+    readCanonicalGlobalMapRoute
 } = compileSummaryBoundary(mainSource);
+
+test('Demo and non-Canonical sessions cannot construct or invoke the global Map route reader', () => {
+    const start = mainSource.indexOf('function getCanonicalMapRouteLoader()');
+    const end = mainSource.indexOf("window.addEventListener('pagehide'", start);
+    assert.notEqual(start, -1);
+    assert.notEqual(end, -1);
+    const body = mainSource.slice(start, end);
+    assert.match(body, /activeSessionMode !== APP_SESSION_MODE\.REAL/);
+    assert.match(body, /sessionActivitySource !== REPOSITORY_SOURCE\.CANONICAL/);
+    assert.ok(body.indexOf('return null') < body.indexOf('createGlobalMapRouteSession'));
+    assert.match(body, /getStreams\(activityId, \{\s*types: \['latlng'\]\s*\}\)/);
+
+    const demoHandler = mainSource.slice(
+        mainSource.indexOf("if (demoButton) demoButton.addEventListener('click'"),
+        mainSource.indexOf("if (logoutButton)")
+    );
+    assert.doesNotMatch(demoHandler, /GlobalMapRoute|loadCanonicalRoutes|getStreams/);
+});
+
+test('Canonical Map composition drops explicit null GPS gaps without weakening geometry validation', () => {
+    assert.deepEqual(readCanonicalGlobalMapRoute({}), []);
+    assert.equal(Object.isFrozen(readCanonicalGlobalMapRoute({})), true);
+    const route = readCanonicalGlobalMapRoute({
+        latlng: { data: [[0, 0], null, [1, 1], null, [2, 2]] }
+    });
+    assert.deepEqual(route, [[0, 0], [1, 1], [2, 2]]);
+    assert.equal(Object.isFrozen(route), true);
+    assert.equal(route.every(Object.isFrozen), true);
+
+    const allMissing = readCanonicalGlobalMapRoute({
+        latlng: { data: [null, null] }
+    });
+    assert.deepEqual(allMissing, []);
+    assert.equal(Object.isFrozen(allMissing), true);
+
+    assert.throws(() => readCanonicalGlobalMapRoute({ latlng: { data: [] } }));
+    assert.throws(() => readCanonicalGlobalMapRoute({ latlng: { data: [[NaN, 0]] } }));
+    assert.throws(() => readCanonicalGlobalMapRoute({ latlng: { data: [[0, 0], undefined] } }));
+    assert.throws(() => readCanonicalGlobalMapRoute({ latlng: null }));
+    assert.throws(() => readCanonicalGlobalMapRoute({ unexpected: {} }));
+
+    const sparseData = [[0, 0], [1, 1]];
+    delete sparseData[1];
+    assert.throws(() => readCanonicalGlobalMapRoute({ latlng: { data: sparseData } }));
+
+    const accessorData = [[0, 0], [1, 1]];
+    Object.defineProperty(accessorData, '1', {
+        enumerable: true,
+        configurable: true,
+        get() {
+            throw new Error('Synthetic accessor must not run');
+        }
+    });
+    assert.throws(() => readCanonicalGlobalMapRoute({ latlng: { data: accessorData } }));
+
+    const proxiedData = new Proxy([[0, 0]], {
+        getPrototypeOf() {
+            throw new Error('Synthetic proxy trap');
+        }
+    });
+    assert.throws(() => readCanonicalGlobalMapRoute({ latlng: { data: proxiedData } }));
+});
 
 function repositoryEnvelope(data, source = REPOSITORY_SOURCE.DEMO) {
     return {
@@ -1117,7 +1184,8 @@ test('Trends metadata selection uses injected context without identity reads or 
             zonesData: null
         }), {
             athleteData: null,
-            zonesData: null
+            zonesData: null,
+            analysisProfileStatus: null
         });
 
         const realAthlete = { id: ATHLETE_ID, firstname: 'Synthetic' };
@@ -1800,10 +1868,15 @@ test('R7 Demo AI Coach capability performs zero consent, key, provider, history,
     assert.deepEqual(storage.operations, []);
 });
 
-test('R7 same-document Demo entry replaces and revokes the Real AI capability before loginWithDemo', async () => {
+test('R7 Demo entry revokes Real AI state and reloads into an isolated Demo document', async () => {
     const mainSource = await readFile(new URL('js/app/main.js', projectRoot), 'utf8');
     assert.match(
         mainSource,
-        /demoButton\.addEventListener\('click',\s*\(\)\s*=>\s*\{\s*aiCoachSession\.revoke\(\);\s*aiCoachActivitySnapshot = null;\s*aiCoachSession = createAICoachSession\(\{\s*sessionMode:\s*APP_SESSION_MODE\.DEMO\s*\}\);\s*loginWithDemo\(initializeApp\)/
+        /demoButton\.addEventListener\('click',\s*\(\)\s*=>\s*\{\s*aiCoachSession\.revoke\(\);\s*aiCoachActivitySnapshot = null;\s*loginWithDemo\(\(\) => \{\s*window\.location\.reload\(\);\s*\}\)/
     );
+    const handler = mainSource.slice(
+        mainSource.indexOf("if (demoButton) demoButton.addEventListener('click'"),
+        mainSource.indexOf('if (logoutButton)')
+    );
+    assert.doesNotMatch(handler, /initializeApp|sessionRepository|sessionAnalysisContext/);
 });

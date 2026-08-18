@@ -55,6 +55,38 @@ const WARNING_DEFINITIONS = deepFreeze({
     TCX_UNKNOWN_EXTENSION_IGNORED: {
         path: '/tcx/extensions',
         message: 'An unsupported TCX extension was ignored.'
+    },
+    TCX_SPEED_SAMPLE_IGNORED: {
+        path: '/streams/speed',
+        message: 'A physically invalid TCX speed sample was ignored.'
+    },
+    TCX_TRACKPOINT_ORDER_NORMALIZED: {
+        path: '/streams',
+        message: 'TCX trackpoints were ordered by their original timestamps.'
+    },
+    TCX_TRACKPOINT_CONFLICT_PRESERVED: {
+        path: '/streams',
+        message: 'Conflicting TCX trackpoints at the same timestamp were preserved.'
+    },
+    TCX_ELAPSED_TIME_EXTENDED: {
+        path: '/activity/elapsedTimeSeconds',
+        message: 'Activity elapsed time was extended to cover the final TCX stream sample.'
+    },
+    TCX_PRE_START_TRACKPOINT_IGNORED: {
+        path: '/streams',
+        message: 'TCX trackpoints before the activity start were ignored.'
+    },
+    TCX_LAP_FIELD_ORDER_NORMALIZED: {
+        path: '/laps',
+        message: 'A bounded TCX Lap field order was normalized.'
+    },
+    TCX_TPX_FIELD_ORDER_NORMALIZED: {
+        path: '/streams',
+        message: 'A bounded TCX TPX field order was normalized.'
+    },
+    TCX_LAP_ELAPSED_TIME_BOUNDED: {
+        path: '/laps',
+        message: 'An overlapping TCX Lap elapsed summary was bounded by the next Lap start.'
     }
 });
 
@@ -381,6 +413,53 @@ function assertCoreChildren(element, allowed) {
     }
 }
 
+function hasExactAlternateLapOrder(element) {
+    if (element.children.some(child => child.uri !== TCX_NS)) return false;
+    const locals = element.children.map(child => child.local);
+    let cursor = 0;
+    const take = local => {
+        if (locals[cursor] !== local) return false;
+        cursor += 1;
+        return true;
+    };
+    if (!take('TotalTimeSeconds') || !take('DistanceMeters')) return false;
+    if (locals[cursor] === 'MaximumSpeed') cursor += 1;
+    if (
+        !take('AverageHeartRateBpm')
+        || !take('MaximumHeartRateBpm')
+        || !take('Calories')
+    ) return false;
+    if (locals[cursor] === 'Cadence') cursor += 1;
+    let tracks = 0;
+    while (locals[cursor] === 'Track') {
+        tracks += 1;
+        cursor += 1;
+    }
+    return tracks > 0 && cursor === locals.length;
+}
+
+function assertLapChildren(element, state) {
+    requireWhitespace(element);
+    const standardOrder = [
+        'TotalTimeSeconds', 'DistanceMeters', 'MaximumSpeed', 'Calories',
+        'AverageHeartRateBpm', 'MaximumHeartRateBpm', 'Intensity', 'Cadence',
+        'TriggerMethod', 'Track', 'Notes', 'Extensions'
+    ];
+    let previous = -1;
+    let standard = true;
+    for (const child of element.children) {
+        const current = child.uri === TCX_NS ? standardOrder.indexOf(child.local) : -1;
+        if (current < 0 || current < previous) {
+            standard = false;
+            break;
+        }
+        previous = current;
+    }
+    if (standard) return;
+    if (!hasExactAlternateLapOrder(element)) fail();
+    addWarning(state.warnings, 'TCX_LAP_FIELD_ORDER_NORMALIZED');
+}
+
 function parseNumber(element, { integer = false, min = null, max = null } = {}) {
     assertAttributes(element);
     const value = textValue(element);
@@ -507,6 +586,21 @@ function ignoreExtensions(
     if (sawKnown && knownWarning !== null) addWarning(state.warnings, knownWarning);
 }
 
+function hasExactAlternateTpxOrder(element) {
+    const namespaceDeclarations = Object.entries(element.namespaces);
+    return element.attributes.length === 0
+        && (
+            namespaceDeclarations.length === 0
+            || (namespaceDeclarations.length === 1
+                && namespaceDeclarations[0][0] === ''
+                && namespaceDeclarations[0][1] === ACTIVITY_EXT_NS)
+        )
+        && element.children.length === 3
+        && element.children.every(child => child.uri === ACTIVITY_EXT_NS)
+        && element.children.map(child => child.local).join('\u0000')
+            === 'RunCadence\u0000Speed\u0000Watts';
+}
+
 function parsePointExtensions(element, state) {
     assertAttributes(element);
     requireWhitespace(element);
@@ -525,19 +619,36 @@ function parsePointExtensions(element, state) {
         if (child.uri === ACTIVITY_EXT_NS && child.local === 'TPX') {
             if (sawTpx) fail();
             sawTpx = true;
-            assertAttributes(child);
+            const alternateOrder = hasExactAlternateTpxOrder(child);
+            if (alternateOrder) {
+                addWarning(state.warnings, 'TCX_TPX_FIELD_ORDER_NORMALIZED');
+            } else {
+                assertAttributes(child, ['\u0000CadenceSensor']);
+                const cadenceSensor = attribute(child, '', 'CadenceSensor');
+                if (cadenceSensor !== null) {
+                    if (cadenceSensor !== 'Footpod' && cadenceSensor !== 'Bike') fail();
+                    addWarning(state.warnings, 'TCX_DEVICE_METADATA_IGNORED');
+                }
+            }
             requireWhitespace(child);
             let previous = -1;
             let sawExtensions = false;
-            const order = ['Speed', 'RunCadence', 'Watts', 'Extensions'];
+            let sawSpeed = false;
+            const order = alternateOrder
+                ? ['RunCadence', 'Speed', 'Watts']
+                : ['Speed', 'RunCadence', 'Watts', 'Extensions'];
             for (const field of child.children) {
                 if (field.uri !== ACTIVITY_EXT_NS) fail();
                 const current = order.indexOf(field.local);
                 if (current < 0 || current < previous) fail();
                 previous = current;
                 if (field.local === 'Speed') {
-                    if (result.speed !== null) fail();
-                    result.speed = parseNumber(field, { min: 0 });
+                    if (sawSpeed) fail();
+                    sawSpeed = true;
+                    const speed = parseNumber(field);
+                    if (speed < 0) {
+                        addWarning(state.warnings, 'TCX_SPEED_SAMPLE_IGNORED');
+                    } else result.speed = speed;
                 } else if (field.local === 'RunCadence') {
                     if (result.runCadence !== null) fail();
                     result.runCadence = parseNumber(field, { integer: true, min: 0, max: 254 });
@@ -656,19 +767,63 @@ function sameValue(left, right) {
     return left === right;
 }
 
-function appendPoint(rows, point) {
-    const previous = rows[rows.length - 1];
-    if (previous && point.epochMs < previous.epochMs) fail();
-    if (previous && point.epochMs === previous.epochMs) {
-        for (const field of Object.keys(point)) {
-            if (field === 'epochMs' || point[field] === null) continue;
-            if (previous[field] !== null && !sameValue(previous[field], point[field])) fail();
-            if (previous[field] === null) previous[field] = point[field];
-        }
-        return;
+function compatiblePoint(left, right) {
+    for (const field of Object.keys(right)) {
+        if (field === 'epochMs' || left[field] === null || right[field] === null) continue;
+        if (!sameValue(left[field], right[field])) return false;
     }
-    if (rows.length >= TCX_LIMITS.maxTrackpointRows) fail();
-    rows.push(point);
+    return true;
+}
+
+function mergePoint(target, point) {
+    for (const field of Object.keys(point)) {
+        if (field !== 'epochMs' && target[field] === null && point[field] !== null) {
+            target[field] = point[field];
+        }
+    }
+}
+
+function normalizePoints(rows, state, activityStartEpochMs) {
+    let outOfOrder = false;
+    for (let index = 1; index < rows.length; index += 1) {
+        if (rows[index].epochMs < rows[index - 1].epochMs) {
+            outOfOrder = true;
+            break;
+        }
+    }
+    const ordered = outOfOrder
+        ? rows
+            .map((row, encounterIndex) => ({ row, encounterIndex }))
+            .sort((left, right) => left.row.epochMs - right.row.epochMs
+                || left.encounterIndex - right.encounterIndex)
+            .map(item => item.row)
+        : rows;
+    if (outOfOrder) addWarning(state.warnings, 'TCX_TRACKPOINT_ORDER_NORMALIZED');
+
+    const retained = ordered.filter(point => point.epochMs >= activityStartEpochMs);
+    if (retained.length !== ordered.length) {
+        if (retained.length === 0) fail();
+        addWarning(state.warnings, 'TCX_PRE_START_TRACKPOINT_IGNORED');
+    }
+
+    const normalized = [];
+    for (const point of retained) {
+        const previous = normalized[normalized.length - 1];
+        if (
+            previous === undefined
+            || previous.epochMs !== point.epochMs
+        ) {
+            normalized.push(point);
+            continue;
+        }
+        if (compatiblePoint(previous, point)) {
+            mergePoint(previous, point);
+            continue;
+        }
+        normalized.push(point);
+        addWarning(state.warnings, 'TCX_TRACKPOINT_CONFLICT_PRESERVED');
+    }
+    return normalized;
 }
 
 function parseTrack(element, state) {
@@ -676,7 +831,10 @@ function parseTrack(element, state) {
     assertCoreChildren(element, ['Trackpoint']);
     const points = children(element, 'Trackpoint');
     if (points.length === 0) fail();
-    for (const point of points) appendPoint(state.rows, parseTrackpoint(point, state));
+    for (const point of points) {
+        if (state.rows.length >= TCX_LIMITS.maxTrackpointRows) fail();
+        state.rows.push(parseTrackpoint(point, state));
+    }
 }
 
 function validateIgnoredSummary(element, local, options = {}) {
@@ -689,15 +847,11 @@ function validateIgnoredSummary(element, local, options = {}) {
     } else parseNumber(child, options);
 }
 
-function parseLap(element, index, activityStart, state, previousEnd) {
+function parseLap(element, index, activityStart, state) {
     assertAttributes(element, ['\u0000StartTime']);
     const startText = attribute(element, '', 'StartTime', true);
     const start = parseDateTimeValue(startText);
-    assertCoreChildren(element, [
-        'TotalTimeSeconds', 'DistanceMeters', 'MaximumSpeed', 'Calories',
-        'AverageHeartRateBpm', 'MaximumHeartRateBpm', 'Intensity', 'Cadence',
-        'TriggerMethod', 'Track', 'Notes', 'Extensions'
-    ]);
+    assertLapChildren(element, state);
     const elapsed = parseNumber(oneChild(element, 'TotalTimeSeconds'), { min: 0 });
     const distance = parseNumber(oneChild(element, 'DistanceMeters'), { min: 0 });
     parseNumber(oneChild(element, 'Calories'), { integer: true, min: 0, max: 65_535 });
@@ -715,11 +869,23 @@ function parseLap(element, index, activityStart, state, previousEnd) {
         textValue(notes);
     }
     const offset = (start.epochMs - activityStart.epochMs) / 1000;
-    if (!Number.isFinite(offset) || offset < 0 || (previousEnd !== null && offset < previousEnd)) fail();
+    if (!Number.isFinite(offset) || offset < 0) fail();
     const tracks = children(element, 'Track');
     state.tracks += tracks.length;
     if (state.tracks > TCX_LIMITS.maxTracks) fail();
+    const firstRowIndex = state.rows.length;
     for (const track of tracks) parseTrack(track, state);
+    let minTrackpointEpochMs = null;
+    let maxTrackpointEpochMs = null;
+    for (let rowIndex = firstRowIndex; rowIndex < state.rows.length; rowIndex += 1) {
+        const epochMs = state.rows[rowIndex].epochMs;
+        minTrackpointEpochMs = minTrackpointEpochMs === null
+            ? epochMs
+            : Math.min(minTrackpointEpochMs, epochMs);
+        maxTrackpointEpochMs = maxTrackpointEpochMs === null
+            ? epochMs
+            : Math.max(maxTrackpointEpochMs, epochMs);
+    }
     const extensions = oneChild(element, 'Extensions', false);
     if (extensions) {
         ignoreExtensions(extensions, state, 'TCX_UNKNOWN_EXTENSION_IGNORED', {
@@ -737,7 +903,11 @@ function parseLap(element, index, activityStart, state, previousEnd) {
             distanceMeters: distance
         },
         end: offset + elapsed,
-        distance
+        distance,
+        startEpochMs: start.epochMs,
+        trackpointCount: state.rows.length - firstRowIndex,
+        minTrackpointEpochMs,
+        maxTrackpointEpochMs
     };
 }
 
@@ -790,10 +960,22 @@ function parseCreatorOrAuthor(element, state) {
     addWarning(state.warnings, 'TCX_DEVICE_METADATA_IGNORED');
 }
 
+function parseRootCreator(element, state) {
+    if (
+        element.attributes.length !== 0
+        || element.children.length !== 0
+        || Object.keys(element.namespaces).length !== 0
+    ) fail();
+    textValue(element);
+    addWarning(state.warnings, 'TCX_DEVICE_METADATA_IGNORED');
+}
+
 function buildBundle(root) {
     if (!core(root, 'TrainingCenterDatabase')) fail();
     assertAttributes(root);
-    assertCoreChildren(root, ['Activities', 'Author', 'Extensions']);
+    assertCoreChildren(root, ['Creator', 'Activities', 'Author', 'Extensions']);
+    const rootCreators = children(root, 'Creator');
+    if (rootCreators.length > 1) fail();
     const activitiesElement = oneChild(root, 'Activities');
     const authors = children(root, 'Author');
     if (authors.length > 1) fail();
@@ -812,14 +994,33 @@ function buildBundle(root) {
     const activityId = `tcx:${encodeURIComponent(sourceId)}`;
     const warnings = new Map();
     const state = { activityId, warnings, rows: [], tracks: 0, extensionElements: 0 };
+    for (const creator of rootCreators) parseRootCreator(creator, state);
     const laps = children(activityElement, 'Lap');
     if (laps.length === 0 || laps.length > TCX_LIMITS.maxLaps) fail();
     const canonicalLaps = [];
     let previousEnd = null;
+    let previousParsed = null;
     let totalDistance = 0;
     for (let index = 0; index < laps.length; index += 1) {
-        const parsed = parseLap(laps[index], index, activityStart, state, previousEnd);
+        const parsed = parseLap(laps[index], index, activityStart, state);
+        if (previousParsed !== null && parsed.lap.startOffsetSeconds < previousParsed.end) {
+            const overlapSeconds = previousParsed.end - parsed.lap.startOffsetSeconds;
+            const canBoundElapsed = overlapSeconds > 0
+                && overlapSeconds <= 60
+                && parsed.lap.startOffsetSeconds
+                    > previousParsed.lap.startOffsetSeconds
+                && previousParsed.trackpointCount > 0
+                && previousParsed.maxTrackpointEpochMs <= parsed.startEpochMs
+                && parsed.trackpointCount > 0
+                && parsed.minTrackpointEpochMs === parsed.startEpochMs;
+            if (!canBoundElapsed) fail();
+            const previousLap = canonicalLaps[canonicalLaps.length - 1];
+            previousLap.elapsedTimeSeconds = parsed.lap.startOffsetSeconds
+                - previousLap.startOffsetSeconds;
+            addWarning(warnings, 'TCX_LAP_ELAPSED_TIME_BOUNDED');
+        }
         canonicalLaps.push(parsed.lap);
+        previousParsed = parsed;
         previousEnd = parsed.end;
         totalDistance += parsed.distance;
         if (!Number.isFinite(totalDistance)) fail();
@@ -839,8 +1040,18 @@ function buildBundle(root) {
     if (rootExtensions) {
         ignoreExtensions(rootExtensions, state, 'TCX_UNKNOWN_EXTENSION_IGNORED');
     }
-    const streams = buildStreams(activityId, state.rows, activityStart.epochMs);
+    const rows = normalizePoints(state.rows, state, activityStart.epochMs);
+    const streams = buildStreams(activityId, rows, activityStart.epochMs);
     const streamTypes = new Set(streams.series.map(series => series.streamType));
+    let elapsedTimeSeconds = previousEnd;
+    if (streams.series.length > 0) {
+        const offsets = streams.series[0].offsetsSeconds;
+        const finalStreamOffset = offsets[offsets.length - 1];
+        if (finalStreamOffset > elapsedTimeSeconds) {
+            elapsedTimeSeconds = finalStreamOffset;
+            addWarning(warnings, 'TCX_ELAPSED_TIME_EXTENDED');
+        }
+    }
     addWarning(warnings, 'TCX_IMPORT_TIME_FALLBACK');
     const activity = {
         schemaVersion: 1,
@@ -857,7 +1068,7 @@ function buildBundle(root) {
             hasLaps: canonicalLaps.length > 0
         },
         distanceMeters: totalDistance,
-        elapsedTimeSeconds: previousEnd
+        elapsedTimeSeconds
     };
     const source = {
         id: `${activityId}:source:0`,
@@ -878,7 +1089,7 @@ function buildBundle(root) {
         sources: [source],
         devices: [],
         warnings: sortedWarnings(warnings),
-        versionMetadata: { schemaVersion: 1, parserVersion: 'tcx-1.0.0' }
+        versionMetadata: { schemaVersion: 1, parserVersion: 'tcx-1.1.0' }
     };
     const validation = validateImportedActivityBundle(bundle);
     if (!validation.ok) fail();

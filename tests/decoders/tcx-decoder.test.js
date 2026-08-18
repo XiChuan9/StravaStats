@@ -50,7 +50,7 @@ function validPoint(time, values = {}) {
     return { time, ...values };
 }
 
-function runBoundaryChild(source) {
+function runBoundaryChild(source, options = {}) {
     return execFileSync(process.execPath, [
         '--max-old-space-size=1024',
         '--input-type=module',
@@ -58,7 +58,8 @@ function runBoundaryChild(source) {
         source
     ], {
         cwd: process.cwd(),
-        encoding: 'utf8'
+        encoding: 'utf8',
+        ...options
     });
 }
 
@@ -136,6 +137,10 @@ test('default namespace maps core, power, temperatures, real zero, and provenanc
         importedAt: SYNTHETIC_TCX_START
     }]);
     assert.deepEqual(warningCodes(bundle), ['TCX_IMPORT_TIME_FALLBACK']);
+    assert.deepEqual(bundle.versionMetadata, {
+        schemaVersion: 1,
+        parserVersion: 'tcx-1.1.0'
+    });
     assert.equal(validateCanonicalActivity(bundle.activity).ok, true);
     assert.equal(validateCanonicalStreamSet(bundle.streams).ok, true);
     assert.equal(validateImportedActivityBundle(bundle).ok, true);
@@ -188,6 +193,123 @@ test('multiple Laps and Tracks preserve encounter order and summed summaries', (
     assert.deepEqual(series(bundle, 'distance').offsetsSeconds, [0, 20, 30]);
 });
 
+test('bounded Lap summary overlap shortens only prior elapsed with track evidence', () => {
+    const firstLap = {
+        start: SYNTHETIC_TCX_START,
+        totalTime: 20,
+        distance: 100,
+        tracks: [[
+            validPoint(SYNTHETIC_TCX_START, { distance: 0 }),
+            validPoint('2031-04-05T06:07:18.000Z', { distance: 100 })
+        ]]
+    };
+    const secondLap = {
+        start: '2031-04-05T06:07:23.000Z',
+        totalTime: 15,
+        distance: 50,
+        tracks: [[
+            validPoint('2031-04-05T06:07:23.000Z', { distance: 0 }),
+            validPoint('2031-04-05T06:07:38.000Z', { distance: 50 })
+        ]]
+    };
+    const bundle = decode({ laps: [firstLap, secondLap] });
+    assert.deepEqual(bundle.laps.map(lap => ({
+        startOffsetSeconds: lap.startOffsetSeconds,
+        elapsedTimeSeconds: lap.elapsedTimeSeconds,
+        distanceMeters: lap.distanceMeters
+    })), [
+        { startOffsetSeconds: 0, elapsedTimeSeconds: 15, distanceMeters: 100 },
+        { startOffsetSeconds: 15, elapsedTimeSeconds: 15, distanceMeters: 50 }
+    ]);
+    assert.equal(bundle.activity.startTimeUtc, SYNTHETIC_TCX_START);
+    assert.deepEqual(series(bundle, 'distance').offsetsSeconds, [0, 10, 15, 30]);
+    assert.deepEqual(
+        bundle.warnings.find(item => item.code === 'TCX_LAP_ELAPSED_TIME_BOUNDED'),
+        {
+            code: 'TCX_LAP_ELAPSED_TIME_BOUNDED',
+            path: '/laps',
+            message: 'An overlapping TCX Lap elapsed summary was bounded by the next Lap start.'
+        }
+    );
+
+    const cases = [
+        [
+            { ...firstLap, totalTime: 76 },
+            secondLap
+        ],
+        [
+            { ...firstLap, tracks: undefined },
+            secondLap
+        ],
+        [
+            {
+                ...firstLap,
+                tracks: [[validPoint('2031-04-05T06:07:24.000Z', { distance: 100 })]]
+            },
+            secondLap
+        ],
+        [
+            firstLap,
+            { ...secondLap, tracks: undefined }
+        ],
+        [
+            firstLap,
+            {
+                ...secondLap,
+                tracks: [[validPoint('2031-04-05T06:07:24.000Z', { distance: 0 })]]
+            }
+        ],
+        [
+            firstLap,
+            {
+                ...secondLap,
+                start: SYNTHETIC_TCX_START,
+                tracks: [[validPoint(SYNTHETIC_TCX_START, { distance: 0 })]]
+            }
+        ]
+    ];
+    for (const laps of cases) assertImportError(() => decode({ laps }));
+});
+
+test('exact Garmin alternate Lap summary order is accepted without broad reordering', () => {
+    const heartRate = (local, value) => `<${local}><Value>${value}</Value></${local}>`;
+    const alternate = createSyntheticTcxActivity()
+        .replace('<Calories>100</Calories>', [
+            '<MaximumSpeed>4.5</MaximumSpeed>',
+            heartRate('AverageHeartRateBpm', 140),
+            heartRate('MaximumHeartRateBpm', 160),
+            '<Calories>100</Calories>',
+            '<Cadence>80</Cadence>'
+        ].join(''))
+        .replace('<Intensity>Active</Intensity>', '')
+        .replace('<TriggerMethod>Manual</TriggerMethod>', '');
+    const bundle = decodeXml(alternate);
+    assert.equal(bundle.laps.length, 1);
+    assert.deepEqual(
+        bundle.warnings.find(item => item.code === 'TCX_LAP_FIELD_ORDER_NORMALIZED'),
+        {
+            code: 'TCX_LAP_FIELD_ORDER_NORMALIZED',
+            path: '/laps',
+            message: 'A bounded TCX Lap field order was normalized.'
+        }
+    );
+
+    const nearMisses = [
+        alternate.replace(heartRate('AverageHeartRateBpm', 140), ''),
+        alternate.replace(heartRate('MaximumHeartRateBpm', 160), ''),
+        alternate.replace(
+            `${heartRate('MaximumHeartRateBpm', 160)}<Calories>`,
+            `${heartRate('MaximumHeartRateBpm', 160)}<Intensity>Active</Intensity><Calories>`
+        ),
+        alternate.replace(
+            '<DistanceMeters>1000</DistanceMeters><MaximumSpeed>4.5</MaximumSpeed>',
+            '<MaximumSpeed>4.5</MaximumSpeed><DistanceMeters>1000</DistanceMeters>'
+        ),
+        alternate.replace(/<Track>[\s\S]*<\/Track>/, '')
+    ];
+    for (const content of nearMisses) assertImportError(() => decodeXml(content));
+});
+
 test('Polar missing speed and Suunto missing altitude stay null without derivation', () => {
     const bundle = decode({
         laps: [{
@@ -235,7 +357,7 @@ test('summary-only Lap is valid while a present empty Track is rejected', () => 
     }));
 });
 
-test('equal timestamps fold compatible values and reject conflicts', () => {
+test('equal timestamps fold compatible values and preserve conflicts', () => {
     const bundle = decode({
         laps: [{
             start: SYNTHETIC_TCX_START,
@@ -249,7 +371,7 @@ test('equal timestamps fold compatible values and reject conflicts', () => {
     });
     assert.deepEqual(series(bundle, 'power').values, [0]);
     assert.deepEqual(series(bundle, 'cadence').values, [0]);
-    assertImportError(() => decode({
+    const conflicting = decode({
         laps: [{
             start: SYNTHETIC_TCX_START,
             totalTime: 1,
@@ -259,23 +381,208 @@ test('equal timestamps fold compatible values and reject conflicts', () => {
                 validPoint(SYNTHETIC_TCX_START, { power: 2 })
             ]]
         }]
-    }));
+    });
+    assert.deepEqual(series(conflicting, 'power').offsetsSeconds, [0, 0]);
+    assert.deepEqual(series(conflicting, 'power').values, [1, 2]);
+    assert.deepEqual(
+        conflicting.warnings.find(item => item.code === 'TCX_TRACKPOINT_CONFLICT_PRESERVED'),
+        {
+            code: 'TCX_TRACKPOINT_CONFLICT_PRESERVED',
+            path: '/streams',
+            message: 'Conflicting TCX trackpoints at the same timestamp were preserved.'
+        }
+    );
 });
 
-test('decreasing and missing Trackpoint times fail closed', () => {
-    assertImportError(() => decode({
+test('same-timestamp branch ambiguity merges only with the latest retained row', () => {
+    const bundle = decode({
+        laps: [{
+            start: SYNTHETIC_TCX_START,
+            totalTime: 1,
+            distance: 0,
+            tracks: [[
+                validPoint(SYNTHETIC_TCX_START, { power: 1 }),
+                validPoint(SYNTHETIC_TCX_START, { power: 2 }),
+                validPoint(SYNTHETIC_TCX_START, { cadence: 3 }),
+                validPoint(SYNTHETIC_TCX_START, { power: 1 })
+            ]]
+        }]
+    });
+    assert.deepEqual(series(bundle, 'power').offsetsSeconds, [0, 0, 0]);
+    assert.deepEqual(series(bundle, 'power').values, [1, 2, 1]);
+    assert.deepEqual(series(bundle, 'cadence').values, [null, 3, null]);
+    assert.equal(
+        warningCodes(bundle).filter(code =>
+            code === 'TCX_TRACKPOINT_CONFLICT_PRESERVED').length,
+        1
+    );
+});
+
+test('high-volume same-timestamp conflicts stay within a linear-time child boundary', () => {
+    const output = runBoundaryChild(`
+        import { tcxDecoder, TCX_MEDIA_TYPE } from './js/decoders/tcx/decoder.js';
+        const start = '${SYNTHETIC_TCX_START}';
+        const points = Array.from({ length: 20000 }, (_, index) =>
+            '<Trackpoint><Time>' + start + '</Time><DistanceMeters>'
+            + (index % 2) + '</DistanceMeters></Trackpoint>'
+        ).join('');
+        const xml = '<TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2"><Activities><Activity Sport="Running"><Id>'
+            + start + '</Id><Lap StartTime="' + start + '"><TotalTimeSeconds>0</TotalTimeSeconds><DistanceMeters>0</DistanceMeters><Calories>0</Calories><Intensity>Active</Intensity><TriggerMethod>Manual</TriggerMethod><Track>'
+            + points + '</Track></Lap></Activity></Activities></TrainingCenterDatabase>';
+        const bundle = tcxDecoder.decode({ mediaType: TCX_MEDIA_TYPE, content: xml });
+        const distance = bundle.streams.series.find(item => item.streamType === 'distance');
+        if (distance.values.length !== 20000) throw new Error('row-count');
+        if (!bundle.warnings.some(item => item.code === 'TCX_TRACKPOINT_CONFLICT_PRESERVED')) {
+            throw new Error('warning');
+        }
+        process.stdout.write('ok');
+    `, { timeout: 10_000 });
+    assert.equal(output, 'ok');
+});
+
+test('finite negative TPX speed is ignored field-by-field without clamping', () => {
+    const bundle = decode({
         laps: [{
             start: SYNTHETIC_TCX_START,
             totalTime: 30,
             distance: 0,
             tracks: [[
-                validPoint('2031-04-05T06:07:38.000Z'),
-                validPoint(SYNTHETIC_TCX_START)
+                validPoint(SYNTHETIC_TCX_START, { speed: -0.25, power: 100 }),
+                validPoint('2031-04-05T06:07:38.000Z', { speed: 4.5, power: 200 })
             ]]
         }]
+    });
+    assert.deepEqual(series(bundle, 'speed').values, [null, 4.5]);
+    assert.deepEqual(series(bundle, 'power').values, [100, 200]);
+    assert.deepEqual(bundle.warnings.find(item => item.code === 'TCX_SPEED_SAMPLE_IGNORED'), {
+        code: 'TCX_SPEED_SAMPLE_IGNORED',
+        path: '/streams/speed',
+        message: 'A physically invalid TCX speed sample was ignored.'
+    });
+    assert.equal(JSON.stringify(bundle.warnings).includes('-0.25'), false);
+
+    for (const speed of ['-Infinity', '-NaN', '--1']) {
+        assertImportError(() => decode({
+            laps: [{
+                start: SYNTHETIC_TCX_START,
+                totalTime: 0,
+                distance: 0,
+                tracks: [[validPoint(SYNTHETIC_TCX_START, { speed })]]
+            }]
+        }));
+    }
+
+    const duplicateSpeed = (first, second) => createSyntheticTcxActivity({
+        laps: [{
+            start: SYNTHETIC_TCX_START,
+            totalTime: 0,
+            distance: 0,
+            tracks: [[validPoint(SYNTHETIC_TCX_START, { speed: first })]]
+        }]
+    }).replace(
+        `</ae:Speed>`,
+        `</ae:Speed><ae:Speed>${second}</ae:Speed>`
+    );
+    for (const [first, second] of [[-1, 4], [-1, -2], [4, -1]]) {
+        assertImportError(() => decodeXml(duplicateSpeed(first, second)));
+    }
+});
+
+test('out-of-order Trackpoints are stably sorted before duplicate normalization', () => {
+    const bundle = decode({
+        laps: [{
+            start: SYNTHETIC_TCX_START,
+            totalTime: 30,
+            distance: 0,
+            tracks: [[
+                validPoint('2031-04-05T06:07:38.000Z', { power: 30 }),
+                validPoint(SYNTHETIC_TCX_START, { power: 0 }),
+                validPoint('2031-04-05T06:07:38.000Z', { power: 31 })
+            ]]
+        }]
+    });
+    assert.deepEqual(series(bundle, 'power').offsetsSeconds, [0, 30, 30]);
+    assert.deepEqual(series(bundle, 'power').values, [0, 30, 31]);
+    assert.deepEqual(
+        bundle.warnings.find(item => item.code === 'TCX_TRACKPOINT_ORDER_NORMALIZED'),
+        {
+            code: 'TCX_TRACKPOINT_ORDER_NORMALIZED',
+            path: '/streams',
+            message: 'TCX trackpoints were ordered by their original timestamps.'
+        }
+    );
+    assert.ok(warningCodes(bundle).includes('TCX_TRACKPOINT_CONFLICT_PRESERVED'));
+
+    assertImportError(() => decode({
+        laps: [{
+            start: SYNTHETIC_TCX_START,
+            totalTime: 30,
+            distance: 0,
+            tracks: [[validPoint('2031-04-05T06:07:07.000Z', { power: 1 })]]
+        }]
     }));
+});
+
+test('Trackpoints before Activity start are ignored without shifting timestamps', () => {
+    const bundle = decode({
+        laps: [{
+            start: SYNTHETIC_TCX_START,
+            totalTime: 30,
+            distance: 0,
+            tracks: [[
+                validPoint(SYNTHETIC_TCX_START, { power: 0 }),
+                validPoint('2031-04-05T06:07:07.000Z', { power: 99 }),
+                validPoint('2031-04-05T06:07:38.000Z', { power: 30 })
+            ]]
+        }]
+    });
+    assert.deepEqual(series(bundle, 'power').offsetsSeconds, [0, 30]);
+    assert.deepEqual(series(bundle, 'power').values, [0, 30]);
+    assert.equal(bundle.activity.startTimeUtc, SYNTHETIC_TCX_START);
+    assert.deepEqual(
+        bundle.warnings.find(item => item.code === 'TCX_PRE_START_TRACKPOINT_IGNORED'),
+        {
+            code: 'TCX_PRE_START_TRACKPOINT_IGNORED',
+            path: '/streams',
+            message: 'TCX trackpoints before the activity start were ignored.'
+        }
+    );
+    assert.ok(warningCodes(bundle).includes('TCX_TRACKPOINT_ORDER_NORMALIZED'));
+
+    assertImportError(() => decode({
+        laps: [{
+            start: SYNTHETIC_TCX_START,
+            totalTime: 0,
+            distance: 0,
+            tracks: [[validPoint('2031-04-05T06:07:07.000Z', { power: 99 })]]
+        }]
+    }));
+});
+
+test('missing Trackpoint time still fails closed', () => {
     const xml = createSyntheticTcxActivity().replace(`<Time>${SYNTHETIC_TCX_START}</Time>`, '');
     assertImportError(() => decodeXml(xml));
+});
+
+test('stream tail extends activity elapsed time without changing Lap summaries', () => {
+    const bundle = decode({
+        laps: [{
+            start: SYNTHETIC_TCX_START,
+            totalTime: 5,
+            distance: 10,
+            tracks: [[
+                validPoint(SYNTHETIC_TCX_START, { power: 1 }),
+                validPoint('2031-04-05T06:07:38.000Z', { power: 2 })
+            ]]
+        }]
+    });
+    assert.equal(bundle.activity.elapsedTimeSeconds, 30);
+    assert.equal(bundle.laps[0].elapsedTimeSeconds, 5);
+    assert.deepEqual(bundle.warnings.find(item => item.code === 'TCX_ELAPSED_TIME_EXTENDED'), {
+        code: 'TCX_ELAPSED_TIME_EXTENDED',
+        path: '/activity/elapsedTimeSeconds',
+        message: 'Activity elapsed time was extended to cover the final TCX stream sample.'
+    });
 });
 
 test('base cadence and RunCadence must agree', () => {
@@ -298,6 +605,120 @@ test('base cadence and RunCadence must agree', () => {
     }));
 });
 
+test('schema-defined TPX CadenceSensor metadata accepts only exact values', () => {
+    for (const cadenceSensor of ['Footpod', 'Bike']) {
+        const bundle = decode({
+            laps: [{
+                start: SYNTHETIC_TCX_START,
+                totalTime: 1,
+                distance: 0,
+                tracks: [[validPoint(SYNTHETIC_TCX_START, {
+                    runCadence: 80,
+                    cadenceSensor
+                })]]
+            }]
+        });
+        assert.equal(series(bundle, 'cadence').values[0], 80);
+        assert.ok(warningCodes(bundle).includes('TCX_DEVICE_METADATA_IGNORED'));
+    }
+    for (const cadenceSensor of ['footpod', 'Run', ' Footpod']) {
+        assertImportError(() => decode({
+            laps: [{
+                start: SYNTHETIC_TCX_START,
+                totalTime: 1,
+                distance: 0,
+                tracks: [[validPoint(SYNTHETIC_TCX_START, {
+                    runCadence: 80,
+                    cadenceSensor
+                })]]
+            }]
+        }));
+    }
+    const extraAttribute = createSyntheticTcxActivity().replace(
+        '<ae:TPX>',
+        '<ae:TPX private="true">'
+    );
+    assertImportError(() => decodeXml(extraAttribute));
+});
+
+test('exact Garmin alternate TPX order is accepted without broad extension reordering', () => {
+    const content = createSyntheticTcxActivity({
+        laps: [{
+            start: SYNTHETIC_TCX_START,
+            totalTime: 1,
+            distance: 0,
+            tracks: [[validPoint(SYNTHETIC_TCX_START, {
+                runCadence: 80,
+                speed: 4,
+                power: 200,
+                alternateTpxOrder: true
+            })]]
+        }]
+    });
+    const bundle = decodeXml(content);
+    assert.equal(series(bundle, 'cadence').values[0], 80);
+    assert.equal(series(bundle, 'speed').values[0], 4);
+    assert.equal(series(bundle, 'power').values[0], 200);
+    assert.deepEqual(
+        bundle.warnings.find(item => item.code === 'TCX_TPX_FIELD_ORDER_NORMALIZED'),
+        {
+            code: 'TCX_TPX_FIELD_ORDER_NORMALIZED',
+            path: '/streams',
+            message: 'A bounded TCX TPX field order was normalized.'
+        }
+    );
+    const defaultNamespace = content
+        .replace('<ae:TPX>', '<TPX xmlns="http://www.garmin.com/xmlschemas/ActivityExtension/v2">')
+        .replace('</ae:TPX>', '</TPX>')
+        .replaceAll('<ae:RunCadence>', '<RunCadence>')
+        .replaceAll('</ae:RunCadence>', '</RunCadence>')
+        .replaceAll('<ae:Speed>', '<Speed>')
+        .replaceAll('</ae:Speed>', '</Speed>')
+        .replaceAll('<ae:Watts>', '<Watts>')
+        .replaceAll('</ae:Watts>', '</Watts>');
+    assert.ok(warningCodes(decodeXml(defaultNamespace)).includes(
+        'TCX_TPX_FIELD_ORDER_NORMALIZED'
+    ));
+
+    for (const standardFallback of [
+        content.replace('<ae:RunCadence>80</ae:RunCadence>', ''),
+        content.replace('<ae:Speed>4</ae:Speed>', '')
+    ]) {
+        assert.equal(
+            warningCodes(decodeXml(standardFallback)).includes(
+                'TCX_TPX_FIELD_ORDER_NORMALIZED'
+            ),
+            false
+        );
+    }
+
+    const nearMisses = [
+        content.replace('<ae:Watts>200</ae:Watts>', ''),
+        content.replace(
+            '<ae:RunCadence>80</ae:RunCadence>',
+            '<ae:RunCadence>80</ae:RunCadence><ae:RunCadence>80</ae:RunCadence>'
+        ),
+        content.replace(
+            '<ae:Speed>4</ae:Speed><ae:Watts>200</ae:Watts>',
+            '<ae:Watts>200</ae:Watts><ae:Speed>4</ae:Speed>'
+        ),
+        content.replace('<ae:TPX>', '<ae:TPX CadenceSensor="Footpod">'),
+        content.replace(
+            '<ae:TPX>',
+            '<ae:TPX xmlns:private="urn:stravastats:synthetic:alternate">'
+        ),
+        content.replace(
+            '<ae:TPX>',
+            '<ae:TPX xmlns:extra="http://www.garmin.com/xmlschemas/ActivityExtension/v2">'
+        ),
+        content.replace(
+            '</ae:TPX>',
+            '<ae:Extensions><synthetic:Extra/></ae:Extensions></ae:TPX>'
+        )
+    ];
+    for (const nearMiss of nearMisses) assertImportError(() => decodeXml(nearMiss));
+});
+
 test('unknown wildcard, lap extension, and device trees add only static warnings', () => {
     const bundle = decode({
         creator: true,
@@ -318,6 +739,39 @@ test('unknown wildcard, lap extension, and device trees add only static warnings
         'TCX_UNKNOWN_EXTENSION_IGNORED'
     ]);
     assert.ok(bundle.warnings.every(warning => !JSON.stringify(warning).includes('Synthetic Device')));
+});
+
+test('exact scalar root Creator metadata before one Activity is ignored narrowly', () => {
+    const bundle = decode({ rootCreator: 'Synthetic root metadata' });
+    assert.deepEqual(warningCodes(bundle), [
+        'TCX_DEVICE_METADATA_IGNORED',
+        'TCX_IMPORT_TIME_FALLBACK'
+    ]);
+    assert.equal(JSON.stringify(bundle).includes('Synthetic root metadata'), false);
+
+    const valid = createSyntheticTcxActivity({ rootCreator: 'Synthetic root metadata' });
+    const nearMisses = [
+        valid.replace('<Creator>Synthetic root metadata</Creator>', '<Creator></Creator>'),
+        valid.replace('<Creator>Synthetic root metadata</Creator>', '<Creator>   </Creator>'),
+        valid.replace('<Creator>', '<Creator private="true">'),
+        valid.replace('<Creator>Synthetic root metadata</Creator>', '<Creator><Name/></Creator>'),
+        valid.replace(
+            '<Creator>Synthetic root metadata</Creator>',
+            '<Creator>Synthetic root metadata</Creator><Creator>Second</Creator>'
+        ),
+        valid.replace(
+            '<Creator>',
+            '<Creator xmlns:private="urn:stravastats:synthetic:root">'
+        ),
+        valid.replace(
+            '<Creator>Synthetic root metadata</Creator><Activities>',
+            '<Activities>'
+        ).replace(
+            '</Activities>',
+            '</Activities><Creator>Synthetic root metadata</Creator>'
+        )
+    ];
+    for (const content of nearMisses) assertImportError(() => decodeXml(content));
 });
 
 test('approved root and Garmin extension wildcards ignore only bounded other namespaces', () => {
@@ -474,7 +928,7 @@ test('TCX and selected extension schema sequences reject out-of-order fields', (
         valid.replace(/(<Id>[^<]+<\/Id>)(<Lap[\s\S]*<\/Lap>)/, '$2$1'),
         valid.replace(/(<TotalTimeSeconds>[^<]+<\/TotalTimeSeconds>)(<DistanceMeters>[^<]+<\/DistanceMeters>)/, '$2$1'),
         valid.replace(/(<Time>[^<]+<\/Time>)(<Position>[\s\S]*?<\/Position>)/, '$2$1'),
-        valid.replace(/(<ae:Speed>[^<]+<\/ae:Speed>)(<ae:RunCadence>[^<]+<\/ae:RunCadence>)/, '$2$1'),
+        valid.replace(/(<ae:RunCadence>[^<]+<\/ae:RunCadence>)(<ae:Watts>[^<]+<\/ae:Watts>)/, '$2$1'),
         valid.replace(/(<tpe:atemp>[^<]+<\/tpe:atemp>)(<tpe:wtemp>[^<]+<\/tpe:wtemp>)/, '$2$1')
     ];
     for (const content of cases) assertImportError(() => decodeXml(content));

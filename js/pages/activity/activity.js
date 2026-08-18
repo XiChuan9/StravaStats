@@ -14,6 +14,11 @@ import {
     prepareStreamMapPresentation,
     restoreStreamGapMask
 } from '../detail/stream-presentation.js';
+import {
+    calculateHeartRateZoneSeconds,
+    formatHeartRateZoneLabels,
+    readHeartRateZones
+} from '../detail/heart-rate-zone-presentation.js';
 
 // =====================================================
 // 1. INITIALIZATION & CONFIGURATION
@@ -125,6 +130,18 @@ function formatPace(speedInMps) {
     return formatPaceRun(1000 / speedInMps);
 }
 
+function formatElevationPerKm(activity, digits = 2) {
+    const distance = activity?.distance;
+    const elevation = activity?.total_elevation_gain;
+    if (
+        !Number.isFinite(distance)
+        || distance <= 0
+        || !Number.isFinite(elevation)
+    ) return null;
+    const value = elevation / (distance / 1000);
+    return Number.isFinite(value) ? value.toFixed(digits) : null;
+}
+
 export function getActivityRouteCoordinates(activity, streams) {
     return readValidatedRouteGeometry(activity, streams);
 }
@@ -133,7 +150,13 @@ export function getActivityRouteCoordinates(activity, streams) {
  * Estimates VO2max from activity data using Karvonen formula
  */
 function estimateVO2max(act, userMaxHr = CONFIG.USER_MAX_HR) {
-    if (!act.distance || !act.moving_time || !act.average_heartrate) return '-';
+    if (
+        !Number.isFinite(userMaxHr)
+        || userMaxHr <= 0
+        || !act.distance
+        || !act.moving_time
+        || !act.average_heartrate
+    ) return '-';
     const vel_m_min = (act.distance / act.moving_time) * 60;
     const vo2_at_pace = (vel_m_min * 0.2) + 3.5;
     const percent_max_hr = act.average_heartrate / userMaxHr;
@@ -181,37 +204,6 @@ function calculateVariability(data, smoothingWindow = 0) {
 
     const cv = (standardDeviation / mean) * 100;
     return `${cv.toFixed(1)}%`;
-}
-
-/**
- * Calculates time spent in each HR zone
- */
-function calculateTimeInZones(heartrateStream, timeStream, zones) {
-    if (!heartrateStream || !timeStream || !zones || zones.length === 0) {
-        return [];
-    }
-
-    const timeInZones = Array(zones.length).fill(0);
-
-    for (let i = 1; i < heartrateStream.data.length; i++) {
-        const hr = heartrateStream.data[i];
-        if (hr === null) continue;
-        const deltaTime = timeStream.data[i] - timeStream.data[i - 1];
-
-        let zoneIndex = -1;
-        for (let j = 0; j < zones.length; j++) {
-            const zone = zones[j];
-            const max = zone.max === -1 ? Infinity : zone.max;
-            if (hr >= zone.min && hr < max) {
-                zoneIndex = j;
-                break;
-            }
-        }
-        if (zoneIndex !== -1) {
-            timeInZones[zoneIndex] += deltaTime;
-        }
-    }
-    return timeInZones;
 }
 
 /**
@@ -765,9 +757,7 @@ function renderActivityStats(activity) {
     const duration = formatTime(activity.moving_time);
     const pace = formatPace(activity.average_speed);
     const elevation = activity.total_elevation_gain !== undefined ? activity.total_elevation_gain : '-';
-    const elevationPerKm = activity.distance > 0
-        ? (activity.total_elevation_gain / (activity.distance / 1000)).toFixed(2)
-        : '-';
+    const elevationPerKm = formatElevationPerKm(activity);
     const calories = activity.calories !== undefined ? activity.calories : '-';
     const hrAvg = activity.average_heartrate ? Math.round(activity.average_heartrate) : '-';
     const hrMax = activity.max_heartrate ? Math.round(activity.max_heartrate) : '-';
@@ -788,7 +778,7 @@ function renderActivityStats(activity) {
             <li><b>Distance:</b> ${distanceKm} km</li>
             <li><b>Pace:</b> ${pace}</li>
             <li><b>Elevation Gain:</b> ${elevation} m</li>
-            <li><b>Elevation per Km:</b> ${elevationPerKm} m</li>
+            <li><b>Elevation per Km:</b> ${elevationPerKm === null ? '–' : `${elevationPerKm} m`}</li>
             <li><b>Calories:</b> ${calories}</li>
             <li><b>HR Avg:</b> ${hrAvg} bpm</li>
             <li><b>HR Max:</b> ${hrMax} bpm</li>
@@ -806,12 +796,10 @@ function renderActivityStats(activity) {
 /**
  * Renders advanced statistics (VO2max, variability, achievements)
  */
-function renderAdvancedStats(activity) {
+function renderAdvancedStats(activity, analysisContext = null) {
     if (!DOM.advanced) return;
 
-    const elevationPerKm = activity.distance > 0
-        ? (activity.total_elevation_gain / (activity.distance / 1000)).toFixed(2)
-        : '-';
+    const elevationPerKm = formatElevationPerKm(activity);
     const moveRatio = activity.moving_ratio !== null && activity.moving_ratio !== undefined
         ? `${(activity.moving_ratio * 100).toFixed(1)}%`
         : '-';
@@ -827,7 +815,14 @@ function renderAdvancedStats(activity) {
     const efficiency = (activity.efficiency !== null && activity.efficiency !== undefined && efficiencyUnit)
         ? `${activity.efficiency.toFixed(3)} ${efficiencyUnit}`
         : '-';
-    const vo2max = estimateVO2max(activity);
+    const configuredMax = analysisContext?.status === 'configured'
+        ? analysisContext.heartRate?.maxBpm
+        : analysisContext?.status === 'unconfigured'
+            ? null
+            : CONFIG.USER_MAX_HR;
+    const vo2max = analysisContext?.status === 'unconfigured'
+        ? 'Requires local heart-rate profile'
+        : estimateVO2max(activity, configuredMax);
     const paceVariabilityLaps = activity.pace_variability_laps || '-';
     const paceVariabilityStream = activity.pace_variability_stream || '-';
     const hrVariabilityLaps = activity.hr_variability_laps || '-';
@@ -839,7 +834,7 @@ function renderAdvancedStats(activity) {
     DOM.advanced.innerHTML = `
         <h3>Advanced Stats</h3>
         <ul>
-            <li><b>Elevation per Km:</b> ${elevationPerKm} m</li>
+            <li><b>Elevation per Km:</b> ${elevationPerKm === null ? '–' : `${elevationPerKm} m`}</li>
             <li><b>Move Ratio:</b> ${moveRatio}</li>
             <li><b>Efficiency:</b> ${efficiency}</li>
             <li><b>Effort:</b> ${effort}</li>
@@ -1358,18 +1353,41 @@ function renderSegments(segments) {
 /**
  * Renders HR zone distribution chart
  */
-function renderHrZoneDistributionChart(streams, zones) {
+function setHeartRateProfileMessage(section, canvas, visible) {
+    if (!section || !canvas) return;
+    let message = section.querySelector?.('[data-analysis-profile-message]') ?? null;
+    if (visible && message === null && document?.createElement) {
+        message = document.createElement('p');
+        message.className = 'empty-state';
+        message.dataset.analysisProfileMessage = 'true';
+        message.textContent = 'Configure your local heart rate profile to see personalized zones.';
+        canvas.parentElement?.append(message);
+    }
+    canvas.hidden = visible;
+    if (message) message.hidden = !visible;
+}
+
+function renderHrZoneDistributionChart(streams, zones, analysisContext = null) {
     const canvas = document.getElementById('hr-zones-chart');
-    if (!canvas || !streams.heartrate || !streams.time) return;
+    const section = document.getElementById('hr-zones-section');
+    if (!canvas || !section || !streams.heartrate || !streams.time) return;
 
-    const configuredZones = zones?.heart_rate?.zones;
-    const hrZones = Array.isArray(configuredZones)
-        ? configuredZones.filter(zone => zone && typeof zone === 'object' && zone.max > 0)
-        : null;
+    const unconfigured = analysisContext?.status === 'unconfigured';
+    setHeartRateProfileMessage(section, canvas, unconfigured);
+    if (unconfigured) return;
 
-    if (hrZones && hrZones.length > 0) {
-        const timeInZones = calculateTimeInZones(streams.heartrate, streams.time, hrZones);
-        const labels = hrZones.map((zone, i) => `Z${i + 1} (${zone.min}-${zone.max === -1 ? '∞' : zone.max})`);
+    const hrZones = readHeartRateZones(zones);
+
+    if (hrZones.length > 0) {
+        const timeInZones = calculateHeartRateZoneSeconds(
+            streams.heartrate,
+            streams.time,
+            hrZones
+        );
+        const labels = formatHeartRateZoneLabels(
+            hrZones,
+            analysisContext?.status === 'configured'
+        );
         const data = timeInZones.map(time => +(time / 60).toFixed(1));
         const gradientColors = ['#fde0e0', '#fababa', '#fa7a7a', '#f44336', '#b71c1c'];
 
@@ -1706,7 +1724,7 @@ function renderClassifierResults(classificationData) {
 /**
  * Main entry point - loads activity data and renders all sections
  */
-export async function renderActivityPage({ activity, streams, zones, athlete, activityId, mapLocationMode, weatherFeatureEnabled }) {
+export async function renderActivityPage({ activity, streams, zones, athlete, activityId, analysisContext = null, mapLocationMode, weatherFeatureEnabled }) {
     const mapCoordinates = getActivityRouteCoordinates(activity, streams);
     if (DOM.streamCharts) DOM.streamCharts.style.display = 'grid';
     weatherFeatureEnabledForPage = weatherFeatureEnabled === true;
@@ -1774,7 +1792,7 @@ export async function renderActivityPage({ activity, streams, zones, athlete, ac
     // Render all sections
     renderActivityInfo(activityData);
     renderActivityStats(activityData);
-    renderAdvancedStats(activityData);
+    renderAdvancedStats(activityData, analysisContext);
     renderActivityMap(activityData, streamData, mapCoordinates);
     renderSplitsCharts(activityData);
     renderStreamCharts(initialSmoothedStreams, activityData, currentSmoothingLevel);
@@ -1783,7 +1801,7 @@ export async function renderActivityPage({ activity, streams, zones, athlete, ac
     renderLapsChart(activityData.laps);
     renderSegments(activityData.segment_efforts);
     renderClassifierResults(classifyRun(activityData, streamData, zones));
-    renderHrZoneDistributionChart(streamData, zones);
+    renderHrZoneDistributionChart(streamData, zones, analysisContext);
     renderHrMinMaxAreaChart(initialSmoothedStreams, currentSmoothingLevel);
     renderPaceMinMaxAreaChart(initialSmoothedStreams, currentSmoothingLevel);
 
@@ -1791,7 +1809,7 @@ export async function renderActivityPage({ activity, streams, zones, athlete, ac
     initDynamicChartControls();
 
     // Initialize advanced analysis with the already-loaded bundle data.
-    initAdvancedAnalysis(activityId, activity, streams);
+    initAdvancedAnalysis(activityId, activity, streams, { analysisContext });
 
     if (DOM.streamCharts) DOM.streamCharts.style.display = '';
 }
@@ -1848,7 +1866,14 @@ export function initAdvancedAnalysis(
     activity,
     streams,
     {
-        analyzerFactory = () => new AdvancedActivityAnalyzer(activityId, activity, streams),
+        analysisContext = null,
+        analyzerFactory = () => new AdvancedActivityAnalyzer(
+            activityId,
+            activity,
+            streams,
+            undefined,
+            analysisContext
+        ),
         uiFactory = (content, analyzer) => createStaticAnalysisUiAdapter(content, analyzer)
     } = {}
 ) {

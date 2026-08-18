@@ -17,7 +17,8 @@ const RUN_PLUS_OPTION_KEYS = new Set([
     'gears',
     'getActivity',
     'getStreams',
-    'onFiltersChange'
+    'onFiltersChange',
+    'analysisContext'
 ]);
 const IMPACT_ATL_DAYS = 7;
 const IMPACT_CTL_DAYS = 42;
@@ -152,7 +153,8 @@ function normalizeRunPlusOptions(value) {
             gears: Object.freeze([]),
             getActivity: null,
             getStreams: null,
-            onFiltersChange: null
+            onFiltersChange: null,
+            analysisContext: null
         });
     }
     const gears = Object.hasOwn(options, 'gears')
@@ -168,14 +170,41 @@ function normalizeRunPlusOptions(value) {
             gears: Object.freeze([]),
             getActivity: null,
             getStreams: null,
-            onFiltersChange: null
+            onFiltersChange: null,
+            analysisContext: null
         });
     }
+    const analysisContext = normalizeRunPlusAnalysisContext(options.analysisContext ?? null);
     return Object.freeze({
         gears: Object.freeze([...gears]),
         getActivity: options.getActivity || null,
         getStreams: options.getStreams || null,
-        onFiltersChange: options.onFiltersChange || null
+        onFiltersChange: options.onFiltersChange || null,
+        analysisContext
+    });
+}
+
+function normalizeRunPlusAnalysisContext(value) {
+    if (value === null) return null;
+    const context = readPlainDataRecord(value);
+    if (context === null || !['configured', 'unconfigured'].includes(context.status)) {
+        return null;
+    }
+    if (context.status === 'unconfigured') {
+        return Object.freeze({ status: 'unconfigured', heartRate: null });
+    }
+    const heartRate = readPlainDataRecord(context.heartRate);
+    if (
+        heartRate === null
+        || !Number.isInteger(heartRate.maxBpm)
+        || heartRate.maxBpm < 100
+        || heartRate.maxBpm > 230
+    ) {
+        return Object.freeze({ status: 'unconfigured', heartRate: null });
+    }
+    return Object.freeze({
+        status: 'configured',
+        heartRate: Object.freeze({ maxBpm: heartRate.maxBpm })
     });
 }
 
@@ -1473,7 +1502,19 @@ function getDashboardHrMax() {
     return Number.isFinite(hrMax) && hrMax >= 120 && hrMax <= 230 ? hrMax : null;
 }
 
-function estimateNsmHrMax(runs) {
+function estimateNsmHrMax(runs, analysisContext = null) {
+    if (analysisContext?.status === 'configured') {
+        return {
+            value: analysisContext.heartRate.maxBpm,
+            source: 'analysis profile'
+        };
+    }
+    if (analysisContext?.status === 'unconfigured') {
+        return {
+            value: null,
+            source: 'training profile required'
+        };
+    }
     const saved = getDashboardHrMax();
     if (saved) return { value: saved, source: 'dashboard setting' };
     const observed = Math.max(
@@ -1535,7 +1576,10 @@ function classifyNsmRun(run, context) {
     const isLongestThisWeek = weekInfo?.longestRunKey && getActivityKey(weekInfo.longestRunKey) === activityId;
     const longByShape = distanceKm >= 16 || (isLongestThisWeek && distanceKm >= Math.max(12, (weekInfo?.avgRunDistance || 0) * 1.45));
     const avgHr = Number(run.average_heartrate);
-    const easyByHr = Number.isFinite(avgHr) && avgHr > 0 && avgHr <= context.easyHrCap + 3;
+    const easyByHr = Number.isFinite(avgHr)
+        && avgHr > 0
+        && Number.isFinite(context.easyHrCap)
+        && avgHr <= context.easyHrCap + 3;
     const classified = typeof window !== 'undefined' && typeof window.classifyRun === 'function'
         ? window.classifyRun(run, run.streams || {})
         : null;
@@ -1543,7 +1587,14 @@ function classifyNsmRun(run, context) {
 
     let autoTag = 'other';
     if (RACE_NAME_RE.test(name) || NSM_RACE_TEST_RE.test(name) || run.workout_type === 1) autoTag = 'race_test';
-    else if (NSM_THRESHOLD_RE.test(name) || (run.workout_type === 3 && Number.isFinite(avgHr) && avgHr >= context.easyHrCap && avgHr <= context.thresholdHrCap + 5)) autoTag = getAutoSubThresholdTag(run);
+    else if (NSM_THRESHOLD_RE.test(name) || (
+        run.workout_type === 3
+        && Number.isFinite(avgHr)
+        && Number.isFinite(context.easyHrCap)
+        && Number.isFinite(context.thresholdHrCap)
+        && avgHr >= context.easyHrCap
+        && avgHr <= context.thresholdHrCap + 5
+    )) autoTag = getAutoSubThresholdTag(run);
     else if (NSM_LONG_RE.test(name) || run.workout_type === 2 || longByShape) autoTag = 'long';
     else if (NSM_EASY_RE.test(name) || /Easy\/Recovery/i.test(classifierLabel) || easyByHr) autoTag = 'easy';
 
@@ -1577,7 +1628,10 @@ function scoreNsmWeek(weekRows, weekStartDate) {
     const subThresholdMinutes = sum(subThreshold.map(row => row.subThresholdWorkMinutes ?? row.minutes));
     const subThresholdShare = totalMinutes > 0 ? subThresholdMinutes / totalMinutes : 0;
     const easyOverCap = easy.filter(row => row.easyOverCap).length;
-    const easyDiscipline = easy.length ? 1 - (easyOverCap / easy.length) : 0;
+    const hasPersonalizedCap = easy.some(row => row.hasPersonalizedCap === true);
+    const easyDiscipline = hasPersonalizedCap && easy.length
+        ? 1 - (easyOverCap / easy.length)
+        : null;
     const target = NSM_WEEKLY_TARGETS;
     const shareMid = (target.subThresholdShareLow + target.subThresholdShareHigh) / 2;
     const shareDistance = Math.abs(subThresholdShare - shareMid);
@@ -1587,7 +1641,7 @@ function scoreNsmWeek(weekRows, weekStartDate) {
         + clamp(easy.length / target.easySessions, 0, 1) * 25
         + clamp(longRuns.length / target.longRuns, 0, 1) * 20
         + shareScore * 15
-        + easyDiscipline * 10
+        + (easyDiscipline ?? 0) * 10
     );
 
     let label = 'Needs structure';
@@ -1607,6 +1661,7 @@ function scoreNsmWeek(weekRows, weekStartDate) {
         subThresholdShare,
         easySessions: easy.length,
         easyOverCap,
+        hasPersonalizedCap,
         easyDiscipline,
         longRuns: longRuns.length,
         raceTests: included.filter(row => row.isRaceTest).length
@@ -1614,6 +1669,7 @@ function scoreNsmWeek(weekRows, weekStartDate) {
 }
 
 function buildNsmEasyDiscipline(easyRows, easyHrCap, hrMaxValue) {
+    const hasPersonalizedCap = Number.isFinite(easyHrCap) && easyHrCap > 0;
     const validHrRows = easyRows
         .filter(row => Number.isFinite(row.avgHr) && row.avgHr > 0)
         .map(row => ({
@@ -1624,7 +1680,7 @@ function buildNsmEasyDiscipline(easyRows, easyHrCap, hrMaxValue) {
             distanceKm: row.distanceKm,
             pace: row.pace,
             avgHr: row.avgHr,
-            easyHrMargin: row.avgHr - easyHrCap,
+            easyHrMargin: hasPersonalizedCap ? row.avgHr - easyHrCap : null,
             easyHrPctMax: hrMaxValue > 0 ? row.avgHr / hrMaxValue : null,
             easyOverCap: row.easyOverCap
         }));
@@ -1635,16 +1691,19 @@ function buildNsmEasyDiscipline(easyRows, easyHrCap, hrMaxValue) {
         if (!row.week) return;
         const entry = weeklyMap.get(row.week) || { week: row.week, total: 0, underCap: 0, overCap: 0, unknownHr: 0 };
         entry.total += 1;
-        if (!Number.isFinite(row.avgHr) || row.avgHr <= 0) entry.unknownHr += 1;
+        if (!Number.isFinite(row.avgHr) || row.avgHr <= 0 || !hasPersonalizedCap) entry.unknownHr += 1;
         else if (row.easyOverCap) entry.overCap += 1;
         else entry.underCap += 1;
         weeklyMap.set(row.week, entry);
     });
 
     return {
+        hasPersonalizedCap,
         runs: easyRows.length,
         overCap: easyRows.filter(row => row.easyOverCap).length,
-        overCapRate: easyRows.length ? easyRows.filter(row => row.easyOverCap).length / easyRows.length : null,
+        overCapRate: hasPersonalizedCap && easyRows.length
+            ? easyRows.filter(row => row.easyOverCap).length / easyRows.length
+            : null,
         capBpm: easyHrCap,
         hrValidRuns: validHrRows.length,
         avgHr: average(validHrRows.map(row => row.avgHr)),
@@ -1738,14 +1797,18 @@ function buildNsmSubThresholdControl(intervalAnalysis, intervalSummary = {}, inp
     };
 }
 
-function buildNsmModel(model) {
+function buildNsmModel(model, analysisContext = null) {
     const settings = readNsmSettings();
     const manualTags = readNsmActivityTags();
     const sessionInputs = readNsmSessionInputs();
     const tests = readNsmTests().sort((a, b) => b.date.localeCompare(a.date));
-    const hrMax = estimateNsmHrMax(model.runs);
-    const easyHrCap = hrMax.value * settings.easyHrCapPct / 100;
-    const thresholdHrCap = hrMax.value * settings.thresholdHrPct / 100;
+    const hrMax = estimateNsmHrMax(model.runs, analysisContext);
+    const easyHrCap = Number.isFinite(hrMax.value)
+        ? hrMax.value * settings.easyHrCapPct / 100
+        : null;
+    const thresholdHrCap = Number.isFinite(hrMax.value)
+        ? hrMax.value * settings.thresholdHrPct / 100
+        : null;
     const weekContext = getWeekContext(model.runs);
     const context = { manualTags, weekContext, easyHrCap, thresholdHrCap };
 
@@ -1759,7 +1822,7 @@ function buildNsmModel(model) {
         const isEasy = tag === 'easy';
         const isLong = tag === 'long';
         const isRaceTest = tag === 'race_test';
-        const easyOverCap = isEasy && Number.isFinite(avgHr) && avgHr > easyHrCap;
+        const easyOverCap = isEasy && Number.isFinite(avgHr) && Number.isFinite(easyHrCap) && avgHr > easyHrCap;
         const intervalAnalysis = isSubThreshold
             ? getNsmIntervalAnalysisForRow(run, activityId, input, tag)
             : null;
@@ -1786,7 +1849,7 @@ function buildNsmModel(model) {
             minutes: runMinutes(run),
             pace: paceSec(run),
             avgHr,
-            easyHrMargin: isEasy && Number.isFinite(avgHr) ? avgHr - easyHrCap : null,
+            easyHrMargin: isEasy && Number.isFinite(avgHr) && Number.isFinite(easyHrCap) ? avgHr - easyHrCap : null,
             easyHrPctMax: isEasy && Number.isFinite(avgHr) && hrMax.value > 0 ? avgHr / hrMax.value : null,
             subThresholdWorkMinutes,
             tag,
@@ -1802,6 +1865,7 @@ function buildNsmModel(model) {
             isEasy,
             isLong,
             isRaceTest,
+            hasPersonalizedCap: Number.isFinite(easyHrCap),
             easyOverCap,
             controlStatus: control.status,
             controlFlags: control.flags,
@@ -1851,6 +1915,7 @@ function buildNsmModel(model) {
     }));
 
     const recommendations = [];
+    if (!Number.isFinite(hrMax.value)) recommendations.push('Configure the local heart-rate training profile to enable personalized HR caps.');
     if (model.diagnostics.tissueLoad.status.level === 'risk') recommendations.push('Reduce impact load before adding another NSM quality session.');
     if (recent7.subThresholdShare > NSM_WEEKLY_TARGETS.subThresholdShareHigh + 0.05) recommendations.push('Sub-threshold share is high; protect easy volume and recovery.');
     if (easyRows.length && easyRows.filter(row => row.easyOverCap).length / easyRows.length > 0.25) recommendations.push('Easy days are drifting above the easy HR cap.');
@@ -3250,7 +3315,7 @@ function renderNsmCommandCenter(model) {
                 <div class="nsm-stat-primary nsm-stat-primary--easy">
                     <span class="nsm-stat-primary__label"><span class="nsm-tooltip" data-tooltip="Percentage of easy runs exceeding the HR cap in the current filtered range (${esc(activeRange)})">Easy Discipline · Filtered</span></span>
                     <span class="nsm-stat-primary__value">${nsm.easyDiscipline.overCapRate == null ? '-' : `${percentLabel(nsm.easyDiscipline.overCapRate)} over cap`}</span>
-                    <span class="nsm-stat-primary__detail">Cap ${Math.round(nsm.easyDiscipline.capBpm)} bpm · ${nsm.easyDiscipline.runs} easy runs</span>
+                    <span class="nsm-stat-primary__detail">${Number.isFinite(nsm.easyDiscipline.capBpm) ? `Cap ${Math.round(nsm.easyDiscipline.capBpm)} bpm` : 'Training profile required'} · ${nsm.easyDiscipline.runs} easy runs</span>
                 </div>
                 <div class="nsm-stat-primary nsm-stat-primary--load">
                     <span class="nsm-stat-primary__label"><span class="nsm-tooltip" data-tooltip="Sub-threshold sessions flagged as overcooked in the current filtered range (${esc(activeRange)})">SubT Control · Filtered</span></span>
@@ -3268,7 +3333,7 @@ function renderNsmCommandCenter(model) {
                 <span class="nsm-stat-secondary">🏃 <strong>${nsm.recent28.longRuns}</strong> long runs (28d)</span>
                 <span class="nsm-stat-secondary">⏱ <strong>${formatNsmHours(nsm.recent28.totalMinutes)}</strong> total (28d)</span>
                 <span class="nsm-stat-secondary ${pillClassForConfidence(model.diagnostics.aerobicEfficiency.confidence)}">💓 HR coverage ${percentLabel(nsm.dataTrust.hrCoverage)}</span>
-                <span class="nsm-stat-secondary">HRmax <strong>${Math.round(nsm.hrMax.value)}</strong> bpm · ${esc(nsm.hrMax.source)}</span>
+                <span class="nsm-stat-secondary">${Number.isFinite(nsm.hrMax.value) ? `HRmax <strong>${Math.round(nsm.hrMax.value)}</strong> bpm` : '<strong>HR profile required</strong>'} · ${esc(nsm.hrMax.source)}</span>
                 <span class="nsm-stat-secondary">🎯 ${esc(nsm.recommendations[0])}</span>
             </div>
             <details class="run-plus-nsm-config">
@@ -3309,7 +3374,11 @@ function renderNsmWeeklyScore(model) {
                                     <td>${row.easySessions}</td>
                                     <td>${row.longRuns}</td>
                                     <td>${percentLabel(row.subThresholdShare)}</td>
-                                    <td>${row.easySessions ? `${row.easyOverCap}/${row.easySessions} over` : '-'}</td>
+                                    <td>${row.easySessions
+                                        ? row.hasPersonalizedCap
+                                            ? `${row.easyOverCap}/${row.easySessions} over`
+                                            : 'Profile required'
+                                        : '-'}</td>
                                     <td>${formatNsmDistance(row.totalDistance)}</td>
                                 </tr>
                             `).join('') || '<tr><td colspan="10"><div class="nsm-empty-state"><span class="nsm-empty-state__icon">📊</span><span class="nsm-empty-state__title">No weekly data</span><span class="nsm-empty-state__text">No weekly runs in the active filter.</span></div></td></tr>'}
@@ -3454,12 +3523,12 @@ function renderNsmEasyDiscipline(model) {
                 <h3>Easy Discipline</h3>
                 <div class="run-plus-nsm-split">
                     <div>
-                        <p class="run-plus-chart-caption">Easy cap is ${Math.round(model.nsm.easyHrCap)} bpm (${model.nsm.settings.easyHrCapPct}% of HRmax). Runs above that cap are not automatically bad, but they weaken the repeatable NSM rhythm when they become common.</p>
+                        <p class="run-plus-chart-caption">${Number.isFinite(model.nsm.easyHrCap) ? `Easy cap is ${Math.round(model.nsm.easyHrCap)} bpm (${model.nsm.settings.easyHrCapPct}% of HRmax). Runs above that cap are not automatically bad, but they weaken the repeatable NSM rhythm when they become common.` : 'Configure the local heart-rate training profile to enable personalized easy-cap analysis.'}</p>
                         <div class="run-plus-nsm-mini-grid">
-                            ${renderNsmMetric('Easy runs', `${easy.runs}`, `${easy.overCap} over cap · ${easy.hrValidRuns} HR-valid`, easy.overCap ? 'warn' : 'good')}
+                            ${renderNsmMetric('Easy runs', `${easy.runs}`, easy.hasPersonalizedCap ? `${easy.overCap} over cap · ${easy.hrValidRuns} HR-valid` : 'Training profile required', easy.hasPersonalizedCap ? (easy.overCap ? 'warn' : 'good') : 'muted')}
                             ${renderNsmMetric('Avg easy HR', Number.isFinite(easy.avgHr) ? `${Math.round(easy.avgHr)} bpm` : '-', Number.isFinite(easy.avgHrPctMax) ? `${nsmHrPercentLabel(easy.avgHrPctMax)} of HRmax` : 'Needs HR data', Number.isFinite(easy.avgHrPctMax) && easy.avgHrPctMax <= model.nsm.settings.easyHrCapPct / 100 ? 'good' : 'warn')}
                             ${renderNsmMetric('HR% distribution', Number.isFinite(easy.hrPctP50) ? `P50 ${nsmHrPercentLabel(easy.hrPctP50)}` : '-', Number.isFinite(easy.hrPctP25) ? `P25 ${nsmHrPercentLabel(easy.hrPctP25)} · P75 ${nsmHrPercentLabel(easy.hrPctP75)}` : 'No HR distribution', 'muted')}
-                            ${renderNsmMetric('Median easy pace', Number.isFinite(easy.medianPace) ? paceLabel(easy.medianPace) : '-', `Cap source ${Math.round(model.nsm.hrMax.value)} bpm · ${model.nsm.hrMax.source}`, 'muted')}
+                            ${renderNsmMetric('Median easy pace', Number.isFinite(easy.medianPace) ? paceLabel(easy.medianPace) : '-', Number.isFinite(model.nsm.hrMax.value) ? `Cap source ${Math.round(model.nsm.hrMax.value)} bpm · ${model.nsm.hrMax.source}` : 'Training profile required', 'muted')}
                         </div>
                     </div>
                     <div class="run-plus-table-wrap nsm-easy-runs-table-wrap">
@@ -3474,7 +3543,11 @@ function renderNsmEasyDiscipline(model) {
                                         <td>${paceLabel(row.pace)}</td>
                                         <td>${Number.isFinite(row.avgHr) ? `${Math.round(row.avgHr)} bpm` : '-'}</td>
                                         <td>${Number.isFinite(row.easyHrPctMax) ? nsmHrPercentLabel(row.easyHrPctMax) : '-'}</td>
-                                        <td>${row.easyOverCap ? '<span class="run-plus-pill run-plus-pill--warn">over cap</span>' : '<span class="run-plus-pill run-plus-pill--good">easy</span>'}</td>
+                                        <td>${!easy.hasPersonalizedCap
+                                            ? '<span class="run-plus-pill run-plus-pill--muted">profile required</span>'
+                                            : row.easyOverCap
+                                                ? '<span class="run-plus-pill run-plus-pill--warn">over cap</span>'
+                                                : '<span class="run-plus-pill run-plus-pill--good">easy</span>'}</td>
                                     </tr>
                                 `).join('') || '<tr><td colspan="7"><div class="nsm-empty-state"><span class="nsm-empty-state__icon">🏃</span><span class="nsm-empty-state__title">No easy runs</span><span class="nsm-empty-state__text">No easy runs detected in the active filter.</span></div></td></tr>'}
                             </tbody>
@@ -4535,23 +4608,24 @@ function renderNsmEasyCharts(model) {
     };
 
     const marginCanvas = document.getElementById(runPlusId('nsm-easy-margin-chart'));
-    if (marginCanvas && chartRows.length) {
+    const marginRows = chartRows.filter(row => Number.isFinite(row.easyHrMargin));
+    if (marginCanvas && marginRows.length) {
         registerNsmEasyChart(new Chart(marginCanvas.getContext('2d'), {
             data: {
-                labels: chartRows.map(row => row.date),
+                labels: marginRows.map(row => row.date),
                 datasets: [
                     {
                         type: 'bar',
                         label: 'HR margin vs cap',
-                        data: chartRows.map(row => +row.easyHrMargin.toFixed(1)),
-                        backgroundColor: chartRows.map(row => row.easyHrMargin > 0 ? 'rgba(245, 158, 11, 0.42)' : 'rgba(22, 163, 74, 0.34)'),
-                        borderColor: chartRows.map(row => row.easyHrMargin > 0 ? warnColor : goodColor),
+                        data: marginRows.map(row => +row.easyHrMargin.toFixed(1)),
+                        backgroundColor: marginRows.map(row => row.easyHrMargin > 0 ? 'rgba(245, 158, 11, 0.42)' : 'rgba(22, 163, 74, 0.34)'),
+                        borderColor: marginRows.map(row => row.easyHrMargin > 0 ? warnColor : goodColor),
                         borderWidth: 1
                     },
                     {
                         type: 'line',
                         label: 'Easy cap',
-                        data: chartRows.map(() => 0),
+                        data: marginRows.map(() => 0),
                         borderColor: riskColor,
                         borderDash: [6, 4],
                         pointRadius: 0,
@@ -4648,7 +4722,9 @@ function renderNsmEasyCharts(model) {
         const percentileLine = (label, pct, color) => ({
             type: 'line',
             label: Number.isFinite(pct) ? `${label} ${nsmHrPercentLabel(pct)}` : label,
-            data: lineData(Number.isFinite(pct) ? pct * model.nsm.hrMax.value : null),
+            data: lineData(Number.isFinite(pct) && Number.isFinite(model.nsm.hrMax.value)
+                ? pct * model.nsm.hrMax.value
+                : null),
             borderColor: color,
             borderDash: [5, 5],
             borderWidth: 1,
@@ -5583,7 +5659,7 @@ export function renderRunPlusTab(allActivities, dateFilterFrom, dateFilterTo, ge
         options.gears
     );
     model.diagnostics = buildDiagnostics(model);
-    model.nsm = buildNsmModel(model);
+    model.nsm = buildNsmModel(model, options.analysisContext);
 
     if (!model.runs.length) {
         destroyImpactLoadChart();

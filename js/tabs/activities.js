@@ -524,6 +524,8 @@ export function renderActivitiesTab(allActivities) {
     }
     const state = tableEl._actState;
     const allColumns = [...COLUMNS, ...inferExtraColumns(allActivities)];
+    state.allActivities = allActivities;
+    state.allColumns = allColumns;
 
     // ── Build filter UI once ──────────────────────────────────────────────────
     if (filterEl && !filterEl._built) {
@@ -726,7 +728,7 @@ export function renderActivitiesTab(allActivities) {
 
         function ensureValidSelection() {
             const selected = new Set(state.selectedCols || []);
-            const known = allColumns.filter(c => selected.has(c.key)).map(c => c.key);
+            const known = state.allColumns.filter(c => selected.has(c.key)).map(c => c.key);
             if (known.length === 0) return [COLUMNS[0].key];
             return known;
         }
@@ -737,7 +739,7 @@ export function renderActivitiesTab(allActivities) {
             const selected = new Set(ensureValidSelection());
             const grid = document.createElement('div');
             grid.className = 'act-col-editor-grid';
-            for (const col of allColumns) {
+            for (const col of state.allColumns) {
                 const label = document.createElement('label');
                 label.className = 'act-col-option';
                 const input = document.createElement('input');
@@ -831,13 +833,13 @@ export function renderActivitiesTab(allActivities) {
 
     // ── Render table ──────────────────────────────────────────────────────────
     function render() {
-        const filtered = applyFilters(allActivities);
+        const filtered = applyFilters(state.allActivities);
         const groupedRows = aggregateByPeriod(filtered, state.groupBy);
         const grouped = state.groupBy !== 'none';
         const sorted = applySort(groupedRows, grouped);
         state.visibleActivities = sorted;
         const selectedCols = new Set(state.selectedCols && state.selectedCols.length ? state.selectedCols : COLUMNS.map(c => c.key));
-        const visibleColumns = allColumns.filter(c => selectedCols.has(c.key));
+        const visibleColumns = state.allColumns.filter(c => selectedCols.has(c.key));
         if (visibleColumns.length === 0) visibleColumns.push(COLUMNS[0]);
         if (!visibleColumns.some(c => c.key === state.sortCol)) {
             state.sortCol = visibleColumns[0].key;
@@ -910,7 +912,7 @@ export function renderActivitiesTab(allActivities) {
             counterEl.innerHTML = `
                 <span>${grouped
                     ? `${sorted.length} groups / ${filtered.length} activities`
-                    : `${sorted.length} / ${allActivities.length} activities`}</span>
+                    : `${sorted.length} / ${state.allActivities.length} activities`}</span>
                 <button id="act-export-csv" class="act-export-btn" type="button">Download CSV</button>
             `;
 

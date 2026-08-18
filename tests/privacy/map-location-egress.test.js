@@ -18,12 +18,17 @@ import {
     readValidatedRouteGeometry,
     validateMapGeometry
 } from '../../js/app/map-location-egress.js';
+import { createMapConsentGeometry } from '../../js/tabs/maps.js';
 
 const projectRoot = new URL('../../', import.meta.url);
 const SYNTHETIC_GEOMETRY = Object.freeze([
     Object.freeze([0, 0]),
     Object.freeze([12.25, -45.5])
 ]);
+
+function mapItem(route, start = null, end = null) {
+    return { activity: {}, route, start, end };
+}
 
 async function source(relativePath) {
     return readFile(new URL(relativePath, projectRoot), 'utf8');
@@ -193,6 +198,92 @@ test('plain-data readers fail closed before accessors, proxies, or malformed poi
     assert.equal(accessorReads, 0);
     assert.deepEqual(readValidatedRouteGeometry({}, { latlng: { data: [[0, 0]] } }), [[0, 0]]);
     assert.deepEqual(readValidatedCoordinate({ start_latlng: [0, 0] }, 'start_latlng'), [0, 0]);
+});
+
+test('global Map authorization geometry preserves the full approved tile envelope with only actual extrema', () => {
+    const routes = Object.freeze([
+        Object.freeze([
+            Object.freeze([10, 20]),
+            Object.freeze([-15, 25]),
+            Object.freeze([12, -70]),
+            Object.freeze([8, 90]),
+            Object.freeze([40, 30]),
+            Object.freeze([11, 21])
+        ]),
+        Object.freeze([
+            Object.freeze([5, 15]),
+            Object.freeze([6, 16])
+        ])
+    ]);
+    const items = Object.freeze(routes.map(route => mapItem(route, route[0], route.at(-1))));
+    const fullGeometry = routes.flatMap(route => route);
+    const authorizationGeometry = createMapConsentGeometry(items);
+    const fullEnvelope = createApprovedTileEnvelope(fullGeometry);
+    const authorizationEnvelope = createApprovedTileEnvelope(authorizationGeometry);
+
+    assert.equal(Object.isFrozen(authorizationGeometry), true);
+    assert.equal(authorizationGeometry.length, 4);
+    assert.equal(authorizationGeometry.every(Object.isFrozen), true);
+    assert.equal(authorizationGeometry.every(point => fullGeometry.includes(point) === false), true);
+    assert.deepEqual(authorizationEnvelope.bounds, fullEnvelope.bounds);
+    assert.deepEqual(authorizationEnvelope.ranges, fullEnvelope.ranges);
+    assert.deepEqual(authorizationGeometry, [
+        [-15, 25],
+        [40, 30],
+        [12, -70],
+        [8, 90]
+    ]);
+});
+
+test('global Map authorization geometry fails closed on hostile or malformed route inputs', () => {
+    let accessorReads = 0;
+    const accessorPoint = [];
+    Object.defineProperty(accessorPoint, '0', {
+        enumerable: true,
+        get() {
+            accessorReads += 1;
+            return 1;
+        }
+    });
+    Object.defineProperty(accessorPoint, '1', { enumerable: true, value: 2 });
+    accessorPoint.length = 2;
+    const accessorItem = { activity: {}, start: null, end: null };
+    Object.defineProperty(accessorItem, 'route', {
+        enumerable: true,
+        get() {
+            accessorReads += 1;
+            return [[1, 2]];
+        }
+    });
+    const sparseItems = new Array(1);
+    const throwingRoute = new Proxy([], {
+        getPrototypeOf() { throw new Error('synthetic'); }
+    });
+    const invalidItems = [
+        null,
+        {},
+        sparseItems,
+        [accessorItem],
+        [mapItem([accessorPoint])],
+        [mapItem(throwingRoute)],
+        [mapItem([[NaN, 2]])],
+        [mapItem([[1, Infinity]])],
+        [mapItem([[91, 2]])],
+        [mapItem([[1, -181]])],
+        [mapItem([], [1])],
+        new Proxy([], { getPrototypeOf() { throw new Error('synthetic'); } })
+    ];
+
+    for (const candidate of invalidItems) {
+        const result = createMapConsentGeometry(candidate);
+        assert.deepEqual(result, []);
+        assert.equal(Object.isFrozen(result), true);
+    }
+    assert.equal(accessorReads, 0);
+    assert.deepEqual(
+        createMapConsentGeometry([mapItem([], [0, 0], [0, 0])]),
+        [[0, 0]]
+    );
 });
 
 test('the approved envelope is complete before a canonical z/x/y URL is constructed', () => {
@@ -563,6 +654,35 @@ test('production integration injects mode and leaves no dormant provider seam', 
     assert.match(gear, /if\s*\(sessionMode\s*===\s*'demo'\)[\s\S]*?return/);
     assert.doesNotMatch(maps, /push\(\.\.\.item\.route\)/);
     assert.doesNotMatch(gear, /push\(\.\.\.item\.route\)/);
+});
+
+test('Canonical global routes remain behind the app-owned reader and existing consent boundary', async () => {
+    const [main, maps, html] = await Promise.all([
+        source('js/app/main.js'),
+        source('js/tabs/maps.js'),
+        source('index.html')
+    ]);
+    assert.match(main, /createGlobalMapRouteSession\(\{[\s\S]*?readRoute\(activityId\)/);
+    assert.match(main, /getStreams\(activityId, \{\s*types: \['latlng'\]\s*\}\)/);
+    assert.match(main, /return readCanonicalGlobalMapRoute\(streamLoad\.data\)/);
+    assert.match(main, /if \(keys\.length === 0\) return Object\.freeze\(\[\]\)/);
+    assert.match(main, /if \(keys\.length !== 1 \|\| keys\[0\] !== 'latlng'\) throw safeOperationalError\(\)/);
+    assert.match(main, /if \(route\.length === 0\) throw safeOperationalError\(\)/);
+    assert.match(maps, /loadCanonicalRoutes = null/);
+    assert.match(maps, /mapBoundary\.present\(\{/);
+    assert.match(maps, /providerControlId: 'map-tiles'/);
+    assert.match(maps, /authorizationCoordinates\(items\)/);
+    assert.match(maps, /createMapConsentGeometry\(items\)/);
+    assert.match(maps, /const coordinates = presentationCoordinates\(items, view\);/);
+    assert.match(maps, /revisionKey: String\(geometryRevision\)/);
+    assert.match(html, /id="global-map"[^>]*role="region"/);
+    assert.match(maps, /statusElement\.setAttribute\('aria-live', 'polite'\)/);
+
+    for (const value of [main, maps]) {
+        assert.doesNotMatch(value, /tile\.openstreetmap\.org|basemaps\.cartocdn|stamen-tiles/);
+    }
+    assert.doesNotMatch(maps, /\bfetch\s*\(|XMLHttpRequest|WebSocket|indexedDB|localStorage|sessionStorage/);
+    assert.doesNotMatch(maps, /console\.(?:log|warn|error)/);
 });
 
 test('the browser harness freezes interception-before-import and zero real external requests', async () => {

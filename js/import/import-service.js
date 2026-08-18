@@ -341,8 +341,11 @@ function exactRetryItems(value, job) {
     const failed = new Set([
         I.FAILED_VALIDATION, I.FAILED_DECODE, I.FAILED_STORAGE
     ]);
+    const activityLinked = new Set([
+        I.COMPLETED, I.REVIEW_REQUIRED
+    ]);
     const successful = new Set([
-        I.COMPLETED, I.REVIEW_REQUIRED, I.SKIPPED_EXACT_DUPLICATE
+        ...activityLinked, I.SKIPPED_EXACT_DUPLICATE
     ]);
     const items = values.map(item => ownDataValues(item, [
         'id', 'jobId', 'ordinal', 'artifactId', 'status', 'errorCode',
@@ -363,7 +366,7 @@ function exactRetryItems(value, job) {
         || (successful.has(item.status) && (
             item.errorCode !== null
             || item.retryable
-            || item.activityId === null
+            || (activityLinked.has(item.status) && item.activityId === null)
         ))
         || ((failed.has(item.status) || item.status === I.CANCELLED) && (
             item.errorCode === null

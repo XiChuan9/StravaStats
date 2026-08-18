@@ -12,6 +12,11 @@ import {
     reduceAlignedStreamData,
     restoreStreamGapMask
 } from '../detail/stream-presentation.js';
+import {
+    calculateHeartRateZoneSeconds,
+    formatHeartRateZoneLabels,
+    readHeartRateZones
+} from '../detail/heart-rate-zone-presentation.js';
 
 // =====================================================
 // 1. INITIALIZATION & CONFIGURATION
@@ -287,37 +292,6 @@ function calculateCoefficient(data) {
 
     const cv = (standardDeviation / mean) * 100;
     return `${cv.toFixed(1)}%`;
-}
-
-/**
- * Calculates time spent in each HR zone
- */
-function calculateTimeInZones(heartrateStream, timeStream, zones) {
-    if (!heartrateStream || !timeStream || !zones || zones.length === 0) {
-        return [];
-    }
-
-    const timeInZones = Array(zones.length).fill(0);
-
-    for (let i = 1; i < heartrateStream.data.length; i++) {
-        const hr = heartrateStream.data[i];
-        if (hr === null) continue;
-        const deltaTime = timeStream.data[i] - timeStream.data[i - 1];
-
-        let zoneIndex = -1;
-        for (let j = 0; j < zones.length; j++) {
-            const zone = zones[j];
-            const max = zone.max === -1 ? Infinity : zone.max;
-            if (hr >= zone.min && hr < max) {
-                zoneIndex = j;
-                break;
-            }
-        }
-        if (zoneIndex !== -1) {
-            timeInZones[zoneIndex] += deltaTime;
-        }
-    }
-    return timeInZones;
 }
 
 /**
@@ -694,35 +668,48 @@ export function renderLapsChart(laps) {
 /**
  * Renders HR zones distribution
  */
-function renderHRZones(activity, zones) {
+function renderHeartRateZoneEmptyState(section, copy) {
+    const heading = document.createElement('h3');
+    heading.textContent = 'Heart Rate Distribution';
+    const message = document.createElement('p');
+    message.className = 'empty-state';
+    message.textContent = copy;
+    section.replaceChildren(heading, message);
+}
+
+function renderHRZones(activity, zones, analysisContext = null) {
     const section = document.getElementById('hr-zones-section');
     if (!DOM.hrZonesChart || !section) return;
     if (!lastStreamData || !lastStreamData.heartrate || !lastStreamData.time) {
         section.style.display = '';
-        section.innerHTML = `
-            <h3>Heart Rate Distribution</h3>
-            <p class="empty-state">No heart rate stream is available for this swim.</p>
-        `;
+        renderHeartRateZoneEmptyState(
+            section,
+            'No heart rate stream is available for this swim.'
+        );
         return;
     }
 
     section.style.display = '';
 
     if (!zones || zones.length === 0) {
-        section.innerHTML = `
-            <h3>Heart Rate Distribution</h3>
-            <p class="empty-state">No heart rate zones are configured for this swim.</p>
-        `;
+        const copy = analysisContext?.status === 'unconfigured'
+            ? 'Configure your local heart rate profile to see personalized zones.'
+            : 'No heart rate zones are configured for this swim.';
+        renderHeartRateZoneEmptyState(section, copy);
         return;
     }
 
     const heartrateStream = lastStreamData.heartrate;
     const timeStream = lastStreamData.time;
-    const timeInZones = calculateTimeInZones(heartrateStream, timeStream, zones);
-    const labels = zones.map((zone, index) => {
-        const maxLabel = zone.max === -1 ? '∞' : zone.max;
-        return `Z${index + 1} (${zone.min}-${maxLabel})`;
-    });
+    const timeInZones = calculateHeartRateZoneSeconds(
+        heartrateStream,
+        timeStream,
+        zones
+    );
+    const labels = formatHeartRateZoneLabels(
+        zones,
+        analysisContext?.status === 'configured'
+    );
     const data = timeInZones.map(time => +(time / 60).toFixed(1));
 
     createChart('hr-zones-chart', {
@@ -872,7 +859,7 @@ function renderStreamCharts(streams, activity) {
 /**
  * Main initialization and rendering logic
  */
-export async function renderSwimPage({ activity, streams, zones, athlete, activityId, activitySource, mapLocationMode, weatherFeatureEnabled }) {
+export async function renderSwimPage({ activity, streams, zones, athlete, activityId, analysisContext = null, activitySource, mapLocationMode, weatherFeatureEnabled }) {
     const mapCoordinates = getActivityRouteCoordinates(activity, streams);
     weatherFeatureEnabledForPage = weatherFeatureEnabled === true;
     mapLocationModeForPage = mapLocationMode;
@@ -897,8 +884,8 @@ export async function renderSwimPage({ activity, streams, zones, athlete, activi
         renderLaps(activityData.laps);
         renderLapsChart(activityData.laps);
 
-        const heartRateZones = Array.isArray(zones?.heart_rate?.zones) ? zones.heart_rate.zones : [];
-        renderHRZones(activityData, heartRateZones);
+        const heartRateZones = readHeartRateZones(zones);
+        renderHRZones(activityData, heartRateZones, analysisContext);
 
         renderStreamCharts(streamData, activityData);
 }

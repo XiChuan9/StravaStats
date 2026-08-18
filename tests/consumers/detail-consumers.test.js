@@ -35,6 +35,10 @@ import {
     REPOSITORY_ERROR_CODE,
     RepositoryError
 } from '../../js/repository/index.js';
+import {
+    DEMO_ANALYSIS_CONTEXT_V1,
+    createAnalysisContextV1
+} from '../../js/app/analysis-profile.js';
 
 const projectRoot = new URL('../../', import.meta.url);
 
@@ -701,6 +705,7 @@ function createDetailPageHarness({
     const calls = {
         mode: 0,
         featureFlags: 0,
+        analysisContext: 0,
         factory: [],
         session: [],
         load: 0,
@@ -708,6 +713,17 @@ function createDetailPageHarness({
         error: []
     };
     const repository = Object.freeze({ synthetic: true });
+    const localAnalysisContext = createAnalysisContextV1({
+        schemaVersion: 1,
+        revision: 1,
+        heartRate: {
+            maxBpm: 200,
+            restingBpm: null,
+            thresholdBpm: null,
+            zoneMode: 'percent-max',
+            upperBoundsBpm: [120, 140, 160, 180]
+        }
+    });
     const source = demo ? 'demo' : canonical ? 'canonical' : 'network';
     const bundle = bundleOverride ?? {
         activity: envelope({ id: 'synthetic-detail', laps: [] }, source),
@@ -727,6 +743,10 @@ function createDetailPageHarness({
                 return Object.freeze({
                     dataRepositoryMode: canonical ? 'canonical' : 'legacy'
                 });
+            },
+            analysisContextReader() {
+                calls.analysisContext += 1;
+                return localAnalysisContext;
             },
             repositoryFactory(options) {
                 calls.factory.push(options);
@@ -748,7 +768,8 @@ function createDetailPageHarness({
                 calls.error.push(args);
             }
         },
-        repository
+        repository,
+        localAnalysisContext
     };
 }
 
@@ -781,11 +802,17 @@ for (const page of detailPageCases) {
             { name: 'demo ignores canonical', demo: true, canonical: true, mode: 'legacy' }
         ]) {
             await t.test(scenario.name, async () => {
-                const { calls, options, repository } = createDetailPageHarness(scenario);
+                const {
+                    calls,
+                    options,
+                    repository,
+                    localAnalysisContext
+                } = createDetailPageHarness(scenario);
                 options.search = '?id=000123';
                 assert.equal(await page.initialize(options), true);
                 assert.equal(calls.mode, 1);
                 assert.equal(calls.featureFlags, scenario.demo ? 0 : 1);
+                assert.equal(calls.analysisContext, scenario.canonical && !scenario.demo ? 1 : 0);
                 assert.deepEqual(calls.factory, [{
                     sessionMode: scenario.demo ? 'demo' : 'real',
                     mode: scenario.mode
@@ -804,6 +831,20 @@ for (const page of detailPageCases) {
                     scenario.demo ? 'demo' : scenario.canonical ? 'canonical' : 'network'
                 );
                 assert.equal(calls.render[0].weatherFeatureEnabled, !scenario.demo);
+                assert.equal(
+                    calls.render[0].analysisContext,
+                    scenario.demo
+                        ? DEMO_ANALYSIS_CONTEXT_V1
+                        : scenario.canonical
+                            ? localAnalysisContext
+                            : null
+                );
+                if (scenario.canonical && !scenario.demo) {
+                    assert.equal(
+                        calls.render[0].zones,
+                        localAnalysisContext.trainingZones
+                    );
+                }
                 assert.equal(calls.error.length, 0);
             });
         }
@@ -1700,6 +1741,150 @@ test('real Run and Bike classifiers consume injected zones without provider stor
     assert.deepEqual({ activity, streams, zones }, before);
 });
 
+test('Bike classifier uses the same exclusive heart-rate boundaries as charts and Run', async () => {
+    const sandbox = { window: {} };
+    const script = await readFile(new URL('classifyBike.js', projectRoot), 'utf8');
+    vm.runInNewContext(script, sandbox, { filename: 'classifyBike.js' });
+    const result = sandbox.window.classifyBike(
+        {
+            distance: 10000,
+            moving_time: 10,
+            elapsed_time: 10,
+            average_speed: 5,
+            sport_type: 'Ride'
+        },
+        {
+            heartrate: { data: [120, 120] },
+            time: { data: [0, 10] }
+        },
+        {
+            heart_rate: {
+                zones: [
+                    { min: 1, max: 120 },
+                    { min: 120, max: 140 },
+                    { min: 140, max: 160 },
+                    { min: 160, max: 180 },
+                    { min: 180, max: -1 }
+                ]
+            }
+        },
+        {
+            exclusiveHeartRateZoneBounds: true
+        }
+    );
+    assert.equal(result.diagnostics.pctZ.low, 0);
+    assert.equal(result.diagnostics.pctZ.midlow, 100);
+
+    const legacyResult = sandbox.window.classifyBike(
+        { distance: 10000, moving_time: 10, elapsed_time: 10, average_speed: 5 },
+        { heartrate: { data: [120, 120] }, time: { data: [0, 10] } },
+        {
+            heart_rate: {
+                zones: [
+                    { min: 1, max: 120 },
+                    { min: 120, max: 140 },
+                    { min: 140, max: 160 },
+                    { min: 160, max: 180 }
+                ]
+            }
+        }
+    );
+    assert.equal(legacyResult.diagnostics.pctZ.low, 100);
+    assert.equal(legacyResult.diagnostics.pctZ.midlow, 0);
+});
+
+test('Trends renders all five local zones and preserves the open Z5', async () => {
+    const priorDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+    const createElement = tagName => ({
+        tagName,
+        children: [],
+        style: {},
+        className: '',
+        textContent: '',
+        title: '',
+        append(...children) { this.children.push(...children); },
+        replaceChildren(...children) { this.children = children; },
+        querySelector() { return null; }
+    });
+    const content = createElement('div');
+    const container = createElement('section');
+    container.querySelector = selector => selector === '.zones-content' ? content : null;
+    try {
+        Object.defineProperty(globalThis, 'document', {
+            configurable: true,
+            value: {
+                getElementById: id => id === 'training-zones-card' ? container : null,
+                createElement
+            }
+        });
+        const { renderTrainingZones } = await import(
+            `../../js/tabs/athlete.js?local-zones=${Date.now()}`
+        );
+        renderTrainingZones({
+            heart_rate: {
+                custom_zones: true,
+                zones: [
+                    { min: 1, max: 120 },
+                    { min: 120, max: 140 },
+                    { min: 140, max: 160 },
+                    { min: 160, max: 180 },
+                    { min: 180, max: -1 }
+                ]
+            }
+        }, {
+            localHeartRateProfile: true,
+            analysisProfileStatus: 'configured'
+        });
+        const zoneBar = content.children[0].children[1];
+        assert.equal(zoneBar.children.length, 5);
+        assert.equal(zoneBar.children[4].textContent, '180+');
+        assert.equal(zoneBar.children[4].title, 'Z5: ≥180');
+        assert.match(zoneBar.children[4].style.flexBasis, /^\d+(?:\.\d+)?%$/);
+
+        renderTrainingZones(null, {
+            localHeartRateProfile: true,
+            analysisProfileStatus: 'unconfigured'
+        });
+        assert.equal(content.children.length, 1);
+        assert.equal(
+            content.children[0].textContent,
+            'Configure your local heart rate profile to see personalized zones.'
+        );
+
+        renderTrainingZones({
+            heart_rate: {
+                custom_zones: true,
+                zones: [
+                    { min: 1, max: 120 },
+                    { min: 120, max: 140 }
+                ]
+            }
+        });
+        const legacyZoneBar = content.children[0].children[1];
+        assert.equal(legacyZoneBar.children[1].textContent, '120+');
+        assert.equal(legacyZoneBar.children[1].title, 'Z2: 120-140');
+    } finally {
+        if (priorDocument) Object.defineProperty(globalThis, 'document', priorDocument);
+        else delete globalThis.document;
+    }
+});
+
+test('Dashboard load scope distinguishes mixed general estimates from personalized analysis', async () => {
+    const { getDashboardLoadEstimateScope } = await import(
+        `../../js/tabs/dashboard.js?estimate-scope=${Date.now()}`
+    );
+    assert.equal(getDashboardLoadEstimateScope([]), null);
+    assert.equal(getDashboardLoadEstimateScope([{}]), null);
+    assert.equal(getDashboardLoadEstimateScope([
+        { tss_estimate_scope: 'personalized' },
+        { recovery_estimate_scope: 'personalized' }
+    ]), 'personalized');
+    assert.equal(getDashboardLoadEstimateScope([
+        { tss_estimate_scope: 'personalized' },
+        { tss_estimate_scope: 'general' }
+    ]), 'general');
+});
+
 test('four renderers degrade safely on empty streams without mutating bundle payloads', async () => {
     const globalNames = ['document', 'window', 'classifyRun', 'fetch'];
     const originals = new Map(globalNames.map(name => [
@@ -1707,13 +1892,14 @@ test('four renderers degrade safely on empty streams without mutating bundle pay
         Object.getOwnPropertyDescriptor(globalThis, name)
     ]));
     let fetchAccesses = 0;
+    let activeStats = null;
     try {
         Object.defineProperty(globalThis, 'document', {
             configurable: true,
             value: {
                 title: '',
                 body: {},
-                getElementById: () => null,
+                getElementById: id => id === 'activity-stats' ? activeStats : null,
                 querySelector: () => null,
                 querySelectorAll: () => []
             }
@@ -1741,6 +1927,7 @@ test('four renderers degrade safely on empty streams without mutating bundle pay
             ['swim', 'renderSwimPage', 'Swim']
         ];
         for (const [directory, exportName, sportType] of cases) {
+            activeStats = directory === 'swim' ? null : { innerHTML: '' };
             const module = await import(
                 `../../js/pages/${directory}/${directory}.js?empty=${Date.now()}-${directory}`
             );
@@ -1770,6 +1957,28 @@ test('four renderers degrade safely on empty streams without mutating bundle pay
             });
             assert.deepEqual(activity, activityBefore, directory);
             assert.deepEqual(streams, streamsBefore, directory);
+            if (activeStats !== null) {
+                const missingElevationActivity = {
+                    ...activity,
+                    id: `missing-elevation-${directory}`,
+                    distance: 1000,
+                    moving_time: 300,
+                    elapsed_time: 300,
+                    average_speed: 1000 / 300
+                };
+                const missingElevationBefore = structuredClone(missingElevationActivity);
+                activeStats.innerHTML = '';
+                await module[exportName]({
+                    activity: missingElevationActivity,
+                    streams,
+                    zones: null,
+                    athlete: null,
+                    activityId: missingElevationActivity.id,
+                    weatherFeatureEnabled: false
+                });
+                assert.doesNotMatch(activeStats.innerHTML, /\b(?:NaN|Infinity)\b/, directory);
+                assert.deepEqual(missingElevationActivity, missingElevationBefore, directory);
+            }
         }
     } finally {
         for (const [name, descriptor] of originals) {

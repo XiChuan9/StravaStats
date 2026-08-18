@@ -91,6 +91,7 @@ test('FIT decoder descriptor is an internal immutable registry-shaped boundary',
 test('Garmin Run maps the frozen message set to a valid Canonical bundle', () => {
     const bundle = decode();
     assert.equal(bundle.activity.id, 'fit-session:1:100:7:1123455940:1123456000');
+    assert.equal(bundle.activity.name, 'Imported Run');
     assert.equal(bundle.activity.sportCategory, 'run');
     assert.equal(bundle.activity.sportVariant, null);
     assert.equal(bundle.activity.distanceMeters, 1000);
@@ -184,6 +185,16 @@ const PROFILE_CASES = [
         name: 'Indoor Run',
         options: { subSport: 45, includeGps: false },
         expected: ['run', 'indoor', 'Garmin']
+    },
+    {
+        name: 'Trail Run',
+        options: { subSport: 3 },
+        expected: ['run', 'trail-run', 'Garmin']
+    },
+    {
+        name: 'Mountain Bike Ride',
+        options: { sport: 2, subSport: 8 },
+        expected: ['ride', 'mountain-bike', 'Garmin']
     }
 ];
 
@@ -249,6 +260,38 @@ test('a partial position is null rather than a fabricated coordinate', () => {
     ]);
 });
 
+test('native and enhanced altitude apply FIT scale/offset and preserve missing rows', () => {
+    const records = createSyntheticFitRecords().map((record) => {
+        if (record.kind !== 'definition' || record.localMessage !== 3) return record;
+        return fitDefinition(3, 20, [
+            ...record.fields,
+            fitField(2, 'uint16'),
+            fitField(78, 'uint32')
+        ]);
+    });
+    const dataIndexes = records.flatMap((record, index) =>
+        record.kind === 'data' && record.localMessage === 3 ? [index] : []
+    );
+    records[dataIndexes[0]] = fitData(3, {
+        ...records[dataIndexes[0]].values,
+        2: 2500,
+        78: null
+    });
+    records[dataIndexes[1]] = fitData(3, {
+        ...records[dataIndexes[1]].values,
+        2: null,
+        78: 2600
+    });
+    records.splice(dataIndexes[1] + 1, 0, fitData(3, {
+        253: FIT_START_TIMESTAMP + 20,
+        2: null,
+        78: null
+    }));
+    const altitude = series(decodeRecords(records), 'altitude');
+    assert.deepEqual(altitude.offsetsSeconds, [0, 10, 20]);
+    assert.deepEqual(altitude.values, [0, 20, null]);
+});
+
 test('Split records fold non-conflicting fields at equal timestamps', () => {
     const bundle = decode({ splitRecords: true });
     assert.deepEqual(series(bundle, 'distance').offsetsSeconds, [0, 10]);
@@ -290,6 +333,91 @@ test('Pause and resume event state is mapped in stable timestamp order', () => {
         'stop'
     ]);
     assert.deepEqual(bundle.events.map(item => item.offsetSeconds), [0, 10, 20, 30]);
+});
+
+test('segmented stop_all/start cycles map to pause/resume and final stop', () => {
+    const records = createSyntheticFitRecords();
+    const finalStopIndex = records.findIndex(record =>
+        record.kind === 'data'
+        && record.localMessage === 2
+        && record.values[1] === 4
+    );
+    records.splice(finalStopIndex, 0,
+        fitData(2, { 253: FIT_START_TIMESTAMP + 10, 0: 0, 1: 4 }),
+        fitData(2, { 253: FIT_START_TIMESTAMP + 20, 0: 0, 1: 0 })
+    );
+    const bundle = decodeRecords(records);
+    assert.deepEqual(bundle.events.map(item => item.type), [
+        'start',
+        'pause',
+        'resume',
+        'stop'
+    ]);
+    assert.deepEqual(bundle.events.map(item => item.offsetSeconds), [0, 10, 20, 30]);
+    assert.ok(warningCodes(bundle).includes('FIT_EVENT_SEQUENCE_NORMALIZED'));
+});
+
+test('duplicate terminal stop_all is omitted with dense Canonical indices', () => {
+    const records = createSyntheticFitRecords();
+    const finalStopIndex = records.findIndex(record =>
+        record.kind === 'data'
+        && record.localMessage === 2
+        && record.values[1] === 4
+    );
+    records.splice(finalStopIndex + 1, 0,
+        fitData(2, { 253: FIT_START_TIMESTAMP + 30, 0: 0, 1: 4 })
+    );
+    const bundle = decodeRecords(records);
+    assert.deepEqual(bundle.events.map(item => item.type), ['start', 'stop']);
+    assert.deepEqual(bundle.events.map(item => item.index), [0, 1]);
+    assert.ok(warningCodes(bundle).includes('FIT_EVENT_SEQUENCE_NORMALIZED'));
+});
+
+test('event time beyond the FIT session is safely bounded and warned', () => {
+    const records = createSyntheticFitRecords().map((record) => {
+        if (
+            record.kind === 'data'
+            && record.localMessage === 2
+            && record.values[1] === 4
+        ) return fitData(2, { ...record.values, 253: FIT_START_TIMESTAMP + 31 });
+        return record;
+    });
+    const bundle = decodeRecords(records);
+    assert.deepEqual(bundle.events.map(item => item.offsetSeconds), [0, 30]);
+    assert.ok(warningCodes(bundle).includes('FIT_EVENT_TIME_BOUNDED'));
+});
+
+test('lap intervals are intersected with the session and made non-overlapping', () => {
+    const records = createSyntheticFitRecords();
+    const lapIndex = records.findIndex(record =>
+        record.kind === 'data' && record.localMessage === 4
+    );
+    records.splice(lapIndex + 1, 0,
+        fitData(4, {
+            2: FIT_START_TIMESTAMP + 19,
+            7: 15_000,
+            8: 20_000,
+            9: 50_000
+        }),
+        fitData(4, {
+            2: FIT_START_TIMESTAMP + 31,
+            7: 1_000,
+            8: 1_000,
+            9: 1_000
+        })
+    );
+    const bundle = decodeRecords(records);
+    assert.deepEqual(bundle.laps.map(item => ({
+        index: item.index,
+        start: item.startOffsetSeconds,
+        elapsed: item.elapsedTimeSeconds,
+        moving: item.movingTimeSeconds
+    })), [
+        { index: 0, start: 0, elapsed: 19, moving: 19 },
+        { index: 1, start: 19, elapsed: 11, moving: 11 }
+    ]);
+    assert.ok(warningCodes(bundle).includes('FIT_LAP_TIME_NORMALIZED'));
+    assert.equal(validateImportedActivityBundle(bundle).ok, true);
 });
 
 test('HR messages expand deterministic fractional/event timestamp points', () => {
@@ -335,6 +463,20 @@ test('record HR preserves an invalid sample before a later numeric sample', () =
     const heartRate = series(decodeRecords(records), 'heartRate');
     assert.deepEqual(heartRate.offsetsSeconds, [0, 10]);
     assert.deepEqual(heartRate.values, [null, 150]);
+});
+
+test('out-of-range record HR is preserved as a null gap with an anonymous warning', () => {
+    const records = createSyntheticFitRecords().map((record) => {
+        if (
+            record.kind === 'data'
+            && record.localMessage === 3
+            && record.values[253] === FIT_START_TIMESTAMP
+        ) return fitData(3, { ...record.values, 3: 0 });
+        return record;
+    });
+    const bundle = decodeRecords(records);
+    assert.deepEqual(series(bundle, 'heartRate').values, [null, 150]);
+    assert.ok(warningCodes(bundle).includes('FIT_HEART_RATE_SAMPLE_IGNORED'));
 });
 
 test('record HR preserves a timestamp whose definition omits the HR field', () => {

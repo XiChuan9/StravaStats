@@ -123,14 +123,36 @@ test('M23 R1 root summary renders persistent names and opaque IDs only through n
     assert.doesNotMatch(athlete, /createChartError\([^)]*error\.message/);
     assert.doesNotMatch(athlete, /console\.error\([^\n]*,\s*error\s*\)/);
     assert.match(athlete, /Error rendering chart\./);
-    assert.match(athlete, /Number\.isFinite\(z\?\.min\)/);
-    assert.match(athlete, /Number\.isFinite\(z\?\.max\)/);
+    assert.match(athlete, /Number\.isFinite\(zone\?\.min\)/);
+    assert.match(athlete, /Number\.isFinite\(zone\?\.max\)/);
     assert.match(athlete, /Number\.isFinite\(zoneWidth\)/);
 
     assert.doesNotMatch(maps, /bindPopup\s*\(\s*`/);
     assert.match(maps, /bindPopup\(popup\)/);
     assert.match(maps, /sportSel\.replaceChildren/);
     assert.match(activities, /document\.createElement\('small'\)/);
+});
+
+test('Global Map filters before Canonical loading and reuses one route snapshot for visual controls', () => {
+    const maps = tabSources.get('js/tabs/maps.js');
+    const reloadStart = maps.indexOf('async function reloadRoutes()');
+    const reloadEnd = maps.indexOf("listen(applyButton, 'click'", reloadStart);
+    assert.notEqual(reloadStart, -1);
+    assert.notEqual(reloadEnd, -1);
+    const reload = maps.slice(reloadStart, reloadEnd);
+
+    assert.ok(reload.indexOf('const visible = visibleActivities()') < reload.indexOf('loadCanonicalRoutes('));
+    assert.match(reload, /loadCanonicalRoutes\(visible\.map\(activity => activity\.id\)\)/);
+    assert.match(maps, /listen\(applyButton, 'click', reloadRoutes\)/);
+    assert.match(maps, /listen\(sportSel, 'change', reloadRoutes\)/);
+    assert.match(maps, /listen\(viewSelect, 'change', presentSnapshot\)/);
+    assert.match(maps, /listen\(densitySlider, 'input', presentSnapshot\)/);
+    assert.match(maps, /listen\(radiusSlider, 'input', presentSnapshot\)/);
+    assert.match(maps, /listen\(blurSlider, 'input', presentSnapshot\)/);
+    assert.match(maps, /listen\(colorBySport, 'change', presentSnapshot\)/);
+    assert.match(maps, /result\?\.status === 'superseded'/);
+    assert.match(maps, /Too many activities to map at once/);
+    assert.doesNotMatch(maps, /Repository|createRepository|indexedDB/);
 });
 
 test('main obtains provider-owned data only through the Repository public entry', () => {
@@ -574,7 +596,7 @@ test('R7 main injects one frozen AI Coach session while the tab owns no provider
     assert.doesNotMatch(aiBoundarySource, /\?key=|Authorization/);
     assert.match(
         mainSource,
-        /demoButton\.addEventListener\('click',\s*\(\)\s*=>\s*\{\s*aiCoachSession\.revoke\(\);\s*aiCoachActivitySnapshot = null;\s*aiCoachSession = createAICoachSession\(\{\s*sessionMode:\s*APP_SESSION_MODE\.DEMO\s*\}\);\s*loginWithDemo\(initializeApp\)/
+        /demoButton\.addEventListener\('click',\s*\(\)\s*=>\s*\{\s*aiCoachSession\.revoke\(\);\s*aiCoachActivitySnapshot = null;\s*loginWithDemo\(\(\) => \{\s*window\.location\.reload\(\);\s*\}\)/
     );
     assert.match(mainSource, /function buildAICoachActivitySnapshot\(activities\)[\s\S]*?try\s*\{[\s\S]*?createActivitySnapshot\(\)[\s\S]*?builder\.add\([\s\S]*?builder\.finish\(\)[\s\S]*?catch\s*\{\s*return null/);
     assert.match(mainSource, /activeTabId === 'ai-chat-tab'[\s\S]*?aiCoachSession\.cancelPending\(\)/);

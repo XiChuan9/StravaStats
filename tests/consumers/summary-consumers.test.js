@@ -1324,3 +1324,788 @@ test('Boundary extraction and session construction perform no network or storage
     assert.equal(network, 0);
     assert.equal(storage, 0);
 });
+
+test('Run and Run Plus public renderers exclude unusable optional metrics without non-finite output', async () => {
+    const savedDocument = globalThis.document;
+    const savedNode = globalThis.Node;
+    const savedChart = globalThis.Chart;
+    const savedSetTimeout = globalThis.setTimeout;
+    const chartConfigs = [];
+    const elements = new Map();
+    const chartIds = new Set([
+        'activity-type-barchart',
+        'monthly-distance-chart',
+        'pace-vs-distance-chart',
+        'distance-vs-elevation-chart',
+        'distance-histogram',
+        'pace-histogram-chart',
+        'elevation-histogram',
+        'pace-hr-curve-chart',
+        'consistency-improvement-chart',
+        'volume-improvement-chart',
+        'efficiency-evolution-chart',
+        'distance-efficiency-chart',
+        'pace-hr-efficiency-chart',
+        'accumulated-distance-chart',
+        'rolling-mean-distance-chart',
+        'run-eddington-distribution-chart',
+        'run-eddington-progression-chart'
+    ]);
+
+    class SyntheticNode {
+        constructor(tagName = '') {
+            this.tagName = tagName.toUpperCase();
+            this.children = [];
+            this.dataset = {};
+            this.style = {};
+            this.classList = {
+                add() {},
+                remove() {},
+                toggle() { return false; }
+            };
+            this.textContent = '';
+            this._innerHTML = '';
+        }
+
+        set innerHTML(value) {
+            this._innerHTML = String(value);
+            for (const match of this._innerHTML.matchAll(/<table[^>]+id="([^"]+)"/g)) {
+                const table = new SyntheticNode('table');
+                const body = new SyntheticNode('tbody');
+                table.children = [body];
+                table.querySelector = selector => selector === 'tbody' ? body : null;
+                table.querySelectorAll = () => [];
+                elements.set(match[1], table);
+            }
+        }
+
+        get innerHTML() {
+            return this._innerHTML;
+        }
+
+        append(...children) {
+            this.children.push(...children);
+        }
+
+        appendChild(child) {
+            this.children.push(child);
+            return child;
+        }
+
+        replaceChildren(...children) {
+            this.children = children;
+        }
+
+        addEventListener() {}
+        setAttribute() {}
+        closest() { return null; }
+        querySelector() { return null; }
+        querySelectorAll() { return []; }
+    }
+
+    const baseId = id => id.startsWith('run-plus-')
+        ? id.slice('run-plus-'.length)
+        : id;
+    const ensureElement = id => {
+        if (elements.has(id)) return elements.get(id);
+        const base = baseId(id);
+        if (
+            base === 'run-summary-cards'
+            || base === 'run-top'
+            || base === 'run-activities-table'
+        ) {
+            const element = new SyntheticNode('div');
+            element.id = id;
+            elements.set(id, element);
+            return element;
+        }
+        if (chartIds.has(base)) {
+            const canvas = new SyntheticNode('canvas');
+            canvas.id = id;
+            elements.set(id, canvas);
+            return canvas;
+        }
+        return null;
+    };
+    const documentObject = {
+        getElementById: ensureElement,
+        querySelector(selector) {
+            return selector.startsWith('#') ? ensureElement(selector.slice(1)) : null;
+        },
+        createElement(tagName) {
+            return new SyntheticNode(tagName);
+        },
+        createTextNode(value) {
+            const node = new SyntheticNode('#text');
+            node.textContent = String(value);
+            return node;
+        }
+    };
+    const visitNumbers = value => {
+        if (typeof value === 'number') {
+            assert.equal(Number.isFinite(value), true);
+            return;
+        }
+        if (Array.isArray(value)) {
+            value.forEach(visitNumbers);
+            return;
+        }
+        if (value && typeof value === 'object' && !(value instanceof Date)) {
+            Object.values(value).forEach(visitNumbers);
+        }
+    };
+    const visibleText = node => [
+        node?.innerHTML || '',
+        node?.textContent || '',
+        ...(node?.children || []).map(visibleText)
+    ].join(' ');
+
+    globalThis.Node = SyntheticNode;
+    globalThis.document = documentObject;
+    globalThis.Chart = class ChartEvidence {
+        constructor(canvas, config) {
+            this.canvas = canvas;
+            this.data = config.data;
+            this.config = config;
+            chartConfigs.push({ canvasId: canvas.id, config });
+        }
+
+        destroy() {}
+    };
+    globalThis.setTimeout = () => 0;
+
+    try {
+        const { renderRunAnalysisTab } = await import(
+            '../../js/tabs/run-analysis.js?pr53-real-import-numeric-hardening'
+        );
+        const runs = [
+            {
+                id: 'synthetic-complete',
+                type: 'Run',
+                name: 'Complete sample',
+                start_date: '2026-01-01T06:00:00.000Z',
+                start_date_local: '2026-01-01T06:00:00',
+                distance: 10000,
+                moving_time: 3000,
+                total_elevation_gain: 100,
+                average_speed: 10 / 3,
+                average_heartrate: 150,
+                efficiency: 0.033,
+                tss: 40
+            },
+            {
+                id: 'synthetic-zero',
+                type: 'Run',
+                name: 'Measured zero sample',
+                start_date: '2026-01-02T06:00:00.000Z',
+                start_date_local: '2026-01-02T06:00:00',
+                distance: 0,
+                moving_time: 0,
+                total_elevation_gain: 0,
+                average_speed: 0,
+                average_heartrate: 0,
+                efficiency: 0,
+                tss: 0
+            },
+            {
+                id: 'synthetic-valid-other-metrics',
+                type: 'Run',
+                name: 'Other complete sample',
+                start_date: '2026-01-03T06:00:00.000Z',
+                distance: 4000,
+                moving_time: 1200,
+                total_elevation_gain: 50,
+                average_speed: 10 / 3,
+                average_heartrate: 145,
+                efficiency: 0.034,
+                tss: 20
+            },
+            {
+                id: 'synthetic-distance-only',
+                type: 'Run',
+                name: 'Distance only',
+                start_date: '2026-01-04T06:00:00.000Z',
+                start_date_local: '2026-01-04T06:00:00',
+                distance: 6000,
+                moving_time: Number.POSITIVE_INFINITY,
+                total_elevation_gain: null,
+                average_speed: Number.NaN,
+                average_heartrate: null,
+                efficiency: Number.NEGATIVE_INFINITY
+            },
+            {
+                id: 'synthetic-time-only',
+                type: 'Run',
+                name: 'Time only',
+                start_date: 'invalid-date',
+                start_date_local: 'invalid-date',
+                distance: Number.NaN,
+                moving_time: 600,
+                total_elevation_gain: Number.NEGATIVE_INFINITY,
+                average_speed: null,
+                average_heartrate: Number.POSITIVE_INFINITY,
+                efficiency: null
+            },
+            {
+                id: 'synthetic-non-numeric',
+                type: 'Run',
+                name: 'Non numeric values',
+                start_date: '2026-01-05T06:00:00.000Z',
+                start_date_local: '2026-01-05T06:00:00',
+                distance: '5000',
+                moving_time: false,
+                total_elevation_gain: -1,
+                average_speed: '3.2',
+                average_heartrate: -1,
+                efficiency: -1
+            }
+        ];
+        const before = structuredClone(runs);
+
+        assert.doesNotThrow(() => {
+            renderRunAnalysisTab(runs, null, null, 'all', 4);
+        });
+        assert.deepEqual(runs, before);
+
+        const runSummary = ensureElement('run-summary-cards').innerHTML;
+        assert.match(runSummary, /20 km/);
+        assert.match(runSummary, /150 m/);
+        assert.match(runSummary, /5:00 \/km/);
+        assert.doesNotMatch(runSummary, /NaN|Infinity|undefined/);
+
+        assert.doesNotThrow(() => {
+            renderRunAnalysisTab(runs, null, null, 'all', 4, {
+                idPrefix: 'run-plus-',
+                root: documentObject
+            });
+        });
+        assert.equal(
+            ensureElement('run-plus-run-summary-cards').innerHTML,
+            runSummary
+        );
+        assert.match(
+            visibleText(ensureElement('run-plus-run-all-table')),
+            /\b0\.00\b/
+        );
+
+        assert.doesNotThrow(() => {
+            renderRunAnalysisTab(runs, '2026-01-01', '2026-12-31', 'all', 4);
+        });
+        assert.deepEqual(runs, before);
+
+        const parityRuns = [
+            {
+                id: 'synthetic-legacy-bin-first',
+                type: 'Run',
+                start_date_local: '2026-03-01T06:00:00',
+                distance: 1000,
+                moving_time: 300,
+                total_elevation_gain: 0,
+                average_heartrate: 151
+            },
+            {
+                id: 'synthetic-legacy-bin-second',
+                type: 'Run',
+                start_date_local: '2026-03-02T06:00:00',
+                distance: 1000,
+                moving_time: 306,
+                total_elevation_gain: 0,
+                average_heartrate: 154
+            }
+        ];
+        const parityStart = chartConfigs.length;
+        renderRunAnalysisTab(parityRuns, null, null, 'all', 4);
+        const parityConfigs = chartConfigs.slice(parityStart);
+        const parityPaceHistogram = parityConfigs.find(entry => (
+            entry.canvasId === 'pace-histogram-chart'
+        ));
+        const parityHeartRateCurve = parityConfigs.find(entry => (
+            entry.canvasId === 'pace-hr-curve-chart'
+        ));
+        assert.equal(parityPaceHistogram.config.data.labels.length, 13);
+        assert.deepEqual(parityHeartRateCurve.config.data.labels, [150, 155]);
+
+        const eddingtonStart = chartConfigs.length;
+        renderRunAnalysisTab([{
+            id: 'synthetic-legacy-100k',
+            type: 'Run',
+            start_date_local: '2026-04-01T06:00:00',
+            distance: 100000,
+            moving_time: 36000,
+            total_elevation_gain: 0,
+            average_heartrate: 140
+        }], null, null, 'all', 4);
+        const eddingtonConfig = chartConfigs.slice(eddingtonStart).find(entry => (
+            entry.canvasId === 'run-eddington-distribution-chart'
+        ));
+        assert.equal(eddingtonConfig.config.data.labels.length, 100);
+
+        const noSamples = [{
+            id: 'synthetic-no-samples',
+            type: 'Run',
+            name: 'No optional samples',
+            start_date: '2026-02-01T06:00:00.000Z',
+            start_date_local: '2026-02-01T06:00:00',
+            distance: null,
+            moving_time: undefined,
+            total_elevation_gain: Number.NaN
+        }];
+        assert.doesNotThrow(() => {
+            renderRunAnalysisTab(noSamples, null, null, 'all', 4);
+        });
+        const emptySummary = ensureElement('run-summary-cards').innerHTML;
+        assert.equal((emptySummary.match(/—/g) || []).length, 3);
+        assert.doesNotMatch(emptySummary, /NaN|Infinity|undefined/);
+
+        const extremeRuns = [
+            {
+                id: 'synthetic-finite-maximum',
+                type: 'Run',
+                name: 'Finite maximum sample',
+                start_date_local: '2033-01-01T06:00:00',
+                distance: Number.MAX_VALUE,
+                moving_time: Number.MAX_VALUE,
+                total_elevation_gain: Number.MAX_VALUE,
+                average_heartrate: Number.MAX_VALUE,
+                average_speed: Number.MAX_VALUE,
+                efficiency: Number.MAX_VALUE,
+                tss: Number.MAX_VALUE
+            },
+            {
+                id: 'synthetic-finite-minimum-distance',
+                type: 'Run',
+                name: 'Finite minimum distance sample',
+                start_date_local: '2033-01-02T06:00:00',
+                distance: Number.MIN_VALUE,
+                moving_time: 1,
+                total_elevation_gain: Number.MAX_VALUE,
+                average_heartrate: 1,
+                average_speed: Number.MIN_VALUE,
+                efficiency: 0,
+                tss: 0
+            }
+        ];
+        const extremeChartStart = chartConfigs.length;
+        assert.doesNotThrow(() => {
+            renderRunAnalysisTab(extremeRuns, null, null, 'all', 4);
+        });
+        assert.doesNotThrow(() => {
+            renderRunAnalysisTab(extremeRuns, null, null, 'all', 4, {
+                idPrefix: 'run-plus-',
+                root: documentObject
+            });
+        });
+        const extremeConfigs = chartConfigs.slice(extremeChartStart);
+        extremeConfigs.forEach(({ config }) => visitNumbers(config));
+        for (const canvasId of [
+            'distance-histogram',
+            'elevation-histogram',
+            'pace-histogram-chart'
+        ]) {
+            const matching = extremeConfigs.filter(entry => (
+                baseId(entry.canvasId) === canvasId
+            ));
+            assert.ok(matching.length > 0, canvasId);
+            for (const entry of matching) {
+                assert.ok(entry.config.data.datasets[0].data.length <= 200, canvasId);
+            }
+        }
+
+        chartConfigs.forEach(({ config }) => visitNumbers(config));
+        const renderedText = Array.from(elements.values()).map(visibleText).join(' ');
+        assert.doesNotMatch(renderedText, /\b(?:NaN|Infinity|undefined)\b/);
+    } finally {
+        if (savedDocument === undefined) delete globalThis.document;
+        else globalThis.document = savedDocument;
+        if (savedNode === undefined) delete globalThis.Node;
+        else globalThis.Node = savedNode;
+        if (savedChart === undefined) delete globalThis.Chart;
+        else globalThis.Chart = savedChart;
+        globalThis.setTimeout = savedSetTimeout;
+    }
+});
+
+test('Trends public renderer keeps time and distance views finite with sparse optional metrics', async () => {
+    const savedDocument = globalThis.document;
+    const savedChart = globalThis.Chart;
+    const chartConfigs = [];
+    const elements = new Map();
+    const chartIds = new Set([
+        'athlete-count-histogram',
+        'activity-frequency-histogram',
+        'per-period-distribution',
+        'transitions-chart',
+        'duration-histogram',
+        'start-time-histogram',
+        'weekly-mix-chart',
+        'monthly-mix-chart',
+        'hour-matrix',
+        'year-month-matrix',
+        'month-weekday-matrix',
+        'month-hour-matrix',
+        'month-day-matrix',
+        'year-weekday-matrix',
+        'year-hour-matrix',
+        'yearly-comparison-chart',
+        'interactiveMatrix'
+    ]);
+
+    class SyntheticElement {
+        constructor(tagName = '') {
+            this.tagName = tagName.toUpperCase();
+            this.children = [];
+            this.dataset = {};
+            this.style = {
+                setProperty() {}
+            };
+            this.textContent = '';
+            this.innerHTML = '';
+            this.value = '';
+            this.selected = false;
+            this.parentElement = {
+                replaceChildren() {}
+            };
+        }
+
+        append(...children) {
+            this.children.push(...children);
+        }
+
+        appendChild(child) {
+            this.children.push(child);
+            return child;
+        }
+
+        replaceChildren(...children) {
+            this.children = children;
+        }
+
+        addEventListener() {}
+        setAttribute() {}
+
+        cloneNode() {
+            const clone = new SyntheticElement(this.tagName);
+            clone.id = this.id;
+            clone.value = this.value;
+            clone.parentNode = this.parentNode;
+            return clone;
+        }
+
+        querySelector() {
+            return null;
+        }
+    }
+
+    const ensureElement = id => {
+        if (elements.has(id)) return elements.get(id);
+        if (['all-time-stats-cards', 'record-stats', 'transitions-details'].includes(id)) {
+            const element = new SyntheticElement('div');
+            element.id = id;
+            elements.set(id, element);
+            return element;
+        }
+        if (chartIds.has(id)) {
+            const canvas = new SyntheticElement('canvas');
+            canvas.id = id;
+            elements.set(id, canvas);
+            return canvas;
+        }
+        if (id === 'matrix-x-axis' || id === 'matrix-y-axis') {
+            const select = new SyntheticElement('select');
+            select.id = id;
+            select.value = id === 'matrix-x-axis' ? 'year' : 'month';
+            select.parentNode = {
+                replaceChild(replacement, previous) {
+                    replacement.parentNode = this;
+                    elements.set(previous.id, replacement);
+                }
+            };
+            elements.set(id, select);
+            return select;
+        }
+        return null;
+    };
+    globalThis.document = {
+        getElementById: ensureElement,
+        createElement(tagName) {
+            return new SyntheticElement(tagName);
+        },
+        createTextNode(value) {
+            const textNode = new SyntheticElement('#text');
+            textNode.textContent = String(value);
+            return textNode;
+        }
+    };
+    globalThis.Chart = class TrendsChartEvidence {
+        constructor(canvas, config) {
+            this.canvas = canvas;
+            this.data = config.data;
+            this.config = config;
+            this.destroyed = false;
+            chartConfigs.push({ canvasId: canvas?.id || null, config, instance: this });
+        }
+
+        destroy() {
+            this.destroyed = true;
+        }
+        update() {}
+    };
+
+    const visitNumbers = value => {
+        if (typeof value === 'number') {
+            assert.equal(Number.isFinite(value), true);
+            return;
+        }
+        if (Array.isArray(value)) {
+            value.forEach(visitNumbers);
+            return;
+        }
+        if (value && typeof value === 'object' && !(value instanceof Date)) {
+            Object.values(value).forEach(visitNumbers);
+        }
+    };
+    const visibleText = node => [
+        node?.innerHTML || '',
+        node?.textContent || '',
+        ...(node?.children || []).map(visibleText)
+    ].join(' ');
+
+    try {
+        const { renderTrendsTab } = await import(
+            '../../js/tabs/athlete.js?pr53-real-import-numeric-hardening'
+        );
+        const activities = [
+            {
+                id: 'synthetic-trends-complete',
+                type: 'Run',
+                sport_type: 'Run',
+                start_date_local: '2025-01-01T06:00:00',
+                distance: 10000,
+                moving_time: 3600,
+                total_elevation_gain: 100,
+                average_speed: 10000 / 3600,
+                athlete_count: 1
+            },
+            {
+                id: 'synthetic-trends-date-fallback',
+                type: 'Ride',
+                sport_type: 'Ride',
+                start_date: '2025-02-01T08:00:00.000Z',
+                distance: 5000,
+                moving_time: 1800,
+                total_elevation_gain: 0,
+                average_speed: 5000 / 1800,
+                athlete_count: 2
+            },
+            {
+                id: 'synthetic-trends-zero',
+                type: 'Run',
+                sport_type: 'Run',
+                start_date_local: '2025-03-01T10:00:00',
+                distance: 0,
+                moving_time: 0,
+                total_elevation_gain: 0,
+                average_speed: 0,
+                athlete_count: 0
+            },
+            {
+                id: 'synthetic-trends-distance-only',
+                type: 'Run',
+                sport_type: 'Run',
+                start_date_local: '2026-01-01T06:00:00',
+                distance: 5000,
+                moving_time: Number.POSITIVE_INFINITY,
+                total_elevation_gain: null,
+                average_speed: Number.NaN,
+                athlete_count: Number.POSITIVE_INFINITY
+            },
+            {
+                id: 'synthetic-trends-time-only',
+                type: 'Ride',
+                sport_type: 'Ride',
+                start_date_local: '2027-01-01T06:00:00',
+                distance: Number.NaN,
+                moving_time: 600,
+                total_elevation_gain: Number.NEGATIVE_INFINITY,
+                average_speed: null,
+                athlete_count: null
+            },
+            {
+                id: 'synthetic-trends-invalid-date',
+                type: 'Run',
+                sport_type: 'Run',
+                start_date_local: 'invalid-date',
+                distance: null,
+                moving_time: undefined,
+                total_elevation_gain: undefined,
+                average_speed: undefined,
+                athlete_count: undefined
+            },
+            {
+                id: 'synthetic-trends-non-numeric',
+                type: 'Run',
+                sport_type: 'Run',
+                start_date_local: '2028-01-01T06:00:00',
+                distance: '7000',
+                moving_time: false,
+                total_elevation_gain: -1,
+                average_speed: '3.5',
+                athlete_count: true
+            }
+        ];
+        const before = structuredClone(activities);
+
+        const timeStart = chartConfigs.length;
+        assert.doesNotThrow(() => {
+            renderTrendsTab(activities, null, null, 'all', 'time');
+        });
+        const timeConfigs = chartConfigs.slice(timeStart);
+        assert.ok(timeConfigs.length > 0);
+
+        const distanceStart = chartConfigs.length;
+        assert.doesNotThrow(() => {
+            renderTrendsTab(activities, null, null, 'all', 'distance');
+        });
+        const distanceConfigs = chartConfigs.slice(distanceStart);
+        assert.ok(distanceConfigs.length > 0);
+        assert.deepEqual(activities, before);
+
+        const allTimeText = ensureElement('all-time-stats-cards').innerHTML;
+        assert.match(allTimeText, /20 km/);
+        assert.match(allTimeText, /1\.7 h/);
+        assert.match(allTimeText, /100 m/);
+        const recordText = visibleText(ensureElement('record-stats'));
+        assert.match(recordText, /Average Pace:\s+6:00 \/km/);
+
+        const yearlyDistance = distanceConfigs.find(entry => (
+            entry.canvasId === 'yearly-comparison-chart'
+        ));
+        assert.ok(yearlyDistance);
+        assert.equal(
+            yearlyDistance.config.data.datasets[0].realData.includes(null),
+            true
+        );
+
+        const legacyPaceActivities = [
+            {
+                id: 'synthetic-legacy-pace-first',
+                type: 'Run',
+                sport_type: 'Run',
+                start_date_local: '2029-01-01T06:00:00',
+                distance: 1000,
+                moving_time: 300,
+                total_elevation_gain: 0,
+                athlete_count: 1
+            },
+            {
+                id: 'synthetic-legacy-pace-second',
+                type: 'Ride',
+                sport_type: 'Ride',
+                start_date_local: '2029-01-01T07:00:00',
+                distance: 10000,
+                moving_time: 3600,
+                total_elevation_gain: 0,
+                athlete_count: 2
+            }
+        ];
+        assert.doesNotThrow(() => {
+            renderTrendsTab(legacyPaceActivities, null, null, 'all', 'count');
+        });
+        assert.match(
+            visibleText(ensureElement('record-stats')),
+            /Average Pace:\s+5:30 \/km/
+        );
+
+        const chartsBeforeEmptyFilter = new Map();
+        for (const entry of chartConfigs) {
+            chartsBeforeEmptyFilter.set(entry.canvasId, entry.instance);
+        }
+        for (const chartId of [
+            'athlete-count-histogram',
+            'per-period-distribution',
+            'transitions-chart',
+            'duration-histogram',
+            'month-hour-matrix'
+        ]) {
+            assert.ok(chartsBeforeEmptyFilter.get(chartId), chartId);
+        }
+
+        const fallbackOnly = [{
+            id: 'synthetic-date-filter-fallback',
+            type: 'Run',
+            sport_type: 'Run',
+            start_date: '2030-02-03T06:00:00.000Z',
+            distance: 1000,
+            moving_time: 300,
+            total_elevation_gain: 0,
+            athlete_count: 1
+        }];
+        assert.doesNotThrow(() => {
+            renderTrendsTab(
+                fallbackOnly,
+                '2030-02-03',
+                '2030-02-03',
+                'all',
+                'count'
+            );
+        });
+        assert.match(ensureElement('all-time-stats-cards').innerHTML, /Total Activities<\/h3><p>1<\/p>/);
+
+        const extremeDuration = [{
+            id: 'synthetic-extreme-duration',
+            type: 'Run',
+            sport_type: 'Run',
+            start_date_local: '2031-01-01T06:00:00',
+            distance: 1000,
+            moving_time: Number.MAX_VALUE,
+            total_elevation_gain: 0,
+            athlete_count: 1
+        }];
+        assert.doesNotThrow(() => {
+            renderTrendsTab(extremeDuration, null, null, 'all', 'time');
+        });
+        const extremeHistogram = chartConfigs
+            .filter(entry => entry.canvasId === 'duration-histogram')
+            .at(-1);
+        assert.ok(extremeHistogram);
+        assert.ok(extremeHistogram.config.data.datasets[0].data.length <= 200);
+
+        const noSamples = [{
+            id: 'synthetic-trends-no-samples',
+            type: 'Run',
+            sport_type: 'Run',
+            start_date_local: 'not-a-date',
+            distance: null,
+            moving_time: Number.NaN,
+            total_elevation_gain: Number.POSITIVE_INFINITY,
+            average_speed: false
+        }];
+        assert.doesNotThrow(() => {
+            renderTrendsTab(noSamples, '2032-01-01', null, 'all', 'distance');
+        });
+        const emptyCards = ensureElement('all-time-stats-cards').innerHTML;
+        assert.equal((emptyCards.match(/—/g) || []).length, 3);
+        const emptyRecords = visibleText(ensureElement('record-stats'));
+        assert.ok((emptyRecords.match(/—/g) || []).length >= 8);
+        assert.match(emptyRecords, /Solo Activities:\s+—/);
+        assert.match(emptyRecords, /Group Activities:\s+—/);
+        for (const chartId of [
+            'athlete-count-histogram',
+            'per-period-distribution',
+            'transitions-chart',
+            'duration-histogram',
+            'month-hour-matrix'
+        ]) {
+            assert.equal(chartsBeforeEmptyFilter.get(chartId).destroyed, true, chartId);
+        }
+
+        chartConfigs.forEach(({ config }) => visitNumbers(config));
+        const renderedText = Array.from(elements.values()).map(visibleText).join(' ');
+        assert.doesNotMatch(renderedText, /\b(?:NaN|Infinity|undefined)\b/);
+    } finally {
+        if (savedDocument === undefined) delete globalThis.document;
+        else globalThis.document = savedDocument;
+        if (savedChart === undefined) delete globalThis.Chart;
+        else globalThis.Chart = savedChart;
+    }
+});

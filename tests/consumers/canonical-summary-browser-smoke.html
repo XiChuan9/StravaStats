@@ -573,6 +573,27 @@
                         'ACTUAL_ROOT_CANONICAL_ELEVATION_VISIBLE'
                     );
                 }
+                if (route === '/map') {
+                    await waitFor(
+                        () => childDocument.getElementById('map-route-status')?.dataset.state === 'partial',
+                        'ACTUAL_ROOT_CANONICAL_MAP_ROUTE_TIMEOUT'
+                    );
+                    assert(
+                        childDocument.getElementById('map-route-status')
+                            .textContent === 'Local routes ready with gaps: 1 route, 502 unavailable, 0 failed.',
+                        'ACTUAL_ROOT_CANONICAL_MAP_ROUTE_STATUS'
+                    );
+                    assert(
+                        Array.from(childDocument.querySelectorAll('#global-map button')).some(button => (
+                            button.textContent === 'Load approximate OpenStreetMap tiles for this map'
+                        )),
+                        'ACTUAL_ROOT_CANONICAL_MAP_CONSENT_VISIBLE'
+                    );
+                    assert(
+                        root.network.every(entry => !/tile\.openstreetmap\.org/.test(entry.target)),
+                        'ACTUAL_ROOT_CANONICAL_MAP_ZERO_TILE_REQUEST_BEFORE_CONSENT'
+                    );
+                }
                 assert(child.__domSafetyExecuted === 0, `ACTUAL_ROOT_ZERO_CANARY_EXECUTION_${tabId}`);
                 assert(
                     childDocument.querySelector('img[src="x"]') === null,
@@ -674,7 +695,7 @@
                     utcOffsetMinutes: 0
                 },
                 capabilities: {
-                    hasGps: false,
+                    hasGps: index === 0,
                     hasHeartRate: false,
                     hasPower: false,
                     hasCadence: false,
@@ -703,7 +724,17 @@
             return {
                 schemaVersion: 1,
                 activity,
-                streams: { activityId: id, series: [] },
+                streams: {
+                    activityId: id,
+                    series: activity.capabilities.hasGps
+                        ? [{
+                            streamType: 'position',
+                            unit: 'wgs84',
+                            offsetsSeconds: [0, 180, 360],
+                            values: [[10, 20], [10.5, 20.5], [11, 21]]
+                        }]
+                        : []
+                },
                 laps: [],
                 events: [],
                 sources: [{

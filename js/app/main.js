@@ -41,6 +41,14 @@ import {
 } from './local-first-bootstrap.js';
 import { recordDiagnosticError } from '../diagnostics/index.js';
 import { createAICoachSession } from './ai-coach-egress.js';
+import {
+    createAnalysisContextV1,
+    createAnalysisProfileSettingsFacade,
+    DEMO_ANALYSIS_CONTEXT_V1,
+    generatePercentMaxUpperBounds
+} from './analysis-profile.js';
+import { createGlobalMapRouteSession } from './global-map-routes.js';
+import { readValidatedRouteGeometry } from './map-location-egress.js';
 
 export const APP_SESSION_MODE = Object.freeze({
     DEMO: 'demo',
@@ -79,7 +87,8 @@ const RUN_PLUS_STREAM_OPTION_KEYS = new Set(['types']);
 const RUN_PLUS_RENDER_OPTION_KEYS = new Set([
     'sessionRepository',
     'sessionGears',
-    'onFiltersChange'
+    'onFiltersChange',
+    'analysisContext'
 ]);
 const RUN_PLUS_STREAM_TYPES = Object.freeze([
     'time',
@@ -88,6 +97,18 @@ const RUN_PLUS_STREAM_TYPES = Object.freeze([
     'heartrate',
     'cadence',
     'altitude'
+]);
+const LOCAL_ANALYSIS_RECOMPUTE_TABS = new Set([
+    'dashboard-tab',
+    'run-tab',
+    'run-plus-tab',
+    'bike-tab',
+    'swim-tab',
+    'trends-tab',
+    'planner-tab',
+    'activities-tab',
+    'calendar-tab',
+    'wrapped-tab'
 ]);
 
 function safeOperationalError() {
@@ -185,6 +206,66 @@ function inspectDenseDataArray(value, collectValues = false) {
 
 function readDenseDataArray(value) {
     return inspectDenseDataArray(value, true)?.values ?? null;
+}
+
+function readCanonicalGlobalMapRoute(streams) {
+    const snapshot = readPlainDataRecord(streams);
+    if (snapshot === null) throw safeOperationalError();
+    const keys = Object.keys(snapshot);
+    if (keys.length === 0) return Object.freeze([]);
+    if (keys.length !== 1 || keys[0] !== 'latlng') throw safeOperationalError();
+
+    const latlng = readPlainDataRecord(snapshot.latlng);
+    if (latlng === null || !Object.hasOwn(latlng, 'data')) throw safeOperationalError();
+    const samples = readDenseDataArray(latlng.data);
+    if (samples === null || samples.length === 0) throw safeOperationalError();
+
+    const presentSamples = [];
+    for (const sample of samples) {
+        if (sample !== null) presentSamples.push(sample);
+    }
+    if (presentSamples.length === 0) return Object.freeze([]);
+
+    const route = readValidatedRouteGeometry({}, {
+        latlng: { data: presentSamples }
+    });
+    if (route.length === 0) throw safeOperationalError();
+    return route;
+}
+
+function snapshotRunPlusAnalysisContext(value) {
+    if (value === null) return null;
+    const context = readPlainDataRecord(value);
+    if (context === null || !['configured', 'unconfigured'].includes(context.status)) {
+        return undefined;
+    }
+    if (context.status === 'unconfigured') {
+        return Object.freeze({
+            status: 'unconfigured',
+            heartRate: null
+        });
+    }
+    const heartRate = readPlainDataRecord(context.heartRate);
+    if (
+        heartRate === null
+        || !Number.isInteger(heartRate.maxBpm)
+        || heartRate.maxBpm < 100
+        || heartRate.maxBpm > 230
+    ) {
+        return undefined;
+    }
+    return Object.freeze({
+        status: 'configured',
+        heartRate: Object.freeze({
+            maxBpm: heartRate.maxBpm,
+            restingBpm: Number.isInteger(heartRate.restingBpm)
+                ? heartRate.restingBpm
+                : null,
+            thresholdBpm: Number.isInteger(heartRate.thresholdBpm)
+                ? heartRate.thresholdBpm
+                : null
+        })
+    });
 }
 
 function isDenseDataArray(value) {
@@ -615,13 +696,21 @@ export function createRunPlusRenderOptions(value = {}) {
     const gears = options === null
         ? null
         : readDenseDataArray(options.sessionGears);
+    const hasAnalysisContext = options !== null
+        && Object.hasOwn(options, 'analysisContext');
+    const analysisContext = options === null
+        ? null
+        : snapshotRunPlusAnalysisContext(options.analysisContext ?? null);
     if (
         options === null
-        || Reflect.ownKeys(options).length !== RUN_PLUS_RENDER_OPTION_KEYS.size
+        || !Object.hasOwn(options, 'sessionRepository')
+        || !Object.hasOwn(options, 'sessionGears')
+        || !Object.hasOwn(options, 'onFiltersChange')
         || repository === null
         || typeof repository.getActivity !== 'function'
         || typeof repository.getStreams !== 'function'
         || gears === null
+        || analysisContext === undefined
         || typeof options.onFiltersChange !== 'function'
     ) {
         throw safeOperationalError();
@@ -656,7 +745,8 @@ export function createRunPlusRenderOptions(value = {}) {
         gears: Object.freeze([...gears]),
         getActivity,
         getStreams,
-        onFiltersChange: options.onFiltersChange
+        onFiltersChange: options.onFiltersChange,
+        ...(hasAnalysisContext ? { analysisContext } : {})
     });
 }
 
@@ -736,6 +826,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let allActivities = [];
     let activeSessionMode = null;
     let sessionRepository = null;
+    let sessionActivitySource = null;
+    let globalMapRouteSession = null;
+    let globalMapViewCleanup = null;
     const documentSessionMode = (() => {
         try {
             return isDemoMode()
@@ -745,6 +838,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return APP_SESSION_MODE.REAL;
         }
     })();
+    let requestedSessionMode = documentSessionMode;
     let aiCoachSession = createAICoachSession({
         sessionMode: documentSessionMode,
         legacyStorage: documentSessionMode === APP_SESSION_MODE.REAL
@@ -756,6 +850,13 @@ document.addEventListener('DOMContentLoaded', () => {
     let sessionAthlete = null;
     let sessionZones = null;
     let sessionGears = [];
+    let canonicalAnalysisProfileEnabled = requestedSessionMode === APP_SESSION_MODE.REAL
+        && getFeatureFlags().dataRepositoryMode === 'canonical';
+    let analysisProfileFacade = null;
+    let analysisProfileState = null;
+    let sessionAnalysisContext = documentSessionMode === APP_SESSION_MODE.DEMO
+        ? DEMO_ANALYSIS_CONTEXT_V1
+        : null;
     let dateFilterFrom = null;
     let dateFilterTo = null;
     let trendsSportFilter = 'all';
@@ -780,9 +881,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'calendar-tab': { render: () => renderCalendarTab(allActivities) },
         'weather-tab': { render: () => renderWeatherTab(allActivities, { sessionMode: activeSessionMode }) },
         'map-tab': {
-            render: () => renderMapTab(allActivities, dateFilterFrom, dateFilterTo, {
-                sessionMode: activeSessionMode
-            }),
+            render: renderGlobalMapView,
             usesFilters: true
         },
         'wrapped-tab': { render: () => renderWrappedTab(allActivities) },
@@ -853,14 +952,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const unitSelect = document.getElementById('units');
     const hrMaxInput = document.getElementById('hr-max');
+    const restingHrInput = document.getElementById('hr-rest');
+    const thresholdHrInput = document.getElementById('hr-threshold');
+    const zoneBoundaryInputs = [1, 2, 3, 4]
+        .map(index => document.getElementById(`hr-zone-bound-${index}`));
+    const legacyHrMaxSetting = document.getElementById('legacy-hr-max-setting');
+    const legacyHrMaxInput = document.getElementById('legacy-hr-max');
     const ageInput = document.getElementById('age');
     const bgImagesToggle = document.getElementById('bg-images-toggle');
     const darkModeToggle = document.getElementById('dark-mode-toggle');
+    const analysisProfileSection = document.getElementById('analysis-profile-section');
+    const analysisProfileForm = document.getElementById('analysis-profile-form');
+    const analysisProfileAutoZones = document.getElementById('analysis-profile-auto-zones');
+    const analysisProfileZoneSummary = document.getElementById('analysis-profile-zone-summary');
+    const analysisProfileStatus = document.getElementById('analysis-profile-status');
+    const analysisProfileError = document.getElementById('analysis-profile-error');
+    const analysisProfileReset = document.getElementById('analysis-profile-reset');
+    const analysisProfileNotice = document.getElementById('analysis-profile-notice');
+    const analysisProfileOpenSettings = document.getElementById('analysis-profile-open-settings');
+    let analysisProfileZoneMode = 'percent-max';
+    let analysisProfileBusy = false;
 
     // --- SETTINGS ---
     if (settingsButton && settingsPanel && closeSettings) {
         settingsButton.addEventListener('click', () => {
-            settingsPanel.style.display = settingsPanel.style.display === 'none' ? 'block' : 'none';
+            settingsPanel.style.display = settingsPanel.style.display === 'none' ? 'flex' : 'none';
         });
         closeSettings.addEventListener('click', () => {
             settingsPanel.style.display = 'none';
@@ -879,17 +995,26 @@ document.addEventListener('DOMContentLoaded', () => {
         document.documentElement.dataset.theme = enabled ? 'dark' : 'light';
     }
 
+    function readDashboardSettings() {
+        if (requestedSessionMode === APP_SESSION_MODE.DEMO) return {};
+        try {
+            return readPlainDataRecord(
+                JSON.parse(localStorage.getItem('dashboard_settings') || '{}')
+            ) ?? {};
+        } catch {
+            return {};
+        }
+    }
+
     function loadSettings() {
         let saved;
         try {
-            saved = readPlainDataRecord(
-                JSON.parse(localStorage.getItem('dashboard_settings') || '{}')
-            ) ?? {};
+            saved = readDashboardSettings();
         } catch {
             saved = {};
         }
         if (saved.units && unitSelect) unitSelect.value = saved.units;
-        if (saved.hrMax && hrMaxInput) hrMaxInput.value = saved.hrMax;
+        if (saved.hrMax && legacyHrMaxInput) legacyHrMaxInput.value = saved.hrMax;
         if (saved.age && ageInput) ageInput.value = saved.age;
         const bgEnabled = saved.bgImages === true;
         if (bgImagesToggle) bgImagesToggle.checked = bgEnabled;
@@ -901,24 +1026,274 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function saveSettings() {
         const settings = {
+            ...readDashboardSettings(),
             units: unitSelect?.value,
-            hrMax: hrMaxInput?.value,
             age: ageInput?.value,
             bgImages: bgImagesToggle?.checked || false,
             darkMode: darkModeToggle?.checked || false
         };
+        if (requestedSessionMode === APP_SESSION_MODE.DEMO) {
+            applyBgImages(settings.bgImages);
+            applyDarkMode(settings.darkMode);
+            return;
+        }
+        if (!canonicalAnalysisProfileEnabled && requestedSessionMode === APP_SESSION_MODE.REAL) {
+            settings.hrMax = legacyHrMaxInput?.value;
+        }
         localStorage.setItem('dashboard_settings', JSON.stringify(settings));
         applyBgImages(settings.bgImages);
         applyDarkMode(settings.darkMode);
     }
 
+    function setAnalysisProfileError(message = '') {
+        if (!analysisProfileError) return;
+        analysisProfileError.textContent = message;
+        analysisProfileError.hidden = message.length === 0;
+    }
+
+    function setAnalysisProfileBusy(busy) {
+        analysisProfileBusy = busy;
+        analysisProfileForm?.querySelectorAll('input, button').forEach(control => {
+            control.disabled = busy;
+        });
+    }
+
+    function setZoneBoundaryValues(values) {
+        zoneBoundaryInputs.forEach((input, index) => {
+            if (input) input.value = Number.isInteger(values?.[index])
+                ? String(values[index])
+                : '';
+        });
+        updateZoneSummary();
+    }
+
+    function updateZoneSummary() {
+        if (!analysisProfileZoneSummary) return;
+        const boundaries = zoneBoundaryInputs.map(input => Number(input?.value));
+        if (
+            boundaries.some(boundary => !Number.isInteger(boundary))
+            || boundaries.some((boundary, index) => (
+                index > 0 && boundary <= boundaries[index - 1]
+            ))
+        ) {
+            analysisProfileZoneSummary.textContent = 'Enter four ascending boundaries to preview the five zones.';
+            return;
+        }
+        const [b1, b2, b3, b4] = boundaries;
+        analysisProfileZoneSummary.textContent = [
+            `Z1 <${b1}`,
+            `Z2 ${b1}–${b2 - 1}`,
+            `Z3 ${b2}–${b3 - 1}`,
+            `Z4 ${b3}–${b4 - 1}`,
+            `Z5 ≥${b4}`
+        ].join(' · ');
+    }
+
+    function updateAnalysisProfileNotice(state) {
+        const unconfigured = canonicalAnalysisProfileEnabled
+            && state?.status !== 'configured';
+        if (!analysisProfileNotice) return;
+        analysisProfileNotice.hidden = !unconfigured;
+        const readinessPanel = document.querySelector('.readiness-chart-container');
+        if (readinessPanel) readinessPanel.hidden = unconfigured;
+    }
+
+    function populateAnalysisProfileForm(state) {
+        updateAnalysisProfileNotice(state);
+        if (!analysisProfileSection) return;
+        analysisProfileSection.hidden = !canonicalAnalysisProfileEnabled;
+        if (!canonicalAnalysisProfileEnabled) return;
+
+        const profile = state?.status === 'configured' ? state.profile : null;
+        const heartRate = profile?.heartRate ?? null;
+        const prefillMax = heartRate?.maxBpm ?? state?.prefillMaxBpm ?? 190;
+        if (hrMaxInput) hrMaxInput.value = String(prefillMax);
+        if (restingHrInput) restingHrInput.value = Number.isInteger(heartRate?.restingBpm)
+            ? String(heartRate.restingBpm)
+            : '';
+        if (thresholdHrInput) thresholdHrInput.value = Number.isInteger(heartRate?.thresholdBpm)
+            ? String(heartRate.thresholdBpm)
+            : '';
+        const boundaries = heartRate?.upperBoundsBpm
+            ?? generatePercentMaxUpperBounds(prefillMax)
+            ?? [];
+        setZoneBoundaryValues(boundaries);
+        analysisProfileZoneMode = heartRate?.zoneMode ?? 'percent-max';
+
+        if (analysisProfileStatus) {
+            analysisProfileStatus.dataset.state = profile ? 'configured' : 'unconfigured';
+            analysisProfileStatus.textContent = profile
+                ? `Training profile configured · revision ${profile.revision}.`
+                : 'Training profile is not configured. Draft values are not used until saved.';
+        }
+        setAnalysisProfileError();
+    }
+
+    function formInteger(input, optional = false) {
+        const value = input?.value?.trim() ?? '';
+        if (optional && value === '') return null;
+        return Number(value);
+    }
+
+    async function recomputeCanonicalAnalysisViews() {
+        if (
+            activeSessionMode !== APP_SESSION_MODE.REAL
+            || getFeatureFlags().dataRepositoryMode !== 'canonical'
+            || sessionAnalysisContext === null
+        ) {
+            throw safeOperationalError();
+        }
+        const repository = requireSummaryRepositorySession(
+            activeSessionMode,
+            sessionRepository
+        );
+        const profileActivityLoad = await loadActivitiesForSession({
+            sessionRepository: repository,
+            refresh: false
+        });
+        if (profileActivityLoad.source !== REPOSITORY_SOURCE.CANONICAL) {
+            throw safeOperationalError();
+        }
+
+        sessionZones = sessionAnalysisContext.trainingZones;
+        allActivities = await preprocessActivities(
+            structuredClone(profileActivityLoad.data),
+            selectPreprocessingAthlete(APP_SESSION_MODE.REAL, sessionAthlete),
+            sessionZones,
+            sessionGears,
+            sessionAnalysisContext
+        );
+        aiCoachActivitySnapshot = buildAICoachActivitySnapshot(allActivities);
+        setupDashboard(allActivities);
+        populateGearFilters();
+        setupYearlySelector();
+
+        const tabId = activeTabId || getTabIdFromPath(window.location.pathname);
+        renderedTabs.clear();
+        if (tabConfig[tabId] && LOCAL_ANALYSIS_RECOMPUTE_TABS.has(tabId)) {
+            tabConfig[tabId].render();
+            renderedTabs.add(tabId);
+        }
+    }
+
+    async function handleAnalysisProfileSave(event) {
+        event.preventDefault();
+        if (analysisProfileBusy || analysisProfileFacade === null) return;
+        setAnalysisProfileError();
+        setAnalysisProfileBusy(true);
+        if (analysisProfileStatus) analysisProfileStatus.textContent = 'Saving profile and rebuilding local analysis...';
+        let profileSaved = false;
+        try {
+            const nextState = analysisProfileFacade.save({
+                maxBpm: formInteger(hrMaxInput),
+                restingBpm: formInteger(restingHrInput, true),
+                thresholdBpm: formInteger(thresholdHrInput, true),
+                zoneMode: analysisProfileZoneMode,
+                upperBoundsBpm: zoneBoundaryInputs.map(input => formInteger(input))
+            });
+            analysisProfileState = nextState;
+            sessionAnalysisContext = nextState.context;
+            profileSaved = true;
+            populateAnalysisProfileForm(nextState);
+            await recomputeCanonicalAnalysisViews();
+            if (analysisProfileStatus) analysisProfileStatus.textContent = 'Training profile saved. Local analysis was recomputed.';
+        } catch {
+            setAnalysisProfileError(
+                profileSaved
+                    ? 'The profile was saved, but the current views could not be rebuilt. Reload this page to apply it.'
+                    : analysisProfileState?.status === 'configured'
+                        ? 'The profile was not changed. Check every field and try again.'
+                        : 'The profile could not be saved. Check every field and try again.'
+            );
+            if (analysisProfileStatus) {
+                analysisProfileStatus.textContent = analysisProfileState?.status === 'configured'
+                    ? `Training profile configured · revision ${analysisProfileState.profile.revision}.`
+                    : 'Training profile is not configured.';
+            }
+        } finally {
+            setAnalysisProfileBusy(false);
+        }
+    }
+
+    async function handleAnalysisProfileReset() {
+        if (
+            analysisProfileBusy
+            || analysisProfileFacade === null
+            || !window.confirm('Reset the local heart-rate training profile? Activities and imported files will not be changed.')
+        ) {
+            return;
+        }
+        setAnalysisProfileError();
+        setAnalysisProfileBusy(true);
+        let profileReset = false;
+        try {
+            const nextState = analysisProfileFacade.reset({ confirmed: true });
+            analysisProfileState = nextState;
+            sessionAnalysisContext = nextState.context;
+            profileReset = true;
+            populateAnalysisProfileForm(nextState);
+            await recomputeCanonicalAnalysisViews();
+            if (analysisProfileStatus) analysisProfileStatus.textContent = 'Training profile reset. Personalized heart-rate analysis is unavailable.';
+        } catch {
+            setAnalysisProfileError(profileReset
+                ? 'The profile was reset, but the current views could not be rebuilt. Reload this page to apply it.'
+                : 'The profile could not be reset. No activity data was changed.');
+        } finally {
+            setAnalysisProfileBusy(false);
+        }
+    }
+
+    if (canonicalAnalysisProfileEnabled) {
+        try {
+            analysisProfileFacade = createAnalysisProfileSettingsFacade({
+                storage: globalThis.localStorage
+            });
+            analysisProfileState = analysisProfileFacade.read();
+            sessionAnalysisContext = analysisProfileState.context;
+        } catch {
+            analysisProfileState = Object.freeze({
+                status: 'unconfigured',
+                profile: null,
+                context: createAnalysisContextV1(null),
+                prefillMaxBpm: null
+            });
+            sessionAnalysisContext = analysisProfileState.context;
+        }
+    }
+    if (legacyHrMaxSetting) {
+        legacyHrMaxSetting.hidden = canonicalAnalysisProfileEnabled
+            || requestedSessionMode !== APP_SESSION_MODE.REAL;
+    }
+
     loadSettings();
+    populateAnalysisProfileForm(analysisProfileState);
 
     if (unitSelect) unitSelect.addEventListener('change', saveSettings);
-    if (hrMaxInput) hrMaxInput.addEventListener('input', saveSettings);
+    if (legacyHrMaxInput) legacyHrMaxInput.addEventListener('input', saveSettings);
     if (ageInput) ageInput.addEventListener('input', saveSettings);
     if (bgImagesToggle) bgImagesToggle.addEventListener('change', saveSettings);
     if (darkModeToggle) darkModeToggle.addEventListener('change', saveSettings);
+    analysisProfileForm?.addEventListener('submit', handleAnalysisProfileSave);
+    analysisProfileReset?.addEventListener('click', handleAnalysisProfileReset);
+    analysisProfileAutoZones?.addEventListener('click', () => {
+        const generated = generatePercentMaxUpperBounds(formInteger(hrMaxInput));
+        if (generated === null) {
+            setAnalysisProfileError('Enter a valid maximum heart rate before generating zones.');
+            return;
+        }
+        setZoneBoundaryValues(generated);
+        analysisProfileZoneMode = 'percent-max';
+        setAnalysisProfileError();
+    });
+    zoneBoundaryInputs.forEach(input => input?.addEventListener('input', () => {
+        analysisProfileZoneMode = 'manual';
+        updateZoneSummary();
+    }));
+    analysisProfileOpenSettings?.addEventListener('click', () => {
+        if (!settingsPanel || !canonicalAnalysisProfileEnabled) return;
+        settingsPanel.style.display = 'flex';
+        hrMaxInput?.focus();
+    });
 
     // --- TAB NAVIGATION ---
     const tabLinks = document.querySelectorAll('.tab-link');
@@ -1062,11 +1437,78 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeTabId = null;
 
     function getTrendsMetadataContext() {
+        const analysisProfileStatus = activeSessionMode === APP_SESSION_MODE.DEMO
+            ? DEMO_ANALYSIS_CONTEXT_V1.status
+            : activeSessionMode === APP_SESSION_MODE.REAL
+                && getFeatureFlags().dataRepositoryMode === 'canonical'
+                ? sessionAnalysisContext?.status ?? 'unconfigured'
+                : null;
         return {
             athleteData: sessionAthlete,
-            zonesData: sessionZones
+            zonesData: sessionZones,
+            analysisProfileStatus
         };
     }
+
+    function disposeGlobalMapRouteSession() {
+        globalMapRouteSession?.dispose();
+        globalMapRouteSession = null;
+    }
+
+    function disposeGlobalMapView() {
+        globalMapViewCleanup?.();
+        globalMapViewCleanup = null;
+    }
+
+    function disposeGlobalMapState() {
+        disposeGlobalMapView();
+        disposeGlobalMapRouteSession();
+    }
+
+    function clearGlobalMapRouteSession() {
+        globalMapRouteSession?.clear();
+    }
+
+    function setSessionActivitySource(source) {
+        if (sessionActivitySource !== source) disposeGlobalMapState();
+        sessionActivitySource = source;
+    }
+
+    function renderGlobalMapView() {
+        disposeGlobalMapView();
+        const cleanup = renderMapTab(allActivities, dateFilterFrom, dateFilterTo, {
+            sessionMode: activeSessionMode,
+            loadCanonicalRoutes: getCanonicalMapRouteLoader()
+        });
+        globalMapViewCleanup = typeof cleanup === 'function' ? cleanup : null;
+    }
+
+    function getCanonicalMapRouteLoader() {
+        if (
+            activeSessionMode !== APP_SESSION_MODE.REAL
+            || sessionActivitySource !== REPOSITORY_SOURCE.CANONICAL
+        ) {
+            return null;
+        }
+        if (globalMapRouteSession === null) {
+            const repository = requireSummaryRepositorySession(
+                activeSessionMode,
+                sessionRepository
+            );
+            globalMapRouteSession = createGlobalMapRouteSession({
+                async readRoute(activityId) {
+                    const streamLoad = await repository.getStreams(activityId, {
+                        types: ['latlng']
+                    });
+                    return readCanonicalGlobalMapRoute(streamLoad.data);
+                }
+            });
+        }
+        const routeSession = globalMapRouteSession;
+        return activityIds => routeSession.load(activityIds);
+    }
+
+    window.addEventListener('pagehide', disposeGlobalMapState, { once: true });
 
     function getRunPlusRenderOptions() {
         return createRunPlusRenderOptions({
@@ -1075,7 +1517,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 sessionRepository
             ),
             sessionGears,
-            onFiltersChange: handleRunPlusFiltersChange
+            onFiltersChange: handleRunPlusFiltersChange,
+            analysisContext: activeSessionMode === APP_SESSION_MODE.DEMO
+                ? sessionAnalysisContext
+                : activeSessionMode === APP_SESSION_MODE.REAL
+                    && getFeatureFlags().dataRepositoryMode === 'canonical'
+                    ? sessionAnalysisContext
+                    : null
         });
     }
 
@@ -1109,7 +1557,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function activateTab(tabId, { updateUrl = false, replaceUrl = false } = {}) {
         if (!consumerRenderingEnabled) return;
         if (tabId === activeTabId) {
-            if (tabId === 'run-plus-tab' && tabConfig[tabId]) {
+            if ((tabId === 'run-plus-tab' || tabId === 'map-tab') && tabConfig[tabId]) {
+                renderedTabs.add(tabId);
                 requestAnimationFrame(() => tabConfig[tabId].render());
             } else if (tabId === 'ai-chat-tab'
                 && !renderedTabs.has(tabId)
@@ -1379,11 +1828,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- INITIALIZATION ---
     async function initializeApp(tokenData, localActivities = null) {
         const localOnly = localActivities !== null;
+        disposeGlobalMapState();
+        sessionActivitySource = null;
         sessionAthlete = null;
         sessionZones = null;
         sessionGears = resetSummarySessionGears();
         setRunSessionGears(sessionGears);
-        const requestedSessionMode = documentSessionMode;
+        const sessionModeRequest = requestedSessionMode;
         const t0 = Date.now();
         const elapsed = () => `${((Date.now() - t0) / 1000).toFixed(1)}s elapsed`;
         showLoading('Preparing dashboard...', 2, elapsed());
@@ -1393,7 +1844,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const establishedSession = establishSummaryRepositorySession({
                 activeSessionMode,
                 sessionRepository,
-                requestedSessionMode,
+                requestedSessionMode: sessionModeRequest,
                 repositoryFactory: createRepository,
                 warningObserver: ({ operation, count }) => {
                     logOperationalWarning(
@@ -1435,6 +1886,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 selectedActivityLoad = activityLoad;
             }
             const activityLoad = selectedActivityLoad;
+            setSessionActivitySource(activityLoad.source);
             const activities = activityLoad.data;
             if (
                 activityLoad.source === REPOSITORY_SOURCE.CANONICAL
@@ -1523,15 +1975,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 sessionMode,
                 athlete
             );
+            const analysisContext = sessionMode === APP_SESSION_MODE.DEMO
+                ? DEMO_ANALYSIS_CONTEXT_V1
+                : sessionMode === APP_SESSION_MODE.REAL
+                    && activityLoad.source === REPOSITORY_SOURCE.CANONICAL
+                    ? sessionAnalysisContext
+                    : undefined;
+            const preprocessingZones = analysisContext === undefined
+                ? zones
+                : analysisContext.trainingZones;
+            sessionZones = preprocessingZones;
             const preprocessingActivities = activityLoad.source === REPOSITORY_SOURCE.CANONICAL
                 ? structuredClone(activities)
                 : activities;
-            const preprocessed = await preprocessActivities(
-                preprocessingActivities,
-                preprocessingAthlete,
-                zones,
-                gears
-            );
+            const preprocessed = analysisContext === undefined
+                ? await preprocessActivities(
+                    preprocessingActivities,
+                    preprocessingAthlete,
+                    preprocessingZones,
+                    gears
+                )
+                : await preprocessActivities(
+                    preprocessingActivities,
+                    preprocessingAthlete,
+                    preprocessingZones,
+                    gears,
+                    analysisContext
+                );
             allActivities = preprocessed;
             aiCoachActivitySnapshot = buildAICoachActivitySnapshot(allActivities);
             if (!localOnly) console.log(`Activities prepared (${allActivities.length})`);
@@ -1565,6 +2035,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function refreshActivities() {
         const sessionMode = activeSessionMode;
+        disposeGlobalMapView();
+        clearGlobalMapRouteSession();
         const canonicalRefresh = sessionMode === APP_SESSION_MODE.REAL
             && getFeatureFlags().dataRepositoryMode === 'canonical';
         sessionAthlete = null;
@@ -1591,6 +2063,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 sessionRepository: repository,
                 refresh: true
             });
+            setSessionActivitySource(activityLoad.source);
             const activities = activityLoad.data;
             const metadata = await loadRefreshAthleteAndZones(repository);
             const athlete = metadata.athlete;
@@ -1615,15 +2088,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 sessionMode,
                 athlete
             );
+            const analysisContext = sessionMode === APP_SESSION_MODE.DEMO
+                ? DEMO_ANALYSIS_CONTEXT_V1
+                : sessionMode === APP_SESSION_MODE.REAL
+                    && activityLoad.source === REPOSITORY_SOURCE.CANONICAL
+                    ? sessionAnalysisContext
+                    : undefined;
+            const preprocessingZones = analysisContext === undefined
+                ? zones
+                : analysisContext.trainingZones;
+            sessionZones = preprocessingZones;
             const preprocessingActivities = activityLoad.source === REPOSITORY_SOURCE.CANONICAL
                 ? structuredClone(activities)
                 : activities;
-            allActivities = await preprocessActivities(
-                preprocessingActivities,
-                preprocessingAthlete,
-                zones,
-                gears
-            );
+            allActivities = analysisContext === undefined
+                ? await preprocessActivities(
+                    preprocessingActivities,
+                    preprocessingAthlete,
+                    preprocessingZones,
+                    gears
+                )
+                : await preprocessActivities(
+                    preprocessingActivities,
+                    preprocessingAthlete,
+                    preprocessingZones,
+                    gears,
+                    analysisContext
+                );
             aiCoachActivitySnapshot = buildAICoachActivitySnapshot(allActivities);
             if (
                 activityLoad.source === REPOSITORY_SOURCE.CANONICAL
@@ -1662,10 +2153,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (demoButton) demoButton.addEventListener('click', () => {
         aiCoachSession.revoke();
         aiCoachActivitySnapshot = null;
-        aiCoachSession = createAICoachSession({
-            sessionMode: APP_SESSION_MODE.DEMO
+        loginWithDemo(() => {
+            window.location.reload();
         });
-        loginWithDemo(initializeApp);
     });
     if (logoutButton) logoutButton.addEventListener('click', () => {
         aiCoachSession.revoke();

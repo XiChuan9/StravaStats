@@ -2,7 +2,12 @@
 //          CLASIFICADOR DE TIPO DE CICLISMO
 // =================================================================
 
-window.classifyBike = function classifyBike(act = {}, streams = {}, zones = null) {
+window.classifyBike = function classifyBike(
+    act = {},
+    streams = {},
+    zones = null,
+    { exclusiveHeartRateZoneBounds = false } = {}
+) {
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     const sum = arr => arr.reduce((s, x) => s + (x || 0), 0);
 
@@ -75,14 +80,17 @@ window.classifyBike = function classifyBike(act = {}, streams = {}, zones = null
             bounds[i] = zonesObj[i]?.max || 0;
         }
         bounds[4] = zonesObj[3]?.max || 200;
+        const below = exclusiveHeartRateZoneBounds
+            ? (value, bound) => value < bound
+            : (value, bound) => value <= bound;
 
         for (let i = 1; i < Math.min(hr.length, times.length); i++) {
             const dt = times[i] - times[i - 1];
             if (dt <= 0) continue;
             const h = hr[i];
-            if (h <= bounds[0]) tPerZone[0] += dt;
-            else if (h <= bounds[1]) tPerZone[1] += dt;
-            else if (h <= bounds[2]) tPerZone[2] += dt;
+            if (below(h, bounds[0])) tPerZone[0] += dt;
+            else if (below(h, bounds[1])) tPerZone[1] += dt;
+            else if (below(h, bounds[2])) tPerZone[2] += dt;
             else tPerZone[3] += dt;
         }
 

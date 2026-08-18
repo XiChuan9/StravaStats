@@ -15,6 +15,26 @@ let dashboardRenderContext = {
     dateFilterTo: null
 };
 
+export function getDashboardLoadEstimateScope(activities) {
+    if (!Array.isArray(activities)) return null;
+    let personalized = false;
+    for (const activity of activities) {
+        if (
+            activity?.tss_estimate_scope === 'general'
+            || activity?.recovery_estimate_scope === 'general'
+        ) {
+            return 'general';
+        }
+        if (
+            activity?.tss_estimate_scope === 'personalized'
+            || activity?.recovery_estimate_scope === 'personalized'
+        ) {
+            personalized = true;
+        }
+    }
+    return personalized ? 'personalized' : null;
+}
+
 const RANGE_OPTIONS = [
     { label: 'This Week', type: 'week' },
     { label: 'Last 7 Days', type: 'last7' },
@@ -1092,6 +1112,16 @@ function renderAcuteLoadExplanation(visibleActivities, historyActivities, profil
         atlPercentile: percentileRank(historyActivities.map(a => a.atl), currentAtl),
         riskPercentile: percentileRank(historyActivities.map(a => a.injuryRisk), currentRisk)
     };
+    const loadEstimateScope = getDashboardLoadEstimateScope(historyActivities);
+    const generalEstimateNotice = loadEstimateScope === 'general'
+        ? `<p class="analysis-estimate-scope-notice" role="status"><strong>General load estimate.</strong> Some activities use power, recorded effort, or duration because personalized heart-rate inputs were unavailable. CTL, ATL, TSB, injury-risk proxy, and recovery values below are not fully personalized.</p>`
+        : '';
+    const injuryRiskLabel = loadEstimateScope === 'general'
+        ? 'Injury Risk Proxy'
+        : 'Injury Risk';
+    const recoveryLabel = loadEstimateScope === 'general'
+        ? 'General Recovery Estimate'
+        : 'Recovery Hours';
 
     // Total load in range
     const totalLoad = visibleActivities.reduce((s, a) => s + (a.tss || 0), 0).toFixed(0);
@@ -1149,6 +1179,7 @@ function renderAcuteLoadExplanation(visibleActivities, historyActivities, profil
     });
 
     container.innerHTML = `
+        ${generalEstimateNotice}
         <div class="acute-load-summary-card">
             <div class="acute-load-summary-topline">
                 <span class="acute-load-kicker">7-day load</span>
@@ -1227,7 +1258,7 @@ function renderAcuteLoadExplanation(visibleActivities, historyActivities, profil
         <div class="pmc-explainer-card pmc-explainer-risk">
             <div class="pmc-explainer-header">
                 <span class="pmc-dot"></span>
-                <strong>Injury Risk</strong>
+                <strong>${injuryRiskLabel}</strong>
                 <span class="pmc-explainer-value">${currentRisk.toFixed(3)}</span>
             </div>
             <small>${describeInjuryRisk(currentRisk, context)} <span style="opacity:.6;">Ideal &lt; 0.25.</span></small>
@@ -1235,10 +1266,12 @@ function renderAcuteLoadExplanation(visibleActivities, historyActivities, profil
         <div class="pmc-explainer-card pmc-explainer-recovery">
             <div class="pmc-explainer-header">
                 <span class="pmc-dot"></span>
-                <strong>Recovery Hours</strong> <small style="opacity:.65;">Est. needed today</small>
+                <strong>${recoveryLabel}</strong> <small style="opacity:.65;">Est. needed today</small>
                 <span class="pmc-explainer-value">${currentRecovery}h</span>
             </div>
-            <small><strong>Recovery Hours</strong> is the estimated physical recovery time your body needs after today's training load, based on activity type, intensity, duration, and accumulated fatigue (TSB). Higher values indicate more recovery is needed.</small>
+            <small>${loadEstimateScope === 'general'
+                ? '<strong>General Recovery Estimate</strong> is a non-personalized load-based estimate. Configure heart-rate inputs and record heart rate to personalize eligible activities.'
+                : '<strong>Recovery Hours</strong> is the estimated physical recovery time your body needs after today\'s training load, based on activity type, intensity, duration, and accumulated fatigue (TSB). Higher values indicate more recovery is needed.'}</small>
             <small style="margin-top:.2rem;display:block;">${describeRecoveryHours(currentRecovery, currentTsb)} <span style="opacity:.6;">Range: 4–96 hours.</span></small>
         </div>
     `;
@@ -1380,6 +1413,10 @@ function closeChartModal() {
 
 export function renderDashboardTab(allActivities, dateFilterFrom, dateFilterTo) {
     dashboardRenderContext = { allActivities, dateFilterFrom, dateFilterTo };
+    const readinessPanel = document.querySelector('.readiness-chart-container');
+    if (readinessPanel) {
+        readinessPanel.hidden = getDashboardLoadEstimateScope(allActivities) === 'general';
+    }
     const container = document.getElementById('dashboard-tab');
     if (container && !document.getElementById('range-selector')) {
         const rangeDiv = document.createElement('div');
@@ -1506,7 +1543,9 @@ function renderDashboardContent(allActivities, dateFilterFrom, dateFilterTo) {
 
     // Render heavy charts in next frame to avoid blocking UI
     requestAnimationFrame(() => {
-        renderTrainingReadiness(allActivities, startDate, endDate);
+        if (getDashboardLoadEstimateScope(allActivities) !== 'general') {
+            renderTrainingReadiness(allActivities, startDate, endDate);
+        }
         renderAcuteLoadChart(allActivities, startDate, endDate);
         renderTSSBarChart(recentActivities, selectedRangeDays);
         setupTSSUnitSelector();
