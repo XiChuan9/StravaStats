@@ -16,13 +16,26 @@ const privatePathPatterns = [
 
 const privateEnvironmentPattern = /(^|\/)\.env(?:\.|$)/i;
 const allowedEnvironmentFiles = new Set(['.env.example']);
-const sportsExportPattern = /\.(fit|tcx|gpx|zip)$/i;
+const sportsExportPattern = /\.(csv|fit|tcx|gpx|zip)$/i;
 const syntheticFixturePrefix = 'tests/fixtures/synthetic/';
+const approvedBinaryAssets = new Map([
+  ['media/bg-bike.jpg', 'a9f213409ce3a8b55aa6b0589071001f4fe32fadd0e3bc8d9d3b9759b5f9f5c3'],
+  ['media/bg-run.jpg', '69a9c6fed39b627e89bbf7441de0bebad0df89f27ed2598967962cb84e7f50d6'],
+  ['media/bg-swim.jpg', 'c4e90fd495b516a5d82e3a243518c61e65e3dff76092e745153f5ca979e56660'],
+]);
+const binaryEvidenceExtensions = new Set([
+  '.avi', '.bmp', '.gif', '.heic', '.jpeg', '.jpg', '.mov', '.mp4', '.pdf',
+  '.png', '.tif', '.tiff', '.webm', '.webp',
+]);
 const trackedTextExtensions = new Set([
   '.css', '.csv', '.html', '.js', '.json', '.md', '.mjs', '.sh', '.svg',
   '.ts', '.tsx', '.txt', '.xml', '.yaml', '.yml',
 ]);
-const trackedTextFileNames = new Set(['.env.example']);
+const trackedTextFileNames = new Set([
+  '.env.example',
+  '.gitattributes',
+  '.gitignore',
+]);
 const forbiddenIdentityDigests = new Set([
   'd197826b0e9da2a20d7be61f043731d65c85b4556f9b2e5212ed2d19117230ae',
   '2717176971c948ffa3370c256f3c0ce28cc94633d2cf78c917a93db77ba03fee',
@@ -71,7 +84,7 @@ function listTrackedFiles() {
   return output.split('\0').filter(Boolean);
 }
 
-function findViolation(file) {
+function findPathViolation(file) {
   if (privatePathPatterns.some(pattern => pattern.test(file))) {
     return 'private path must not be tracked';
   }
@@ -82,6 +95,11 @@ function findViolation(file) {
 
   if (sportsExportPattern.test(file) && !file.startsWith(syntheticFixturePrefix)) {
     return 'sports export must be an explicitly synthetic test fixture';
+  }
+
+  if (binaryEvidenceExtensions.has(extname(file).toLowerCase())
+      && !approvedBinaryAssets.has(file)) {
+    return 'binary evidence must be an explicitly approved application asset';
   }
 
   return null;
@@ -108,6 +126,65 @@ function isTrackedTextFile(file) {
     || trackedTextExtensions.has(extname(file).toLowerCase());
 }
 
+function startsWithBytes(bytes, expected) {
+  return expected.every((value, index) => bytes[index] === value);
+}
+
+function recognizedBinaryKind(bytes) {
+  if (startsWithBytes(bytes, [0xff, 0xd8, 0xff])) return 'image';
+  if (startsWithBytes(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) {
+    return 'image';
+  }
+  if (startsWithBytes(bytes, [0x47, 0x49, 0x46, 0x38])) return 'image';
+  if (
+    startsWithBytes(bytes, [0x52, 0x49, 0x46, 0x46])
+    && String.fromCharCode(...bytes.subarray(8, 12)) === 'WEBP'
+  ) return 'image';
+  if (startsWithBytes(bytes, [0x25, 0x50, 0x44, 0x46, 0x2d])) return 'document';
+  if (
+    startsWithBytes(bytes, [0x50, 0x4b, 0x03, 0x04])
+    || startsWithBytes(bytes, [0x50, 0x4b, 0x05, 0x06])
+    || startsWithBytes(bytes, [0x50, 0x4b, 0x07, 0x08])
+  ) return 'sports-archive';
+  if (
+    (bytes[0] === 12 || bytes[0] === 14)
+    && String.fromCharCode(...bytes.subarray(8, 12)) === '.FIT'
+  ) return 'sports-archive';
+  return null;
+}
+
+function byteContent(value) {
+  if (Buffer.isBuffer(value)) return value;
+  if (value instanceof Uint8Array) {
+    return Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+  }
+  return Buffer.from(String(value), 'utf8');
+}
+
+export function findTrackedFileViolation(file, content) {
+  const pathViolation = findPathViolation(file);
+  if (pathViolation) return pathViolation;
+
+  const bytes = byteContent(content);
+  const approvedDigest = approvedBinaryAssets.get(file);
+  if (approvedDigest) {
+    return digest(bytes) === approvedDigest
+      ? null
+      : 'approved binary asset bytes changed';
+  }
+
+  const binaryKind = recognizedBinaryKind(bytes);
+  if (binaryKind === 'sports-archive' && file.startsWith(syntheticFixturePrefix)) {
+    return null;
+  }
+  if (binaryKind) return 'recognized binary evidence must not be tracked here';
+
+  if (!isTrackedTextFile(file)) {
+    return 'unapproved file type must not be tracked';
+  }
+  return findContentViolation(file, bytes.toString('utf8'));
+}
+
 export function findContentViolation(
   file,
   content,
@@ -130,18 +207,21 @@ export function findContentViolation(
 
 export function scanTrackedFiles(
   files = listTrackedFiles(),
-  { readFile = readFileSync } = {},
+  { readFile } = {},
 ) {
   const violations = [];
   for (const file of files) {
-    const pathViolation = findViolation(file);
+    const pathViolation = findPathViolation(file);
     if (pathViolation) {
       violations.push({ file, reason: pathViolation });
       continue;
     }
-    if (!isTrackedTextFile(file)) continue;
-    const contentViolation = findContentViolation(file, readFile(file, 'utf8'));
-    if (contentViolation) violations.push({ file, reason: contentViolation });
+
+    const content = readFile
+      ? readFile(file, isTrackedTextFile(file) ? 'utf8' : undefined)
+      : readFileSync(file);
+    const violation = findTrackedFileViolation(file, content);
+    if (violation) violations.push({ file, reason: violation });
   }
   return violations;
 }

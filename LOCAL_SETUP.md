@@ -4,7 +4,7 @@ This project includes a local Node.js dev server (`scripts/local-dev-server.mjs`
 
 ## Prerequisites
 
-- Node.js 18+
+- Node.js 24.19.0 and npm 11.17.0
 - A Strava account
 - A Strava Developer App
 
@@ -41,6 +41,15 @@ npm run dev
 - Dynamically imports the matching module in `api/` for any request to `/api/*` and invokes its default export as a Vercel-style handler. Modules are re-imported per request, so edits to handlers take effect without restarting the server.
 - Reads `.env.local` so the Strava credentials are available to the serverless modules.
 - Listens on `PORT` (default `3001`). Override with `PORT=4000 npm run dev`.
+- Rejects local API request bodies above 65,536 bytes before invoking a route.
+
+TLS certificate and hostname validation remains enabled for every provider
+request. If a corporate proxy requires a private CA, configure that CA outside
+the repository rather than disabling validation:
+
+```bash
+NODE_EXTRA_CA_CERTS=/absolute/path/to/corporate-ca.pem npm run dev
+```
 
 Open the local URL printed by the dev server, then click Connect with Strava.
 

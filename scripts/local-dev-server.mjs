@@ -123,10 +123,46 @@ async function loadEnv() {
   await loadEnvFile('.env.local');
 }
 
+export const LOCAL_API_BODY_LIMIT = 65_536;
+
+class LocalRequestBodyTooLargeError extends Error {
+  constructor() {
+    super('Local API request body is too large.');
+    this.name = 'LocalRequestBodyTooLargeError';
+    this.code = 'LOCAL_REQUEST_BODY_TOO_LARGE';
+  }
+}
+
 function collectBody(req) {
+  const claimedLength = req.headers['content-length'];
+  if (claimedLength !== undefined) {
+    if (!/^\d+$/.test(claimedLength)) {
+      req.resume();
+      return Promise.reject(new LocalRequestBodyTooLargeError());
+    }
+    const length = Number(claimedLength);
+    if (!Number.isSafeInteger(length) || length > LOCAL_API_BODY_LIMIT) {
+      req.resume();
+      return Promise.reject(new LocalRequestBodyTooLargeError());
+    }
+  }
+
   return new Promise((resolve, reject) => {
     const chunks = [];
-    req.on('data', chunk => chunks.push(chunk));
+    let total = 0;
+    let settled = false;
+    req.on('data', chunk => {
+      if (settled) return;
+      total += chunk.byteLength;
+      if (total > LOCAL_API_BODY_LIMIT) {
+        settled = true;
+        chunks.length = 0;
+        req.resume();
+        reject(new LocalRequestBodyTooLargeError());
+        return;
+      }
+      chunks.push(chunk);
+    });
     req.on('end', () => resolve(Buffer.concat(chunks)));
     req.on('error', reject);
   });
@@ -207,7 +243,20 @@ async function handleApi(req, res, url) {
   }
 
   try {
-    const body = await parseBody(req);
+    let body;
+    try {
+      body = await parseBody(req);
+    } catch (error) {
+      if (error?.code === 'LOCAL_REQUEST_BODY_TOO_LARGE') {
+        res.writeHead(413, {
+          'cache-control': 'no-store',
+          'content-type': 'application/json; charset=utf-8'
+        });
+        res.end(JSON.stringify({ error: 'REQUEST_BODY_TOO_LARGE' }));
+        return;
+      }
+      throw error;
+    }
     const moduleUrl = pathToFileURL(apiPath);
     const version = (await stat(apiPath)).mtimeMs;
     const mod = await import(`${moduleUrl.href}?v=${version}`);
@@ -384,9 +433,6 @@ export function createLocalDevServer() {
 }
 
 async function startLocalDevServer() {
-  // Local dev only: corporate proxies use self-signed CA certs that Node.js doesn't trust.
-  // Vercel runs the API handlers directly, so this is never set by the production runtime.
-  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
   await loadEnv();
 
   const server = createLocalDevServer();

@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
+import { readFile as readFileAsync } from 'node:fs/promises';
 import test from 'node:test';
 
-import { findContentViolation } from '../../scripts/check-privacy.mjs';
+import {
+    findContentViolation,
+    findTrackedFileViolation,
+    scanTrackedFiles
+} from '../../scripts/check-privacy.mjs';
 
 const MAPPER = new URL(
     '../../js/connectors/strava/strava-import-mapper.js',
@@ -34,7 +39,7 @@ const C3C_BROWSER_FILES = Object.freeze([
 ]);
 
 test('C3a production mapper contains no credential, storage, provider route, or logging seam', async () => {
-    const source = await readFile(MAPPER, 'utf8');
+    const source = await readFileAsync(MAPPER, 'utf8');
     assert.doesNotMatch(
         source,
         /access_token|refresh_token|client_secret|Bearer\s|https?:\/\/|strava\.com|\/api\//i
@@ -48,7 +53,7 @@ test('C3a production mapper contains no credential, storage, provider route, or 
 });
 
 test('C3a fixture is tracked synthetic code, not an account response or export', async () => {
-    const source = await readFile(FIXTURE, 'utf8');
+    const source = await readFileAsync(FIXTURE, 'utf8');
     assert.doesNotMatch(
         source,
         /access_token|refresh_token|client_secret|Bearer\s|https?:\/\/|strava\.com|tests\/fixtures\/private/i
@@ -62,7 +67,7 @@ test('C3a fixture is tracked synthetic code, not an account response or export',
 });
 
 test('C3a mapper drops provider profile, route, gear, device, and name fields', async () => {
-    const source = await readFile(MAPPER, 'utf8');
+    const source = await readFileAsync(MAPPER, 'utf8');
     for (const field of ['name', 'athlete', 'map', 'gear_id', 'device_name']) {
         assert.match(source, new RegExp(`['"]${field}['"]`));
     }
@@ -73,7 +78,7 @@ test('C3a mapper drops provider profile, route, gear, device, and name fields', 
 test('C3b provider artifact path has no credential, network, logging, or private-fixture seam', async () => {
     const sources = await Promise.all(C3B_FILES.map(async relative => ({
         relative,
-        source: await readFile(new URL(relative, import.meta.url), 'utf8')
+        source: await readFileAsync(new URL(relative, import.meta.url), 'utf8')
     })));
     for (const { relative, source } of sources) {
         assert.doesNotMatch(
@@ -93,7 +98,7 @@ test('C3b provider artifact path has no credential, network, logging, or private
 test('C1.1 browser authorization stays same-origin, redacted, and outside page/provider selection', async () => {
     const sources = await Promise.all(C1_BROWSER_FILES.map(async relative => ({
         relative,
-        source: await readFile(new URL(relative, import.meta.url), 'utf8')
+        source: await readFileAsync(new URL(relative, import.meta.url), 'utf8')
     })));
     for (const { relative, source } of sources) {
         assert.doesNotMatch(source, /console\.|tests\/fixtures\/private/i, relative);
@@ -114,7 +119,7 @@ test('C1.1 browser authorization stays same-origin, redacted, and outside page/p
 test('C3c provider Sync keeps credentials and provider selection outside page/DOM/log surfaces', async () => {
     const sources = await Promise.all(C3C_BROWSER_FILES.map(async relative => ({
         relative,
-        source: await readFile(new URL(relative, import.meta.url), 'utf8')
+        source: await readFileAsync(new URL(relative, import.meta.url), 'utf8')
     })));
     for (const { relative, source } of sources) {
         assert.doesNotMatch(source, /console\.|tests\/fixtures\/private/i, relative);
@@ -133,4 +138,51 @@ test('C3c provider Sync keeps credentials and provider selection outside page/DO
     assert.match(connector, /cache: 'no-store'/);
     assert.match(connector, /referrerPolicy: 'no-referrer'/);
     assert.doesNotMatch(connector, /fetchImpl\([^\n]*activityId|strava\.com|https?:\/\//i);
+});
+
+test('privacy guard confines sports exports and binary evidence to exact approved paths', () => {
+    assert.equal(
+        findTrackedFileViolation('tests/fixtures/synthetic/example.csv', Buffer.from('SYNTHETIC\n')),
+        null
+    );
+    assert.match(
+        findTrackedFileViolation('exports/activities.csv', Buffer.from('activity_id\n')),
+        /explicitly synthetic/
+    );
+
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe1, 0x00, 0x10]);
+    assert.match(
+        findTrackedFileViolation('docs/evidence.md', jpeg),
+        /recognized binary evidence/
+    );
+    assert.match(
+        findTrackedFileViolation('docs/evidence.bin', Buffer.from('%PDF-1.7\n')),
+        /recognized binary evidence/
+    );
+    assert.match(
+        findTrackedFileViolation('docs/screenshot.jpg', jpeg),
+        /approved application asset/
+    );
+    const asciiPpm = Buffer.from('P3\n1 1\n255\n255 0 0\n');
+    assert.match(
+        findTrackedFileViolation('docs/screenshot.ppm', asciiPpm),
+        /unapproved file type/
+    );
+    assert.match(
+        findTrackedFileViolation('docs/screenshot.bin', asciiPpm),
+        /unapproved file type/
+    );
+
+    const approvedPath = 'media/bg-bike.jpg';
+    const approvedBytes = readFileSync(new URL(`../../${approvedPath}`, import.meta.url));
+    assert.deepEqual(
+        scanTrackedFiles([approvedPath], { readFile: () => approvedBytes }),
+        []
+    );
+    const changed = Buffer.from(approvedBytes);
+    changed[changed.length - 1] ^= 1;
+    assert.match(
+        findTrackedFileViolation(approvedPath, changed),
+        /bytes changed/
+    );
 });
