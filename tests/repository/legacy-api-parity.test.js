@@ -374,14 +374,19 @@ test('real fetchAllActivities delegates one bounded first-page proxy request', a
 
     assert.equal(fetchCalls.length, 1);
     assert.equal(fetchCalls[0][0], '/api/strava-activities?page=1&per_page=25');
-    assert.deepEqual(fetchCalls[0][1], {
-        method: 'GET',
-        headers: { Authorization: `Bearer ${ENCODED_TOKEN}` },
-        credentials: 'same-origin',
-        cache: 'no-store',
-        redirect: 'error',
-        referrerPolicy: 'no-referrer'
-    });
+    assert.deepEqual(
+        { ...fetchCalls[0][1], signal: undefined },
+        {
+            method: 'GET',
+            headers: { Authorization: `Bearer ${ENCODED_TOKEN}` },
+            credentials: 'same-origin',
+            cache: 'no-store',
+            redirect: 'error',
+            referrerPolicy: 'no-referrer',
+            signal: undefined
+        }
+    );
+    assert.ok(fetchCalls[0][1].signal instanceof AbortSignal);
     assert.deepEqual(storage.getCalls, ['strava_demo_mode', 'strava_tokens']);
     assert.deepEqual(storage.setCalls, []);
     assert.deepEqual(storage.removeCalls, []);

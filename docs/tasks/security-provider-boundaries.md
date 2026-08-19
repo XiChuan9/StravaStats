@@ -42,13 +42,16 @@ tests/privacy/weather-egress.test.js
 tests/repository/legacy-api-parity.test.js
 tests/repository/dependency-boundaries.test.js
 tests/repository/strava-api-connector.test.js
+tests/release/alpha-candidate.test.js
 tests/server/provider-boundaries.test.js
 tests/source-manager/source-manager-authorization.test.js
 ```
 
-No DOM renderer, import/export, backup/restore, analysis, storage, schema,
-migration, dependency, lockfile, release, deployment, or user-data path is
-authorized.
+The release-test path is limited to accounting for the one new tracked internal
+browser module. No selector, manifest, workflow, release runtime, or deployment
+change is authorized. No DOM renderer, import/export, backup/restore, analysis,
+storage, schema, migration, dependency, lockfile, deployment, or user-data path
+is authorized.
 
 ## Frozen decisions
 
