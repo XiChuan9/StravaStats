@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import { request } from 'node:http';
 import test from 'node:test';
 
-import { createLocalDevServer } from '../../scripts/local-dev-server.mjs';
+import {
+  createLocalDevServer,
+  LOCAL_API_BODY_LIMIT
+} from '../../scripts/local-dev-server.mjs';
 
 const RETIRED_ROUTE = ['/run', 'plus'].join('-');
 const RETIRED_NESTED_ROUTE = `${RETIRED_ROUTE}/${['n', 'sm'].join('')}`;
@@ -26,13 +29,20 @@ function close(server) {
   });
 }
 
-function requestPath(address, pathname, { method = 'GET' } = {}) {
+function requestPath(address, pathname, {
+  method = 'GET',
+  headers = {},
+  body,
+  chunks
+} = {}) {
   return new Promise((resolve, reject) => {
     const req = request({
       host: address.address,
       port: address.port,
       method,
-      path: pathname
+      path: pathname,
+      headers,
+      agent: false
     }, res => {
       const chunks = [];
       res.on('data', chunk => chunks.push(chunk));
@@ -46,9 +56,57 @@ function requestPath(address, pathname, { method = 'GET' } = {}) {
     });
 
     req.once('error', reject);
-    req.end();
+    if (Array.isArray(chunks)) {
+      for (const chunk of chunks) req.write(chunk);
+      req.end();
+      return;
+    }
+    req.end(body);
   });
 }
+
+test('local API request bodies are bounded before route handling', async t => {
+  const server = createLocalDevServer();
+  const address = await listen(server);
+  t.after(() => close(server));
+
+  const exactBody = JSON.stringify('x'.repeat(LOCAL_API_BODY_LIMIT - 2));
+  assert.equal(Buffer.byteLength(exactBody), LOCAL_API_BODY_LIMIT);
+  const exact = await requestPath(address, '/api/strava-auth', {
+    method: 'POST',
+    headers: {
+      'content-length': String(LOCAL_API_BODY_LIMIT),
+      'content-type': 'application/json'
+    },
+    body: exactBody
+  });
+  assert.equal(exact.statusCode, 400);
+
+  const declared = await requestPath(address, '/api/strava-auth', {
+    method: 'POST',
+    headers: {
+      'content-length': String(LOCAL_API_BODY_LIMIT + 1),
+      'content-type': 'application/json'
+    },
+    body: Buffer.alloc(LOCAL_API_BODY_LIMIT + 1, 0x20)
+  });
+  assert.equal(declared.statusCode, 413);
+  assert.deepEqual(
+    JSON.parse(declared.body.toString('utf8')),
+    { error: 'REQUEST_BODY_TOO_LARGE' }
+  );
+
+  const chunked = await requestPath(address, '/api/strava-auth', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    chunks: [
+      Buffer.alloc(LOCAL_API_BODY_LIMIT, 0x20),
+      Buffer.from('x')
+    ]
+  });
+  assert.equal(chunked.statusCode, 413);
+  assert.equal(chunked.headers['cache-control'], 'no-store');
+});
 
 test('local development server exposes only public application assets', async t => {
   const server = createLocalDevServer();
