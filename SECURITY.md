@@ -167,11 +167,14 @@ The following properties must hold:
 - Cache cleanup names only application-owned retired caches and never clears
   user storage, Legacy data, V2 data, or unknown caches. Mixed-version or update
   failure must degrade safely without destructive cleanup.
-- Removing retired public UI must not read, remove, rename, rewrite, or migrate
-  its historical LocalStorage compatibility keys.
-- Current portable Backup/Restore must not serialize, recreate, or otherwise
-  publish those retired compatibility keys. Existing LocalStorage values remain
-  user-owned and byte-for-byte untouched.
+- The current public runtime, including Backup/Restore, must not read, write,
+  remove, rename, rewrite, or migrate historical Run Plus/NSM LocalStorage
+  compatibility keys. Existing values remain user-owned and byte-for-byte
+  untouched.
+- Current portable backups must not serialize or publish those retired keys,
+  and restore must not recreate them. A legacy backup containing a retired
+  entry may restore its other supported data, but the retired entry is ignored
+  without publishing its value.
 
 ## Reportable Findings and Severity Context
 
@@ -251,7 +254,8 @@ athlete-data exposure, or repetition of the historical value.
 
 Private Run Plus/NSM functionality is not reviewed as public product behavior
 after the scope freeze. Accidental reintroduction, reachability, current-feature
-claims, compatibility-key deletion, or disclosure of its private repository or
+claims, any current-runtime read, write, removal, migration, or portable backup
+handling of its compatibility keys, or disclosure of its private repository or
 evidence location remains reportable.
 
 ## Known Limitations and Compensating Controls
