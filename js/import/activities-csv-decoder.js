@@ -1,29 +1,21 @@
 import { IMPORT_ERROR_CODE, importError } from './errors.js';
 import {
-    deepFreeze,
     denseArraySnapshot,
     frozenClone,
     ownDataValues
 } from './safe-data.js';
-import { parseActivitiesCsv } from './csv-tokenizer.js';
+import {
+    ACTIVITIES_CSV_FRAME_FIELDS,
+    ENGLISH_ACTIVITIES_CSV_PROFILE,
+    parseActivitiesCsv,
+    parseActivitiesCsvFrame
+} from './csv-tokenizer.js';
+
+export { ENGLISH_ACTIVITIES_CSV_PROFILE };
 
 export const ACTIVITIES_CSV_MEDIA_TYPE = 'text/csv;profile=strava-activities';
 
-const HEADER_FIELDS = Object.freeze([
-    'activityId',
-    'startTime',
-    'sportType',
-    'name',
-    'elapsedTime',
-    'movingTime',
-    'distance',
-    'elevationGain',
-    'averageHeartRate',
-    'averagePower',
-    'averageCadence',
-    'timeZone',
-    'activityFilename'
-]);
+const HEADER_FIELDS = ACTIVITIES_CSV_FRAME_FIELDS;
 const PROFILE_FIELDS = Object.freeze(['id', 'headers']);
 const INPUT_FIELDS = Object.freeze(['mediaType', 'content']);
 const REQUIRED_HEADERS = Object.freeze(['activityId', 'startTime', 'sportType']);
@@ -39,25 +31,6 @@ const OPTIONAL_PATHS = Object.freeze({
     averagePower: '/activity/averagePowerWatts',
     averageCadence: '/activity/averageCadence',
     timeZone: '/activity/timeZone'
-});
-
-export const ENGLISH_ACTIVITIES_CSV_PROFILE = deepFreeze({
-    id: 'english-v1',
-    headers: {
-        activityId: ['Activity ID'],
-        startTime: ['Activity Date'],
-        sportType: ['Activity Type'],
-        name: ['Activity Name'],
-        elapsedTime: ['Elapsed Time'],
-        movingTime: ['Moving Time'],
-        distance: ['Distance'],
-        elevationGain: ['Elevation Gain'],
-        averageHeartRate: ['Average Heart Rate'],
-        averagePower: ['Average Watts'],
-        averageCadence: ['Average Cadence'],
-        timeZone: ['Activity Time Zone'],
-        activityFilename: ['Activity Filename']
-    }
 });
 
 const SPORTS = Object.freeze({
@@ -289,11 +262,8 @@ function mapSport(value, warnings) {
     return Object.freeze({ category: 'other', variant: null });
 }
 
-function decodeRow(records, profile) {
-    if (records.length !== 2) fail(IMPORT_ERROR_CODE.CSV_MALFORMED);
-    const [header, row] = records;
-    if (row.length !== header.length) fail(IMPORT_ERROR_CODE.CSV_COLUMN_MISMATCH);
-    const resolved = resolveHeaders(header, profile);
+function decodeResolvedRow(row, columnCount, resolved, profile) {
+    if (row.length !== columnCount) fail(IMPORT_ERROR_CODE.CSV_COLUMN_MISMATCH);
     const positions = resolved.positions;
     const warnings = [];
     for (const [field, path] of Object.entries(OPTIONAL_PATHS)) {
@@ -396,7 +366,14 @@ function decodeRow(records, profile) {
     });
 }
 
+function decodeRow(records, profile) {
+    if (records.length !== 2) fail(IMPORT_ERROR_CODE.CSV_MALFORMED);
+    const [header, row] = records;
+    return decodeResolvedRow(row, header.length, resolveHeaders(header, profile), profile);
+}
+
 export function createActivitiesCsvDecoder(profileValue) {
+    const acceptsCompactFrames = profileValue === ENGLISH_ACTIVITIES_CSV_PROFILE;
     const profile = snapshotProfile(profileValue);
     return Object.freeze({
         id: `activities-csv:${profile.id}`,
@@ -408,6 +385,24 @@ export function createActivitiesCsvDecoder(profileValue) {
             }
             if (typeof values.content !== 'string' || values.content.length === 0) {
                 fail(IMPORT_ERROR_CODE.FILE_EMPTY);
+            }
+            const frame = acceptsCompactFrames
+                ? parseActivitiesCsvFrame(values.content)
+                : null;
+            if (frame) {
+                const positions = {};
+                for (let index = 0; index < HEADER_FIELDS.length; index += 1) {
+                    positions[HEADER_FIELDS[index]] = frame.positions[index];
+                }
+                return decodeResolvedRow(
+                    frame.row,
+                    frame.columnCount,
+                    Object.freeze({
+                        positions: Object.freeze(positions),
+                        hasExtra: frame.hasExtra
+                    }),
+                    profile
+                );
             }
             return decodeRow(parseActivitiesCsv(values.content), profile);
         }
