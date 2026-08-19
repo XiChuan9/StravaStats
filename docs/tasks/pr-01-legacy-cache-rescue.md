@@ -7,7 +7,7 @@
 | Status | In review |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/legacy-rescue` |
-| Worktree | `/Users/wangchuanliang/Documents/StravaStats-worktrees/legacy-rescue` |
+| Worktree | `<worktree-root>/legacy-rescue` |
 | Owner | XiChuan9 |
 | Reviewer | 独立 Codex 线程 + XiChuan9 |
 | Related PRD | Sections 2.3、4.1、8.1、8.2、8.7、8.8、9.1、Epic C、20 |

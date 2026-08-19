@@ -8,7 +8,7 @@
 | Status | Final Review Closure complete; remote depth-one, exact-head CI and Ready handoff pending |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/alpha-contract` |
-| Worktree | `/Users/wangchuanliang/.codex/worktrees/3282/StravaStats` |
+| Worktree | `<worktree-root>/<task-name>` |
 | Exact base | `integration/v2@4375d699fb1fc1142d399c158b9ad0c4e7e730dc` |
 | Exact base tree | `b076c4f80cd1d6de7719cebe26e327d18a1f4734` |
 | Owner / release owner | XiChuan9 |

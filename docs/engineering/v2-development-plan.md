@@ -58,10 +58,10 @@ codex/v2/backup-restore
 ## 21.3 Worktree 目录
 
 ```text
-/Users/wangchuanliang/Documents/StravaStats
+<repo-root>
 └── main
 
-/Users/wangchuanliang/Documents/StravaStats-worktrees/
+<worktree-root>/
 ├── v1
 ├── v2
 ├── repo-safety
@@ -97,7 +97,7 @@ codex/v2/backup-restore
 ## 22.1 创建基线
 
 ```bash
-cd /Users/wangchuanliang/Documents/StravaStats
+cd "$HOME/Documents/StravaStats"
 
 git switch main
 git pull --ff-only origin main
@@ -129,7 +129,7 @@ git push -u origin integration/v2
 ## 22.3 创建永久 Worktree
 
 ```bash
-WT_ROOT=/Users/wangchuanliang/Documents/StravaStats-worktrees
+WT_ROOT="$HOME/Documents/StravaStats-worktrees"
 
 mkdir -p "$WT_ROOT"
 
@@ -1015,7 +1015,7 @@ origin/integration/v2
 codex/v2/<task-name>
 
 Worktree：
-/Users/wangchuanliang/Documents/StravaStats-worktrees/<task-name>
+<worktree-root>/<task-name>
 
 任务目标：
 <一句话描述>

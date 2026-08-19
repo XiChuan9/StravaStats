@@ -53,7 +53,7 @@ synthetic/
 建议：
 
 ```text
-/Users/wangchuanliang/Documents/StravaStats-private/
+<private-data-root>/
 ├── local-data/
 ├── fixtures-private/
 ├── exports/

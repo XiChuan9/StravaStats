@@ -10,7 +10,7 @@
 | Base branch | `integration/v2` |
 | Exact base SHA | `84e5e0af23d133a4fdf1e4c0cf371b5b97b26110` |
 | Feature branch | `codex/v2/storage` |
-| Worktree | `/Users/wangchuanliang/.codex/worktrees/09cc/StravaStats` |
+| Worktree | `<worktree-root>/<task-name>` |
 | Owner | XiChuan9 / Codex execution |
 | Reviewer | Control tower independent Final Review — Accepted / PASS |
 | Related PRD | [StravaStats v2 PRD](../product/stravastats-v2-prd.md) |

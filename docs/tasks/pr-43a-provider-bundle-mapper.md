@@ -10,7 +10,7 @@
 | Exact base | `integration/v2@92a735fb4d4809173c5fddf868416bf44642faed` |
 | Exact base tree | `568cf2457f418130ec0a6641478eb45a60e676c1` |
 | Feature branch | `codex/v2/provider-bundle-mapper` |
-| Worktree | `/Users/wangchuanliang/.codex/worktrees/pr43a/StravaStats` |
+| Worktree | `<worktree-root>/<task-name>` |
 | Parent decision | PR-43 / `D-C3.1 A + D-C3.2 B + D-C3.3 A + D-C3.4 A` |
 | Parent Draft | PR #49 |
 | Control tower | `019fa697-6cbf-70f1-a120-bf31ecc9e2ba` |

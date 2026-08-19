@@ -11,8 +11,15 @@
 
 ## 1. 使用规则
 
-本矩阵记录必须长期保持的行为场景。`Automated` 只表示已有自动化覆盖，
-不代表某次执行已通过；实际结果必须链接对应测试、CI 或浏览器证据。
+本矩阵记录必须长期保持的行为场景。`Automated` 只表示目标行为已经由
+默认 `npm test` 的 Node/static runner 完整覆盖，不代表某次执行已通过。
+源码字符串检查、fake-indexeddb、Import/Repository 测试和本地 server
+测试都不能代替真实浏览器渲染或交互验收。
+
+同时要求自动化和真实浏览器的行，在浏览器证据尚未完成或尚未链接时
+必须标记为 `Partial`。浏览器结果必须记录运行日期、浏览器版本、隔离
+profile、synthetic fixtures、实际步骤、console/network 结果和证据位置；
+不得仅凭本矩阵或自动测试状态推断为已通过。
 
 状态：
 
@@ -20,6 +27,7 @@
 Not implemented
 Planned
 Automated
+Partial
 Manual pass
 Failed
 Blocked
@@ -38,8 +46,8 @@ Not applicable
 | REG-004 | Legacy Strava | Bike summary | Bike | 汇总图表和活动表可用 | E2E + visual | Planned |
 | REG-005 | Legacy Strava | Swim summary | Swim | Pool/open-water 逻辑可用 | E2E + visual | Planned |
 | REG-006 | Legacy Strava | Full streams | Activity Detail | 详情、streams、导出可用 | E2E | Planned |
-| REG-007 | Public root | Navigation/assets | Public shell | 不显示已退役私有扩展入口，不加载其脚本或样式 | Static + browser | Automated |
-| REG-008 | Retired extension routes | Navigation | Public shell | 旧扩展路由不渲染私有内容，且不产生运行时错误 | Static + browser | Automated |
+| REG-007 | Public root | Navigation/assets | Public shell | 不显示已退役私有扩展入口，不加载其脚本或样式 | Node/static + browser | Partial |
+| REG-008 | Retired extension routes | Navigation | Public shell | 旧扩展路由不渲染私有内容，且不产生运行时错误 | Node server/static + browser | Partial |
 | REG-009 | Legacy Strava | Summary/polyline | Map | 路线和筛选可用 | E2E + visual | Planned |
 | REG-010 | Legacy Strava | Gear | Gear |装备映射和累计里程可用 | E2E | Planned |
 
@@ -118,14 +126,21 @@ Not applicable
 
 | ID | Scenario | Expected result | Target test | Status |
 | --- | --- | --- | --- | --- |
-| REG-120 | 普通 `/run` 路由 | Run 汇总、图表和活动表仍正常渲染 | Static + browser | Automated |
-| REG-121 | Source Manager 导入 synthetic FIT | 导入经 Repository 后出现在 Activities | Import + Repository + browser | Automated |
-| REG-122 | Source Manager 导入 synthetic TCX | 导入经 Repository 后出现在 Activities | Import + Repository + browser | Automated |
-| REG-123 | 重复导入同一 synthetic 文件 | Exact Identity 保持一条活动 | Import + Repository + browser | Automated |
+| REG-120 | 普通 `/run` 路由 | Run 汇总、图表和活动表仍正常渲染 | Node/static + browser | Partial |
+| REG-121 | Source Manager 导入 synthetic FIT | 导入经 Repository 后出现在 Activities | Node Import/Repository + browser | Partial |
+| REG-122 | Source Manager 导入 synthetic TCX | 导入经 Repository 后出现在 Activities | Node Import/Repository + browser | Partial |
+| REG-123 | 重复导入同一 synthetic 文件 | Exact Identity 保持一条活动 | Node Import/Repository + browser | Partial |
 | REG-124 | Public scope freeze 数据库 diff | IndexedDB version、schema 和 migration 不变 | Static + storage | Automated |
-| REG-125 | 历史用户自有扩展设置 | 公开运行时不读取、迁移或删除原有 LocalStorage keys | Static + browser | Automated |
-| REG-126 | Legacy / Canonical 数据 | 不因公开范围冻结而删除、覆盖或迁移 | Storage + browser | Automated |
+| REG-125 | 历史用户自有扩展设置 | 公开运行时不读取、迁移或删除原有 LocalStorage keys | Node/static + browser | Partial |
+| REG-126 | Legacy / Canonical 数据 | 不因公开范围冻结而删除、覆盖或迁移 | Node storage + browser | Partial |
 | REG-127 | Service Worker / Cache | cache generation 不变，验收前后计数无破坏性减少 | Static + browser | Planned |
+
+当前表中 `Partial` 仅确认对应 Node/static 子集已有覆盖；真实浏览器部分
+在独立验收记录被创建并链接前保持 pending。尤其是 Activities、Run、
+Activity Detail 的实际渲染，Backup/Diagnostics、LocalStorage/IndexedDB/
+Cache 前后状态、退役路由直接访问、console error 和外部上传检查，均不
+由 `tests/public/local-import-core-freeze.test.js` 的源码或 fake-indexeddb
+断言替代。
 
 ### Browser coverage
 

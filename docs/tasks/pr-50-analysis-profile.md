@@ -7,7 +7,7 @@
 | Status | Local implementation and browser acceptance complete; exact-head CI pending |
 | Base checkpoint | `ba7b8cf` |
 | Feature branch | `codex/v2-analysis-profile` |
-| Worktree | `/Users/wangchuanliang/Documents/StravaStats` |
+| Worktree | `<repo-root>` |
 | Data migration | None |
 | Repository API change | None |
 | Backup format change | None |

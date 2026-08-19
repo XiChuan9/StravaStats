@@ -90,7 +90,7 @@ pr-04a-summary-consumers.md
 | Status | Draft |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/<task>` |
-| Worktree | `/Users/.../<task>` |
+| Worktree | `<worktree-root>/<task-name>` |
 | Owner | |
 | Reviewer | |
 | Related PRD | |

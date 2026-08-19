@@ -10,7 +10,7 @@
 | Exact base | `integration/v2@e28a047c21ad4bd6f92fdfe368f94593e6c9f80a` |
 | Exact base tree | `a9a92bf7ce7cae98711cb5ab5a06619168923eb4` |
 | Feature branch | `codex/v2/provider-artifact-import` |
-| Worktree | `/Users/wangchuanliang/.codex/worktrees/2e78/StravaStats` |
+| Worktree | `<worktree-root>/<task-name>` |
 | Parent decision | `D-C3.1 A + D-C3.2 B + D-C3.3 A + D-C3.4 A` |
 | Completed prerequisite | C3a / merged PR #50 at the exact base |
 | Pull request | [Draft PR #51](https://github.com/XiChuan9/StravaStats/pull/51), open against `integration/v2` |

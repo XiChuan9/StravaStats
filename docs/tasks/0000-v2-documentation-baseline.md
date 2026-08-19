@@ -7,7 +7,7 @@
 | Status | Completed |
 | Base branch | `main` |
 | Feature branch | `codex/docs/v2-governance-baseline` |
-| Worktree | `/Users/wangchuanliang/Documents/StravaStats` |
+| Worktree | `<repo-root>` |
 | Owner | XiChuan9 |
 | Reviewer | XiChuan9 |
 | Related PRD | [StravaStats v2 PRD](../product/stravastats-v2-prd.md) |

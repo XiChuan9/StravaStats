@@ -10,7 +10,7 @@
 | Exact base | `integration/v2@b9e4e1d7eedb5051a582e15d39be8c0ffc1a43df` |
 | Exact base tree | `8692ac73a08a4725b68f40cf135be743d3018666` |
 | Feature branch | `codex/v2/source-manager-connection-controller` |
-| Worktree | `/Users/wangchuanliang/.codex/worktrees/pr41/StravaStats` |
+| Worktree | `<worktree-root>/<task-name>` |
 | Owner decision | C1-A3 implementation and exact ten-path maximum approved; live authorization boundaries withheld |
 | Parent decision | PR-40 / D-A A2 / D-B C / C1 A3 at `c864930f3890a392283939067f5d4d8da494d96f` |
 | Parent pull request | PR #46 remains open and Draft; this task does not modify it |
@@ -71,7 +71,7 @@ allowlist is not implementation authority.
   `origin/integration/v2`, and new worktree HEAD were verified at exact commit
   `b9e4e1d7eedb5051a582e15d39be8c0ffc1a43df`, tree
   `8692ac73a08a4725b68f40cf135be743d3018666`.
-- The feature branch and `/Users/wangchuanliang/.codex/worktrees/pr41` path were absent before
+- The feature branch and its isolated task worktree were absent before
   creation. The isolated branch/worktree was then created at the exact base. The locked long-lived
   integration worktree was not modified.
 - PR #46's worktree was clean at `c864930f3890a392283939067f5d4d8da494d96f` before this task and

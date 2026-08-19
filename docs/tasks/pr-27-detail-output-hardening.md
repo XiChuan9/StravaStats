@@ -9,7 +9,7 @@
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/dom-safety-detail-gear` |
 | Exact base | `integration/v2@7787ee707c167cca02ba9fd1c1606c94fc2d1411` |
-| Worktree | `/Users/wangchuanliang/.codex/worktrees/09e9/StravaStats` |
+| Worktree | `<worktree-root>/<task-name>` |
 | Owner | Codex |
 | Reviewer | Independent findings-first reviewer required |
 | Dependencies | PR #32 R1 squash merged; integration push CI success |

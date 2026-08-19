@@ -7,7 +7,7 @@
 | Status | Ready for review |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/detail-consumers` |
-| Worktree | `/Users/wangchuanliang/Documents/StravaStats-worktrees/detail-consumers` |
+| Worktree | `<worktree-root>/detail-consumers` |
 | Owner | XiChuan9 |
 | Reviewer | 控制塔 + 独立审查任务 |
 | Related PRD | Sections 4.1、5、8.4、8.6、10 Epic B2、11.2、19 |
@@ -136,7 +136,7 @@ getGear(gearId)
 
 | Check | Actual result |
 | --- | --- |
-| Source worktree | `/Users/wangchuanliang/Documents/StravaStats-worktrees/v2` |
+| Source worktree | `<worktree-root>/v2` |
 | Source branch | `integration/v2` |
 | Source worktree status | Clean |
 | Local HEAD | `66cdc2c457457a93bec46fdf98c5a508c96770c9` |

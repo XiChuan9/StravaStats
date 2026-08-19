@@ -35,6 +35,57 @@ test('privacy guard digest matching is testable without private literals', () =>
   );
 });
 
+test('privacy guard rejects personal filesystem and private evidence locations', () => {
+  const macOSHome = ['', 'Users', 'synthetic-user', 'Documents', 'StravaStats'].join('/');
+  const codexDirectory = ['.', 'codex'].join('');
+  const codexWorktree = [
+    codexDirectory,
+    'worktrees',
+    'synthetic-id',
+    'StravaStats',
+  ].join('/');
+  const privateEvidence = [
+    ['StravaStats', 'private-data'].join('-'),
+    'backups',
+  ].join('/');
+
+  assert.equal(
+    findContentViolation('synthetic.md', `Repository: ${macOSHome}`),
+    'personal macOS home path',
+  );
+  assert.equal(
+    findContentViolation('synthetic.md', `Worktree: ${codexWorktree}`),
+    'Codex worktree identifier path',
+  );
+  assert.equal(
+    findContentViolation('synthetic.md', `Evidence: ${privateEvidence}`),
+    'private evidence directory path',
+  );
+  for (const file of ['synthetic.csv', 'synthetic.svg', '.env.example']) {
+    assert.equal(
+      findContentViolation(file, `Repository: ${macOSHome}`),
+      'personal macOS home path',
+      file,
+    );
+  }
+  const placeholderHome = ['', 'Users', '<name>', 'Documents'].join('/');
+  assert.equal(
+    findContentViolation('synthetic.md', `Repository: ${placeholderHome}`),
+    'personal macOS home path',
+  );
+});
+
+test('privacy guard permits portable repository and worktree placeholders', () => {
+  for (const path of [
+    '$HOME/Documents/StravaStats',
+    '<repo-root>',
+    '<worktree-root>/feature',
+    '<private-evidence-root>',
+  ]) {
+    assert.equal(findContentViolation('synthetic.md', `Path: ${path}`), null, path);
+  }
+});
+
 test('opaque string IDs remain permitted as inert data', () => {
   for (const id of [
     '0',

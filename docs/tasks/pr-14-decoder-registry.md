@@ -9,7 +9,7 @@
 | Base branch | `integration/v2` |
 | Exact base SHA | `76846965023c6a049df4d6a02015ccf54a9994c3` |
 | Feature branch | `codex/v2/decoder-registry` |
-| Worktree | `/Users/wangchuanliang/.codex/worktrees/cfd2/StravaStats` |
+| Worktree | `<worktree-root>/<task-name>` |
 | Owner | XiChuan9 / Codex execution |
 | Reviewer | Independent Final Review before Ready transition |
 | Dependency | PR-13 / PR #19 merged into `integration/v2` |

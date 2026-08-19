@@ -9,7 +9,7 @@
 | Base branch | `integration/v2` |
 | Exact base SHA | `25e1b24d876ddad1c429c7ddadd2061ef99c21a9` |
 | Feature branch | `codex/v2/shadow-writer` |
-| Worktree | `/Users/wangchuanliang/.codex/worktrees/52ff/StravaStats` |
+| Worktree | `<worktree-root>/<task-name>` |
 | Owner | XiChuan9 / Codex execution |
 | Reviewer | Control tower + independent Final Review |
 | Dependency | PR-05 / PR #11 merged into `integration/v2` |

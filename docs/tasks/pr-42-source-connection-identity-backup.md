@@ -10,7 +10,7 @@
 | Exact base | `integration/v2@7dcb90ff171599a38eae31fadd09adc2f2ba7edb` |
 | Exact base tree | `941e5a6934f4e781629f42ddbec764736f815393` |
 | Feature branch | `codex/v2/source-connection-identity-backup` |
-| Worktree | `/Users/wangchuanliang/.codex/worktrees/pr42/StravaStats` |
+| Worktree | `<worktree-root>/<task-name>` |
 | Parent decision | PR-40 / D-A A2 / D-B C, staged C1-C4 |
 | Completed prerequisite | C1 / PR #47 squash-merged as `7dcb90ff171599a38eae31fadd09adc2f2ba7edb` |
 | Pull request | [Draft PR #48](https://github.com/XiChuan9/StravaStats/pull/48), open against `integration/v2` |

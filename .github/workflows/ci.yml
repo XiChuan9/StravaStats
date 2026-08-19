@@ -45,6 +45,14 @@ jobs:
           test "$(git rev-parse --is-shallow-repository)" = "true"
           test "$(git rev-list --count HEAD)" = "1"
 
+      - name: Fetch fixed public scope-freeze base
+        if: github.event_name == 'pull_request' && github.head_ref == 'codex/public/local-import-core'
+        run: git fetch --no-tags --depth=1 origin 6924e7c77036c9a743f908936a28a2719936b726
+
+      - name: Guard public scope-freeze changed paths
+        if: github.event_name == 'pull_request' && github.head_ref == 'codex/public/local-import-core'
+        run: node scripts/check-public-scope-freeze.mjs
+
       - name: Install dependencies
         run: npm ci
 

@@ -7,7 +7,7 @@
 | Status | Approved for merge |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/repo-safety` |
-| Worktree | `/Users/wangchuanliang/Documents/StravaStats-worktrees/repo-safety` |
+| Worktree | `<worktree-root>/repo-safety` |
 | Owner | XiChuan9 |
 | Reviewer | 独立 Codex 线程 + XiChuan9 |
 | Related PRD | Sections 2.3、4.1、8.1、9.3 |

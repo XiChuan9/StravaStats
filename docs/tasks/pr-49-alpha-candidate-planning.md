@@ -8,7 +8,7 @@
 | Status | A3 implementation authorized; fifteen-path cumulative maximum frozen |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/alpha-candidate-planning` |
-| Worktree | `/Users/wangchuanliang/.codex/worktrees/d939/StravaStats` |
+| Worktree | `<worktree-root>/<task-name>` |
 | Exact base | `integration/v2@de9b47f3551d08102364f0b0794f487935d167a9` |
 | Exact base tree | `4a273bfffe5248ecdb4af7dbe6707c318398c6ac` |
 | Owner / release owner | XiChuan9 |
@@ -61,7 +61,7 @@ git diff --check          PASS
 ```
 
 The locked unique verification worktree at
-`/Users/wangchuanliang/Documents/StravaStats-worktrees/v2` names `integration/v2` at the same exact
+`<worktree-root>/v2` names `integration/v2` at the same exact
 commit. `main` and `maintenance/v1` are outside this task and remain unchanged.
 
 ## A1 staged authority

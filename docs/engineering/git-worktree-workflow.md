@@ -81,20 +81,20 @@ codex/v2/decoder-fit
 长期 worktree：
 
 ```text
-/Users/wangchuanliang/Documents/StravaStats
+<repo-root>
     → main
 
-/Users/wangchuanliang/Documents/StravaStats-worktrees/v1
+<worktree-root>/v1
     → maintenance/v1
 
-/Users/wangchuanliang/Documents/StravaStats-worktrees/v2
+<worktree-root>/v2
     → integration/v2
 ```
 
 短期功能 worktree：
 
 ```text
-/Users/wangchuanliang/Documents/StravaStats-worktrees/<task-name>
+<worktree-root>/<task-name>
     → codex/v2/<task-name>
 ```
 

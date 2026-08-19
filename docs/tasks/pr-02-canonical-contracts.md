@@ -7,7 +7,7 @@
 | Status | In review |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/contracts` |
-| Worktree | `/Users/wangchuanliang/Documents/StravaStats-worktrees/contracts` |
+| Worktree | `<worktree-root>/contracts` |
 | Owner | XiChuan9 |
 | Reviewer | 独立 Codex 线程 + XiChuan9 |
 | Related PRD | Sections 4、5、6、8.4、9、15、17、19 |
@@ -1256,7 +1256,7 @@ documentation 更新：
 
 ```text
 A0 local/remote audit:
-  Worktree: /Users/wangchuanliang/Documents/StravaStats-worktrees/contracts
+  Worktree: <worktree-root>/contracts
   Branch: codex/v2/contracts
   Starting HEAD: b96bb6aa7e9929845af51b5151f7ba195b4489d4
   Base: origin/integration/v2 at b96bb6aa7e9929845af51b5151f7ba195b4489d4

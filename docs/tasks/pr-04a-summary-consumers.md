@@ -8,7 +8,7 @@
 | Base branch | `integration/v2` |
 | Base SHA | `2178858f29d6c8efe5cf45de5ff07443387d2577` |
 | Feature branch | `codex/v2/summary-consumers` |
-| Worktree | `/Users/wangchuanliang/Documents/StravaStats-worktrees/summary-consumers` |
+| Worktree | `<worktree-root>/summary-consumers` |
 | Owner | XiChuan9 |
 | Reviewer | Control tower + independent review |
 | Related PRD | Sections 4.1, 5, 8.4, 8.6, 11.2, 19 |
@@ -530,8 +530,8 @@ npm 11.11.0.
 
 | Audit | Actual result |
 | --- | --- |
-| Main repository | `/Users/wangchuanliang/Documents/StravaStats`; `main`; clean |
-| V2 worktree | `/Users/wangchuanliang/Documents/StravaStats-worktrees/v2`; locked as `Long-lived v2 integration worktree`; clean |
+| Main repository | `<repo-root>`; `main`; clean |
+| V2 worktree | `<worktree-root>/v2`; locked as `Long-lived v2 integration worktree`; clean |
 | Local `integration/v2` | `2178858f29d6c8efe5cf45de5ff07443387d2577` |
 | `origin/integration/v2` after `git fetch origin --prune` | `2178858f29d6c8efe5cf45de5ff07443387d2577` |
 | Local/remote ahead/behind | `0/0` |
@@ -553,7 +553,7 @@ This was an environment permission boundary, not a repository failure.
 
 ## A1 evidence
 
-- Worktree: `/Users/wangchuanliang/Documents/StravaStats-worktrees/summary-consumers`.
+- Worktree: `<worktree-root>/summary-consumers`.
 - Branch: `codex/v2/summary-consumers`.
 - Starting HEAD: exact fixed base `2178858f29d6c8efe5cf45de5ff07443387d2577`.
 - Git automatically set the new branch to track the base remote; that incorrect temporary
@@ -2178,7 +2178,7 @@ A0:
   V2 worktree final — clean
 
 A1:
-  Worktree — /Users/wangchuanliang/Documents/StravaStats-worktrees/summary-consumers
+  Worktree — <worktree-root>/summary-consumers
   Branch — codex/v2/summary-consumers
   Task Brief commit — c82ce35573f654e278446f6a768b3392d79af168
   Push — Success; correct origin feature upstream; no force push

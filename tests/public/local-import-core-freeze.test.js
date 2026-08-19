@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { webcrypto } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
@@ -23,6 +24,12 @@ import { createSyntheticFitActivity } from
     '../fixtures/synthetic/fit/fit-fixture.js';
 import { createSyntheticTcxActivity } from
     '../fixtures/synthetic/tcx/tcx-fixture.js';
+import {
+    PROHIBITED_SCOPE_FILES,
+    PROHIBITED_SCOPE_PREFIXES,
+    findProhibitedScopeChanges,
+    scopeFreezeDiffArgs
+} from '../../scripts/check-public-scope-freeze.mjs';
 
 const ROOT = new URL('../../', import.meta.url);
 const RETIRED_SLUG = ['run', 'plus'].join('-');
@@ -30,6 +37,7 @@ const RETIRED_SYMBOL = ['render', 'Run', 'Plus', 'Tab'].join('');
 const RETIRED_TAB = `${RETIRED_SLUG}-tab`;
 const RETIRED_SECONDARY = ['n', 'sm'].join('');
 const RETIRED_STORAGE_PREFIX = ['run', 'plus'].join('_');
+const SCOPE_FREEZE_BRANCH = 'codex/public/local-import-core';
 
 async function source(path) {
     return readFile(new URL(path, ROOT), 'utf8');
@@ -201,4 +209,55 @@ test('scope freeze preserves V6 schema and historical settings compatibility', a
     for (const key of historicalKeys) {
         assert.equal(publicRuntime.includes(key), false, key);
     }
+});
+
+test('scope freeze changed-path classifier covers every literal prohibited boundary', () => {
+    const prohibited = [
+        ...PROHIBITED_SCOPE_PREFIXES.map(prefix => `${prefix}synthetic.js`),
+        ...PROHIBITED_SCOPE_FILES,
+        'LICENSE',
+        'LICENSE.md',
+        'LICENSES',
+        'LICENSE_extra',
+        'licenses/LICENSE.md'
+    ];
+    assert.deepEqual(findProhibitedScopeChanges(prohibited), [...prohibited].sort());
+    assert.deepEqual(findProhibitedScopeChanges([
+        'docs/testing/regression-matrix.md',
+        'scripts/check-privacy.mjs',
+        'tests/public/local-import-core-freeze.test.js'
+    ]), []);
+    assert.deepEqual(
+        scopeFreezeDiffArgs('synthetic-base'),
+        ['diff', '--no-renames', '--name-only', '-z', 'synthetic-base', '--']
+    );
+});
+
+function currentTaskBranch() {
+    if (process.env.GITHUB_ACTIONS === 'true' && process.env.GITHUB_HEAD_REF) {
+        return process.env.GITHUB_HEAD_REF;
+    }
+    try {
+        return execFileSync('git', ['branch', '--show-current'], {
+            cwd: new URL('../../', import.meta.url),
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore']
+        }).trim();
+    } catch {
+        return '';
+    }
+}
+
+test('current public scope-freeze branch changes no prohibited path', {
+    skip: currentTaskBranch() !== SCOPE_FREEZE_BRANCH
+}, () => {
+    assert.doesNotThrow(() => execFileSync(
+        process.execPath,
+        ['scripts/check-public-scope-freeze.mjs'],
+        {
+            cwd: new URL('../../', import.meta.url),
+            encoding: 'utf8',
+            stdio: 'pipe'
+        }
+    ));
 });

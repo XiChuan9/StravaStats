@@ -19,8 +19,10 @@ const allowedEnvironmentFiles = new Set(['.env.example']);
 const sportsExportPattern = /\.(fit|tcx|gpx|zip)$/i;
 const syntheticFixturePrefix = 'tests/fixtures/synthetic/';
 const trackedTextExtensions = new Set([
-  '.css', '.html', '.js', '.json', '.md', '.mjs', '.txt', '.yaml', '.yml',
+  '.css', '.csv', '.html', '.js', '.json', '.md', '.mjs', '.sh', '.svg',
+  '.ts', '.tsx', '.txt', '.xml', '.yaml', '.yml',
 ]);
+const trackedTextFileNames = new Set(['.env.example']);
 const forbiddenIdentityDigests = new Set([
   'd197826b0e9da2a20d7be61f043731d65c85b4556f9b2e5212ed2d19117230ae',
   '2717176971c948ffa3370c256f3c0ce28cc94633d2cf78c917a93db77ba03fee',
@@ -43,6 +45,20 @@ const identityStructurePatterns = Object.freeze([
   Object.freeze({
     pattern: /\bparseInt\s*\(\s*activityId\b/,
     reason: 'opaque activity ID numeric parsing',
+  }),
+]);
+const privateLocationPatterns = Object.freeze([
+  Object.freeze({
+    pattern: /\/Users\//,
+    reason: 'personal macOS home path',
+  }),
+  Object.freeze({
+    pattern: /\.codex[\\/]worktrees[\\/]/,
+    reason: 'Codex worktree identifier path',
+  }),
+  Object.freeze({
+    pattern: /\bStravaStats-private(?:-data)?(?:[\\/]|$)/i,
+    reason: 'private evidence directory path',
   }),
 ]);
 
@@ -92,7 +108,11 @@ export function findContentViolation(
   content,
   identityDigests = forbiddenIdentityDigests,
 ) {
-  if (!trackedTextExtensions.has(extname(file).toLowerCase())) return null;
+  if (!trackedTextFileNames.has(file)
+    && !trackedTextExtensions.has(extname(file).toLowerCase())) return null;
+  for (const { pattern, reason } of privateLocationPatterns) {
+    if (pattern.test(content)) return reason;
+  }
   for (const { pattern, reason } of identityStructurePatterns) {
     if (pattern.test(content)) return reason;
   }

@@ -7,7 +7,7 @@
 | Status | Ready for review |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/repository` |
-| Worktree | `/Users/wangchuanliang/Documents/StravaStats-worktrees/repository` |
+| Worktree | `<worktree-root>/repository` |
 | Owner | XiChuan9 |
 | Reviewer | 控制塔 + 独立审查线程 |
 | Related PRD | Sections 4.1、5、8.4、8.6、8.7、17、19 |
@@ -519,7 +519,7 @@ Strava Connector、Feature Flag 接线或 consumer migration。
 
 | Check | Result |
 | --- | --- |
-| V2 worktree | `/Users/wangchuanliang/Documents/StravaStats-worktrees/v2` |
+| V2 worktree | `<worktree-root>/v2` |
 | V2 branch | `integration/v2` |
 | Local HEAD | `5137afeff2530a228c2be79af54bd04912a0c389` |
 | Remote `integration/v2` | 与预期 SHA identical，ahead/behind `0/0` |

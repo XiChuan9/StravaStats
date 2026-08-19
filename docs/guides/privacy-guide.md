@@ -27,6 +27,12 @@ Diagnostics, telemetry, or public support messages:
 Use fixed safe error codes and non-identifying counts. Opaque identifiers remain private even when
 they do not look like a person's name.
 
+Repository prose and test evidence must use portable expressions such as `$HOME`, `<repo-root>`,
+`<worktree-root>`, `<private-data-root>`, or `<private-evidence-root>`. Do not record a developer
+username, an absolute home-directory path, a generated worktree identifier, or the concrete
+location/name of a private evidence directory. The repository privacy check enforces these path
+boundaries for tracked text.
+
 ## Where data lives
 
 - Canonical activities, Import records, optional SourceConnection metadata, and the privacy-minimal

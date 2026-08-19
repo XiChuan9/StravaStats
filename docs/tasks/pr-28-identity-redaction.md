@@ -9,7 +9,7 @@
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/identity-redaction` |
 | Exact base | `integration/v2@e760946583f163085b0a8bac887b66fc5c9cec3d` |
-| Worktree | `/Users/wangchuanliang/.codex/worktrees/fc15/StravaStats` |
+| Worktree | `<worktree-root>/<task-name>` |
 | Owner | Codex |
 | Reviewer | Independent findings-first reviewer required |
 | Dependencies | R1 PR #32 and R2 PR #33 Squash Merged; exact-base integration push CI successful |

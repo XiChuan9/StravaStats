@@ -9,7 +9,7 @@
 | Base branch | `integration/v2` |
 | Exact base SHA | `b8525bce7ca7d536f30ad3ed7312332a12ef243e` |
 | Feature branch | `codex/v2/cutover-summary` |
-| Worktree | `/Users/wangchuanliang/.codex/worktrees/ecf4/StravaStats` |
+| Worktree | `<worktree-root>/<task-name>` |
 | Owner | XiChuan9 / Codex execution |
 | Reviewer | Independent findings-first Final Review before Ready transition |
 | Dependency | PR-15 local-first bootstrap merged into `integration/v2` |

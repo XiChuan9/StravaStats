@@ -647,3 +647,35 @@ test('documentation index and limitations point to current scope authority and l
     assert.match(limitations, /2026-11-12/);
     assert.match(limitations, /no-rewrite[\s\S]{0,100}(?:disposition|risk acceptance)/i);
 });
+
+test('pre-freeze baseline is historical and browser acceptance is not overclaimed', async () => {
+    const [baseline, matrix] = await Promise.all([
+        source('docs/baseline/README.md'),
+        source('docs/testing/regression-matrix.md')
+    ]);
+
+    assert.match(baseline, /Status \| Historical — frozen point-in-time pre-freeze baseline/i);
+    assert.match(baseline, /not current public product|不是当前公开产品/i);
+    assert.match(baseline, /public-local-import-core-freeze\.md/i);
+    assert.match(baseline, /Run Plus[\s\S]{0,80}NSM[\s\S]{0,180}历史私有扩展/i);
+
+    const partialBrowserRows = [
+        'REG-007',
+        'REG-008',
+        'REG-120',
+        'REG-121',
+        'REG-122',
+        'REG-123',
+        'REG-125',
+        'REG-126'
+    ];
+    for (const id of partialBrowserRows) {
+        const row = matrix.split('\n').find(line => line.startsWith(`| ${id} |`));
+        assert.notEqual(row, undefined, `${id} row exists`);
+        assert.match(row, /\| Partial \|$/, `${id} must remain partial until browser evidence is linked`);
+    }
+    assert.match(matrix, /fake-indexeddb[\s\S]{0,160}不能代替真实浏览器/i);
+    assert.match(matrix, /真实浏览器部分[\s\S]{0,80}pending/i);
+    assert.match(matrix, /\| REG-124 \|[^\n]*\| Automated \|/);
+    assert.match(matrix, /\| REG-127 \|[^\n]*\| Planned \|/);
+});
