@@ -291,7 +291,6 @@ function compileSummaryBoundary(source) {
             resetSummarySessionGears,
             applySummarySessionGearLoad,
             buildSessionGearNameMap,
-            createRunPlusRenderOptions,
             selectPreprocessingAthlete,
             readCanonicalGlobalMapRoute
         };`
@@ -318,7 +317,6 @@ const {
     resetSummarySessionGears,
     applySummarySessionGearLoad,
     buildSessionGearNameMap,
-    createRunPlusRenderOptions,
     selectPreprocessingAthlete,
     readCanonicalGlobalMapRoute
 } = compileSummaryBoundary(mainSource);
@@ -1261,63 +1259,6 @@ test('Demo preprocessing context blocks Legacy athlete fallback when metadata is
     );
 });
 
-test('Run Plus Demo data façade uses only the Demo Repository session', async () => {
-    const storage = new MemoryStorage({
-        ...realLibrary(),
-        ...demoNamespace()
-    });
-    storage.operations = [];
-    storage.forbiddenReads = new Set([
-        'strava_tokens',
-        'strava_activities',
-        'strava_athlete_data',
-        'strava_training_zones',
-        'strava_gears'
-    ]);
-    const harness = repositorySessionHarness({ storage, sessionMode: 'demo' });
-    const session = establishSummaryRepositorySession({
-        activeSessionMode: null,
-        sessionRepository: null,
-        requestedSessionMode: 'demo',
-        repositoryFactory: harness.factory
-    }).sessionRepository;
-    const gears = getDemoGears(storage);
-    const options = createRunPlusRenderOptions({
-        sessionRepository: session,
-        sessionGears: gears,
-        onFiltersChange() {}
-    });
-    const activityId = String(getDemoActivities(storage)[0].id);
-
-    const activity = await options.getActivity(activityId);
-    const streams = await options.getStreams(activityId);
-
-    assert.equal(activity.id, getDemoActivities(storage)[0].id);
-    assert.deepEqual(streams, {});
-    assert.deepEqual(harness.calls.getActivity, [activityId]);
-    assert.deepEqual(harness.calls.getStreams, [{
-        activityId,
-        options: {
-            types: [
-                'time',
-                'distance',
-                'velocity_smooth',
-                'heartrate',
-                'cadence',
-                'altitude'
-            ]
-        }
-    }]);
-    assert.notEqual(options.gears, gears);
-    assert.deepEqual(options.gears, gears);
-    assert.equal(Object.isFrozen(options), true);
-    assert.equal(Object.isFrozen(options.gears), true);
-    assert.deepEqual(
-        storage.getItemCalls.filter(key => storage.forbiddenReads.has(key)),
-        []
-    );
-});
-
 test('Entering Demo adds only Demo keys and preserves the real snapshot byte-for-byte', () => {
     const storage = new MemoryStorage(realLibrary());
     const before = storage.snapshot();
@@ -1751,14 +1692,12 @@ test('Source and privacy boundaries enforce production-path isolation', async ()
         authSource,
         apiSource,
         athleteSource,
-        runPlusSource,
         indexSource
     ] = await Promise.all([
         readFile(new URL('js/demo/index.js', projectRoot), 'utf8'),
         readFile(new URL('js/app/auth.js', projectRoot), 'utf8'),
         readFile(new URL('js/services/api.js', projectRoot), 'utf8'),
         readFile(new URL('js/tabs/athlete.js', projectRoot), 'utf8'),
-        readFile(new URL('js/tabs/run-plus.js', projectRoot), 'utf8'),
         readFile(new URL('index.html', projectRoot), 'utf8')
     ]);
     const prohibitedMutation = /(?:setItem|removeItem)\(\s*['"](?:strava_tokens|strava_activities|strava_athlete_data|strava_training_zones|strava_gears|dashboard_settings)/;
@@ -1794,8 +1733,10 @@ test('Source and privacy boundaries enforce production-path isolation', async ()
         2,
         'initialize and refresh must call the production activity loader'
     );
-    assert.match(mainSource, /createRunPlusRenderOptions\(\{/);
-    assert.match(mainSource, /sessionRepository:\s*requireSummaryRepositorySession\(/);
+    assert.match(
+        mainSource,
+        /function renderRunRelatedTabs\(\)\s*\{\s*renderRunAnalysisTab\(/
+    );
     assert.match(
         mainSource,
         /return buildSessionGearNameMap\(sessionGears\)/
@@ -1810,20 +1751,6 @@ test('Source and privacy boundaries enforce production-path isolation', async ()
     assert.equal(athleteSource.includes('strava_training_zones'), false);
     assert.equal(athleteSource.includes('active athlete'), false);
 
-    for (const pattern of [
-        /getCachedGears|strava_gears|strava_tokens/,
-        /\/api\/strava-/,
-        /Authorization|\bfetch\s*\(/,
-        /indexedDB|createRepository|new\s+\w*Connector/
-    ]) {
-        assert.doesNotMatch(runPlusSource, pattern);
-    }
-    assert.equal(
-        runPlusSource.includes("console.error('NSM interval analysis failed:'"),
-        false
-    );
-    assert.match(runPlusSource, /options\.getActivity\(activityId\)/);
-    assert.match(runPlusSource, /options\.getStreams\(activityId\)/);
     assert.match(
         indexSource,
         /id="logout-button"[\s\S]*?aria-label="Disconnect Strava"[\s\S]*?title="Disconnect Strava"/

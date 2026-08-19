@@ -525,7 +525,6 @@ test('Main gear lifecycle resets stale context and sets successful gears before 
     });
     setter(sessionGears);
     events.push({ type: 'run-render', gears: sessionGears });
-    events.push({ type: 'run-plus-render', gears: sessionGears });
     events.push({ type: 'gear-render', gears: sessionGears });
 
     assert.deepEqual(resetGears, []);
@@ -541,7 +540,6 @@ test('Main gear lifecycle resets stale context and sets successful gears before 
         'load',
         'set',
         'run-render',
-        'run-plus-render',
         'gear-render'
     ]);
     assert.deepEqual(events[1].gears, []);
@@ -1325,7 +1323,7 @@ test('Boundary extraction and session construction perform no network or storage
     assert.equal(storage, 0);
 });
 
-test('Run and Run Plus public renderers exclude unusable optional metrics without non-finite output', async () => {
+test('Run and generic scoped renderers exclude unusable optional metrics without non-finite output', async () => {
     const savedDocument = globalThis.document;
     const savedNode = globalThis.Node;
     const savedChart = globalThis.Chart;
@@ -1403,8 +1401,8 @@ test('Run and Run Plus public renderers exclude unusable optional metrics withou
         querySelectorAll() { return []; }
     }
 
-    const baseId = id => id.startsWith('run-plus-')
-        ? id.slice('run-plus-'.length)
+    const baseId = id => id.startsWith('embedded-')
+        ? id.slice('embedded-'.length)
         : id;
     const ensureElement = id => {
         if (elements.has(id)) return elements.get(id);
@@ -1575,16 +1573,16 @@ test('Run and Run Plus public renderers exclude unusable optional metrics withou
 
         assert.doesNotThrow(() => {
             renderRunAnalysisTab(runs, null, null, 'all', 4, {
-                idPrefix: 'run-plus-',
+                idPrefix: 'embedded-',
                 root: documentObject
             });
         });
         assert.equal(
-            ensureElement('run-plus-run-summary-cards').innerHTML,
+            ensureElement('embedded-run-summary-cards').innerHTML,
             runSummary
         );
         assert.match(
-            visibleText(ensureElement('run-plus-run-all-table')),
+            visibleText(ensureElement('embedded-run-all-table')),
             /\b0\.00\b/
         );
 
@@ -1691,7 +1689,7 @@ test('Run and Run Plus public renderers exclude unusable optional metrics withou
         });
         assert.doesNotThrow(() => {
             renderRunAnalysisTab(extremeRuns, null, null, 'all', 4, {
-                idPrefix: 'run-plus-',
+                idPrefix: 'embedded-',
                 root: documentObject
             });
         });

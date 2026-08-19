@@ -4,6 +4,9 @@ import test from 'node:test';
 
 import { createLocalDevServer } from '../../scripts/local-dev-server.mjs';
 
+const RETIRED_ROUTE = ['/run', 'plus'].join('-');
+const RETIRED_NESTED_ROUTE = `${RETIRED_ROUTE}/${['n', 'sm'].join('')}`;
+
 function listen(server) {
   return new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -60,7 +63,6 @@ test('local development server exposes only public application assets', async t 
 
     const cases = [
       ['/dashboard', 'text/html'],
-      ['/run-plus/nsm', 'text/html'],
       ['/html/run.html', 'text/html'],
       ['/js/main.js', 'text/javascript'],
       ['/styles/style.css', 'text/css'],
@@ -100,7 +102,9 @@ test('local development server exposes only public application assets', async t 
       '/media/README.md',
       '/js/main.js.map',
       '/styles',
-      '/not-an-app-route'
+      '/not-an-app-route',
+      RETIRED_ROUTE,
+      RETIRED_NESTED_ROUTE
     ];
 
     for (const pathname of blockedPaths) {

@@ -9,7 +9,6 @@ const [
     html,
     main,
     maps,
-    runPlus,
     dashboard,
     planner,
     activities,
@@ -20,7 +19,6 @@ const [
     source('index.html'),
     source('js/app/main.js'),
     source('js/tabs/maps.js'),
-    source('js/tabs/run-plus.js'),
     source('js/tabs/dashboard.js'),
     source('js/tabs/planner.js'),
     source('js/tabs/activities.js'),
@@ -119,7 +117,6 @@ test('Save and recompute performs one local Canonical list read and no metadata 
     for (const localTab of [
         'dashboard-tab',
         'run-tab',
-        'run-plus-tab',
         'bike-tab',
         'swim-tab',
         'trends-tab',
@@ -134,17 +131,6 @@ test('Save and recompute performs one local Canonical list read and no metadata 
     assert.match(planner, /currentPlannerRuns = runs/);
     assert.match(activities, /state\.allActivities = allActivities/);
     assert.match(activities, /applyFilters\(state\.allActivities\)/);
-});
-
-test('Run Plus consumes the injected context and Canonical unconfigured state cannot use legacy HRmax fallback', () => {
-    assert.match(main, /analysisContext:[\s\S]*dataRepositoryMode === 'canonical'/);
-    assert.match(runPlus, /buildNsmModel\(model, options\.analysisContext\)/);
-    const start = runPlus.indexOf('function estimateNsmHrMax');
-    const end = runPlus.indexOf('function runMinutes', start);
-    const body = runPlus.slice(start, end);
-    assert.ok(body.indexOf("analysisContext?.status === 'unconfigured'") < body.indexOf('getDashboardHrMax()'));
-    assert.match(body, /value: null/);
-    assert.match(runPlus, /Training profile required/);
 });
 
 test('Global Map lazily composes Canonical latlng reads and keeps other modes on summary geometry', () => {

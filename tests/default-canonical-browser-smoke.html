@@ -47,7 +47,7 @@
             runtimeErrors: 0,
             consoleErrors: 0,
             detailError: null,
-            routePlan: ['/dashboard', '/html/activity-router.html', '/html/run.html', '/run-plus', '/run-plus/nsm']
+            routePlan: ['/dashboard', '/html/activity-router.html', '/html/run.html', '/activities', '/run']
         };
         let frameSequence = 0;
         const installers = new Map();
@@ -655,12 +655,12 @@
             globalThis.__PR23_DEFAULT_CANONICAL_RESULT__ = observations;
             globalThis.__PR23_ACTUAL_ROUTE_PLAN__ = Object.freeze({
                 defaultMode: 'canonical',
-                routes: Object.freeze(['/dashboard', '/html/activity-router.html', '/html/run.html', '/run-plus', '/run-plus/nsm']),
+                routes: Object.freeze(['/dashboard', '/html/activity-router.html', '/html/run.html', '/activities', '/run']),
                 modes: Object.freeze(['default', 'canonical', 'legacy', 'shadow', 'demo']),
                 requiresActualServedNavigation: true
             });
             document.body.dataset.status = 'passed';
-            status.textContent = 'Passed deterministic gates; continue actual /run-plus and /run-plus/nsm navigation.';
+            status.textContent = 'Passed deterministic gates; continue actual public route navigation.';
             output.textContent = JSON.stringify({
                 status: 'passed',
                 observations,

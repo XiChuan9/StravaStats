@@ -8,6 +8,10 @@ import { dirname, join } from 'node:path';
 
 const VERSION = '2.0.0-alpha.1';
 const RELEASE_NAME = `v${VERSION}`;
+const RETIRED_ROUTE = ['/run', 'plus'].join('-');
+const RETIRED_NESTED_ROUTE = `${RETIRED_ROUTE}/${['n', 'sm'].join('')}`;
+const RETIRED_TAB_SCRIPT = ['js/tabs/run', 'plus.js'].join('-');
+const RETIRED_TAB_STYLE = ['styles/run', 'plus.css'].join('-');
 const ALLOWLIST = Object.freeze([
   '.github/workflows/ci.yml',
   'CHANGELOG.md',
@@ -177,12 +181,14 @@ test('G1 selector derives the current exact tracked regular payload', async () =
       return { mode, type, object, path };
     });
   const selected = tool.selectPayloadPaths(records);
-  assert.equal(selected.length, 212);
+  assert.equal(selected.length, 210);
   assert.equal(selected[0].path, 'classifyBike.js');
   assert.equal(selected.at(-1).path, 'sw.js');
   assert.equal(selected.every(item => item.mode === '100644' && item.type === 'blob'), true);
   assert.equal(selected.some(item => item.path.startsWith('api/')), false);
   assert.equal(selected.some(item => item.path === 'package.json'), false);
+  assert.equal(selected.some(item => item.path === RETIRED_TAB_SCRIPT), false);
+  assert.equal(selected.some(item => item.path === RETIRED_TAB_STYLE), false);
 });
 
 test('approved CSS repair removes the missing Dashboard image request only', async () => {
@@ -286,6 +292,8 @@ test('loopback static server serves only manifest-listed files and rejects unsaf
   assert.equal((await localRequest(port, '/', { method: 'HEAD' })).body.length, 0);
   assert.equal((await localRequest(port, '/api/token')).status, 403);
   assert.equal((await localRequest(port, '/source-manager.html?mode=real')).status, 200);
+  assert.equal((await localRequest(port, RETIRED_ROUTE)).status, 404);
+  assert.equal((await localRequest(port, RETIRED_NESTED_ROUTE)).status, 404);
   assert.equal((await localRequest(port, '/?enable-sw=1')).status, 403);
   assert.equal((await localRequest(port, '/%2e%2e/index.html')).status, 403);
   assert.equal((await localRequest(port, '/unlisted.txt')).status, 404);

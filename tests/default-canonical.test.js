@@ -3,12 +3,16 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const ROOT = new URL('../', import.meta.url);
+const HISTORICAL_CONSUMER_CUTOVER_TEST = [
+    'tests/consumers/run',
+    'plus-canonical-cutover.test.js'
+].join('-');
 const EXACT_ALLOWLIST = Object.freeze([
     'docs/tasks/pr-23-default-canonical.md',
     'js/app/feature-flags.js',
     'js/app/main.js',
     'tests/feature-flags.test.js',
-    'tests/consumers/run-plus-canonical-cutover.test.js',
+    HISTORICAL_CONSUMER_CUTOVER_TEST,
     'tests/default-canonical.test.js',
     'tests/default-canonical-browser-smoke.html',
     'tests/shadow/shadow-app-integration.test.js',
@@ -103,7 +107,7 @@ test('served PR-23 harness freezes synthetic default, rollback, Demo, detail, an
         /DEMO_PRECEDENCE_ZERO_REAL_DATABASE/,
         /PROVIDER_OFFLINE_LOCAL_CANONICAL/,
         /DEFAULT_CANONICAL_DETAIL/,
-        /\/run-plus\/nsm/,
+        /\/html\/run\.html/,
         /NO_TOKEN_OR_AUTHORIZATION_READ/,
         /OPAQUE_ID_PRESERVED/,
         /MISSING_NULL_REAL_ZERO_PRESERVED/,

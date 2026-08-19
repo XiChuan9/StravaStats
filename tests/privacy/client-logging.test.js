@@ -13,7 +13,6 @@ const REDACTED_CLIENT_PATHS = Object.freeze([
     'js/tabs/athlete.js',
     'js/tabs/bike-analysis.js',
     'js/tabs/run-analysis.js',
-    'js/tabs/run-plus.js',
     'js/tabs/weather.js'
 ]);
 
@@ -81,25 +80,6 @@ test('R5 production responsibility paths contain no browser console sink', async
         .map(entry => entry.path);
 
     assert.deepEqual(findingPaths, [], 'CLIENT_CONSOLE_SINKS_PRESENT');
-});
-
-test('Run Plus does not publish private diagnostics through DOM or window debug surfaces', async () => {
-    const text = await source('js/tabs/run-plus.js');
-    const patterns = new Map([
-        ['diagnostics-property', /\.runPlusDiagnostics\s*=/],
-        ['nsm-property', /\.runPlusNsm\s*=/],
-        ['diagnostics-dataset', /dataset\.runPlusDiagnostics\s*=/],
-        ['nsm-dataset', /dataset\.runPlusNsm\s*=/],
-        ['diagnostics-serialization', /JSON\.stringify\s*\(\s*diagnostics\s*\)/],
-        ['nsm-serialization', /JSON\.stringify\s*\(\s*summary\s*\)/],
-        ['run-plus-window-publication', /window\.runPlus[A-Za-z0-9_$]*\s*=/],
-        ['computed-window-publication', /window\s*\[\s*key\s*\]/]
-    ]);
-    const findings = [...patterns]
-        .filter(([, pattern]) => pattern.test(text))
-        .map(([category]) => category);
-
-    assert.deepEqual(findings, [], 'CLIENT_DEBUG_EXPOSURE_PRESENT');
 });
 
 test('Legacy cache hostile failures recover without console output or thrown-value inspection', async () => {
@@ -355,88 +335,6 @@ test('Weather render success, failure, and hostile inputs keep output inside fix
             'consent',
             'unavailable'
         ], 'WEATHER_DOM_OUTPUT_CHANGED');
-    } finally {
-        for (const [name, descriptor] of descriptors) restoreGlobal(name, descriptor);
-    }
-});
-
-test('Run Plus synthetic render creates no window or DOM debug publication', async () => {
-    const names = ['document', 'localStorage', 'sessionStorage', 'window'];
-    const descriptors = new Map(names.map(name => [
-        name,
-        Object.getOwnPropertyDescriptor(globalThis, name)
-    ]));
-    const windowWrites = [];
-    const storageWrites = [];
-    const root = {
-        dataset: Object.create(null),
-        innerHTML: '',
-        querySelector() {
-            return null;
-        },
-        querySelectorAll() {
-            return [];
-        }
-    };
-    const storage = Object.freeze({
-        getItem() {
-            return null;
-        },
-        setItem(key) {
-            storageWrites.push(key);
-        },
-        removeItem(key) {
-            storageWrites.push(key);
-        }
-    });
-    const windowTarget = {
-        history: Object.freeze({ pushState() {} }),
-        location: Object.freeze({ pathname: '/run-plus' }),
-        print() {}
-    };
-
-    Object.defineProperty(globalThis, 'document', {
-        configurable: true,
-        value: Object.freeze({
-            body: Object.freeze({
-                appendChild() {},
-                removeChild() {}
-            }),
-            createElement() {
-                let text = '';
-                return {
-                    get innerHTML() {
-                        return text;
-                    },
-                    set textContent(value) {
-                        text = String(value ?? '');
-                    }
-                };
-            },
-            getElementById(id) {
-                return id === 'run-plus-tab' ? root : null;
-            }
-        })
-    });
-    Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: storage });
-    Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, value: storage });
-    Object.defineProperty(globalThis, 'window', {
-        configurable: true,
-        value: new Proxy(windowTarget, {
-            set(target, key, value) {
-                windowWrites.push(typeof key === 'string' ? key : 'symbol');
-                return Reflect.set(target, key, value);
-            }
-        })
-    });
-
-    try {
-        const module = await import('../../js/tabs/run-plus.js?r5-run-plus-runtime=1');
-        module.renderRunPlusTab(Object.freeze([]), null, null, 'all');
-        assert.deepEqual(windowWrites, [], 'RUN_PLUS_WINDOW_OUTPUT_PRESENT');
-        assert.deepEqual(Object.keys(root.dataset), [], 'RUN_PLUS_DATASET_OUTPUT_PRESENT');
-        assert.deepEqual(storageWrites, [], 'RUN_PLUS_STORAGE_OUTPUT_PRESENT');
-        assert.equal(root.innerHTML.length > 0, true, 'RUN_PLUS_RENDER_DID_NOT_EXECUTE');
     } finally {
         for (const [name, descriptor] of descriptors) restoreGlobal(name, descriptor);
     }

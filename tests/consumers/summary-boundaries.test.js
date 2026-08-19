@@ -26,7 +26,6 @@ const tabSources = new Map(await Promise.all(summaryTabs.map(async path => (
 ))));
 const mainSource = await source('js/app/main.js');
 const tabsIndexSource = await source('js/tabs/index.js');
-const runPlusSource = await source('js/tabs/run-plus.js');
 const speedInsightsSource = await source('js/shared/utils/speed-insights.js');
 
 const domSafetyCanaries = Object.freeze([
@@ -131,6 +130,9 @@ test('M23 R1 root summary renders persistent names and opaque IDs only through n
     assert.match(maps, /bindPopup\(popup\)/);
     assert.match(maps, /sportSel\.replaceChildren/);
     assert.match(activities, /document\.createElement\('small'\)/);
+    assert.match(run, /params\.set\('id', activityId\)/);
+    assert.match(run, /link\.textContent = label/);
+    assert.match(run, /link\.rel = 'noopener noreferrer'/);
 });
 
 test('Global Map filters before Canonical loading and reuses one route snapshot for visual controls', () => {
@@ -345,10 +347,7 @@ test('tabs governance file contains every frozen B1 boundary and parity rule', a
         /chart configuration, DOM IDs\/classes, ordering, or visual output/,
         /Missing metadata or capabilities/,
         /`Not run`/,
-        /Run Plus gear labels and options use only the immutable session gear snapshot/,
-        /injected `getActivity` and `getStreams`\s+callbacks/,
-        /Activity IDs.*opaque non-empty strings/,
-        /Demo and Real use the same injected shape/
+        /Activity IDs.*opaque non-empty strings/
     ]) {
         assert.match(rules, pattern);
     }
@@ -385,25 +384,6 @@ test('B2 wires the Run gear context through the existing tab public entry', () =
     const runAnalysis = tabSources.get('js/tabs/run-analysis.js');
     assert.match(runAnalysis, /export function setRunSessionGears\(gears\)/);
     assert.doesNotMatch(runAnalysis, /getCachedGears|strava_gears/);
-    assert.match(runPlusSource, /import\s*\{\s*renderRunAnalysisTab\s*\}\s*from\s*['"]\.\/run-analysis\.js['"]/);
-    assert.match(
-        runPlusSource,
-        /renderRunAnalysisTab\(\s*allActivities,[\s\S]*?\{\s*idPrefix:\s*RUN_PLUS_ID_PREFIX/
-    );
-});
-
-test('PR-04C removes the final Run Plus provider boundary without changing the B3 seam', () => {
-    for (const pattern of [
-        /from\s*['"]\.\/api\.js['"]/,
-        /getCachedGears|strava_gears|strava_tokens/,
-        /\/api\/strava-/,
-        /Authorization|\bfetch\s*\(/,
-        /indexedDB|createRepository|new\s+\w*Connector/
-    ]) {
-        assert.doesNotMatch(runPlusSource, pattern);
-    }
-    assert.match(runPlusSource, /options\.getActivity\(activityId\)/);
-    assert.match(runPlusSource, /options\.getStreams\(activityId\)/);
     assert.doesNotMatch(mainSource, /summary-browser-smoke/);
 });
 

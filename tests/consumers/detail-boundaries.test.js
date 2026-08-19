@@ -822,7 +822,6 @@ test('Stream presentation reduction remains confined to renderer construction se
     assert.match(cadenceSpeed, /renderStreamPresentationState\('chart-cadence-speed'/);
     for (const relativePath of [
         'js/pages/activity/advanced-analysis.js',
-        'js/tabs/run-plus.js',
         'js/analysis/index.js',
         'js/repository/index.js'
     ]) {

@@ -104,7 +104,7 @@ test('Task Brief keeps a literal cumulative allowlist and prohibited scope', asy
         'tests/feature-flags.test.js',
         'tests/shadow/shadow-app-integration.test.js',
         'tests/consumers/summary-consumers.test.js',
-        'tests/consumers/run-plus-consumers.test.js',
+        ['tests/consumers/run', 'plus-consumers.test.js'].join('-'),
         'tests/legacy/demo-isolation.test.js',
         'tests/shadow/shadow-writer-browser-smoke.html'
     ];

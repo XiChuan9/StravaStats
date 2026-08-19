@@ -36,8 +36,6 @@
         </div>
     </section>
 
-    <section id="run-plus-tab"></section>
-
     <section id="legacy-dom-safety-evidence" hidden>
         <div id="activity-filters"></div>
         <table id="activities-table"></table>
@@ -72,8 +70,7 @@
             pageNetwork: [],
             storage: [],
             console: { errors: 0, warnings: 0 },
-            chartConfigs: [],
-            runPlus: null
+            chartConfigs: []
         };
 
         function endpoint(value, method = null) {
@@ -802,7 +799,6 @@
                     'loadOptionalSessionGears',
                     'resetSummarySessionGears',
                     'applySummarySessionGearLoad',
-                    'createRunPlusRenderOptions',
                     'selectPreprocessingAthlete'
                 ]) {
                     requireGate(typeof module[exportName] === 'function');
@@ -1095,22 +1091,6 @@
                 requireGate(gearEvidence.rejected.status === 'rejected');
                 requireGate(gearEvidence.rejected.count === 0);
 
-                const runPlusOptions = mainModule.createRunPlusRenderOptions({
-                    sessionRepository: session,
-                    sessionGears: completeGears,
-                    onFiltersChange() {}
-                });
-                const runPlusActivity = await runPlusOptions.getActivity('opaque/real:id');
-                const runPlusStreams = await runPlusOptions.getStreams('opaque/real:id');
-                requireGate(runPlusActivity.id === 'opaque/real:id');
-                requireGate(JSON.stringify(runPlusStreams) === JSON.stringify({
-                    time: { data: [0, 1] }
-                }));
-                requireGate(Object.isFrozen(runPlusOptions));
-                requireGate(Object.isFrozen(runPlusOptions.gears));
-                requireGate(JSON.stringify(runPlusOptions.gears.map(gear => gear.id))
-                    === JSON.stringify(['real-shoe-2', 'real-shoe-1', 'real-shoe-2']));
-
                 activityMode = 'partial';
                 let partialFailedClosed = false;
                 try {
@@ -1162,301 +1142,6 @@
                     platformUnchanged: true,
                     realSentinelUnchanged: true
                 };
-            });
-
-            await gate('runPlusEmbeddedConsumer', async () => {
-                requireGate(mainModule !== null && modules !== null);
-                requireGate(
-                    modules.tabsModule.setRunSessionGears
-                    === modules.runModule.setRunSessionGears
-                );
-                requireGate(storageMethods.getItem.call(localStorage, 'strava_demo_mode') === 'true');
-                const injectedLabel = 'Injected Session Gear Duplicate';
-                const injectedGears = [
-                    { id: 'demo-shoe', name: 'Injected Session Gear First' },
-                    { id: 'unused-shoe', name: 'Unused Session Gear' },
-                    { id: 'demo-shoe', name: injectedLabel }
-                ];
-                const networkStart = observations.pageNetwork.length;
-                const chartStart = observations.chartConfigs.length;
-                const rawRun = {
-                    id: OPAQUE_ID_CANARY,
-                    type: 'Run',
-                    sport_type: 'Run',
-                    name: `${DOM_XSS_CANARY} Synthetic 6x Threshold`,
-                    start_date: '2026-01-05T06:00:00.000Z',
-                    start_date_local: '2026-01-05T06:00:00.000Z',
-                    distance: 10000,
-                    moving_time: 3000,
-                    elapsed_time: 3100,
-                    total_elevation_gain: 100,
-                    average_heartrate: 150,
-                    gear_id: 'demo-shoe'
-                };
-                let activityReads = 0;
-                let streamReads = 0;
-                const renderOptions = Object.freeze({
-                    gears: Object.freeze([...injectedGears]),
-                    async getActivity(activityId) {
-                        activityReads += 1;
-                        requireGate(activityId === OPAQUE_ID_CANARY);
-                        return { ...rawRun, laps: [] };
-                    },
-                    async getStreams(activityId) {
-                        streamReads += 1;
-                        requireGate(activityId === OPAQUE_ID_CANARY);
-                        throw new Error('synthetic private stream failure');
-                    },
-                    onFiltersChange(nextFilters) {
-                        modules.tabsModule.renderRunPlusTab(
-                            processedActivities,
-                            nextFilters.dateFilterFrom,
-                            nextFilters.dateFilterTo,
-                            nextFilters.gearFilter,
-                            renderOptions
-                        );
-                    }
-                });
-                const preprocessingContext = mainModule.selectPreprocessingAthlete(
-                    'demo',
-                    demoAthlete
-                );
-                const preprocessingReadStart = observations.storage.length;
-                const preprocessingNetworkStart = observations.pageNetwork.length;
-                const processedActivities = await modules.preprocessingModule.preprocessActivities(
-                    [rawRun],
-                    preprocessingContext,
-                    demoZones,
-                    demoGears
-                );
-                const preprocessingStorage = observations.storage.slice(preprocessingReadStart);
-                const athleteFallbackReads = preprocessingStorage.filter(event => (
-                    event.type === 'read' && event.key === 'strava_athlete_data'
-                ));
-                const preprocessingTokenOrRealCacheEvents = preprocessingStorage.filter(event => (
-                    /token/i.test(event.key || '') || realKeys.includes(event.key)
-                ));
-                requireGate(processedActivities.length === 1);
-                requireGate(processedActivities[0] === rawRun);
-                requireGate(Number.isFinite(processedActivities[0].efficiency));
-                requireGate(processedActivities[0].efficiency_method === 'pace_per_hr');
-                requireGate(athleteFallbackReads.length === 0);
-                requireGate(preprocessingTokenOrRealCacheEvents.length === 0);
-                requireGate(observations.pageNetwork.length === preprocessingNetworkStart);
-                const runPlusProviderReadStart = observations.storage.length;
-
-                modules.tabsModule.renderRunPlusTab(
-                    processedActivities,
-                    '',
-                    '',
-                    'all',
-                    renderOptions
-                );
-                await Promise.resolve();
-                const root = document.getElementById('run-plus-tab');
-                const embeddedCharts = observations.chartConfigs.slice(chartStart).filter(config => (
-                    typeof config.canvasId === 'string'
-                    && config.canvasId.startsWith('run-plus-')
-                ));
-                const singleRunPaceHrChart = embeddedCharts.find(config => (
-                    config.canvasId === 'run-plus-pace-hr-efficiency-chart'
-                ));
-                const singleRunDistanceEfficiencyChart = embeddedCharts.find(config => (
-                    config.canvasId === 'run-plus-distance-efficiency-chart'
-                ));
-                const singleRunEfficiencyEvolutionChart = embeddedCharts.find(config => (
-                    config.canvasId === 'run-plus-efficiency-evolution-chart'
-                ));
-                const gearFilter = root.querySelector('#run-plus-gear-filter');
-                const gearFilterOptions = [...(gearFilter?.options || [])].map(option => ({
-                    value: option.value,
-                    label: option.textContent
-                }));
-                requireGate(gearFilterOptions.some(option => (
-                    option.value === 'demo-shoe'
-                    && option.label === injectedLabel
-                )));
-                requireGate(!gearFilterOptions.some(option => (
-                    option.label === 'Synthetic Demo Shoe'
-                )));
-                gearFilter.value = 'demo-shoe';
-                gearFilter.dispatchEvent(new Event('change', { bubbles: true }));
-                await Promise.resolve();
-                const rerenderedGearFilter = root.querySelector('#run-plus-gear-filter');
-                const canaryLinks = Array.from(root.querySelectorAll('a')).filter(link => (
-                    link.textContent === `${DOM_XSS_CANARY} Synthetic 6x Threshold`
-                ));
-                requireGate(canaryLinks.length > 0);
-                requireGate(canaryLinks.every(link => (
-                    new URL(link.href).searchParams.get('id') === OPAQUE_ID_CANARY
-                    && link.relList.contains('noopener')
-                    && link.relList.contains('noreferrer')
-                )));
-                requireGate(root.querySelector('img[src="x"]') === null);
-                requireGate(globalThis.__domSafetyExecuted === 0);
-                const allEmbeddedCharts = observations.chartConfigs.slice(chartStart).filter(config => (
-                    typeof config.canvasId === 'string'
-                    && config.canvasId.startsWith('run-plus-')
-                ));
-                const unsafeEmbeddedCharts = allEmbeddedCharts.filter(config => (
-                    config.allNumericDataFinite !== true
-                    || config.allDataValuesDefined !== true
-                    || config.labelsContainNonFinite === true
-                ));
-                let unsafeOptionGetterCalls = 0;
-                const unsafeOptions = {};
-                Object.defineProperty(unsafeOptions, 'gears', {
-                    enumerable: true,
-                    get() {
-                        unsafeOptionGetterCalls += 1;
-                        throw new Error('unsafe option getter executed');
-                    }
-                });
-                modules.tabsModule.renderRunPlusTab([], '', '', 'all', unsafeOptions);
-                requireGate(unsafeOptionGetterCalls === 0);
-
-                history.pushState({}, '', '/run-plus/nsm');
-                modules.tabsModule.renderRunPlusTab(
-                    processedActivities,
-                    '',
-                    '',
-                    'all',
-                    renderOptions
-                );
-                const settleAnalysis = async () => {
-                    await Promise.resolve();
-                    await new Promise(resolve => setTimeout(resolve, 0));
-                    await Promise.resolve();
-                };
-                for (let clickIndex = 0; clickIndex < 2; clickIndex += 1) {
-                    const intervalButton = root.querySelector('[data-nsm-analyze-intervals]');
-                    requireGate(Boolean(intervalButton));
-                    intervalButton.click();
-                    await settleAnalysis();
-                }
-                const deepButton = root.querySelector('[data-nsm-analyze-streams]');
-                requireGate(Boolean(deepButton));
-                deepButton.click();
-                await settleAnalysis();
-                deepButton.click();
-                await settleAnalysis();
-                requireGate(activityReads === 2);
-                requireGate(streamReads === 2);
-                requireGate(deepButton.textContent === 'Deep HR failed');
-                requireGate(deepButton.title === 'Unable to analyze intervals');
-                requireGate(root.querySelector('.run-plus-shell'));
-                const runPlusStorage = observations.storage.slice(runPlusProviderReadStart);
-                const providerStorageKeys = new Set([...demoKeys, ...realKeys]);
-                const providerStorageEvents = runPlusStorage.filter(event => (
-                    providerStorageKeys.has(event.key)
-                ));
-                const providerReadKeys = [...new Set(providerStorageEvents
-                    .filter(event => event.type === 'read')
-                    .map(event => event.key))].sort();
-                const providerWritesOrRemoves = providerStorageEvents.filter(event => (
-                    event.type === 'write' || event.type === 'remove' || event.type === 'clear'
-                ));
-                const realProviderEvents = runPlusStorage.filter(event => realKeys.includes(event.key));
-                const tokenEvents = runPlusStorage.filter(event => /token/i.test(event.key || ''));
-                observations.runPlus = {
-                    sharedModuleInstance: true,
-                    embeddedChartCount: embeddedCharts.length,
-                    auditedEmbeddedChartCount: allEmbeddedCharts.length,
-                    preprocessing: {
-                        raw: {
-                            id: 'run-plus-demo-activity',
-                            distance: 10000,
-                            movingTime: 3000,
-                            averageHeartRate: 150
-                        },
-                        preprocessedActivityCount: processedActivities.length,
-                        sameActivityReference: processedActivities[0] === rawRun,
-                        efficiency: processedActivities[0].efficiency,
-                        efficiencyFinite: Number.isFinite(processedActivities[0].efficiency),
-                        efficiencyMethod: processedActivities[0].efficiency_method,
-                        athleteFallbackReads: athleteFallbackReads.length,
-                        tokenOrRealCacheEvents: preprocessingTokenOrRealCacheEvents.length,
-                        networkAttempts: observations.pageNetwork.length - preprocessingNetworkStart
-                    },
-                    gearFilterLabelSource: injectedLabel,
-                    sessionGearOrderAndDuplicates: injectedGears.map(gear => gear.id),
-                    sessionContextLabelApplied: gearFilterOptions.some(option => (
-                        option.label === injectedLabel
-                    )),
-                    gearFilterInteractionApplied: rerenderedGearFilter?.value === 'demo-shoe',
-                    canaryRenderedAsText: canaryLinks.length > 0,
-                    opaqueIdRoundTrip: OPAQUE_ID_CANARY,
-                    canaryExecutions: globalThis.__domSafetyExecuted,
-                    unsafeOptionGetterCalls,
-                    nsmActivityReads: activityReads,
-                    nsmStreamReads: streamReads,
-                    nsmSafeFailureLabel: deepButton.textContent,
-                    singleRunRegressionSafe: Boolean(
-                        singleRunPaceHrChart
-                        && singleRunPaceHrChart.datasetCount === 1
-                        && JSON.stringify(singleRunPaceHrChart.labels) === JSON.stringify(['Run Data'])
-                        && JSON.stringify(singleRunPaceHrChart.dataPointCounts) === JSON.stringify([1])
-                        && singleRunPaceHrChart.allNumericDataFinite === true
-                        && singleRunPaceHrChart.allDataValuesDefined === true
-                        && singleRunPaceHrChart.labelsContainNonFinite === false
-                    ),
-                    paceHrChart: singleRunPaceHrChart,
-                    singleRunDistanceEfficiencySafe: Boolean(
-                        singleRunDistanceEfficiencyChart
-                        && singleRunDistanceEfficiencyChart.datasetCount === 1
-                        && JSON.stringify(singleRunDistanceEfficiencyChart.labels)
-                            === JSON.stringify(['Run Data'])
-                        && JSON.stringify(singleRunDistanceEfficiencyChart.dataPointCounts)
-                            === JSON.stringify([1])
-                        && singleRunDistanceEfficiencyChart.allNumericDataFinite === true
-                        && singleRunDistanceEfficiencyChart.allDataValuesDefined === true
-                        && singleRunDistanceEfficiencyChart.labelsContainNonFinite === false
-                    ),
-                    distanceEfficiencyChart: singleRunDistanceEfficiencyChart,
-                    efficiencyEvolutionSafe: Boolean(
-                        singleRunEfficiencyEvolutionChart
-                        && singleRunEfficiencyEvolutionChart.datasetCount === 2
-                        && JSON.stringify(singleRunEfficiencyEvolutionChart.labels)
-                            === JSON.stringify(['Raw Efficiency', 'Smoothed Trend'])
-                        && JSON.stringify(singleRunEfficiencyEvolutionChart.dataPointCounts)
-                            === JSON.stringify([1, 1])
-                        && singleRunEfficiencyEvolutionChart.allNumericDataFinite === true
-                        && singleRunEfficiencyEvolutionChart.allDataValuesDefined === true
-                        && singleRunEfficiencyEvolutionChart.labelsContainNonFinite === false
-                    ),
-                    efficiencyEvolutionChart: singleRunEfficiencyEvolutionChart,
-                    allEmbeddedNumericAuditPassed: unsafeEmbeddedCharts.length === 0,
-                    auditedEmbeddedChartIds: allEmbeddedCharts.map(config => config.canvasId),
-                    unsafeEmbeddedCharts: unsafeEmbeddedCharts.map(config => config.canvasId),
-                    providerReadKeys,
-                    providerWritesOrRemoves: providerWritesOrRemoves.length,
-                    realProviderStorageEvents: realProviderEvents.length,
-                    tokenEvents: tokenEvents.length,
-                    networkAttempts: observations.pageNetwork.length - networkStart,
-                    rootHasRunPlusShell: Boolean(root.querySelector('.run-plus-shell'))
-                };
-                requireGate(observations.runPlus.rootHasRunPlusShell);
-                requireGate(embeddedCharts.length > 0);
-                requireGate(observations.runPlus.preprocessing.efficiencyFinite);
-                requireGate(observations.runPlus.preprocessing.efficiencyMethod === 'pace_per_hr');
-                requireGate(observations.runPlus.preprocessing.athleteFallbackReads === 0);
-                requireGate(observations.runPlus.preprocessing.tokenOrRealCacheEvents === 0);
-                requireGate(observations.runPlus.preprocessing.networkAttempts === 0);
-                requireGate(observations.runPlus.singleRunRegressionSafe);
-                requireGate(observations.runPlus.singleRunDistanceEfficiencySafe);
-                requireGate(observations.runPlus.efficiencyEvolutionSafe);
-                requireGate(observations.runPlus.allEmbeddedNumericAuditPassed);
-                requireGate(observations.runPlus.gearFilterInteractionApplied);
-                requireGate(observations.runPlus.sessionContextLabelApplied);
-                requireGate(observations.runPlus.unsafeOptionGetterCalls === 0);
-                requireGate(observations.runPlus.nsmActivityReads === 2);
-                requireGate(observations.runPlus.nsmStreamReads === 2);
-                requireGate(providerReadKeys.length === 0);
-                requireGate(providerWritesOrRemoves.length === 0);
-                requireGate(realProviderEvents.length === 0);
-                requireGate(tokenEvents.length === 0);
-                requireGate(observations.pageNetwork.length === networkStart);
-                return observations.runPlus;
             });
 
             const finalResources = performance.getEntriesByType('resource')
