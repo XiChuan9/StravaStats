@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { extname, resolve } from 'node:path';
+import { basename, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const privatePathPatterns = [
@@ -14,7 +14,7 @@ const privatePathPatterns = [
   /(^|\/)worktree\.local\.json$/,
 ];
 
-const privateEnvironmentPattern = /(^|\/)\.env(?:\.|$)/;
+const privateEnvironmentPattern = /(^|\/)\.env(?:\.|$)/i;
 const allowedEnvironmentFiles = new Set(['.env.example']);
 const sportsExportPattern = /\.(fit|tcx|gpx|zip)$/i;
 const syntheticFixturePrefix = 'tests/fixtures/synthetic/';
@@ -103,13 +103,17 @@ function identityCandidates(content) {
   return candidates;
 }
 
+function isTrackedTextFile(file) {
+  return trackedTextFileNames.has(basename(file))
+    || trackedTextExtensions.has(extname(file).toLowerCase());
+}
+
 export function findContentViolation(
   file,
   content,
   identityDigests = forbiddenIdentityDigests,
 ) {
-  if (!trackedTextFileNames.has(file)
-    && !trackedTextExtensions.has(extname(file).toLowerCase())) return null;
+  if (!isTrackedTextFile(file)) return null;
   for (const { pattern, reason } of privateLocationPatterns) {
     if (pattern.test(content)) return reason;
   }
@@ -124,7 +128,10 @@ export function findContentViolation(
   return null;
 }
 
-export function scanTrackedFiles(files = listTrackedFiles()) {
+export function scanTrackedFiles(
+  files = listTrackedFiles(),
+  { readFile = readFileSync } = {},
+) {
   const violations = [];
   for (const file of files) {
     const pathViolation = findViolation(file);
@@ -132,8 +139,8 @@ export function scanTrackedFiles(files = listTrackedFiles()) {
       violations.push({ file, reason: pathViolation });
       continue;
     }
-    if (!trackedTextExtensions.has(extname(file).toLowerCase())) continue;
-    const contentViolation = findContentViolation(file, readFileSync(file, 'utf8'));
+    if (!isTrackedTextFile(file)) continue;
+    const contentViolation = findContentViolation(file, readFile(file, 'utf8'));
     if (contentViolation) violations.push({ file, reason: contentViolation });
   }
   return violations;

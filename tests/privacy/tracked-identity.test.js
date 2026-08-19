@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   createIdentityDigest,
@@ -83,6 +87,97 @@ test('privacy guard permits portable repository and worktree placeholders', () =
     '<private-evidence-root>',
   ]) {
     assert.equal(findContentViolation('synthetic.md', `Path: ${path}`), null, path);
+  }
+});
+
+test('tracked .env.example content is checked through the scanner entry point', () => {
+  const macOSHome = ['', 'Users', 'synthetic-user', 'Documents', 'StravaStats'].join('/');
+  const files = new Map([
+    ['.env.example', `PUBLIC_REPOSITORY_PATH=${macOSHome}`],
+  ]);
+
+  assert.deepEqual(
+    scanTrackedFiles([...files.keys()], {
+      readFile(file, encoding) {
+        assert.equal(encoding, 'utf8');
+        return files.get(file);
+      },
+    }),
+    [{ file: '.env.example', reason: 'personal macOS home path' }],
+  );
+});
+
+test('nested .env.example is rejected before tracked content is read', () => {
+  let readCount = 0;
+
+  assert.deepEqual(
+    scanTrackedFiles(['config/.env.example'], {
+      readFile() {
+        readCount += 1;
+        return '';
+      },
+    }),
+    [{ file: 'config/.env.example', reason: 'environment file must not be tracked' }],
+  );
+  assert.equal(readCount, 0);
+});
+
+test('environment filename case variants are rejected before content is read', () => {
+  let readCount = 0;
+
+  assert.deepEqual(
+    scanTrackedFiles(['.ENV.EXAMPLE', 'config/.Env.production'], {
+      readFile() {
+        readCount += 1;
+        return '';
+      },
+    }),
+    [
+      { file: '.ENV.EXAMPLE', reason: 'environment file must not be tracked' },
+      { file: 'config/.Env.production', reason: 'environment file must not be tracked' },
+    ],
+  );
+  assert.equal(readCount, 0);
+});
+
+test('privacy CLI scans a tracked root .env.example in a synthetic repository', () => {
+  const repository = mkdtempSync(join(tmpdir(), 'stravastats-privacy-env-'));
+  const privacyScript = fileURLToPath(
+    new URL('../../scripts/check-privacy.mjs', import.meta.url),
+  );
+  const macOSHome = ['', 'Users', 'synthetic-user', 'Documents', 'StravaStats'].join('/');
+
+  try {
+    execFileSync('git', ['init', '--quiet'], {
+      cwd: repository,
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+    writeFileSync(
+      join(repository, '.env.example'),
+      `PUBLIC_REPOSITORY_PATH=${macOSHome}\n`,
+      'utf8',
+    );
+    execFileSync('git', ['add', '--', '.env.example'], {
+      cwd: repository,
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+
+    assert.throws(
+      () => execFileSync(process.execPath, [privacyScript], {
+        cwd: repository,
+        encoding: 'utf8',
+        stdio: 'pipe',
+      }),
+      error => {
+        assert.notEqual(error.status, 0);
+        assert.match(error.stderr, /personal macOS home path/);
+        return true;
+      },
+    );
+  } finally {
+    rmSync(repository, { recursive: true, force: true });
   }
 });
 

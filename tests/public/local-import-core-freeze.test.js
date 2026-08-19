@@ -1,7 +1,16 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { webcrypto } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import {
+    mkdir,
+    mkdtemp,
+    readFile,
+    rename,
+    rm,
+    writeFile
+} from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
@@ -25,9 +34,15 @@ import { createSyntheticFitActivity } from
 import { createSyntheticTcxActivity } from
     '../fixtures/synthetic/tcx/tcx-fixture.js';
 import {
+    PUBLIC_SCOPE_FREEZE_ALLOWED_PATHS,
+    PUBLIC_SCOPE_FREEZE_BRANCH,
     PROHIBITED_SCOPE_FILES,
     PROHIBITED_SCOPE_PREFIXES,
     findProhibitedScopeChanges,
+    findUnlistedScopeChanges,
+    isPublicScopeFreezeBranch,
+    listScopeFreezeChanges,
+    resolveScopeFreezeBranch,
     scopeFreezeDiffArgs
 } from '../../scripts/check-public-scope-freeze.mjs';
 
@@ -37,7 +52,6 @@ const RETIRED_SYMBOL = ['render', 'Run', 'Plus', 'Tab'].join('');
 const RETIRED_TAB = `${RETIRED_SLUG}-tab`;
 const RETIRED_SECONDARY = ['n', 'sm'].join('');
 const RETIRED_STORAGE_PREFIX = ['run', 'plus'].join('_');
-const SCOPE_FREEZE_BRANCH = 'codex/public/local-import-core';
 
 async function source(path) {
     return readFile(new URL(path, ROOT), 'utf8');
@@ -233,23 +247,166 @@ test('scope freeze changed-path classifier covers every literal prohibited bound
     );
 });
 
-function currentTaskBranch() {
-    if (process.env.GITHUB_ACTIONS === 'true' && process.env.GITHUB_HEAD_REF) {
-        return process.env.GITHUB_HEAD_REF;
-    }
-    try {
-        return execFileSync('git', ['branch', '--show-current'], {
-            cwd: new URL('../../', import.meta.url),
-            encoding: 'utf8',
-            stdio: ['ignore', 'pipe', 'ignore']
-        }).trim();
-    } catch {
-        return '';
-    }
+test('scope freeze code allowlist exactly matches the Task Brief literal paths', async () => {
+    const taskBrief = await source('docs/tasks/public-local-import-core-freeze.md');
+    const literalBlock = taskBrief.match(
+        /## Literal allowed paths[\s\S]*?```text\n([\s\S]*?)\n```/
+    );
+    assert.ok(literalBlock, 'Task Brief literal allowlist block must exist');
+
+    const documentedPaths = literalBlock[1]
+        .split('\n')
+        .map(path => path.trim())
+        .filter(Boolean);
+    assert.deepEqual(
+        PUBLIC_SCOPE_FREEZE_ALLOWED_PATHS,
+        documentedPaths,
+        'runtime guard and Task Brief allowlists must not drift'
+    );
+    assert.equal(
+        new Set(PUBLIC_SCOPE_FREEZE_ALLOWED_PATHS).size,
+        PUBLIC_SCOPE_FREEZE_ALLOWED_PATHS.length,
+        'literal allowlist must not contain duplicates'
+    );
+});
+
+test('scope freeze rejects ordinary unlisted paths as well as prohibited paths', () => {
+    const allowed = [
+        'README.md',
+        'scripts/check-public-scope-freeze.mjs',
+        'tests/public/local-import-core-freeze.test.js'
+    ];
+    assert.deepEqual(findUnlistedScopeChanges(allowed), []);
+    assert.deepEqual(findUnlistedScopeChanges([
+        ...allowed,
+        'docs/not-listed.md',
+        'scripts/not-listed.mjs',
+        'docs/not-listed.md'
+    ]), [
+        'docs/not-listed.md',
+        'scripts/not-listed.mjs'
+    ]);
+
+    const prohibited = [
+        'js/import/escape.js',
+        'js/tabs/run-analysis.js',
+        'LICENSE.md'
+    ];
+    const expected = [...prohibited].sort();
+    assert.deepEqual(findProhibitedScopeChanges(prohibited), expected);
+    assert.deepEqual(findUnlistedScopeChanges(prohibited), expected);
+});
+
+function git(cwd, args) {
+    return execFileSync('git', args, {
+        cwd,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe']
+    }).trim();
 }
 
-test('current public scope-freeze branch changes no prohibited path', {
-    skip: currentTaskBranch() !== SCOPE_FREEZE_BRANCH
+test('scope freeze diff sees HEAD, index, worktree, untracked, and both rename paths', async () => {
+    const repository = await mkdtemp(join(tmpdir(), 'scope-freeze-allowlist-'));
+    try {
+        git(repository, ['init', '--quiet']);
+        git(repository, ['config', 'user.name', 'Scope Guard Test']);
+        git(repository, ['config', 'user.email', 'scope-guard@example.invalid']);
+        await mkdir(join(repository, 'docs'), { recursive: true });
+        await mkdir(join(repository, 'js/import'), { recursive: true });
+        await writeFile(join(repository, 'README.md'), 'base\n');
+        await writeFile(join(repository, 'CHANGELOG.md'), 'base\n');
+        await writeFile(join(repository, 'docs/README.md'), 'base\n');
+        await writeFile(join(repository, 'js/import/escape.js'), 'rename\n');
+        git(repository, ['add', '--',
+            'README.md',
+            'CHANGELOG.md',
+            'docs/README.md',
+            'js/import/escape.js'
+        ]);
+        git(repository, ['commit', '--quiet', '-m', 'base']);
+        const base = git(repository, ['rev-parse', 'HEAD']);
+
+        await writeFile(join(repository, 'README.md'), 'head\n');
+        git(repository, ['add', '--', 'README.md']);
+        git(repository, ['commit', '--quiet', '-m', 'head change']);
+
+        await writeFile(join(repository, 'CHANGELOG.md'), 'index\n');
+        git(repository, ['add', '--', 'CHANGELOG.md']);
+        await writeFile(join(repository, 'docs/README.md'), 'worktree\n');
+
+        await mkdir(join(repository, 'scripts'), { recursive: true });
+        await rename(
+            join(repository, 'js/import/escape.js'),
+            join(repository, 'scripts/check-public-scope-freeze.mjs')
+        );
+        git(repository, ['add', '--',
+            'js/import/escape.js',
+            'scripts/check-public-scope-freeze.mjs'
+        ]);
+
+        await writeFile(join(repository, 'docs/not-listed.md'), 'untracked\n');
+
+        const changes = listScopeFreezeChanges({ base, cwd: repository });
+        assert.deepEqual(changes, [
+            'CHANGELOG.md',
+            'README.md',
+            'docs/README.md',
+            'docs/not-listed.md',
+            'js/import/escape.js',
+            'scripts/check-public-scope-freeze.mjs'
+        ]);
+        assert.deepEqual(findProhibitedScopeChanges(changes), [
+            'js/import/escape.js'
+        ]);
+        assert.deepEqual(findUnlistedScopeChanges(changes), [
+            'docs/not-listed.md',
+            'js/import/escape.js'
+        ]);
+        assert.throws(() => listScopeFreezeChanges({
+            base: '0000000000000000000000000000000000000000',
+            cwd: repository
+        }));
+    } finally {
+        await rm(repository, { recursive: true, force: true });
+    }
+});
+
+test('scope freeze branch gate prefers CI head and fails closed without it', () => {
+    const localBranch = () => `${PUBLIC_SCOPE_FREEZE_BRANCH}\n`;
+    assert.equal(resolveScopeFreezeBranch({
+        env: {},
+        execFile: localBranch
+    }), PUBLIC_SCOPE_FREEZE_BRANCH);
+    assert.equal(isPublicScopeFreezeBranch({
+        env: {},
+        execFile: localBranch
+    }), true);
+    assert.equal(isPublicScopeFreezeBranch({
+        env: {},
+        execFile: () => 'other-branch\n'
+    }), false);
+
+    assert.equal(resolveScopeFreezeBranch({
+        env: {
+            GITHUB_ACTIONS: 'true',
+            GITHUB_HEAD_REF: PUBLIC_SCOPE_FREEZE_BRANCH
+        },
+        execFile: () => {
+            throw new Error('CI must not fall back to the local branch');
+        }
+    }), PUBLIC_SCOPE_FREEZE_BRANCH);
+    assert.equal(isPublicScopeFreezeBranch({
+        env: { GITHUB_ACTIONS: 'true' },
+        execFile: localBranch
+    }), false);
+});
+
+function currentTaskBranch() {
+    return resolveScopeFreezeBranch({ cwd: new URL('../../', import.meta.url) });
+}
+
+test('current public scope-freeze branch satisfies the literal allowlist', {
+    skip: currentTaskBranch() !== PUBLIC_SCOPE_FREEZE_BRANCH
 }, () => {
     assert.doesNotThrow(() => execFileSync(
         process.execPath,
