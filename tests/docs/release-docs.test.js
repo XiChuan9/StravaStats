@@ -648,10 +648,11 @@ test('documentation index and limitations point to current scope authority and l
     assert.match(limitations, /no-rewrite[\s\S]{0,100}(?:disposition|risk acceptance)/i);
 });
 
-test('pre-freeze baseline is historical and browser acceptance is not overclaimed', async () => {
-    const [baseline, matrix] = await Promise.all([
+test('pre-freeze baseline is historical and browser acceptance is evidence-backed', async () => {
+    const [baseline, matrix, evidence] = await Promise.all([
         source('docs/baseline/README.md'),
-        source('docs/testing/regression-matrix.md')
+        source('docs/testing/regression-matrix.md'),
+        source('docs/testing/public-local-import-core-browser-acceptance.md')
     ]);
 
     assert.match(baseline, /Status \| Historical — frozen point-in-time pre-freeze baseline/i);
@@ -659,7 +660,7 @@ test('pre-freeze baseline is historical and browser acceptance is not overclaime
     assert.match(baseline, /public-local-import-core-freeze\.md/i);
     assert.match(baseline, /Run Plus[\s\S]{0,80}NSM[\s\S]{0,180}历史私有扩展/i);
 
-    const partialBrowserRows = [
+    const manualBrowserRows = [
         'REG-007',
         'REG-008',
         'REG-120',
@@ -669,13 +670,20 @@ test('pre-freeze baseline is historical and browser acceptance is not overclaime
         'REG-125',
         'REG-126'
     ];
-    for (const id of partialBrowserRows) {
+    for (const id of manualBrowserRows) {
         const row = matrix.split('\n').find(line => line.startsWith(`| ${id} |`));
         assert.notEqual(row, undefined, `${id} row exists`);
-        assert.match(row, /\| Partial \|$/, `${id} must remain partial until browser evidence is linked`);
+        assert.match(row, /public-local-import-core-browser-acceptance\.md/);
+        assert.match(row, /\| Manual pass \|$/, `${id} requires linked browser evidence`);
     }
     assert.match(matrix, /fake-indexeddb[\s\S]{0,160}不能代替真实浏览器/i);
-    assert.match(matrix, /真实浏览器部分[\s\S]{0,80}pending/i);
     assert.match(matrix, /\| REG-124 \|[^\n]*\| Automated \|/);
-    assert.match(matrix, /\| REG-127 \|[^\n]*\| Planned \|/);
+    assert.match(matrix, /\| REG-127 \|[^\n]*browser-acceptance\.md[^\n]*\| Manual pass \|/);
+    assert.match(evidence, /a32cacbbae1b95aaceb18087f24dd6ebc7707338/);
+    assert.match(evidence, /5393c41042cd0a17fcf04429807d64f312e8635c/);
+    assert.match(evidence, /Console errors: 0/);
+    assert.match(evidence, /\/run-plus[\s\S]{0,400}404/);
+    assert.match(evidence, /LocalStorage[\s\S]{0,500}6\/6[\s\S]{0,500}PASS/);
+    assert.match(evidence, /Cache Storage[\s\S]{0,300}PASS/);
+    assert.match(evidence, /no release or deployment authorization/i);
 });
