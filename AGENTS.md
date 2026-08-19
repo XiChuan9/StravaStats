@@ -46,9 +46,11 @@ defined here.
 - Repository boundaries must prevent pages and analysis modules from choosing
   persistence or source-specific behavior directly.
 
-## Required verification
+## Build, test, and verification commands
 
-Run the checks required by the task brief. The repository minimum is:
+Use Node.js `24.19.0` and npm `11.17.0`, matching `package.json`, CI, and the
+accepted verification baseline. Run the checks required by the active Task
+Brief. The repository minimum is:
 
 ```bash
 npm ci
@@ -58,8 +60,19 @@ npm test
 git diff --check
 ```
 
+Run `npm audit` when the Task Brief requires it and for dependency, lockfile,
+candidate, or release work. Use focused `node --test <approved-test-path>`
+commands in addition to, not instead of, the full test suite when a Task Brief
+names a security-sensitive component.
+
+The repository has no general production bundle step. `npm run dev` serves the
+working tree locally. Alpha-candidate build, verification, browser, migration,
+Service Worker, deployment, and release commands require explicit Task Brief
+scope and do not become authorized merely because a package script exists.
+
 Tests must not require network access, Strava credentials, or private fixtures.
-Do not claim a browser, migration, or CI check passed unless it actually ran.
+Do not claim a browser, migration, Service Worker, deployment, rollback, or CI
+check passed unless it actually ran against the reported revision.
 
 ## Completion report
 
