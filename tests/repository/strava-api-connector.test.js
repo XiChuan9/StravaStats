@@ -35,18 +35,59 @@ function syntheticResponse({
     jsonError = null,
     counters = null
 } = {}) {
+    let responseBody = body;
+    if (
+        body
+        && typeof body === 'object'
+        && !Array.isArray(body)
+        && Array.isArray(body.activities)
+        && !Object.hasOwn(body, 'has_more')
+        && Reflect.ownKeys(body).every(key => key === 'activities' || key === 'tokens')
+        && !(Object.hasOwn(body, 'tokens') && body.tokens === undefined)
+    ) {
+        responseBody = {
+            activities: body.activities,
+            has_more: false,
+            tokens: Object.hasOwn(body, 'tokens') ? body.tokens : null
+        };
+    }
+    let bytes;
+    try {
+        bytes = new TextEncoder().encode(
+            jsonError ? '{' : JSON.stringify(responseBody)
+        );
+    } catch {
+        bytes = new TextEncoder().encode('{');
+    }
+    let offset = 0;
     return {
         status,
         headers: {
             get(name) {
                 counters && (counters.headerReads += 1);
-                return name === 'Retry-After' ? retryAfter : null;
+                const normalized = String(name).toLowerCase();
+                if (normalized === 'retry-after') return retryAfter;
+                if (normalized === 'content-type') return 'application/json';
+                return null;
             }
         },
-        async json() {
-            counters && (counters.jsonReads += 1);
-            if (jsonError) throw jsonError;
-            return body;
+        body: {
+            getReader() {
+                return {
+                    async read() {
+                        if (offset >= bytes.byteLength) return { done: true };
+                        counters && (counters.jsonReads += 1);
+                        if (jsonError) throw jsonError;
+                        const value = bytes.subarray(offset);
+                        offset = bytes.byteLength;
+                        return { done: false, value };
+                    },
+                    async cancel() {
+                        offset = bytes.byteLength;
+                    },
+                    releaseLock() {}
+                };
+            }
         }
     };
 }
@@ -59,7 +100,10 @@ function createHarness({
     tokenReader,
     tokenWriter,
     tokenEncoder,
-    fetchImpl
+    fetchImpl,
+    AbortControllerImpl,
+    setTimeoutImpl,
+    clearTimeoutImpl
 } = {}) {
     const calls = {
         fetch: [],
@@ -83,7 +127,10 @@ function createHarness({
             calls.encodes.push(raw);
             return encodedToken;
         }),
-        now
+        now,
+        ...(AbortControllerImpl ? { AbortControllerImpl } : {}),
+        ...(setTimeoutImpl ? { setTimeoutImpl } : {}),
+        ...(clearTimeoutImpl ? { clearTimeoutImpl } : {})
     });
     return { connector, calls };
 }
@@ -345,7 +392,7 @@ const endpointCases = [
         invoke: connector => connector.fetchActivities(),
         body: { activities: [{ id: 3 }, { id: 1 }] },
         expected: [{ id: 3 }, { id: 1 }],
-        url: '/api/strava-activities'
+        url: '/api/strava-activities?page=1&per_page=25'
     },
     {
         name: 'activity',
@@ -393,13 +440,20 @@ for (const endpointCase of endpointCases) {
         const result = await endpointCase.invoke(connector);
         assert.deepEqual(result, endpointCase.expected);
         assert.equal(calls.fetch.length, 1);
-        assert.deepEqual(calls.fetch[0], [
-            endpointCase.url,
+        assert.equal(calls.fetch[0][0], endpointCase.url);
+        assert.deepEqual(
+            { ...calls.fetch[0][1], signal: undefined },
             {
                 method: 'GET',
-                headers: { Authorization: `Bearer ${ENCODED_TOKEN}` }
+                headers: { Authorization: `Bearer ${ENCODED_TOKEN}` },
+                credentials: 'same-origin',
+                cache: 'no-store',
+                redirect: 'error',
+                referrerPolicy: 'no-referrer',
+                signal: undefined
             }
-        ]);
+        );
+        assert.ok(calls.fetch[0][1].signal instanceof AbortSignal);
         assert.equal(calls.reads, 1);
         assert.deepEqual(calls.encodes, [RAW_TOKEN]);
         assert.deepEqual(calls.writes, []);
@@ -407,7 +461,7 @@ for (const endpointCase of endpointCases) {
     });
 }
 
-test('activities makes exactly one browser request without pagination or sorting', async () => {
+test('activities stops after a partial bounded page without sorting', async () => {
     const activities = [{ id: 9 }, { id: 2 }, { id: 7 }];
     const { connector, calls } = createHarness({
         response: syntheticResponse({ body: { activities } })
@@ -416,7 +470,110 @@ test('activities makes exactly one browser request without pagination or sorting
     assert.deepEqual(result, activities);
     assert.notEqual(result, activities);
     assert.equal(calls.fetch.length, 1);
-    assert.doesNotMatch(calls.fetch[0][0], /page|per_page/);
+    assert.equal(calls.fetch[0][0], '/api/strava-activities?page=1&per_page=25');
+});
+
+test('activities follows bounded 25-item pages and stops at has_more false', async () => {
+    const urls = [];
+    const pages = [
+        {
+            activities: Array.from({ length: 25 }, (_, index) => ({ id: index + 1 })),
+            has_more: true,
+            tokens: null
+        },
+        {
+            activities: [{ id: 26 }],
+            has_more: false,
+            tokens: null
+        }
+    ];
+    const { connector } = createHarness({
+        fetchImpl: async url => {
+            urls.push(url);
+            return syntheticResponse({ body: pages.shift() });
+        }
+    });
+    const result = await connector.fetchActivities();
+    assert.equal(result.length, 26);
+    assert.deepEqual(urls, [
+        '/api/strava-activities?page=1&per_page=25',
+        '/api/strava-activities?page=2&per_page=25'
+    ]);
+});
+
+test('activities stops after 10,000 items without issuing page 401', async () => {
+    let requests = 0;
+    const { connector } = createHarness({
+        fetchImpl: async () => {
+            requests += 1;
+            return syntheticResponse({
+                body: {
+                    activities: Array.from({ length: 25 }, (_, index) => ({
+                        id: (requests - 1) * 25 + index + 1
+                    })),
+                    has_more: true,
+                    tokens: null
+                }
+            });
+        }
+    });
+    await assertConnectorError(
+        connector.fetchActivities(),
+        STRAVA_CONNECTOR_ERROR_CODE.INVALID_ENVELOPE,
+        { operation: 'listActivities' }
+    );
+    assert.equal(requests, 400);
+});
+
+test('activities aborts the seventeenth 2,000,000-byte page at the 32 MiB sync cap', async () => {
+    const envelope = JSON.stringify({
+        activities: Array.from({ length: 25 }, (_, index) => ({ id: index + 1 })),
+        has_more: true,
+        tokens: null
+    });
+    const bytes = new TextEncoder().encode(`${envelope}${' '.repeat(2_000_000 - envelope.length)}`);
+    let requests = 0;
+    let cancels = 0;
+    const { connector } = createHarness({
+        fetchImpl: async () => {
+            requests += 1;
+            let offset = 0;
+            return {
+                status: 200,
+                headers: {
+                    get(name) {
+                        return String(name).toLowerCase() === 'content-type'
+                            ? 'application/json'
+                            : null;
+                    }
+                },
+                body: {
+                    getReader() {
+                        return {
+                            async read() {
+                                if (offset >= bytes.byteLength) return { done: true };
+                                const value = bytes.subarray(offset);
+                                offset = bytes.byteLength;
+                                return { done: false, value };
+                            },
+                            async cancel() {
+                                cancels += 1;
+                                offset = bytes.byteLength;
+                            },
+                            releaseLock() {}
+                        };
+                    }
+                }
+            };
+        }
+    });
+    await assertConnectorError(
+        connector.fetchActivities(),
+        STRAVA_CONNECTOR_ERROR_CODE.INVALID_JSON,
+        { operation: 'listActivities' }
+    );
+    assert.equal(requests, 17);
+    assert.equal(cancels, 1);
 });
 
 const invalidIds = [
@@ -817,6 +974,142 @@ test('fetch rejection maps to NETWORK_FAILED without underlying message', async 
     });
 });
 
+test('the 12-second deadline aborts a request waiting for response headers', async () => {
+    let timeoutCallback;
+    let timeoutDelay;
+    const cleared = [];
+    const timeoutId = Object.freeze({ id: 'synthetic-header-timeout' });
+    let resolveLate;
+    const { connector } = createHarness({
+        setTimeoutImpl(callback, delay) {
+            timeoutCallback = callback;
+            timeoutDelay = delay;
+            return timeoutId;
+        },
+        clearTimeoutImpl(id) {
+            cleared.push(id);
+        },
+        fetchImpl: async (_url, options) => new Promise((resolve, reject) => {
+            resolveLate = resolve;
+            options.signal.addEventListener('abort', () => {
+                reject(new Error('synthetic-abort-detail'));
+            }, { once: true });
+        })
+    });
+
+    const pending = connector.fetchActivities();
+    assert.equal(timeoutDelay, 12_000);
+    timeoutCallback();
+    await assertConnectorError(
+        pending,
+        STRAVA_CONNECTOR_ERROR_CODE.NETWORK_FAILED,
+        { operation: 'listActivities' }
+    );
+    resolveLate(syntheticResponse({ body: { activities: [{ id: 99 }] } }));
+    await Promise.resolve();
+    assert.deepEqual(cleared, [timeoutId]);
+});
+
+test('the same 12-second deadline aborts a pending streamed response body', async () => {
+    let timeoutCallback;
+    const cleared = [];
+    const timeoutId = Object.freeze({ id: 'synthetic-body-timeout' });
+    let resolveLate;
+    let capturedSignal;
+    const { connector } = createHarness({
+        setTimeoutImpl(callback, delay) {
+            assert.equal(delay, 12_000);
+            timeoutCallback = callback;
+            return timeoutId;
+        },
+        clearTimeoutImpl(id) {
+            cleared.push(id);
+        },
+        fetchImpl: async (_url, options) => {
+            capturedSignal = options.signal;
+            return {
+                status: 200,
+                headers: {
+                    get(name) {
+                        return String(name).toLowerCase() === 'content-type'
+                            ? 'application/json'
+                            : null;
+                    }
+                },
+                body: {
+                    getReader() {
+                        return {
+                            read() {
+                                return new Promise((resolve, reject) => {
+                                    resolveLate = resolve;
+                                    if (capturedSignal.aborted) {
+                                        reject(new Error('synthetic-abort-detail'));
+                                        return;
+                                    }
+                                    capturedSignal.addEventListener('abort', () => {
+                                        reject(new Error('synthetic-abort-detail'));
+                                    }, { once: true });
+                                });
+                            },
+                            async cancel() {},
+                            releaseLock() {}
+                        };
+                    }
+                }
+            };
+        }
+    });
+
+    const pending = connector.fetchActivities();
+    await Promise.resolve();
+    assert.equal(typeof timeoutCallback, 'function');
+    timeoutCallback();
+    await assertConnectorError(
+        pending,
+        STRAVA_CONNECTOR_ERROR_CODE.NETWORK_FAILED,
+        { operation: 'listActivities' }
+    );
+    resolveLate({ done: false, value: new Uint8Array([123]) });
+    await Promise.resolve();
+    assert.deepEqual(cleared, [timeoutId]);
+});
+
+test('successful bounded body parsing clears the request deadline afterward', async () => {
+    const events = [];
+    const timeoutId = Object.freeze({ id: 'synthetic-success-timeout' });
+    const { connector } = createHarness({
+        setTimeoutImpl(_callback, delay) {
+            assert.equal(delay, 12_000);
+            events.push('timer-set');
+            return timeoutId;
+        },
+        clearTimeoutImpl(id) {
+            assert.equal(id, timeoutId);
+            events.push('timer-clear');
+        },
+        fetchImpl: async (_url, options) => {
+            assert.ok(options.signal instanceof AbortSignal);
+            events.push('fetch');
+            const response = syntheticResponse({ body: { activities: [{ id: 1 }] } });
+            const originalGetReader = response.body.getReader;
+            response.body.getReader = () => {
+                const reader = originalGetReader();
+                const originalRead = reader.read;
+                reader.read = async () => {
+                    const result = await originalRead();
+                    if (result.done) events.push('body-complete');
+                    return result;
+                };
+                return reader;
+            };
+            return response;
+        }
+    });
+
+    assert.deepEqual(await connector.fetchActivities(), [{ id: 1 }]);
+    assert.deepEqual(events, ['timer-set', 'fetch', 'body-complete', 'timer-clear']);
+});
+
 test('invalid JSON maps to INVALID_JSON without underlying message', async () => {
     const { connector } = createHarness({
         response: syntheticResponse({
@@ -862,8 +1155,7 @@ test('refreshed token is validated, reduced, and written exactly once before ret
         response: syntheticResponse({
             body: {
                 activities: [{ id: 1 }],
-                tokens: refreshed,
-                transport_extra: 'must-not-return'
+                tokens: refreshed
             }
         }),
         tokenWriter: serialized => {
@@ -884,7 +1176,6 @@ test('refreshed token is validated, reduced, and written exactly once before ret
         expires_at: 4200000000
     });
     assert.deepEqual(result, [{ id: 1 }]);
-    assert.equal(Object.hasOwn(result, 'transport_extra'), false);
 });
 
 test('refresh preserves exact subject and ordered scopes for five-field authority', async () => {
@@ -1051,8 +1342,7 @@ test('returned data is detached and input is not mutated', async () => {
         }
     ]);
     const providerEnvelope = deepFreeze({
-        activities: providerData,
-        transport_extra: { ignored: true }
+        activities: providerData
     });
     const { connector } = createHarness({
         response: syntheticResponse({ body: providerEnvelope })
@@ -1081,91 +1371,17 @@ test('detached cloning preserves __proto__ as data without prototype mutation', 
     assert.deepEqual(result[0].__proto__, { synthetic: 'value' });
 });
 
-test('top-level and nested accessors are rejected without execution', async () => {
-    let getterCalls = 0;
-    const topLevel = {};
-    Object.defineProperty(topLevel, 'activities', {
-        enumerable: true,
-        get() {
-            getterCalls += 1;
-            return [];
-        }
-    });
-    const nested = {};
-    Object.defineProperty(nested, 'private', {
-        enumerable: true,
-        get() {
-            getterCalls += 1;
-            return 'synthetic-private-value';
-        }
-    });
-
-    for (const body of [topLevel, { activities: [nested] }]) {
-        const { connector } = createHarness({
-            response: syntheticResponse({ body })
-        });
-        await assertConnectorError(
-            connector.fetchActivities(),
-            STRAVA_CONNECTOR_ERROR_CODE.INVALID_ENVELOPE,
-            { operation: 'listActivities' }
-        );
-    }
-    assert.equal(getterCalls, 0);
+test('connector consumes streamed JSON bytes and never invokes response.json', async () => {
+    let jsonCalls = 0;
+    const response = syntheticResponse({ body: { activities: [{ id: 1 }] } });
+    response.json = async () => {
+        jsonCalls += 1;
+        throw new Error('synthetic-json-method-secret');
+    };
+    const { connector } = createHarness({ response });
+    assert.deepEqual(await connector.fetchActivities(), [{ id: 1 }]);
+    assert.equal(jsonCalls, 0);
 });
-
-test('revoked and throwing proxies fail closed', async () => {
-    const { proxy, revoke } = Proxy.revocable({}, {});
-    revoke();
-    const throwingProxy = new Proxy({}, {
-        getPrototypeOf() {
-            throw new Error('synthetic-proxy-secret');
-        }
-    });
-    for (const body of [
-        { activities: [proxy] },
-        { activities: [throwingProxy] }
-    ]) {
-        const { connector } = createHarness({
-            response: syntheticResponse({ body })
-        });
-        await assertConnectorError(
-            connector.fetchActivities(),
-            STRAVA_CONNECTOR_ERROR_CODE.INVALID_ENVELOPE,
-            { operation: 'listActivities' }
-        );
-    }
-});
-
-const cyclic = {};
-cyclic.self = cyclic;
-class SyntheticClass {}
-const invalidNestedValues = [
-    undefined,
-    Number.POSITIVE_INFINITY,
-    1n,
-    () => {},
-    Symbol('synthetic'),
-    new Date(0),
-    new Map(),
-    new Set(),
-    new SyntheticClass(),
-    cyclic
-];
-
-for (const invalidValue of invalidNestedValues) {
-    test(`nested ${Object.prototype.toString.call(invalidValue)} is not JSON-safe`, async () => {
-        const { connector } = createHarness({
-            response: syntheticResponse({
-                body: { activities: [{ value: invalidValue }] }
-            })
-        });
-        await assertConnectorError(
-            connector.fetchActivities(),
-            STRAVA_CONNECTOR_ERROR_CODE.INVALID_ENVELOPE,
-            { operation: 'listActivities' }
-        );
-    });
-}
 
 test('StravaConnectorError is deterministic, redacted, and fails closed', () => {
     const first = new StravaConnectorError(
@@ -1242,7 +1458,7 @@ test('StravaConnectorError drops secret constructor input deterministically', ()
     );
 });
 
-test('connector source has no pagination loop, logging, DOM, Demo, cache, or implementation import', async () => {
+test('connector source keeps bounded pagination isolated from UI, logging, and implementation imports', async () => {
     const source = await readFile(
         new URL(
             '../../js/connectors/strava/strava-api-connector.js',
@@ -1250,11 +1466,12 @@ test('connector source has no pagination loop, logging, DOM, Demo, cache, or imp
         ),
         'utf8'
     );
-    assert.doesNotMatch(source, /\bpage\b|\bper_page\b/);
     assert.doesNotMatch(source, /\bconsole\.(?:log|warn|error)\b/);
     assert.doesNotMatch(source, /\bdocument\b|\bwindow\b/);
     assert.doesNotMatch(source, /\bdemo\b/i);
     assert.doesNotMatch(source, /activity-cache|LegacyRepository|DemoRepository/);
     assert.doesNotMatch(source, /from\s+['"][^'"]*\/api\//);
-    assert.doesNotMatch(source, /\bwhile\s*\(|\bfor\s+await\b/);
+    assert.match(source, /MAX_ACTIVITY_PAGES\s*=\s*400/);
+    assert.match(source, /MAX_ACTIVITIES\s*=\s*10_000/);
+    assert.match(source, /MAX_ACTIVITY_SYNC_BYTES\s*=\s*32\s*\*\s*1024\s*\*\s*1024/);
 });

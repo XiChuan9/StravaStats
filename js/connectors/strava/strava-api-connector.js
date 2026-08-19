@@ -1,3 +1,5 @@
+import { readBoundedResponseJson } from '../../shared/bounded-response.js';
+
 export const STRAVA_CONNECTOR_ERROR_CODE = Object.freeze({
     INVALID_REQUEST: 'INVALID_REQUEST',
     TOKEN_ABSENT: 'TOKEN_ABSENT',
@@ -52,7 +54,10 @@ const CONSTRUCTOR_KEYS = new Set([
     'tokenReader',
     'tokenWriter',
     'tokenEncoder',
-    'now'
+    'now',
+    'AbortControllerImpl',
+    'setTimeoutImpl',
+    'clearTimeoutImpl'
 ]);
 const STREAM_OPTION_KEYS = new Set(['types']);
 const STREAM_TYPES = new Set([
@@ -79,6 +84,15 @@ const AUTHORITY_TOKEN_KEYS = Object.freeze([
     'granted_scopes'
 ]);
 const REQUIRED_SCOPES = Object.freeze(['read', 'activity:read_all']);
+const ACTIVITY_PAGE_SIZE = 25;
+const MAX_ACTIVITY_PAGES = 400;
+const MAX_ACTIVITIES = 10_000;
+const MAX_ACTIVITY_PAGE_BYTES = 2 * 1024 * 1024;
+const MAX_ACTIVITY_SYNC_BYTES = 32 * 1024 * 1024;
+const MAX_ACTIVITY_BYTES = 2 * 1024 * 1024;
+const MAX_METADATA_BYTES = 1024 * 1024;
+const MAX_STREAM_BYTES = 16 * 1024 * 1024;
+const REQUEST_TIMEOUT_MS = 12_000;
 
 function invalidErrorDetails() {
     return {
@@ -226,6 +240,14 @@ function defaultNow() {
     return Date.now();
 }
 
+function defaultSetTimeout(callback, delay) {
+    return globalThis.setTimeout(callback, delay);
+}
+
+function defaultClearTimeout(timeoutId) {
+    globalThis.clearTimeout(timeoutId);
+}
+
 function readDataProperties(value, allowedKeys) {
     try {
         if (
@@ -271,6 +293,9 @@ function normalizeConstructorOptions(options) {
         tokenWriter: defaultTokenWriter,
         tokenEncoder: defaultTokenEncoder,
         now: defaultNow,
+        AbortControllerImpl: globalThis.AbortController,
+        setTimeoutImpl: defaultSetTimeout,
+        clearTimeoutImpl: defaultClearTimeout,
         ...values
     };
 
@@ -601,6 +626,44 @@ function readEnvelope(result, field, expectedType, operation) {
     }
 }
 
+function readActivitiesPage(result, operation) {
+    try {
+        if (
+            result === null
+            || typeof result !== 'object'
+            || Array.isArray(result)
+            || Object.getPrototypeOf(result) !== Object.prototype
+        ) throw new TypeError();
+        const keys = Reflect.ownKeys(result);
+        if (
+            keys.length !== 3
+            || !keys.includes('activities')
+            || !keys.includes('has_more')
+            || !keys.includes('tokens')
+        ) throw new TypeError();
+        for (const key of keys) {
+            const descriptor = Object.getOwnPropertyDescriptor(result, key);
+            if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) throw new TypeError();
+        }
+        if (
+            !Array.isArray(result.activities)
+            || result.activities.length > ACTIVITY_PAGE_SIZE
+            || typeof result.has_more !== 'boolean'
+            || (result.has_more && result.activities.length !== ACTIVITY_PAGE_SIZE)
+        ) throw new TypeError();
+        return {
+            data: cloneJsonValue(result.activities),
+            hasMore: result.has_more,
+            tokens: result.tokens
+        };
+    } catch {
+        throw connectorError(
+            STRAVA_CONNECTOR_ERROR_CODE.INVALID_ENVELOPE,
+            operation
+        );
+    }
+}
+
 function readStatus(response) {
     try {
         const status = response?.status;
@@ -697,6 +760,9 @@ export class StravaApiConnector {
     #tokenWriter;
     #tokenEncoder;
     #now;
+    #AbortControllerImpl;
+    #setTimeoutImpl;
+    #clearTimeoutImpl;
 
     constructor(options = {}) {
         const normalized = normalizeConstructorOptions(options);
@@ -705,15 +771,41 @@ export class StravaApiConnector {
         this.#tokenWriter = normalized.tokenWriter;
         this.#tokenEncoder = normalized.tokenEncoder;
         this.#now = normalized.now;
+        this.#AbortControllerImpl = normalized.AbortControllerImpl;
+        this.#setTimeoutImpl = normalized.setTimeoutImpl;
+        this.#clearTimeoutImpl = normalized.clearTimeoutImpl;
     }
 
-    fetchActivities() {
-        return this.#request({
-            operation: 'listActivities',
-            url: '/api/strava-activities',
-            field: 'activities',
-            expectedType: 'array'
-        });
+    async fetchActivities() {
+        const operation = 'listActivities';
+        const activities = [];
+        let claimedBytes = 0;
+        for (let page = 1; page <= MAX_ACTIVITY_PAGES; page += 1) {
+            const authorization = this.#authorization(operation);
+            const result = await this.#fetchJson(
+                `/api/strava-activities?page=${page}&per_page=${ACTIVITY_PAGE_SIZE}`,
+                authorization,
+                operation,
+                MAX_ACTIVITY_PAGE_BYTES,
+                bytes => {
+                    claimedBytes += bytes;
+                    return claimedBytes <= MAX_ACTIVITY_SYNC_BYTES;
+                }
+            );
+            const envelope = readActivitiesPage(result, operation);
+            this.#persistRefreshedToken(
+                envelope.tokens,
+                operation,
+                true,
+                authorization.authority
+            );
+            if (activities.length + envelope.data.length > MAX_ACTIVITIES) {
+                throw connectorError(STRAVA_CONNECTOR_ERROR_CODE.INVALID_ENVELOPE, operation);
+            }
+            activities.push(...envelope.data);
+            if (!envelope.hasMore) return activities;
+        }
+        throw connectorError(STRAVA_CONNECTOR_ERROR_CODE.INVALID_ENVELOPE, operation);
     }
 
     fetchActivity(activityId) {
@@ -723,7 +815,8 @@ export class StravaApiConnector {
             operation,
             url: `/api/strava-activity?id=${encodeURIComponent(id)}`,
             field: 'activity',
-            expectedType: 'object'
+            expectedType: 'object',
+            maxBytes: MAX_ACTIVITY_BYTES
         });
     }
 
@@ -735,7 +828,8 @@ export class StravaApiConnector {
             operation,
             url: `/api/strava-streams?id=${encodeURIComponent(id)}&type=${encodeURIComponent(types.join(','))}`,
             field: 'streams',
-            expectedType: 'object'
+            expectedType: 'object',
+            maxBytes: MAX_STREAM_BYTES
         });
     }
 
@@ -744,7 +838,8 @@ export class StravaApiConnector {
             operation: 'getAthlete',
             url: '/api/strava-athlete',
             field: 'athlete',
-            expectedType: 'object'
+            expectedType: 'object',
+            maxBytes: MAX_METADATA_BYTES
         });
     }
 
@@ -753,7 +848,8 @@ export class StravaApiConnector {
             operation: 'getZones',
             url: '/api/strava-zones',
             field: 'zones',
-            expectedType: 'object'
+            expectedType: 'object',
+            maxBytes: MAX_METADATA_BYTES
         });
     }
 
@@ -764,7 +860,8 @@ export class StravaApiConnector {
             operation,
             url: `/api/strava-gear?id=${encodeURIComponent(id)}`,
             field: 'gear',
-            expectedType: 'object'
+            expectedType: 'object',
+            maxBytes: MAX_METADATA_BYTES
         });
     }
 
@@ -897,46 +994,96 @@ export class StravaApiConnector {
         }
     }
 
-    async #request({
-        operation,
-        url,
-        field,
-        expectedType
-    }) {
-        const authorization = this.#authorization(operation);
-        let response;
+    async #fetchJson(url, authorization, operation, maxBytes, claimBytes = () => true) {
+        let timeoutId;
+        let timedOut = false;
+        let controller;
         try {
-            response = await this.#fetchImpl(url, {
-                method: 'GET',
-                headers: {
-                    Authorization: authorization.header
+            controller = new this.#AbortControllerImpl();
+            timeoutId = this.#setTimeoutImpl(() => {
+                timedOut = true;
+                try {
+                    controller.abort();
+                } catch {
+                    // The fixed timeout result does not expose abort implementation details.
                 }
-            });
-        } catch {
+            }, REQUEST_TIMEOUT_MS);
+
+            let response;
+            try {
+                response = await this.#fetchImpl(url, {
+                    method: 'GET',
+                    headers: { Authorization: authorization.header },
+                    credentials: 'same-origin',
+                    cache: 'no-store',
+                    redirect: 'error',
+                    referrerPolicy: 'no-referrer',
+                    signal: controller.signal
+                });
+            } catch {
+                throw connectorError(
+                    STRAVA_CONNECTOR_ERROR_CODE.NETWORK_FAILED,
+                    operation,
+                    { retryable: true }
+                );
+            }
+            const status = readStatus(response);
+            if (status === null || status < 200 || status >= 300) {
+                throw httpError(status, operation, response, this.#now);
+            }
+
+            try {
+                const result = await readBoundedResponseJson(response, { maxBytes, claimBytes });
+                if (timedOut) {
+                    throw connectorError(
+                        STRAVA_CONNECTOR_ERROR_CODE.NETWORK_FAILED,
+                        operation,
+                        { retryable: true }
+                    );
+                }
+                return result.value;
+            } catch (error) {
+                if (error instanceof StravaConnectorError) throw error;
+                throw connectorError(
+                    timedOut
+                        ? STRAVA_CONNECTOR_ERROR_CODE.NETWORK_FAILED
+                        : STRAVA_CONNECTOR_ERROR_CODE.INVALID_JSON,
+                    operation,
+                    timedOut ? { retryable: true } : undefined
+                );
+            }
+        } catch (error) {
+            if (error instanceof StravaConnectorError) throw error;
             throw connectorError(
                 STRAVA_CONNECTOR_ERROR_CODE.NETWORK_FAILED,
                 operation,
                 { retryable: true }
             );
-        }
-
-        const status = readStatus(response);
-        if (status === null || status < 200 || status >= 300) {
-            throw httpError(status, operation, response, this.#now);
-        }
-
-        let result;
-        try {
-            if (typeof response?.json !== 'function') {
-                throw new TypeError();
+        } finally {
+            if (timeoutId !== undefined) {
+                try {
+                    this.#clearTimeoutImpl(timeoutId);
+                } catch {
+                    // Cleanup failure cannot change the fixed request result.
+                }
             }
-            result = await response.json();
-        } catch {
-            throw connectorError(
-                STRAVA_CONNECTOR_ERROR_CODE.INVALID_JSON,
-                operation
-            );
         }
+    }
+
+    async #request({
+        operation,
+        url,
+        field,
+        expectedType,
+        maxBytes
+    }) {
+        const authorization = this.#authorization(operation);
+        const result = await this.#fetchJson(
+            url,
+            authorization,
+            operation,
+            maxBytes
+        );
 
         const envelope = readEnvelope(result, field, expectedType, operation);
         this.#persistRefreshedToken(

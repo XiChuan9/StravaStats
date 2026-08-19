@@ -199,7 +199,30 @@ function oauthResponse(athleteId = ATHLETE_ID) {
     };
 }
 
+function oauthAuthorityResponse(subjectId = ATHLETE_ID) {
+    return {
+        access_token: 'synthetic-oauth-access-token',
+        refresh_token: 'synthetic-oauth-refresh-token',
+        expires_at: 2_200_000_000,
+        subject_id: String(subjectId),
+        granted_scopes: ['read', 'activity:read_all']
+    };
+}
+
+function legacyStateRecord(state, overrides = {}) {
+    return JSON.stringify({
+        schemaVersion: 1,
+        state,
+        createdAt: FIXED_NOW_MS - 1_000,
+        expiresAt: FIXED_NOW_MS + 599_000,
+        returnPath: '/dashboard',
+        ...overrides
+    });
+}
+
 function jsonResponse(data) {
+    const bytes = new TextEncoder().encode(JSON.stringify(data));
+    let offset = 0;
     return {
         ok: true,
         status: 200,
@@ -208,7 +231,20 @@ function jsonResponse(data) {
                 ? 'application/json'
                 : null
         },
-        json: async () => data
+        body: {
+            getReader() {
+                return {
+                    async read() {
+                        if (offset >= bytes.byteLength) return { done: true };
+                        const value = bytes.subarray(offset);
+                        offset = bytes.byteLength;
+                        return { done: false, value };
+                    },
+                    async cancel() { offset = bytes.byteLength; },
+                    releaseLock() {}
+                };
+            }
+        }
     };
 }
 
@@ -240,7 +276,8 @@ globalThis.alert = () => {};
 const {
     handleAuth,
     loginWithDemo,
-    logout
+    logout,
+    redirectToStrava
 } = await import('../../js/app/auth.js?demo-isolation-test');
 const {
     selectTrendsMetadataContext
@@ -1567,7 +1604,7 @@ test('Malformed or expired Demo tokens clear only the Demo namespace', async () 
     }
 });
 
-test('Real OAuth takes priority over Demo and clears only Demo after success', async () => {
+test('Demo mode ignores OAuth callback parameters and performs no provider exchange', async () => {
     const storage = new MemoryStorage({
         ...realLibrary(),
         ...demoNamespace()
@@ -1600,56 +1637,185 @@ test('Real OAuth takes priority over Demo and clears only Demo after success', a
     });
 
     assert.equal(result.status, 'success');
-    assert.equal(fetchCalls, 1);
-    assert.equal(historyCalls, 1);
-    assertDemoCleared(storage);
+    assert.equal(result.demo, true);
+    assert.equal(fetchCalls, 0);
+    assert.equal(historyCalls, 0);
     assert.equal(
         authenticatedTokens.access_token,
-        'synthetic-oauth-access-token'
+        'synthetic-demo-access-token'
     );
     assert.equal(
         JSON.parse(storage.getItem('strava_tokens')).access_token,
-        'synthetic-oauth-access-token'
+        REAL_ACCESS_TOKEN
     );
-    const realAfter = realSnapshot(storage);
-    assert.deepEqual(
-        {
-            ...realAfter,
-            strava_tokens: realBefore.strava_tokens
-        },
-        realBefore
-    );
+    assert.deepEqual(realSnapshot(storage), realBefore);
+    for (const key of DEMO_STORAGE_KEYS) assert.equal(storage.values.has(key), true);
 });
 
-test('OAuth identity mismatch from Demo fails closed with zero storage writes', async () => {
+test('Demo mode never calls an OAuth provider even if callback identity would mismatch', async () => {
     const storage = new MemoryStorage({
         ...realLibrary(),
         ...demoNamespace()
     });
     const before = storage.snapshot();
-    const originalConsoleError = console.error;
-    console.error = () => {};
     storage.operations = [];
+    let authenticatedCalls = 0;
+    let fetchCalls = 0;
 
-    try {
-        await assert.rejects(
-            handleAuth(() => {
-                throw new Error('Mismatched OAuth must not authenticate');
-            }, {
-                storage,
-                search: '?code=synthetic-mismatch-code',
-                now: FIXED_NOW_MS,
-                fetchImpl: async () => jsonResponse(oauthResponse(2002002)),
-                history: { replaceState: () => {} }
-            }),
-            error => error?.code === 'identity-mismatch'
-        );
-    } finally {
-        console.error = originalConsoleError;
-    }
+    const result = await handleAuth(() => {
+        authenticatedCalls += 1;
+    }, {
+        storage,
+        search: '?code=synthetic-mismatch-code&state=invalid&scope=read,activity:read_all',
+        now: FIXED_NOW_MS,
+        fetchImpl: async () => {
+            fetchCalls += 1;
+            return jsonResponse(oauthResponse(2002002));
+        },
+        history: { replaceState: () => {} }
+    });
 
+    assert.equal(result.demo, true);
+    assert.equal(authenticatedCalls, 1);
+    assert.equal(fetchCalls, 0);
     assert.deepEqual(storage.snapshot(), before);
     assert.deepEqual(storage.operations, []);
+});
+
+test('Real OAuth rejects missing, mismatched, expired, and expanded state before provider access', async () => {
+    const state = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq';
+    const cases = [
+        {
+            name: 'missing state parameter',
+            search: '?code=synthetic-code&scope=read,activity:read_all',
+            session: new MemoryStorage()
+        },
+        {
+            name: 'mismatched state',
+            search: '?code=synthetic-code&state=0123456789_abcdefghijklmnopqrstuvwxyzABCDEF&scope=read,activity:read_all',
+            session: new MemoryStorage({
+                legacy_authorization_state: legacyStateRecord(state)
+            })
+        },
+        {
+            name: 'expired state',
+            search: `?code=synthetic-code&state=${state}&scope=read,activity:read_all`,
+            session: new MemoryStorage({
+                legacy_authorization_state: legacyStateRecord(state, {
+                    createdAt: FIXED_NOW_MS - 600_001,
+                    expiresAt: FIXED_NOW_MS - 1
+                })
+            })
+        },
+        {
+            name: 'expanded scope',
+            search: `?code=synthetic-code&state=${state}&scope=read,activity:read_all,profile:read_all`,
+            session: new MemoryStorage({
+                legacy_authorization_state: legacyStateRecord(state)
+            })
+        }
+    ];
+
+    for (const scenario of cases) {
+        const storage = new MemoryStorage(realLibrary());
+        const before = storage.snapshot();
+        let fetchCalls = 0;
+        await assert.rejects(handleAuth(() => {}, {
+            storage,
+            sessionStorage: scenario.session,
+            pathname: '/dashboard',
+            search: scenario.search,
+            now: FIXED_NOW_MS,
+            fetchImpl: async () => {
+                fetchCalls += 1;
+                return jsonResponse(oauthAuthorityResponse());
+            }
+        }), scenario.name);
+        assert.equal(fetchCalls, 0, scenario.name);
+        assert.deepEqual(storage.snapshot(), before, scenario.name);
+    }
+});
+
+test('Real OAuth redirect stores 256-bit state and requests only the exact scopes', async () => {
+    const sessionStorage = new MemoryStorage();
+    const navigations = [];
+    const fetches = [];
+    await redirectToStrava({
+        sessionStorage,
+        origin: 'https://synthetic.example',
+        pathname: '/dashboard',
+        now: () => FIXED_NOW_MS,
+        crypto: {
+            getRandomValues(bytes) {
+                for (let index = 0; index < bytes.length; index += 1) {
+                    bytes[index] = index;
+                }
+                return bytes;
+            }
+        },
+        fetchImpl: async (...args) => {
+            fetches.push(args);
+            return jsonResponse({ stravaClientId: '12345' });
+        },
+        navigate(url) { navigations.push(url); }
+    });
+
+    assert.equal(fetches.length, 1);
+    assert.equal(fetches[0][0], '/api/config');
+    assert.equal(navigations.length, 1);
+    const record = JSON.parse(sessionStorage.values.get('legacy_authorization_state'));
+    assert.equal(record.state.length, 43);
+    assert.equal(record.expiresAt - record.createdAt, 600_000);
+    assert.equal(record.returnPath, '/dashboard');
+    const destination = new URL(navigations[0]);
+    assert.equal(destination.origin, 'https://www.strava.com');
+    assert.equal(destination.pathname, '/oauth/authorize');
+    assert.equal(destination.searchParams.get('scope'), 'read,activity:read_all');
+    assert.equal(destination.searchParams.get('state'), record.state);
+    assert.equal(destination.search.includes('profile%3Aread_all'), false);
+});
+
+test('Real OAuth state is single-use and replay cannot fetch or rewrite tokens', async () => {
+    const state = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq';
+    const storage = new MemoryStorage(realLibrary());
+    const sessionStorage = new MemoryStorage({
+        legacy_authorization_state: legacyStateRecord(state)
+    });
+    const search = `?code=synthetic-code&state=${state}&scope=read,activity:read_all`;
+    let fetchCalls = 0;
+    let authenticatedCalls = 0;
+    const lifecycleFactory = () => ({
+        async acceptOAuthTokenResponse(token) {
+            storage.setItem('strava_tokens', JSON.stringify(token));
+            return Object.freeze({ status: 'success' });
+        }
+    });
+    const options = {
+        storage,
+        sessionStorage,
+        pathname: '/dashboard',
+        search,
+        now: FIXED_NOW_MS,
+        history: { replaceState() {} },
+        lifecycleFactory,
+        fetchImpl: async () => {
+            fetchCalls += 1;
+            return jsonResponse(oauthAuthorityResponse());
+        }
+    };
+
+    const result = await handleAuth(() => {
+        authenticatedCalls += 1;
+    }, options);
+    assert.equal(result.status, 'success');
+    assert.equal(fetchCalls, 1);
+    assert.equal(authenticatedCalls, 1);
+    assert.equal(sessionStorage.values.has('legacy_authorization_state'), false);
+    const tokenAfterSuccess = storage.getItem('strava_tokens');
+
+    await assert.rejects(handleAuth(() => {}, options));
+    assert.equal(fetchCalls, 1);
+    assert.equal(storage.getItem('strava_tokens'), tokenAfterSuccess);
 });
 
 test('A partial Demo write is compensated without touching the real library', () => {

@@ -107,19 +107,59 @@ function syntheticResponse({
     jsonError = null,
     counters = null
 } = {}) {
+    let responseBody = body;
+    if (
+        body
+        && typeof body === 'object'
+        && !Array.isArray(body)
+        && Array.isArray(body.activities)
+        && !Object.hasOwn(body, 'has_more')
+        && Reflect.ownKeys(body).every(key => key === 'activities' || key === 'tokens')
+    ) {
+        responseBody = {
+            activities: body.activities,
+            has_more: false,
+            tokens: Object.hasOwn(body, 'tokens') ? body.tokens : null
+        };
+    }
+    const bytes = new TextEncoder().encode(
+        jsonError ? '{' : JSON.stringify(responseBody)
+    );
+    let offset = 0;
     return {
         ok: status >= 200 && status < 300,
         status,
         headers: {
-            get() {
+            get(name) {
                 counters && (counters.headerReads += 1);
+                if (String(name).toLowerCase() === 'content-type') {
+                    return 'application/json';
+                }
                 return null;
+            }
+        },
+        body: {
+            getReader() {
+                return {
+                    async read() {
+                        if (offset >= bytes.byteLength) return { done: true };
+                        counters && (counters.jsonReads += 1);
+                        if (jsonError) throw jsonError;
+                        const value = bytes.subarray(offset);
+                        offset = bytes.byteLength;
+                        return { done: false, value };
+                    },
+                    async cancel() {
+                        offset = bytes.byteLength;
+                    },
+                    releaseLock() {}
+                };
             }
         },
         async json() {
             counters && (counters.jsonReads += 1);
             if (jsonError) throw jsonError;
-            return body;
+            return responseBody;
         }
     };
 }
@@ -304,7 +344,7 @@ test('Demo fetchAllActivities reads only the Demo namespace and stays offline', 
     assert.deepEqual(storage.removeCalls, []);
 });
 
-test('real fetchAllActivities delegates one exact network-only proxy request', async () => {
+test('real fetchAllActivities delegates one bounded first-page proxy request', async () => {
     const activities = [
         { id: 'synthetic-activity-z', name: 'Later' },
         { id: 'synthetic-activity-a', name: 'Earlier' }
@@ -333,12 +373,15 @@ test('real fetchAllActivities delegates one exact network-only proxy request', a
     });
 
     assert.equal(fetchCalls.length, 1);
-    assert.equal(fetchCalls[0][0], '/api/strava-activities');
+    assert.equal(fetchCalls[0][0], '/api/strava-activities?page=1&per_page=25');
     assert.deepEqual(fetchCalls[0][1], {
         method: 'GET',
-        headers: { Authorization: `Bearer ${ENCODED_TOKEN}` }
+        headers: { Authorization: `Bearer ${ENCODED_TOKEN}` },
+        credentials: 'same-origin',
+        cache: 'no-store',
+        redirect: 'error',
+        referrerPolicy: 'no-referrer'
     });
-    assert.doesNotMatch(fetchCalls[0][0], /page|per_page/);
     assert.deepEqual(storage.getCalls, ['strava_demo_mode', 'strava_tokens']);
     assert.deepEqual(storage.setCalls, []);
     assert.deepEqual(storage.removeCalls, []);

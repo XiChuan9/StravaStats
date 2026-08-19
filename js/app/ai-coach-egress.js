@@ -1,3 +1,5 @@
+import { readBoundedResponseText } from '../shared/bounded-response.js';
+
 export const AI_COACH_MODEL = 'gemini-3-flash-preview';
 export const AI_COACH_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${AI_COACH_MODEL}:generateContent`;
 export const AI_COACH_CONFIRM_LABEL = 'Send this request to Google Gemini';
@@ -420,10 +422,11 @@ export function createAICoachSession(options = {}) {
             });
             enforceActiveState(state);
             if (result?.ok !== true) fail('AI_COACH_PROVIDER_ERROR');
-            if (typeof result.text !== 'function') fail('AI_COACH_RESPONSE_INVALID');
-            const raw = await result.text();
+            const { text: raw } = await readBoundedResponseText(result, {
+                maxBytes: RESPONSE_BODY_LIMIT,
+                requireJson: true
+            });
             enforceActiveState(state);
-            if (typeof raw !== 'string' || raw.length > RESPONSE_BODY_LIMIT) fail('AI_COACH_RESPONSE_INVALID');
             const reply = responseText(raw);
             enforceActiveState(state);
             appendBoundedHistory(history, prepared.question, reply);

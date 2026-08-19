@@ -33,6 +33,8 @@ class MemoryStorage {
 
 function response(body, { status = 200, contentType = 'application/json' } = {}) {
     const serialized = JSON.stringify(body);
+    const bytes = new TextEncoder().encode(serialized);
+    let offset = 0;
     return {
         ok: status >= 200 && status < 300,
         status,
@@ -45,7 +47,22 @@ function response(body, { status = 200, contentType = 'application/json' } = {})
                 return null;
             }
         },
-        async text() { return serialized; }
+        body: {
+            getReader() {
+                return {
+                    async read() {
+                        if (offset >= bytes.byteLength) return { done: true };
+                        const value = bytes.subarray(offset);
+                        offset = bytes.byteLength;
+                        return { done: false, value };
+                    },
+                    async cancel() {
+                        offset = bytes.byteLength;
+                    },
+                    releaseLock() {}
+                };
+            }
+        }
     };
 }
 

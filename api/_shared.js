@@ -1,5 +1,10 @@
 // api/_shared.js — Shared authentication utilities for all API endpoints
 
+import {
+    PROVIDER_LIMIT,
+    requestProviderJson
+} from './_provider-boundary.js';
+
 export const SERVER_API_EVENT = Object.freeze({
     TOKEN_REFRESH_FAILED: 'server_api.token_refresh_failed',
     AUTH_NETWORK_FAILED: 'server_api.auth_network_failed',
@@ -26,23 +31,41 @@ export function logServerEvent(event) {
 }
 
 async function refreshAccessToken(refreshToken) {
-    const response = await fetch('https://www.strava.com/oauth/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            client_id: process.env.STRAVA_CLIENT_ID,
-            client_secret: process.env.STRAVA_CLIENT_SECRET,
-            grant_type: 'refresh_token',
-            refresh_token: refreshToken
-        })
-    });
-
-    if (!response.ok) {
+    let data;
+    try {
+        data = await requestProviderJson('https://www.strava.com/oauth/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                client_id: process.env.STRAVA_CLIENT_ID,
+                client_secret: process.env.STRAVA_CLIENT_SECRET,
+                grant_type: 'refresh_token',
+                refresh_token: refreshToken
+            })
+        }, {
+            maxBytes: PROVIDER_LIMIT.TOKEN_BYTES
+        });
+    } catch (error) {
+        logServerEvent(SERVER_API_EVENT.TOKEN_REFRESH_FAILED);
+        throw error;
+    }
+    if (
+        data === null
+        || typeof data !== 'object'
+        || Array.isArray(data)
+        || typeof data.access_token !== 'string'
+        || data.access_token.length === 0
+        || data.access_token.length > 4_096
+        || typeof data.refresh_token !== 'string'
+        || data.refresh_token.length === 0
+        || data.refresh_token.length > 4_096
+        || !Number.isSafeInteger(data.expires_at)
+        || data.expires_at <= 0
+    ) {
         logServerEvent(SERVER_API_EVENT.TOKEN_REFRESH_FAILED);
         throw new Error('Token refresh failed');
     }
-
-    return await response.json();
+    return data;
 }
 
 export async function getValidAccessToken(req) {
