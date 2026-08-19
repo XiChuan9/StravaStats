@@ -16,7 +16,6 @@ import {
     renderWrappedTab,
     renderMapTab,
     renderAIChatTab,
-    renderRunPlusTab,
     setRunSessionGears,
 } from '../tabs/index.js';
 import {
@@ -83,25 +82,10 @@ const SUMMARY_GEAR_LOAD_KEYS = new Set([
     'partial',
     'status'
 ]);
-const RUN_PLUS_STREAM_OPTION_KEYS = new Set(['types']);
-const RUN_PLUS_RENDER_OPTION_KEYS = new Set([
-    'sessionRepository',
-    'sessionGears',
-    'onFiltersChange',
-    'analysisContext'
-]);
-const RUN_PLUS_STREAM_TYPES = Object.freeze([
-    'time',
-    'distance',
-    'velocity_smooth',
-    'heartrate',
-    'cadence',
-    'altitude'
-]);
+const SUMMARY_STREAM_OPTION_KEYS = new Set(['types']);
 const LOCAL_ANALYSIS_RECOMPUTE_TABS = new Set([
     'dashboard-tab',
     'run-tab',
-    'run-plus-tab',
     'bike-tab',
     'swim-tab',
     'trends-tab',
@@ -231,41 +215,6 @@ function readCanonicalGlobalMapRoute(streams) {
     });
     if (route.length === 0) throw safeOperationalError();
     return route;
-}
-
-function snapshotRunPlusAnalysisContext(value) {
-    if (value === null) return null;
-    const context = readPlainDataRecord(value);
-    if (context === null || !['configured', 'unconfigured'].includes(context.status)) {
-        return undefined;
-    }
-    if (context.status === 'unconfigured') {
-        return Object.freeze({
-            status: 'unconfigured',
-            heartRate: null
-        });
-    }
-    const heartRate = readPlainDataRecord(context.heartRate);
-    if (
-        heartRate === null
-        || !Number.isInteger(heartRate.maxBpm)
-        || heartRate.maxBpm < 100
-        || heartRate.maxBpm > 230
-    ) {
-        return undefined;
-    }
-    return Object.freeze({
-        status: 'configured',
-        heartRate: Object.freeze({
-            maxBpm: heartRate.maxBpm,
-            restingBpm: Number.isInteger(heartRate.restingBpm)
-                ? heartRate.restingBpm
-                : null,
-            thresholdBpm: Number.isInteger(heartRate.thresholdBpm)
-                ? heartRate.thresholdBpm
-                : null
-        })
-    });
 }
 
 function isDenseDataArray(value) {
@@ -428,11 +377,11 @@ export function createSummaryRepositorySession({
             if (typeof activityId !== 'string' || activityId.trim().length === 0) {
                 throw safeOperationalError();
             }
-            const values = readPlainDataRecord(options, RUN_PLUS_STREAM_OPTION_KEYS);
+            const values = readPlainDataRecord(options, SUMMARY_STREAM_OPTION_KEYS);
             const types = values === null ? null : readDenseDataArray(values.types);
             if (
                 values === null
-                || Reflect.ownKeys(values).length !== RUN_PLUS_STREAM_OPTION_KEYS.size
+                || Reflect.ownKeys(values).length !== SUMMARY_STREAM_OPTION_KEYS.size
                 || types === null
                 || types.length === 0
                 || types.some(type => typeof type !== 'string' || type.trim().length === 0)
@@ -673,83 +622,6 @@ export function buildSessionGearNameMap(sessionGears) {
 }
 // B2_C_SESSION_GEAR_MAP_END
 
-function readRunPlusSessionData(value) {
-    const envelope = readPlainDataRecord(value, SUMMARY_ENVELOPE_KEYS);
-    if (
-        envelope === null
-        || Reflect.ownKeys(envelope).length !== SUMMARY_ENVELOPE_KEYS.size
-        || !SUMMARY_SOURCES.has(envelope.source)
-        || envelope.partial !== false
-        || !Array.isArray(envelope.warnings)
-        || readPlainDataRecord(envelope.data) === null
-    ) {
-        throw safeOperationalError();
-    }
-    return envelope.data;
-}
-
-export function createRunPlusRenderOptions(value = {}) {
-    const options = readPlainDataRecord(value, RUN_PLUS_RENDER_OPTION_KEYS);
-    const repository = options === null
-        ? null
-        : readPlainDataRecord(options.sessionRepository);
-    const gears = options === null
-        ? null
-        : readDenseDataArray(options.sessionGears);
-    const hasAnalysisContext = options !== null
-        && Object.hasOwn(options, 'analysisContext');
-    const analysisContext = options === null
-        ? null
-        : snapshotRunPlusAnalysisContext(options.analysisContext ?? null);
-    if (
-        options === null
-        || !Object.hasOwn(options, 'sessionRepository')
-        || !Object.hasOwn(options, 'sessionGears')
-        || !Object.hasOwn(options, 'onFiltersChange')
-        || repository === null
-        || typeof repository.getActivity !== 'function'
-        || typeof repository.getStreams !== 'function'
-        || gears === null
-        || analysisContext === undefined
-        || typeof options.onFiltersChange !== 'function'
-    ) {
-        throw safeOperationalError();
-    }
-
-    const readActivity = repository.getActivity;
-    const readStreams = repository.getStreams;
-    const getActivity = async activityId => {
-        if (typeof activityId !== 'string' || activityId.trim().length === 0) {
-            throw safeOperationalError();
-        }
-        try {
-            return readRunPlusSessionData(await readActivity(activityId));
-        } catch {
-            throw safeOperationalError();
-        }
-    };
-    const getStreams = async activityId => {
-        if (typeof activityId !== 'string' || activityId.trim().length === 0) {
-            throw safeOperationalError();
-        }
-        try {
-            return readRunPlusSessionData(await readStreams(activityId, {
-                types: [...RUN_PLUS_STREAM_TYPES]
-            }));
-        } catch {
-            throw safeOperationalError();
-        }
-    };
-
-    return Object.freeze({
-        gears: Object.freeze([...gears]),
-        getActivity,
-        getStreams,
-        onFiltersChange: options.onFiltersChange,
-        ...(hasAnalysisContext ? { analysisContext } : {})
-    });
-}
-
 // B2_C_PREPROCESSING_CONTEXT_START
 export function selectPreprocessingAthlete(sessionMode, athlete) {
     if (![APP_SESSION_MODE.DEMO, APP_SESSION_MODE.REAL].includes(sessionMode)) {
@@ -871,7 +743,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const tabConfig = {
         'dashboard-tab': { render: () => renderDashboardTab(allActivities, dateFilterFrom, dateFilterTo), usesFilters: true },
         'run-tab': { render: () => renderRunAnalysisTab(allActivities, dateFilterFrom, dateFilterTo, runGearFilter, runRollingWindow), usesFilters: true },
-        'run-plus-tab': { render: () => renderRunPlusTab(allActivities, dateFilterFrom, dateFilterTo, runGearFilter, getRunPlusRenderOptions()), usesFilters: true },
         'bike-tab': { render: () => renderBikeAnalysisTab(allActivities, dateFilterFrom, dateFilterTo, bikeGearFilter, bikeRollingWindow), usesFilters: true },
         'swim-tab': { render: () => renderSwimAnalysisTab(allActivities, dateFilterFrom, dateFilterTo, swimRollingWindow), usesFilters: true },
         'trends-tab': { render: () => renderTrendsTab(allActivities, dateFilterFrom, dateFilterTo, trendsSportFilter, trendsDataType, getTrendsMetadataContext()), usesFilters: true },
@@ -1307,8 +1178,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const routeToTab = {
         '/': 'dashboard-tab',
         '/run': 'run-tab',
-        '/run-plus': 'run-plus-tab',
-        '/run-plus/nsm': 'run-plus-tab',
         '/dashboard': 'dashboard-tab',
         '/bike': 'bike-tab',
         '/swim': 'swim-tab',
@@ -1326,7 +1195,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const tabToRoute = {
         'run-tab': '/run',
-        'run-plus-tab': '/run-plus',
         'dashboard-tab': '/dashboard',
         'bike-tab': '/bike',
         'swim-tab': '/swim',
@@ -1510,54 +1378,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.addEventListener('pagehide', disposeGlobalMapState, { once: true });
 
-    function getRunPlusRenderOptions() {
-        return createRunPlusRenderOptions({
-            sessionRepository: requireSummaryRepositorySession(
-                activeSessionMode,
-                sessionRepository
-            ),
-            sessionGears,
-            onFiltersChange: handleRunPlusFiltersChange,
-            analysisContext: activeSessionMode === APP_SESSION_MODE.DEMO
-                ? sessionAnalysisContext
-                : activeSessionMode === APP_SESSION_MODE.REAL
-                    && getFeatureFlags().dataRepositoryMode === 'canonical'
-                    ? sessionAnalysisContext
-                    : null
-        });
-    }
-
-    function handleRunPlusFiltersChange({ dateFilterFrom: newFrom = null, dateFilterTo: newTo = null, gearFilter: newGear = 'all' } = {}) {
-        dateFilterFrom = newFrom || null;
-        dateFilterTo = newTo || null;
-        runGearFilter = newGear || 'all';
-
-        if (dateFromEl) dateFromEl.value = dateFilterFrom || '';
-        if (dateToEl) dateToEl.value = dateFilterTo || '';
-        if (runGearFilterEl) runGearFilterEl.value = runGearFilter;
-        document.querySelectorAll('#year-filter-buttons .year-btn').forEach(b => b.classList.remove('active'));
-
-        if (dateFilterFrom && dateFilterTo && dateFilterFrom.slice(5) === '01-01' && dateFilterTo.slice(5) === '12-31') {
-            const year = dateFilterFrom.slice(0, 4);
-            document.querySelector(`#year-filter-buttons .year-btn[data-year="${year}"]`)?.classList.add('active');
-        }
-
-        saveFilterState();
-        renderRunRelatedTabs();
-    }
-
     function renderRunRelatedTabs() {
         renderRunAnalysisTab(allActivities, dateFilterFrom, dateFilterTo, runGearFilter, runRollingWindow);
-        if (renderedTabs.has('run-plus-tab') || activeTabId === 'run-plus-tab') {
-            renderRunPlusTab(allActivities, dateFilterFrom, dateFilterTo, runGearFilter, getRunPlusRenderOptions());
-            renderedTabs.add('run-plus-tab');
-        }
     }
 
     function activateTab(tabId, { updateUrl = false, replaceUrl = false } = {}) {
         if (!consumerRenderingEnabled) return;
         if (tabId === activeTabId) {
-            if ((tabId === 'run-plus-tab' || tabId === 'map-tab') && tabConfig[tabId]) {
+            if (tabId === 'map-tab' && tabConfig[tabId]) {
                 renderedTabs.add(tabId);
                 requestAnimationFrame(() => tabConfig[tabId].render());
             } else if (tabId === 'ai-chat-tab'
@@ -1607,10 +1435,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (updateUrl) {
-            const currentRoute = normalizePath(window.location.pathname);
-            const route = replaceUrl && tabId === 'run-plus-tab' && routeToTab[currentRoute] === 'run-plus-tab'
-                ? currentRoute
-                : (tabToRoute[tabId] || '/run');
+            const route = tabToRoute[tabId] || '/run';
             const method = replaceUrl ? 'replaceState' : 'pushState';
             window.history[method]({ tabId }, '', route);
         }

@@ -31,7 +31,7 @@ const MIME = new Map([
   ['.svg', 'image/svg+xml'], ['.txt', 'text/plain; charset=utf-8'],
 ]);
 const SPA_ROUTES = new Set([
-  '/', '/run', '/run-plus', '/run-plus/nsm', '/dashboard', '/bike', '/swim', '/trends',
+  '/', '/run', '/dashboard', '/bike', '/swim', '/trends',
   '/planner', '/gear', '/activities', '/calendar', '/weather', '/map', '/wrapped', '/ai-coach',
 ]);
 

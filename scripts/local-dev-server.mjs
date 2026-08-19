@@ -33,8 +33,6 @@ const mimeTypes = new Map([
 const spaRoutes = new Set([
   '/',
   '/run',
-  '/run-plus',
-  '/run-plus/nsm',
   '/dashboard',
   '/bike',
   '/swim',
