@@ -1,15 +1,18 @@
 import { types as utilTypes } from 'node:util';
 
 import { logServerEvent, SERVER_API_EVENT } from './_shared.js';
+import {
+    PROVIDER_LIMIT,
+    ProviderBoundaryError,
+    requestProviderJson,
+    setNoStoreHeaders
+} from './_provider-boundary.js';
 
-const LEGACY_BODY_FIELDS = Object.freeze(['code']);
 const SOURCE_MANAGER_BODY_FIELDS = Object.freeze(['code', 'granted_scopes']);
 const REQUIRED_SCOPES = Object.freeze(['read', 'activity:read_all']);
 const REQUIRED_PROVIDER_SCOPE = REQUIRED_SCOPES.join(' ');
-const UPSTREAM_TIMEOUT_MS = 12_000;
 const MAX_CODE_LENGTH = 512;
 const MAX_TOKEN_LENGTH = 4_096;
-const MAX_PROVIDER_BYTES = 65_536;
 
 function readOwnData(value, key) {
     if ((typeof value !== 'object' && typeof value !== 'function') || value === null) {
@@ -102,13 +105,7 @@ function normalizeRequest(req) {
             sourceManager: true
         });
     }
-    const legacy = exactOwnData(body, LEGACY_BODY_FIELDS);
-    if (!legacy || !boundedString(legacy.code, MAX_CODE_LENGTH)) return null;
-    return Object.freeze({
-        code: legacy.code,
-        grantedScopes: null,
-        sourceManager: false
-    });
+    return null;
 }
 
 function positiveDecimal(value) {
@@ -116,35 +113,6 @@ function positiveDecimal(value) {
     return typeof value === 'string' && /^[1-9]\d*$/.test(value) && value.length <= 32
         ? value
         : null;
-}
-
-function responseHeader(response, name) {
-    try {
-        const headers = response?.headers;
-        if (!headers || typeof headers.get !== 'function') return null;
-        return headers.get(name);
-    } catch {
-        return null;
-    }
-}
-
-async function readProviderJson(response) {
-    const type = responseHeader(response, 'content-type');
-    const lengthRaw = responseHeader(response, 'content-length');
-    if (typeof type !== 'string' || !/^application\/json(?:\s*;|$)/i.test(type.trim())) {
-        throw new TypeError();
-    }
-    if (lengthRaw !== null) {
-        if (typeof lengthRaw !== 'string' || !/^\d+$/.test(lengthRaw)) throw new TypeError();
-        const length = Number(lengthRaw);
-        if (!Number.isSafeInteger(length) || length > MAX_PROVIDER_BYTES) throw new TypeError();
-    }
-    if (typeof response?.text !== 'function') throw new TypeError();
-    const text = await response.text();
-    if (typeof text !== 'string' || text.length === 0 || text.length > MAX_PROVIDER_BYTES) {
-        throw new TypeError();
-    }
-    return JSON.parse(text);
 }
 
 function normalizeProviderToken(value, grantedScopes) {
@@ -163,7 +131,7 @@ function normalizeProviderToken(value, grantedScopes) {
         || !Number.isSafeInteger(expiresAt)
         || expiresAt <= 0
         || subjectId === null
-        || (grantedScopes !== null && providerScope !== REQUIRED_PROVIDER_SCOPE)
+        || providerScope !== REQUIRED_PROVIDER_SCOPE
     ) return null;
     const reduced = {
         access_token: accessToken,
@@ -171,14 +139,12 @@ function normalizeProviderToken(value, grantedScopes) {
         expires_at: expiresAt,
         subject_id: subjectId
     };
-    if (grantedScopes !== null) reduced.granted_scopes = [...REQUIRED_SCOPES];
+    reduced.granted_scopes = [...REQUIRED_SCOPES];
     return reduced;
 }
 
 function setFixedHeaders(res) {
-    res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Referrer-Policy', 'no-referrer');
+    setNoStoreHeaders(res);
 }
 
 export default async function handler(req, res) {
@@ -202,32 +168,30 @@ export default async function handler(req, res) {
         code: request.code,
         grant_type: 'authorization_code'
     });
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
-    let response;
     try {
-        try {
-            response = await fetch('https://www.strava.com/oauth/token', {
-                method: 'POST',
-                body: params,
-                signal: controller.signal
-            });
-        } catch {
-            logServerEvent(SERVER_API_EVENT.AUTH_NETWORK_FAILED);
-            return res.status(502).json({ error: 'AUTH_NETWORK_FAILED' });
-        }
-
-        if (!response || response.ok !== true || response.status < 200 || response.status >= 300) {
-            logServerEvent(SERVER_API_EVENT.AUTH_PROVIDER_REJECTED);
-            return res.status(502).json({ error: 'AUTH_PROVIDER_REJECTED' });
-        }
-
         let data;
         try {
-            data = await readProviderJson(response);
-        } catch {
-            logServerEvent(SERVER_API_EVENT.AUTH_RESPONSE_INVALID);
-            return res.status(502).json({ error: 'AUTH_RESPONSE_INVALID' });
+            data = await requestProviderJson('https://www.strava.com/oauth/token', {
+                method: 'POST',
+                body: params
+            }, {
+                maxBytes: PROVIDER_LIMIT.TOKEN_BYTES
+            });
+        } catch (error) {
+            if (error instanceof ProviderBoundaryError && error.code === 'UPSTREAM_TIMEOUT') {
+                logServerEvent(SERVER_API_EVENT.AUTH_NETWORK_FAILED);
+                return res.status(504).json({ error: 'AUTH_TIMEOUT' });
+            }
+            if (error instanceof ProviderBoundaryError && error.code === 'UPSTREAM_REJECTED') {
+                logServerEvent(SERVER_API_EVENT.AUTH_PROVIDER_REJECTED);
+                return res.status(502).json({ error: 'AUTH_PROVIDER_REJECTED' });
+            }
+            if (error instanceof ProviderBoundaryError && error.code.startsWith('UPSTREAM_RESPONSE')) {
+                logServerEvent(SERVER_API_EVENT.AUTH_RESPONSE_INVALID);
+                return res.status(502).json({ error: 'AUTH_RESPONSE_INVALID' });
+            }
+            logServerEvent(SERVER_API_EVENT.AUTH_NETWORK_FAILED);
+            return res.status(502).json({ error: 'AUTH_NETWORK_FAILED' });
         }
         const reduced = normalizeProviderToken(data, request.grantedScopes);
         if (!reduced) {
@@ -235,7 +199,8 @@ export default async function handler(req, res) {
             return res.status(502).json({ error: 'AUTH_RESPONSE_INVALID' });
         }
         return res.status(200).json(reduced);
-    } finally {
-        clearTimeout(timeout);
+    } catch {
+        logServerEvent(SERVER_API_EVENT.AUTH_NETWORK_FAILED);
+        return res.status(502).json({ error: 'AUTH_NETWORK_FAILED' });
     }
 }

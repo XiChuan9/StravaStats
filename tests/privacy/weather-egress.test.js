@@ -53,10 +53,32 @@ function hourly(overrides = {}) {
 }
 
 function okResponse(hourlyValue = hourly()) {
+    const bytes = new TextEncoder().encode(JSON.stringify({ hourly: hourlyValue }));
+    let offset = 0;
     return {
         ok: true,
-        async json() {
-            return { hourly: hourlyValue };
+        status: 200,
+        headers: {
+            get(name) {
+                if (String(name).toLowerCase() === 'content-type') return 'application/json';
+                return null;
+            }
+        },
+        body: {
+            getReader() {
+                return {
+                    async read() {
+                        if (offset >= bytes.byteLength) return { done: true };
+                        const value = bytes.subarray(offset);
+                        offset = bytes.byteLength;
+                        return { done: false, value };
+                    },
+                    async cancel() {
+                        offset = bytes.byteLength;
+                    },
+                    releaseLock() {}
+                };
+            }
         }
     };
 }
@@ -256,7 +278,7 @@ test('only literal finite hourly numbers are present and genuine zero survives',
         wind_speed: null,
         wind_direction: null,
         weather_code: null,
-        humidity: -0,
+        humidity: 0,
         cloudcover: null,
         pressure: null,
         weather_time: '2031-02-03T04:00'
@@ -344,9 +366,6 @@ test('HTTP, network, malformed, time, and timeout failures remain unavailable', 
             surface_pressure: { 0: 1000 },
             relativehumidity_2m: { 0: 50 }
         }))],
-        ['sparse hourly field', async () => okResponse(hourly({
-            temperature_2m: new Array(1)
-        }))],
         ['mismatched hourly field length', async () => okResponse(hourly({
             temperature_2m: []
         }))]
@@ -373,44 +392,20 @@ test('HTTP, network, malformed, time, and timeout failures remain unavailable', 
     });
 });
 
-test('hourly accessors fail closed without execution', async () => {
-    const { createWeatherConsentService } = await consentModule('hourly-accessor');
-    let reads = 0;
-    const temperatures = [0];
-    Object.defineProperty(temperatures, 0, {
-        configurable: true,
-        enumerable: true,
-        get() {
-            reads += 1;
-            return 17;
-        }
-    });
+test('weather response is consumed from bounded bytes without response.json', async () => {
+    const { createWeatherConsentService } = await consentModule('bounded-stream');
+    let jsonCalls = 0;
+    const providerResponse = okResponse();
+    providerResponse.json = async () => {
+        jsonCalls += 1;
+        throw new Error('synthetic-json-method-secret');
+    };
     const service = createWeatherConsentService(serviceDependencies({
-        fetch: async () => okResponse(hourly({ temperature_2m: temperatures }))
+        fetch: async () => providerResponse
     }));
     service.grant();
-    assert.equal(await service.request(VALID_INPUT), null);
-    assert.equal(reads, 0);
-});
-
-test('hourly record accessors fail closed without execution', async () => {
-    const { createWeatherConsentService } = await consentModule('hourly-record-accessor');
-    let reads = 0;
-    const hourlyRecord = hourly();
-    Object.defineProperty(hourlyRecord, 'time', {
-        configurable: true,
-        enumerable: true,
-        get() {
-            reads += 1;
-            return ['2031-02-03T04:00'];
-        }
-    });
-    const service = createWeatherConsentService(serviceDependencies({
-        fetch: async () => okResponse(hourlyRecord)
-    }));
-    service.grant();
-    assert.equal(await service.request(VALID_INPUT), null);
-    assert.equal(reads, 0);
+    assert.equal((await service.request(VALID_INPUT)).temperature, 0);
+    assert.equal(jsonCalls, 0);
 });
 
 test('cache is consent-bound, expires at 30 minutes, and is capped at 256', async () => {

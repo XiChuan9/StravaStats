@@ -38,11 +38,11 @@ const HANDLERS = Object.freeze([
     Object.freeze({
         name: 'activities',
         handler: activitiesHandler,
-        query: Object.freeze({}),
+        query: Object.freeze({ page: '1', per_page: '25' }),
         event: EXPECTED_EVENTS.ACTIVITIES_FAILED,
         providerStatus: 503,
-        responseStatus: 500,
-        providerError: 'Failed to fetch activities from Strava'
+        responseStatus: 502,
+        providerError: 'ACTIVITIES_UPSTREAM_FAILED'
     }),
     Object.freeze({
         name: 'activity',
@@ -50,7 +50,7 @@ const HANDLERS = Object.freeze([
         query: Object.freeze({ id: 'synthetic-opaque-id' }),
         event: EXPECTED_EVENTS.ACTIVITY_FAILED,
         providerStatus: 404,
-        providerError: 'Failed to fetch activity from Strava'
+        providerError: 'ACTIVITY_UPSTREAM_FAILED'
     }),
     Object.freeze({
         name: 'athlete',
@@ -58,7 +58,7 @@ const HANDLERS = Object.freeze([
         query: Object.freeze({}),
         event: EXPECTED_EVENTS.ATHLETE_FAILED,
         providerStatus: 403,
-        providerError: 'Failed to fetch athlete from Strava'
+        providerError: 'ATHLETE_UPSTREAM_FAILED'
     }),
     Object.freeze({
         name: 'gear',
@@ -66,7 +66,7 @@ const HANDLERS = Object.freeze([
         query: Object.freeze({ id: 'synthetic-opaque-id' }),
         event: EXPECTED_EVENTS.GEAR_FAILED,
         providerStatus: 404,
-        providerError: 'Failed to fetch gear from Strava'
+        providerError: 'GEAR_UPSTREAM_FAILED'
     }),
     Object.freeze({
         name: 'streams',
@@ -74,7 +74,7 @@ const HANDLERS = Object.freeze([
         query: Object.freeze({ id: 'synthetic-opaque-id', type: 'time' }),
         event: EXPECTED_EVENTS.STREAMS_FAILED,
         providerStatus: 429,
-        providerError: 'Failed to fetch streams from Strava'
+        providerError: 'STREAMS_UPSTREAM_FAILED'
     }),
     Object.freeze({
         name: 'zones',
@@ -82,7 +82,7 @@ const HANDLERS = Object.freeze([
         query: Object.freeze({}),
         event: EXPECTED_EVENTS.ZONES_FAILED,
         providerStatus: 403,
-        providerError: 'Failed to fetch zones from Strava'
+        providerError: 'ZONES_UPSTREAM_FAILED'
     })
 ]);
 
@@ -144,9 +144,32 @@ function providerFailure(status) {
 }
 
 function providerSuccess(payload) {
+    const serialized = JSON.stringify(payload);
+    const bytes = new TextEncoder().encode(serialized);
+    let offset = 0;
     return {
         ok: true,
         status: 200,
+        headers: {
+            get(name) {
+                if (String(name).toLowerCase() === 'content-type') return 'application/json';
+                return null;
+            }
+        },
+        body: {
+            getReader() {
+                return {
+                    async read() {
+                        if (offset >= bytes.byteLength) return { done: true };
+                        const value = bytes.subarray(offset);
+                        offset = bytes.byteLength;
+                        return { done: false, value };
+                    },
+                    async cancel() { offset = bytes.byteLength; },
+                    releaseLock() {}
+                };
+            }
+        },
         async json() {
             return payload;
         },
@@ -280,6 +303,8 @@ test('server/API production sources use only the shared closed logger and fixed 
 
 function jsonProviderResponse(body, status = 200) {
     const serialized = JSON.stringify(body);
+    const bytes = new TextEncoder().encode(serialized);
+    let offset = 0;
     return {
         ok: status >= 200 && status < 300,
         status,
@@ -292,7 +317,22 @@ function jsonProviderResponse(body, status = 200) {
                 return null;
             }
         },
-        async text() { return serialized; }
+        body: {
+            getReader() {
+                return {
+                    async read() {
+                        if (offset >= bytes.byteLength) return { done: true };
+                        const value = bytes.subarray(offset);
+                        offset = bytes.byteLength;
+                        return { done: false, value };
+                    },
+                    async cancel() { offset = bytes.byteLength; },
+                    releaseLock() {}
+                };
+            }
+        },
+        async text() { return serialized; },
+        async json() { return body; }
     };
 }
 
@@ -311,6 +351,13 @@ function sourceManagerAuthRequest(body) {
         headers: { 'content-type': 'application/json' },
         body
     };
+}
+
+function validAuthRequest(code = 'synthetic-code') {
+    return sourceManagerAuthRequest({
+        code,
+        granted_scopes: ['read', 'activity:read_all']
+    });
 }
 
 test('Source Manager exchange is exact, bounded, reduced, timed, and no-store', async () => {
@@ -369,17 +416,20 @@ test('Source Manager exchange keeps the upstream timeout active through body con
                 access_token: 'synthetic-access',
                 refresh_token: 'synthetic-refresh',
                 expires_at: 2_100_000_000,
+                scope: 'read activity:read_all',
                 athlete: { id: 424242 }
             });
-            const read = response.text;
-            response.text = async () => {
+            const reader = response.body.getReader();
+            const read = reader.read;
+            reader.read = async () => {
                 bodyConsumed = true;
-                return read();
+                return Reflect.apply(read, reader, []);
             };
+            response.body.getReader = () => reader;
             return response;
         }, async () => {
             const response = createResponse();
-            await authHandler(sourceManagerAuthRequest({ code: 'synthetic-code' }), response);
+            await authHandler(validAuthRequest(), response);
             assert.equal(response.statusCode, 200);
         });
     } finally {
@@ -416,22 +466,17 @@ test('Source Manager exchange requires exact ordered upstream scope evidence', a
     }
 });
 
-test('legacy code-only exchange stays reduced and cannot invent five-field authority', async () => {
-    await withCapturedRuntime(async () => jsonProviderResponse({
-        access_token: 'synthetic-access',
-        refresh_token: 'synthetic-refresh',
-        expires_at: 2_100_000_000,
-        athlete: { id: '424242' }
-    }), async logs => {
+test('legacy code-only exchange is rejected before provider access', async () => {
+    let fetches = 0;
+    await withCapturedRuntime(async () => {
+        fetches += 1;
+        return jsonProviderResponse({});
+    }, async logs => {
         const response = createResponse();
         await authHandler(sourceManagerAuthRequest({ code: 'synthetic-code' }), response);
-        assert.deepEqual(response.body, {
-            access_token: 'synthetic-access',
-            refresh_token: 'synthetic-refresh',
-            expires_at: 2_100_000_000,
-            subject_id: '424242'
-        });
-        assert.equal(Object.hasOwn(response.body, 'granted_scopes'), false);
+        assert.equal(response.statusCode, 400);
+        assertExactBody(response, { error: 'AUTH_REQUEST_INVALID' });
+        assert.equal(fetches, 0);
         assertClosedLogs(logs, []);
     });
 });
@@ -591,7 +636,7 @@ test('token exchange failures use fixed events and fixed response bodies', async
                 const response = createResponse();
                 await invokeWithoutRawRejection(
                     authHandler,
-                    sourceManagerAuthRequest({ code: 'synthetic-code' }),
+                    validAuthRequest(),
                     response
                 );
                 assert.equal(response.statusCode, 502, 'safe auth network status');
@@ -608,7 +653,7 @@ test('token exchange failures use fixed events and fixed response bodies', async
                 const response = createResponse();
                 await invokeWithoutRawRejection(
                     authHandler,
-                    sourceManagerAuthRequest({ code: 'synthetic-code' }),
+                    validAuthRequest(),
                     response
                 );
                 assert.equal(response.statusCode, 502, 'safe auth provider status');
@@ -741,8 +786,8 @@ test('token refresh failure does not read the provider body and emits only close
                 response
             );
             assert.equal(textReads, 0, 'safe refresh body read count');
-            assert.equal(response.statusCode, 500, 'safe refresh failure status');
-            assertExactBody(response, { error: 'Internal Server Error' });
+            assert.equal(response.statusCode, 401, 'safe refresh failure status');
+            assertExactBody(response, { error: 'ATHLETE_UPSTREAM_FAILED' });
             assertClosedLogs(logs, [
                 EXPECTED_EVENTS.TOKEN_REFRESH_FAILED,
                 EXPECTED_EVENTS.ATHLETE_FAILED
@@ -756,7 +801,7 @@ test('hostile thrown values are never inspected, coerced, logged, or returned', 
         Object.freeze({
             name: 'auth',
             handler: authHandler,
-            request: sourceManagerAuthRequest({ code: 'synthetic-code' }),
+            request: validAuthRequest(),
             status: 502,
             event: EXPECTED_EVENTS.AUTH_NETWORK_FAILED
         }),
@@ -764,8 +809,9 @@ test('hostile thrown values are never inspected, coerced, logged, or returned', 
             name: scenario.name,
             handler: scenario.handler,
             request: createRequest(scenario.query),
-            status: 500,
-            event: scenario.event
+            status: 502,
+            event: scenario.event,
+            body: scenario.providerError
         }))
     ];
 
@@ -795,7 +841,7 @@ test('hostile thrown values are never inspected, coerced, logged, or returned', 
                     assert.equal(traps, 0, 'safe hostile trap count');
                     assert.equal(response.statusCode, scenario.status, 'safe hostile status');
                     assertExactBody(response, {
-                        error: scenario.name === 'auth' ? 'AUTH_NETWORK_FAILED' : 'Internal Server Error'
+                        error: scenario.name === 'auth' ? 'AUTH_NETWORK_FAILED' : scenario.body
                     });
                     assertClosedLogs(logs, [scenario.event]);
                 }
@@ -851,7 +897,11 @@ test('ordinary successes emit no server error event', async t => {
     for (const scenario of HANDLERS.filter(item => item.name !== 'activities')) {
         await t.test(scenario.name, async () => {
             await withCapturedRuntime(
-                async () => providerSuccess({ synthetic: true }),
+                async () => providerSuccess(
+                    scenario.name === 'streams'
+                        ? { time: { data: [] } }
+                        : { synthetic: true }
+                ),
                 async logs => {
                     const response = createResponse();
                     await invokeWithoutRawRejection(scenario.handler, createRequest(scenario.query), response);
@@ -868,7 +918,11 @@ test('ordinary successes emit no server error event', async t => {
             async () => providerSuccess(calls++ === 0 ? [{ synthetic: true }] : []),
             async logs => {
                 const response = createResponse();
-                await invokeWithoutRawRejection(activitiesHandler, createRequest(), response);
+                await invokeWithoutRawRejection(
+                    activitiesHandler,
+                    createRequest({ page: '1', per_page: '25' }),
+                    response
+                );
                 assert.equal(response.statusCode, 200, 'safe activities success status');
                 assertClosedLogs(logs, []);
             }
@@ -881,13 +935,14 @@ test('ordinary successes emit no server error event', async t => {
                 access_token: 'synthetic-access',
                 refresh_token: 'synthetic-refresh',
                 expires_at: 4_102_444_800,
+                scope: 'read activity:read_all',
                 athlete: { id: 424242 }
             }),
             async logs => {
                 const response = createResponse();
                 await invokeWithoutRawRejection(
                     authHandler,
-                    sourceManagerAuthRequest({ code: 'synthetic-code' }),
+                    validAuthRequest(),
                     response
                 );
                 assert.equal(response.statusCode, 200, 'safe auth success status');
@@ -895,7 +950,8 @@ test('ordinary successes emit no server error event', async t => {
                     access_token: 'synthetic-access',
                     refresh_token: 'synthetic-refresh',
                     expires_at: 4_102_444_800,
-                    subject_id: '424242'
+                    subject_id: '424242',
+                    granted_scopes: ['read', 'activity:read_all']
                 });
                 assertClosedLogs(logs, []);
             }
@@ -909,7 +965,7 @@ test('ordinary successes emit no server error event', async t => {
                 const response = createResponse();
                 await invokeWithoutRawRejection(
                     authHandler,
-                    sourceManagerAuthRequest({ code: 'synthetic-code' }),
+                    validAuthRequest(),
                     response
                 );
                 assert.equal(response.statusCode, 502, 'safe auth invalid response status');

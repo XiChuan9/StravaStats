@@ -1,38 +1,34 @@
-import { getValidAccessToken, logServerEvent, SERVER_API_EVENT, validateEnv } from './_shared.js';
+import { getValidAccessToken, logServerEvent, SERVER_API_EVENT } from './_shared.js';
+import {
+    boundedOpaqueId,
+    exactQuery,
+    providerErrorStatus,
+    PROVIDER_LIMIT,
+    requestProviderJson,
+    setNoStoreHeaders
+} from './_provider-boundary.js';
 
 export default async function handler(req, res) {
-    try {
-        validateEnv();
-    } catch {
-        return res.status(500).json({ error: 'Server configuration error: Strava environment variables are not set.' });
+    setNoStoreHeaders(res);
+    if (req?.method !== 'GET') {
+        res.setHeader('Allow', 'GET');
+        return res.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
     }
-
-    if (req.method !== 'GET') {
-        return res.status(405).json({ error: 'Method Not Allowed' });
+    const query = exactQuery(req.query, ['id']);
+    if (!query || !boundedOpaqueId(query.id)) {
+        return res.status(400).json({ error: 'ACTIVITY_REQUEST_INVALID' });
     }
-
-    const { id } = req.query;
-    if (!id) {
-        return res.status(400).json({ error: 'Activity ID is required' });
-    }
-
     try {
         const { accessToken, updatedTokens } = await getValidAccessToken(req);
-
-        const stravaResponse = await fetch(`https://www.strava.com/api/v3/activities/${encodeURIComponent(id)}?include_all_efforts=true`, {
-            headers: { Authorization: `Bearer ${accessToken}` }
-        });
-
-        if (!stravaResponse.ok) {
-            logServerEvent(SERVER_API_EVENT.ACTIVITY_FAILED);
-            return res.status(stravaResponse.status).json({ error: 'Failed to fetch activity from Strava' });
-        }
-
-        const activity = await stravaResponse.json();
+        const activity = await requestProviderJson(
+            `https://www.strava.com/api/v3/activities/${encodeURIComponent(query.id)}?include_all_efforts=true`,
+            { method: 'GET', headers: { Authorization: `Bearer ${accessToken}` } },
+            { maxBytes: PROVIDER_LIMIT.ACTIVITY_BYTES }
+        );
+        if (!activity || typeof activity !== 'object' || Array.isArray(activity)) throw new TypeError();
         return res.status(200).json({ activity, tokens: updatedTokens });
-
-    } catch {
+    } catch (error) {
         logServerEvent(SERVER_API_EVENT.ACTIVITY_FAILED);
-        return res.status(500).json({ error: 'Internal Server Error' });
+        return res.status(providerErrorStatus(error)).json({ error: 'ACTIVITY_UPSTREAM_FAILED' });
     }
 }

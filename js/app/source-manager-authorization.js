@@ -1,3 +1,5 @@
+import { readBoundedResponseJson } from '../shared/bounded-response.js';
+
 const OPTION_FIELDS = Object.freeze([
     'fetchImpl',
     'sessionStorage',
@@ -22,6 +24,7 @@ const TOKEN_FIELDS = Object.freeze([
 const CONFIG_FIELDS = Object.freeze(['stravaClientId']);
 const REVOKE_FIELDS = Object.freeze(['revoked']);
 const STATE_KEY = 'source_manager_authorization_state';
+const LEGACY_STATE_KEY = 'legacy_authorization_state';
 const RETURN_PATH = '/source-manager.html?mode=real';
 const STATE_TTL_MS = 600_000;
 const BROWSER_TIMEOUT_MS = 15_000;
@@ -203,7 +206,7 @@ function boundedString(value, maxLength) {
         && value.trim().length > 0;
 }
 
-function normalizeStateRecord(value) {
+function normalizeStateRecord(value, returnPath = RETURN_PATH) {
     const record = exactOwnData(value, STATE_FIELDS);
     if (
         !record
@@ -212,9 +215,110 @@ function normalizeStateRecord(value) {
         || !Number.isSafeInteger(record.createdAt)
         || !Number.isSafeInteger(record.expiresAt)
         || record.expiresAt - record.createdAt !== STATE_TTL_MS
-        || record.returnPath !== RETURN_PATH
+        || record.returnPath !== returnPath
     ) return null;
     return Object.freeze({ ...record });
+}
+
+function validReturnPath(value) {
+    if (
+        typeof value !== 'string'
+        || value.length === 0
+        || value.length > 512
+        || !value.startsWith('/')
+        || value.startsWith('//')
+        || /[\\#\u0000-\u001f\u007f]/.test(value)
+    ) return false;
+    try {
+        const parsed = new URL(value, 'https://local.invalid');
+        return parsed.origin === 'https://local.invalid'
+            && `${parsed.pathname}${parsed.search}` === value;
+    } catch {
+        return false;
+    }
+}
+
+function createStateRecord(getRandomValues, crypto, now, returnPath) {
+    if (!Number.isSafeInteger(now) || now < 0 || !validReturnPath(returnPath)) throw new TypeError();
+    const bytes = new Uint8Array(32);
+    const result = Reflect.apply(getRandomValues, crypto, [bytes]);
+    if (result !== bytes) throw new TypeError();
+    const state = base64url(bytes);
+    if (!validState(state)) throw new TypeError();
+    return Object.freeze({
+        schemaVersion: 1,
+        state,
+        createdAt: now,
+        expiresAt: now + STATE_TTL_MS,
+        returnPath
+    });
+}
+
+function parseStateRecord(raw, now, returnPath) {
+    if (typeof raw !== 'string' || raw.length === 0 || raw.length > 2_048) throw new TypeError();
+    const record = normalizeStateRecord(JSON.parse(raw), returnPath);
+    if (!record || !Number.isSafeInteger(now) || now < record.createdAt) throw new TypeError();
+    if (now >= record.expiresAt) {
+        const error = new Error('Authorization state expired.');
+        error.code = 'STATE_EXPIRED';
+        throw error;
+    }
+    return record;
+}
+
+export function issueLegacyAuthorizationState(options) {
+    const values = exactOwnData(options, ['sessionStorage', 'crypto', 'now', 'returnPath']);
+    if (!values || typeof values.now !== 'function' || !validReturnPath(values.returnPath)) {
+        throw new TypeError('Legacy authorization state is unavailable.');
+    }
+    const setItem = dataMethod(values.sessionStorage, 'setItem');
+    const removeItem = dataMethod(values.sessionStorage, 'removeItem');
+    const getRandomValues = dataMethod(values.crypto, 'getRandomValues');
+    if (!setItem || !removeItem || !getRandomValues) throw new TypeError('Legacy authorization state is unavailable.');
+    try {
+        const record = createStateRecord(
+            getRandomValues,
+            values.crypto,
+            values.now(),
+            values.returnPath
+        );
+        Reflect.apply(setItem, values.sessionStorage, [LEGACY_STATE_KEY, JSON.stringify(record)]);
+        return record.state;
+    } catch {
+        try { Reflect.apply(removeItem, values.sessionStorage, [LEGACY_STATE_KEY]); } catch {}
+        throw new TypeError('Legacy authorization state is unavailable.');
+    }
+}
+
+export function consumeLegacyAuthorizationState(options) {
+    const values = exactOwnData(options, ['sessionStorage', 'now', 'returnPath', 'state']);
+    if (
+        !values
+        || typeof values.now !== 'function'
+        || !validReturnPath(values.returnPath)
+        || !validState(values.state)
+    ) throw new TypeError('Legacy authorization state is invalid.');
+    const getItem = dataMethod(values.sessionStorage, 'getItem');
+    const removeItem = dataMethod(values.sessionStorage, 'removeItem');
+    if (!getItem || !removeItem) throw new TypeError('Legacy authorization state is unavailable.');
+    let raw;
+    try {
+        raw = Reflect.apply(getItem, values.sessionStorage, [LEGACY_STATE_KEY]);
+    } catch {
+        throw new TypeError('Legacy authorization state is unavailable.');
+    }
+    try {
+        Reflect.apply(removeItem, values.sessionStorage, [LEGACY_STATE_KEY]);
+    } catch {
+        throw new TypeError('Legacy authorization state is unavailable.');
+    }
+    try {
+        const record = parseStateRecord(raw, values.now(), values.returnPath);
+        if (record.state !== values.state) throw new TypeError();
+        return true;
+    } catch {
+        throw new TypeError('Legacy authorization state is invalid.');
+    }
 }
 
 function normalizeToken(value) {
@@ -238,32 +342,6 @@ function normalizeToken(value) {
     });
 }
 
-function contentLength(response) {
-    try {
-        const get = dataMethod(response?.headers, 'get');
-        if (!get) return null;
-        const value = Reflect.apply(get, response.headers, ['content-length']);
-        if (value === null) return null;
-        if (typeof value !== 'string' || !/^\d+$/.test(value)) return Number.NaN;
-        const parsed = Number(value);
-        return Number.isSafeInteger(parsed) ? parsed : Number.NaN;
-    } catch {
-        return Number.NaN;
-    }
-}
-
-function jsonContentType(response) {
-    try {
-        const get = dataMethod(response?.headers, 'get');
-        if (!get) return false;
-        const value = Reflect.apply(get, response.headers, ['content-type']);
-        return typeof value === 'string'
-            && /^application\/json(?:\s*;|$)/i.test(value.trim());
-    } catch {
-        return false;
-    }
-}
-
 function responseStatus(response) {
     try {
         return response !== null
@@ -278,16 +356,11 @@ function responseStatus(response) {
 }
 
 async function readBoundedJson(response) {
-    if (!responseStatus(response) || !jsonContentType(response)) throw new TypeError();
-    const length = contentLength(response);
-    if (Number.isNaN(length) || (length !== null && length > MAX_JSON_BYTES)) throw new TypeError();
-    const textMethod = dataMethod(response, 'text');
-    if (!textMethod) throw new TypeError();
-    const text = await Reflect.apply(textMethod, response, []);
-    if (typeof text !== 'string' || text.length === 0 || text.length > MAX_JSON_BYTES) {
-        throw new TypeError();
-    }
-    return JSON.parse(text);
+    if (!responseStatus(response)) throw new TypeError();
+    const { value } = await readBoundedResponseJson(response, {
+        maxBytes: MAX_JSON_BYTES
+    });
+    return value;
 }
 
 export function createSourceManagerAuthorization(options) {
@@ -351,23 +424,15 @@ export function createSourceManagerAuthorization(options) {
 
     async function beginAuthorization() {
         assertOpen();
-        let now;
         let state;
         try {
-            now = dependencies.now();
-            if (!Number.isSafeInteger(now) || now < 0) throw new TypeError();
-            const bytes = new Uint8Array(32);
-            const result = Reflect.apply(dependencies.getRandomValues, dependencies.crypto, [bytes]);
-            if (result !== bytes) throw new TypeError();
-            state = base64url(bytes);
-            if (!validState(state)) throw new TypeError();
-            const record = {
-                schemaVersion: 1,
-                state,
-                createdAt: now,
-                expiresAt: now + STATE_TTL_MS,
-                returnPath: RETURN_PATH
-            };
+            const record = createStateRecord(
+                dependencies.getRandomValues,
+                dependencies.crypto,
+                dependencies.now(),
+                RETURN_PATH
+            );
+            state = record.state;
             Reflect.apply(dependencies.setItem, dependencies.sessionStorage, [
                 STATE_KEY,
                 JSON.stringify(record)
@@ -416,28 +481,15 @@ export function createSourceManagerAuthorization(options) {
         if (raw === null) {
             throw authorizationError(SOURCE_MANAGER_AUTHORIZATION_ERROR_CODE.STATE_UNAVAILABLE);
         }
-        if (typeof raw !== 'string' || raw.length === 0 || raw.length > 2_048) {
-            throw authorizationError(SOURCE_MANAGER_AUTHORIZATION_ERROR_CODE.STATE_INVALID);
+        try {
+            return parseStateRecord(raw, dependencies.now(), RETURN_PATH);
+        } catch (error) {
+            throw authorizationError(
+                error?.code === 'STATE_EXPIRED'
+                    ? SOURCE_MANAGER_AUTHORIZATION_ERROR_CODE.STATE_EXPIRED
+                    : SOURCE_MANAGER_AUTHORIZATION_ERROR_CODE.STATE_INVALID
+            );
         }
-        let parsed;
-        try { parsed = JSON.parse(raw); } catch {
-            throw authorizationError(SOURCE_MANAGER_AUTHORIZATION_ERROR_CODE.STATE_INVALID);
-        }
-        const record = normalizeStateRecord(parsed);
-        if (!record) {
-            throw authorizationError(SOURCE_MANAGER_AUTHORIZATION_ERROR_CODE.STATE_INVALID);
-        }
-        let now;
-        try { now = dependencies.now(); } catch {
-            throw authorizationError(SOURCE_MANAGER_AUTHORIZATION_ERROR_CODE.STATE_INVALID);
-        }
-        if (!Number.isSafeInteger(now) || now < record.createdAt) {
-            throw authorizationError(SOURCE_MANAGER_AUTHORIZATION_ERROR_CODE.STATE_INVALID);
-        }
-        if (now >= record.expiresAt) {
-            throw authorizationError(SOURCE_MANAGER_AUTHORIZATION_ERROR_CODE.STATE_EXPIRED);
-        }
-        return record;
     }
 
     async function processCallback(callback) {

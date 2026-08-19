@@ -58,11 +58,33 @@ class MemoryStorage {
 }
 
 function response(body, { ok = true, status = 200 } = {}) {
+    const serialized = typeof body === 'string' ? body : JSON.stringify(body);
+    const bytes = new TextEncoder().encode(serialized);
+    let offset = 0;
     return {
         ok,
         status,
-        async text() {
-            return typeof body === 'string' ? body : JSON.stringify(body);
+        headers: {
+            get(name) {
+                if (String(name).toLowerCase() === 'content-type') return 'application/json';
+                return null;
+            }
+        },
+        body: {
+            getReader() {
+                return {
+                    async read() {
+                        if (offset >= bytes.byteLength) return { done: true };
+                        const value = bytes.subarray(offset);
+                        offset = bytes.byteLength;
+                        return { done: false, value };
+                    },
+                    async cancel() {
+                        offset = bytes.byteLength;
+                    },
+                    releaseLock() {}
+                };
+            }
         }
     };
 }
@@ -631,12 +653,37 @@ test('timeout and revoke remain authoritative while response headers or body are
     assert.deepEqual(timeoutSession.getHistory(), []);
 
     let resolveLateBody;
+    let lateBodyDelivered = false;
     const revokeSession = createAICoachSession(dependencies({
         fetch: async () => ({
             ok: true,
             status: 200,
-            async text() {
-                return new Promise(resolve => { resolveLateBody = resolve; });
+            headers: {
+                get(name) {
+                    return String(name).toLowerCase() === 'content-type'
+                        ? 'application/json'
+                        : null;
+                }
+            },
+            body: {
+                getReader() {
+                    return {
+                        async read() {
+                            if (lateBodyDelivered) return { done: true };
+                            return new Promise(resolve => {
+                                resolveLateBody = serialized => {
+                                    lateBodyDelivered = true;
+                                    resolve({
+                                        done: false,
+                                        value: new TextEncoder().encode(serialized)
+                                    });
+                                };
+                            });
+                        },
+                        async cancel() {},
+                        releaseLock() {}
+                    };
+                }
             }
         })
     }));
@@ -657,12 +704,37 @@ test('timeout and revoke remain authoritative while response headers or body are
 
 test('clear cancels an in-flight response and a prior cancellation wins a later timeout race', async () => {
     let resolveClearBody;
+    let clearBodyDelivered = false;
     const clearSession = createAICoachSession(dependencies({
         fetch: async () => ({
             ok: true,
             status: 200,
-            async text() {
-                return new Promise(resolve => { resolveClearBody = resolve; });
+            headers: {
+                get(name) {
+                    return String(name).toLowerCase() === 'content-type'
+                        ? 'application/json'
+                        : null;
+                }
+            },
+            body: {
+                getReader() {
+                    return {
+                        async read() {
+                            if (clearBodyDelivered) return { done: true };
+                            return new Promise(resolve => {
+                                resolveClearBody = serialized => {
+                                    clearBodyDelivered = true;
+                                    resolve({
+                                        done: false,
+                                        value: new TextEncoder().encode(serialized)
+                                    });
+                                };
+                            });
+                        },
+                        async cancel() {},
+                        releaseLock() {}
+                    };
+                }
             }
         })
     }));

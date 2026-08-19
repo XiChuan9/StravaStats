@@ -1,39 +1,32 @@
-import { getValidAccessToken, logServerEvent, SERVER_API_EVENT, validateEnv } from './_shared.js';
+import { getValidAccessToken, logServerEvent, SERVER_API_EVENT } from './_shared.js';
+import {
+    boundedOpaqueId,
+    exactQuery,
+    providerErrorStatus,
+    PROVIDER_LIMIT,
+    requestProviderJson,
+    setNoStoreHeaders
+} from './_provider-boundary.js';
 
 export default async function handler(req, res) {
-    try {
-        validateEnv();
-    } catch {
-        return res.status(500).json({ error: 'Server configuration error: Strava environment variables are not set.' });
+    setNoStoreHeaders(res);
+    if (req?.method !== 'GET') {
+        res.setHeader('Allow', 'GET');
+        return res.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
     }
-
-    if (req.method !== 'GET') {
-        return res.status(405).json({ error: 'Method Not Allowed' });
-    }
-
-    const { id } = req.query;
-    if (!id) {
-        return res.status(400).json({ error: 'Gear ID is required' });
-    }
-
+    const query = exactQuery(req.query, ['id']);
+    if (!query || !boundedOpaqueId(query.id)) return res.status(400).json({ error: 'GEAR_REQUEST_INVALID' });
     try {
         const { accessToken, updatedTokens } = await getValidAccessToken(req);
-
-        const gearUrl = `https://www.strava.com/api/v3/gear/${encodeURIComponent(id)}`;
-        const stravaResponse = await fetch(gearUrl, {
-            headers: { Authorization: `Bearer ${accessToken}` }
-        });
-
-        if (!stravaResponse.ok) {
-            logServerEvent(SERVER_API_EVENT.GEAR_FAILED);
-            return res.status(stravaResponse.status).json({ error: 'Failed to fetch gear from Strava' });
-        }
-
-        const gear = await stravaResponse.json();
+        const gear = await requestProviderJson(
+            `https://www.strava.com/api/v3/gear/${encodeURIComponent(query.id)}`,
+            { method: 'GET', headers: { Authorization: `Bearer ${accessToken}` } },
+            { maxBytes: PROVIDER_LIMIT.METADATA_BYTES }
+        );
+        if (!gear || typeof gear !== 'object' || Array.isArray(gear)) throw new TypeError();
         return res.status(200).json({ gear, tokens: updatedTokens });
-
-    } catch {
+    } catch (error) {
         logServerEvent(SERVER_API_EVENT.GEAR_FAILED);
-        return res.status(500).json({ error: 'Internal Server Error' });
+        return res.status(providerErrorStatus(error)).json({ error: 'GEAR_UPSTREAM_FAILED' });
     }
 }

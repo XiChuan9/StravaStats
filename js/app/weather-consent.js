@@ -1,3 +1,5 @@
+import { readBoundedResponseJson } from '../shared/bounded-response.js';
+
 export const WEATHER_CONSENT_STORAGE_KEY = 'stravastats_weather_egress_consent_v1';
 export const WEATHER_CONSENT_COPY = 'To retrieve historical weather, StravaStats uses Open-Meteo. If you choose “Allow for this tab”, it sends one approximate start coordinate (rounded to 2 decimals) and the local calendar date for each eligible activity in the Weather view you open. It does not send activity IDs or names, full routes, tokens, heart rate, or power. You can revoke here at any time; revocation cancels requests still in progress and blocks future requests.';
 export const WEATHER_HOURLY_FIELDS = Object.freeze([
@@ -16,6 +18,7 @@ const CONSENT_VERSION = 1;
 const CACHE_MAX_ENTRIES = 256;
 const CACHE_TTL_MS = 30 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 4000;
+const RESPONSE_BODY_LIMIT = 1024 * 1024;
 const GRANTED_STATE = '{"version":1,"granted":true}';
 const DENIED_STATE = '{"version":1,"granted":false}';
 
@@ -374,14 +377,17 @@ export function createWeatherConsentService(dependencies) {
                 signal: controller.signal,
                 credentials: 'omit',
                 cache: 'no-store',
-                referrerPolicy: 'no-referrer'
+                referrerPolicy: 'no-referrer',
+                redirect: 'error'
             });
             if (
                 response?.ok !== true
                 || epoch !== requestEpoch
                 || !isGranted()
             ) return null;
-            const data = await response.json();
+            const { value: data } = await readBoundedResponseJson(response, {
+                maxBytes: RESPONSE_BODY_LIMIT
+            });
             if (epoch !== requestEpoch || !isGranted()) return null;
             const weatherDay = normalizedWeatherDay(data, prepared.date);
             if (weatherDay === null) return null;

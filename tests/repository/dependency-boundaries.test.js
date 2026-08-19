@@ -164,10 +164,13 @@ test('approved Connector implementation matches the frozen C1.1 hash', async () 
     // PR-04B B1 approved the Connector and test changes for the type= fix.
     // C1.1 explicitly approved the five-field authority-preserving refresh extension
     // and replaced its unused Source Manager test path with this hash-accounting path.
+    // The provider-boundary security batch updates the frozen implementation for
+    // bounded pagination, streamed response limits, redirect rejection, and
+    // one deadline spanning response headers through the streamed body.
     const expected = new Map([
         [
             'js/connectors/strava/strava-api-connector.js',
-            'b45b9c52d87980aa78dae5b48bffdd9deb484f569e03293cdd65368f44bc8d4c'
+            '18cd2769bf6048075280b98d4c61ff770a12664c9809be1a4cc65aa70e83608b'
         ]
     ]);
     for (const [relative, hash] of expected) {

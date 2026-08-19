@@ -1,27 +1,30 @@
 import { getValidAccessToken, logServerEvent, SERVER_API_EVENT } from './_shared.js';
+import {
+    exactQuery,
+    providerErrorStatus,
+    PROVIDER_LIMIT,
+    requestProviderJson,
+    setNoStoreHeaders
+} from './_provider-boundary.js';
 
 export default async function handler(req, res) {
-    if (req.method !== 'GET') {
-        return res.status(405).json({ error: 'Method Not Allowed' });
+    setNoStoreHeaders(res);
+    if (req?.method !== 'GET') {
+        res.setHeader('Allow', 'GET');
+        return res.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
     }
-
+    if (!exactQuery(req.query, [])) return res.status(400).json({ error: 'ZONES_REQUEST_INVALID' });
     try {
         const { accessToken, updatedTokens } = await getValidAccessToken(req);
-
-        const stravaResponse = await fetch('https://www.strava.com/api/v3/athlete/zones', {
-            headers: { Authorization: `Bearer ${accessToken}` }
-        });
-
-        if (!stravaResponse.ok) {
-            logServerEvent(SERVER_API_EVENT.ZONES_FAILED);
-            return res.status(stravaResponse.status).json({ error: 'Failed to fetch zones from Strava' });
-        }
-
-        const zonesData = await stravaResponse.json();
-        return res.status(200).json({ zones: zonesData, tokens: updatedTokens });
-
-    } catch {
+        const zones = await requestProviderJson(
+            'https://www.strava.com/api/v3/athlete/zones',
+            { method: 'GET', headers: { Authorization: `Bearer ${accessToken}` } },
+            { maxBytes: PROVIDER_LIMIT.METADATA_BYTES }
+        );
+        if (!zones || typeof zones !== 'object' || Array.isArray(zones)) throw new TypeError();
+        return res.status(200).json({ zones, tokens: updatedTokens });
+    } catch (error) {
         logServerEvent(SERVER_API_EVENT.ZONES_FAILED);
-        return res.status(500).json({ error: 'Internal Server Error' });
+        return res.status(providerErrorStatus(error)).json({ error: 'ZONES_UPSTREAM_FAILED' });
     }
 }
