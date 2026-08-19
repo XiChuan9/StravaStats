@@ -92,6 +92,7 @@ tests/docs/release-docs.test.js
 tests/legacy/demo-isolation.test.js
 tests/pages/main.test.js
 tests/privacy/client-logging.test.js
+tests/privacy/root-privacy-disclosure.test.js
 tests/release/alpha-candidate.test.js
 tests/server/local-dev-server.test.js
 tests/shadow/shadow-boundaries.test.js

@@ -8,7 +8,7 @@ import { createLocalDevServer } from '../../scripts/local-dev-server.mjs';
 const PROJECT_ROOT = new URL('../../', import.meta.url);
 const EXPECTED_DISCLOSURE = 'Privacy Notice: Your activity library is stored locally in your browser by default. Only explicit actions or consents may contact external services for Strava provider operations, Weather, AI Coach, or OpenStreetMap tiles, each under its existing separate disclosure.';
 const EXPECTED_DISCLOSURE_MARKUP = `<strong>Privacy Notice:</strong> ${EXPECTED_DISCLOSURE.replace('Privacy Notice: ', '')}`;
-const NORMALIZED_BASE_ROOT_SHA256 = '0311db6888ae8683c363af2587a0259034b602c373a19a6342a97e8b397fbe62';
+const NORMALIZED_PUBLIC_SCOPE_ROOT_SHA256 = 'd236ed58b1f943ecc0e16d40cee083f696b18e9a9d46c7c0e3b1d27d1738bca9';
 const ALLOWLIST = Object.freeze([
     'docs/tasks/pr-39-root-privacy-disclosure.md',
     'index.html',
@@ -57,12 +57,12 @@ test('root static disclosure states the exact bounded local-first truth', async 
     assert.doesNotMatch(disclosure, /https?:|\/api\/|\.com\b|token|authorization|activity IDs?|coordinates?|heart rate|power/i);
 });
 
-test('only the root disclosure copy differs from the exact integration base', async () => {
+test('root outside the disclosure matches the approved public-scope shell', async () => {
     const html = await source('index.html');
     const normalized = rootWithoutDisclosureCopy(html);
     assert.equal(
         createHash('sha256').update(normalized).digest('hex'),
-        NORMALIZED_BASE_ROOT_SHA256
+        NORMALIZED_PUBLIC_SCOPE_ROOT_SHA256
     );
 });
 
