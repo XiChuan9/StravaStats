@@ -1,4 +1,5 @@
 import * as utils from './utils.js';
+import { serializeCsvCell } from '../shared/csv-security.js';
 
 const RUN_TYPES = new Set(['Run', 'TrailRun', 'VirtualRun']);
 const SWIM_TYPES = new Set(['Swim', 'OpenWaterSwim']);
@@ -79,10 +80,7 @@ function fmtGeneric(v) {
 }
 
 function csvEscape(value) {
-    if (value === null || value === undefined) return '';
-    const text = String(value);
-    if (/[,"\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
-    return text;
+    return serializeCsvCell(value);
 }
 
 function buildActivitiesCsv(activities, columns, cellValueGetter) {

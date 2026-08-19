@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
@@ -7,7 +8,8 @@ import { IMPORT_ERROR_CODE } from '../../js/import/index.js';
 import {
     ACTIVITIES_CSV_LIMITS,
     decodeActivitiesCsvUtf8,
-    frameActivitiesCsv
+    frameActivitiesCsv,
+    parseActivitiesCsvFrame
 } from '../../js/import/csv-tokenizer.js';
 import {
     ACTIVITIES_CSV_MEDIA_TYPE,
@@ -101,18 +103,68 @@ test('tokenizer accepts BOM, CRLF, quoted commas/newlines, and escaped quotes', 
 });
 
 test('row framing preserves lexical bytes for exact raw SHA semantics', () => {
+    const plainHeader = 'Activity ID,Activity Date,Activity Type\n';
+    const quotedHeader = 'Activity ID,Activity Date,Activity Type\r\n';
     const plain = frameActivitiesCsv(
-        'Activity ID,Activity Date,Activity Type\n'
+        plainHeader
         + 'opaque,2026-01-01T00:00:00Z,Run\n'
     );
     const quoted = frameActivitiesCsv(
-        'Activity ID,Activity Date,Activity Type\r\n'
+        quotedHeader
         + 'opaque,2026-01-01T00:00:00Z,"Run"\r\n'
     );
     assert.notEqual(plain[0], quoted[0]);
-    assert.match(plain[0], /,Run\n$/);
-    assert.match(quoted[0], /,"Run"\r\n$/);
+    const plainFrame = JSON.parse(plain[0]);
+    const quotedFrame = JSON.parse(quoted[0]);
+    assert.equal(plainFrame.rowLexical, 'opaque,2026-01-01T00:00:00Z,Run\n');
+    assert.equal(quotedFrame.rowLexical, 'opaque,2026-01-01T00:00:00Z,"Run"\r\n');
+    assert.equal(
+        plainFrame.headerSha256,
+        createHash('sha256').update(plainHeader).digest('hex')
+    );
+    assert.equal(
+        quotedFrame.headerSha256,
+        createHash('sha256').update(quotedHeader).digest('hex')
+    );
     assert.equal(decode(plain[0]).activity.id, decode(quoted[0]).activity.id);
+});
+
+test('large headers are represented once and compact frames remain linear', () => {
+    const extraHeader = `Synthetic ${'x'.repeat(200_000)}`;
+    const header = `Activity ID,Activity Date,Activity Type,${extraHeader}\n`;
+    const rows = Array.from(
+        { length: 100 },
+        (_, index) => `opaque-${index},2026-01-01T00:00:00Z,Run,\n`
+    );
+    const content = header + rows.join('');
+    const framed = frameActivitiesCsv(content);
+    assert.equal(framed.length, 100);
+    assert.ok(framed.reduce((total, frame) => total + frame.length, 0) < content.length * 2);
+    assert.equal(new Set(framed.map(frame => JSON.parse(frame).headerSha256)).size, 1);
+    assert.equal(decode(framed.at(-1)).activity.id, 'strava-archive:opaque-99');
+});
+
+test('compact frames reject extra fields and lexical row mismatches', () => {
+    const [framed] = frameActivitiesCsv(oneRow([
+        'opaque', '2026-01-01T00:00:00Z', 'Run'
+    ]));
+    const extra = { ...JSON.parse(framed), unexpected: true };
+    assert.throws(
+        () => parseActivitiesCsvFrame(JSON.stringify(extra)),
+        expectCode(IMPORT_ERROR_CODE.CSV_MALFORMED)
+    );
+    const mismatch = { ...JSON.parse(framed), rowLexical: 'other,2026-01-01T00:00:00Z,Run' };
+    assert.throws(
+        () => parseActivitiesCsvFrame(JSON.stringify(mismatch)),
+        expectCode(IMPORT_ERROR_CODE.CSV_MALFORMED)
+    );
+    assert.throws(
+        () => parseActivitiesCsvFrame(
+            '{"schemaVersion":1,"profileId":"english-v1",'
+            + 'x'.repeat(ACTIVITIES_CSV_LIMITS.maxBytes)
+        ),
+        expectCode(IMPORT_ERROR_CODE.CSV_TOO_LARGE)
+    );
 });
 
 test('known repeated headers use the frozen occurrence and ambiguous duplicates fail', () => {
@@ -212,9 +264,21 @@ test('CSV byte, row, column, field, and row limits fail closed', () => {
         () => frameActivitiesCsv(`Activity ID,Activity Date,Activity Type\n${hugeField},2026-01-01T00:00:00Z,Run`),
         expectCode(IMPORT_ERROR_CODE.CSV_FIELD_TOO_LARGE)
     );
+    assert.throws(
+        () => frameActivitiesCsv(
+            `Activity ID,Activity Date,Activity Type\n"${hugeField}`
+        ),
+        expectCode(IMPORT_ERROR_CODE.CSV_FIELD_TOO_LARGE)
+    );
     const rows = Array.from(
         { length: ACTIVITIES_CSV_LIMITS.maxRows + 1 },
         (_, index) => `opaque-${index},2026-01-01T00:00:00Z,Run`
+    );
+    assert.equal(
+        frameActivitiesCsv(
+            `Activity ID,Activity Date,Activity Type\n${rows.slice(0, -1).join('\n')}`
+        ).length,
+        ACTIVITIES_CSV_LIMITS.maxRows
     );
     assert.throws(
         () => frameActivitiesCsv(`Activity ID,Activity Date,Activity Type\n${rows.join('\n')}`),

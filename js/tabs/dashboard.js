@@ -1,4 +1,5 @@
 import * as utils from './utils.js';
+import { boundedCsvLines, CSV_FILE_LIMITS } from '../shared/csv-security.js';
 
 let selectedRangeDays = 'last30'; // rango inicial
 let customDateFromIso = null;
@@ -262,12 +263,8 @@ function fillMissingHrvDates(entries) {
     return resolved;
 }
 
-function parseGarminHrvCsv(csvText) {
-    const lines = String(csvText || '')
-        .replace(/^\uFEFF/, '')
-        .split(/\r?\n/)
-        .map(line => line.trim())
-        .filter(Boolean);
+export function parseGarminHrvCsv(csvText) {
+    const lines = boundedCsvLines(csvText);
 
     if (lines.length < 2) {
         throw new Error('CSV file is empty or missing data rows.');
@@ -331,6 +328,19 @@ function parseGarminHrvCsv(csvText) {
         rangeEnd: uniqueEntries[uniqueEntries.length - 1].date,
         entries: uniqueEntries
     };
+}
+
+export async function readGarminHrvFile(file) {
+    if (
+        !file
+        || !Number.isSafeInteger(file.size)
+        || file.size < 0
+        || file.size > CSV_FILE_LIMITS.maxBytes
+        || typeof file.text !== 'function'
+    ) {
+        throw new RangeError('CSV file exceeds the 5 MiB limit.');
+    }
+    return parseGarminHrvCsv(await file.text());
 }
 
 function loadStoredHrvData() {
@@ -2048,8 +2058,7 @@ function setupReadinessHrvControls() {
         if (!file) return;
 
         try {
-            const text = await file.text();
-            const parsed = parseGarminHrvCsv(text);
+            const parsed = await readGarminHrvFile(file);
             saveStoredHrvData(parsed);
             rerenderTrainingReadinessFromDashboardContext();
         } catch (error) {

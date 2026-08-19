@@ -1117,9 +1117,17 @@ test('stale work remains inert until explicit Recover schedules only its pending
         'stale-recover-item', 'validating', 'hashing'
     );
     const content = JSON.stringify(bundle());
+    const digest = await webcrypto.subtle.digest(
+        'SHA-256',
+        new TextEncoder().encode(content)
+    );
+    const sha256 = Array.from(
+        new Uint8Array(digest),
+        byte => byte.toString(16).padStart(2, '0')
+    ).join('');
     await value.importStore.storeRawArtifact('stale-recover-item', {
-        id: `raw:${'a'.repeat(64)}`,
-        sha256: 'a'.repeat(64),
+        id: `raw:${sha256}`,
+        sha256,
         mediaType: SYNTHETIC_JSON_MEDIA_TYPE,
         byteLength: new TextEncoder().encode(content).byteLength,
         content

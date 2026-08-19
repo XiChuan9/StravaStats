@@ -498,6 +498,44 @@ export function createImportService(options) {
         }
     }
 
+    async function loadExactRetryArtifact(item) {
+        const stored = item.artifactId
+            ? await dependencies.store.getRawArtifact(item.artifactId)
+            : null;
+        const exact = exactPendingRetryArtifact(stored, item.artifactId);
+        if (!exact) return null;
+        const hashed = await hash(exact.content);
+        if (
+            hashed.sha256 !== exact.sha256
+            || hashed.byteLength !== exact.byteLength
+            || exact.id !== `raw:${hashed.sha256}`
+        ) return null;
+        return Object.freeze({
+            artifactId: exact.id,
+            mediaType: exact.mediaType,
+            content: exact.content
+        });
+    }
+
+    async function loadRetryArtifacts(items, recoveryOnly) {
+        const loaded = [];
+        for (const item of items) {
+            if (isTerminalImportItem(item.status) && (
+                recoveryOnly || item.retryable !== true
+            )) {
+                loaded[item.ordinal] = null;
+                continue;
+            }
+            if (recoveryOnly && item.status !== I.RETRYING) {
+                throw importError(IMPORT_ERROR_CODE.RETRY_NOT_ALLOWED);
+            }
+            const artifact = await loadExactRetryArtifact(item);
+            if (!artifact) throw importError(IMPORT_ERROR_CODE.RETRY_NOT_ALLOWED);
+            loaded[item.ordinal] = artifact;
+        }
+        return Object.freeze(loaded);
+    }
+
     async function failItem(item, status, error) {
         try {
             return await transitionItem(item, status, error);
@@ -516,14 +554,21 @@ export function createImportService(options) {
         let items = [...await dependencies.store.listImportItems(jobId)];
         let artifacts = suppliedArtifacts;
         if (startingStatus === J.RETRYING) {
+            artifacts = artifacts || await loadRetryArtifacts(items, recoveryOnly);
+            for (const item of items) {
+                if (isTerminalImportItem(item.status) && (
+                    recoveryOnly || item.retryable !== true
+                )) continue;
+                if (artifacts[item.ordinal]?.artifactId !== item.artifactId) {
+                    throw importError(IMPORT_ERROR_CODE.RETRY_NOT_ALLOWED);
+                }
+            }
             await transitionJob(jobId, J.RETRYING, J.VALIDATING);
             jobStatus = J.VALIDATING;
-            const loaded = [];
             for (let item of items) {
                 if (isTerminalImportItem(item.status) && (
                     recoveryOnly || item.retryable !== true
                 )) {
-                    loaded[item.ordinal] = null;
                     continue;
                 }
                 if (recoveryOnly && item.status !== I.RETRYING) {
@@ -533,16 +578,7 @@ export function createImportService(options) {
                     item = await transitionItem(item, I.RETRYING);
                 }
                 item = await transitionItem(item, I.VALIDATING);
-                const stored = item.artifactId
-                    ? await dependencies.store.getRawArtifact(item.artifactId)
-                    : null;
-                if (!stored) throw importError(IMPORT_ERROR_CODE.RETRY_NOT_ALLOWED);
-                loaded[item.ordinal] = Object.freeze({
-                    mediaType: stored.mediaType,
-                    content: stored.content
-                });
             }
-            artifacts = Object.freeze(loaded);
             items = [...await dependencies.store.listImportItems(jobId)];
         } else {
             await transitionJob(jobId, J.QUEUED, J.VALIDATING);
@@ -834,10 +870,7 @@ export function createImportService(options) {
                 if (retryable.length > 0) {
                     eligibility = 'eligible';
                     for (const item of retryable) {
-                        const artifact = item.artifactId
-                            ? await dependencies.store.getRawArtifact(item.artifactId)
-                            : null;
-                        if (!exactPendingRetryArtifact(artifact, item.artifactId)) {
+                        if (!await loadExactRetryArtifact(item)) {
                             eligibility = 'source_unavailable';
                             break;
                         }
@@ -913,13 +946,11 @@ export function createImportService(options) {
         if (retryable.length === 0) {
             throw importError(IMPORT_ERROR_CODE.RETRY_NOT_ALLOWED);
         }
-        for (const item of retryable) {
-            if (!item.artifactId || !await dependencies.store.getRawArtifact(item.artifactId)) {
-                throw importError(IMPORT_ERROR_CODE.RETRY_NOT_ALLOWED);
-            }
-        }
+        const artifacts = await loadRetryArtifacts(items, false);
+        if (closed) throw importError(IMPORT_ERROR_CODE.STORAGE_UNAVAILABLE);
         await transitionJob(jobId, job.status, J.RETRYING);
-        const completion = run(jobId, null, J.RETRYING).finally(() => active.delete(jobId));
+        const completion = run(jobId, artifacts, J.RETRYING)
+            .finally(() => active.delete(jobId));
         active.set(jobId, completion);
         return Object.freeze({ jobId, completion });
     }

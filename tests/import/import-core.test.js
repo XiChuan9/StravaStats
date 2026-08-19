@@ -413,6 +413,72 @@ test('worker crash is redacted, persisted, and explicitly retryable', async () =
     await core.close();
 });
 
+test('retry rejects tampered compact-frame interpretation before state or Worker mutation', async () => {
+    const indexedDB = new IDBFactory();
+    const realStore = store(indexedDB);
+    let mutation = null;
+    const wrappedStore = {
+        ...realStore,
+        async getRawArtifact(id) {
+            const stored = await realStore.getRawArtifact(id);
+            if (!stored || !mutation || stored.mediaType !== ACTIVITIES_CSV_MEDIA_TYPE) {
+                return stored;
+            }
+            const frame = JSON.parse(stored.content);
+            if (mutation === 'positions') {
+                [frame.positions[0], frame.positions[3]] = [
+                    frame.positions[3], frame.positions[0]
+                ];
+            } else if (mutation === 'hasExtra') {
+                frame.hasExtra = !frame.hasExtra;
+            } else if (mutation === 'columnCount') {
+                frame.columnCount += 1;
+            } else if (mutation === 'headerSha256') {
+                frame.headerSha256 = `${frame.headerSha256[0] === '0' ? '1' : '0'}`
+                    + frame.headerSha256.slice(1);
+            }
+            const content = JSON.stringify(frame);
+            return Object.freeze({
+                ...stored,
+                byteLength: new TextEncoder().encode(content).byteLength,
+                content
+            });
+        }
+    };
+    let workerCalls = 0;
+    const inline = createInlineImportWorker();
+    const core = service(wrappedStore, {
+        worker: {
+            async process(input) {
+                workerCalls += 1;
+                if (workerCalls === 1) throw new Error('synthetic worker interruption');
+                return inline.process(input);
+            },
+            close() { inline.close(); }
+        }
+    });
+    await core.initialize();
+    const run = await core.importArtifacts([await csvArtifact(
+        'Activity ID,Activity Date,Activity Type,Activity Name\n'
+        + 'original,2026-01-01T00:00:00Z,Run,Synthetic'
+    )]);
+    assert.equal((await core.waitForJob(run.jobId)).status, 'failed_decode');
+
+    for (mutation of ['positions', 'hasExtra', 'columnCount', 'headerSha256']) {
+        const [entry] = await inspectImportServiceRetryJobs(core);
+        assert.equal(entry.eligibility, 'source_unavailable');
+    }
+    mutation = 'positions';
+    await assert.rejects(
+        core.retryJob(run.jobId),
+        error => error.code === IMPORT_ERROR_CODE.RETRY_NOT_ALLOWED
+    );
+    assert.equal((await core.getReport(run.jobId)).status, 'failed_decode');
+    assert.equal(workerCalls, 1);
+    assert.equal((await core.previewActivities()).total, 0);
+    await core.close();
+});
+
 test('internal Retry inspection preserves the public service and report surfaces', async () => {
     const indexedDB = new IDBFactory();
     const importStore = store(indexedDB);
@@ -529,6 +595,53 @@ test('multi-item Worker crash retries every persisted unfinished item idempotent
     assert.equal(report.totals.completed, 1);
     assert.equal(report.totals.skippedExactDuplicate, 1);
     assert.equal((await core.previewActivities()).total, 1);
+    await core.close();
+});
+
+test('retry skips an exact-duplicate terminal item and processes the failed sibling', async () => {
+    const indexedDB = new IDBFactory();
+    const importStore = store(indexedDB);
+    const inline = createInlineImportWorker();
+    let crashNext = false;
+    const core = service(importStore, {
+        worker: {
+            async process(input) {
+                if (crashNext) {
+                    crashNext = false;
+                    throw new Error('synthetic mixed-result interruption');
+                }
+                return inline.process(input);
+            },
+            close() { inline.close(); }
+        }
+    });
+    await core.initialize();
+    const duplicate = await artifact();
+    const seed = await core.importArtifacts([duplicate]);
+    assert.equal((await core.waitForJob(seed.jobId)).status, 'completed');
+
+    const siblingValue = JSON.parse(duplicate.content);
+    siblingValue.activity.id = 'synthetic:mixed-retry:sibling';
+    siblingValue.activity.startTimeUtc = '2026-02-15T07:00:00.000Z';
+    siblingValue.streams.activityId = siblingValue.activity.id;
+    siblingValue.sources[0].id = 'synthetic:mixed-retry:source';
+    siblingValue.sources[0].activityId = siblingValue.activity.id;
+    const sibling = {
+        mediaType: SYNTHETIC_JSON_MEDIA_TYPE,
+        content: JSON.stringify(siblingValue)
+    };
+    crashNext = true;
+    const failed = await core.importArtifacts([duplicate, sibling]);
+    const failedReport = await core.waitForJob(failed.jobId);
+    assert.equal(failedReport.status, 'failed_decode');
+    assert.equal(failedReport.totals.skippedExactDuplicate, 1);
+
+    await core.retryJob(failed.jobId);
+    const retried = await core.waitForJob(failed.jobId);
+    assert.equal(retried.status, 'completed');
+    assert.equal(retried.totals.skippedExactDuplicate, 1);
+    assert.equal(retried.totals.completed, 1);
+    assert.equal((await core.previewActivities()).total, 2);
     await core.close();
 });
 
