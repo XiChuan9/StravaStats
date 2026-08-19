@@ -1,8 +1,16 @@
 # Privacy Guide
 
-StravaStats V2 keeps Canonical storage and local file import in the user's browser. That local-first
-boundary reduces unnecessary upload, but it does not make every application page or exported file
-public-safe or fully offline.
+The StravaStats public local-import core keeps Canonical storage and local file import in the user's
+browser. That local-first boundary reduces unnecessary upload, but it does not make every
+application page or exported file public-safe or fully offline.
+
+The public scope freeze changes which product surfaces are reachable; it is not a privacy-data
+migration. It does not read, copy, migrate, overwrite, or delete historical personal-extension
+LocalStorage settings. It also does not change the IndexedDB version or schema, clear Canonical or
+Legacy records, alter the backup format, or perform Cache Storage cleanup. Old cache entries may
+become unreachable and later age out only through the browser or the existing Service Worker
+lifecycle. The exact retained-key no-delete rule is recorded in the
+[scope-freeze Task Brief](../tasks/public-local-import-core-freeze.md).
 
 ## Data that must never enter public evidence
 
@@ -179,9 +187,10 @@ storage contents.
 ## Current tree versus public Git history
 
 R3 removed the identified tracked identity from the current tree and the privacy guard passes.
-That deterministic current-tree result does not resolve the separate public Git history incident.
-Its disposition remains `BLOCKED` pending a privacy/security owner decision. This guide does not
-repeat the value and authorizes no history rewrite, force-push, or branch cleanup.
+That deterministic result does not erase the separate public Git history. The recorded owner
+disposition accepted no rewrite; this guide does not repeat the value and authorizes no history
+rewrite, force-push, or branch cleanup. This incident record is independent of the public product
+scope freeze.
 
 ## Synthetic fixtures and browser evidence
 
@@ -212,4 +221,4 @@ metadata, telemetry, or external services are safe; human review remains require
 6. Add the smallest guard/regression and re-run privacy plus affected release gates.
 
 Privacy, data-loss risk, destructive Legacy behavior, and unauthorized external activity-data
-transmission are non-waivable release gates.
+egress are non-waivable integration gates.

@@ -172,8 +172,6 @@ Hotfix 合入 `main` 后必须同步到仍然活跃的 `integration/v2`。已开
 | `package.json` / `package-lock.json` | 单一 Owner |
 | `js/app/main.js` | 单一 Owner |
 | `js/app/auth.js` | 单一 Owner |
-| `js/tabs/run-plus.js` | 单一 Owner |
-| `styles/run-plus.css` | 单一 Owner |
 | `sw.js` | 单一 Owner |
 | Decoder Registry | 单一 Owner |
 | IndexedDB Schema/Migration | 单一 Owner |

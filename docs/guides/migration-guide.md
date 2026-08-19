@@ -1,7 +1,20 @@
 # Migration Guide
 
-This guide explains how the integrated V2 candidate coexists with the preserved Legacy path. It is
-an operator/user guide, not an instruction to publish or deploy V2.
+This guide explains how the public local-import core coexists with the preserved Legacy path. It is
+an operator/user guide, not an instruction to publish or deploy a release.
+
+## The public scope freeze is not a migration
+
+Removing retired public surfaces does not change the physical IndexedDB version, schema, store
+set, or migration chain. It does not copy, migrate, clear, rewrite, or delete Canonical activities,
+Legacy activities, Sources, RawArtifacts, Import records, duplicate decisions, backups, connection
+state, or user settings.
+
+Historical personal-extension LocalStorage settings are deliberately left in place. The public
+runtime does not read, copy, migrate, overwrite, or delete them. No Cache Storage cleanup or
+Service Worker generation change is part of this freeze: unreachable older entries may remain and
+may later age out through the browser or the already-established worker lifecycle. Do not clear
+site data as a substitute for code rollback.
 
 ## The essential rule: two physically separate libraries
 
@@ -133,5 +146,6 @@ or user setting is cleared. Disconnecting Strava remains separate from deleting 
 - no release tag, deployment, or production approval.
 
 For error-specific recovery, use [Troubleshooting](./troubleshooting.md). For protected restore,
-use the [Backup Guide](./backup-guide.md). The release-state evidence remains in the
-[PR-24 ledger](../tasks/pr-24-release-documentation.md).
+use the [Backup Guide](./backup-guide.md). The current public scope is recorded in the
+[scope-freeze Task Brief](../tasks/public-local-import-core-freeze.md). PR-24 remains a pre-freeze
+point-in-time ledger, not a current release route.

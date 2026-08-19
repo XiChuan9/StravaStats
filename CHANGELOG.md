@@ -3,7 +3,28 @@
 This file records merged repository changes. It does not claim a package publication, Git tag,
 GitHub Release, deployment, or production release.
 
-## Unreleased — local Alpha candidate-building head
+## Unreleased — Public Scope Freeze
+
+Exact scope-freeze base: `integration/v2@6924e7c77036c9a743f908936a28a2719936b726`
+(tree `7e771d4202e6b2be45521aaedf1fb0704fbf6426`).
+
+- The public runtime removes the Run Plus and NSM pages, navigation, routes, runtime modules,
+  styles, dedicated tests, and current-feature documentation.
+- The complete pre-freeze implementation was verified in a separately retained private snapshot;
+  no private repository address or private artifact is published here.
+- This scope freeze does not delete, migrate, clear, or rewrite Canonical or Legacy activities,
+  IndexedDB databases, LocalStorage settings, Cache Storage, backups, import records, or source
+  connection state. The IndexedDB version, schema, migrations, and backup format are unchanged.
+- Existing sports analytics, the source-neutral Canonical library, Repository and Projection,
+  Source Manager, exact identity, Backup/Restore, Diagnostics, optional Strava source, and local
+  FIT, TCX, GPX, CSV, and ZIP imports remain public.
+- This change is not an Alpha, Beta, Release Candidate, production release, publication, hosting,
+  deployment, or LICENSE change.
+
+The scope authority and acceptance boundary are recorded in the
+[Public Local Import Core Task Brief](./docs/tasks/public-local-import-core-freeze.md).
+
+## Pre-freeze V2 integration history
 
 Exact documented baseline: `integration/v2@eb0b6695b5dbf618877ff794dbc76935babeb793`.
 The package metadata is `2.0.0-alpha.1` for the authorized local candidate-building head. G13 is
@@ -25,10 +46,10 @@ It changes no Service Worker, cache, storage, schema, Legacy, provider or privat
 - [PR-02](./docs/tasks/pr-02-canonical-contracts.md) implemented and accepted the source-neutral
   Canonical Activity, Streams, Imported bundle, version, and provenance contracts.
 - [PR-03](./docs/tasks/pr-03-legacy-repository.md) introduced the seven-method Repository boundary.
-- [PR-04A](./docs/tasks/pr-04a-summary-consumers.md),
-  [PR-04B](./docs/tasks/pr-04b-detail-consumers.md), and
-  [PR-04C](./docs/tasks/pr-04c-run-plus-consumers.md) moved summary, detail, Run Plus, and NSM
-  consumers behind Repository-owned composition boundaries.
+- [PR-04A](./docs/tasks/pr-04a-summary-consumers.md) and
+  [PR-04B](./docs/tasks/pr-04b-detail-consumers.md) moved the retained summary and detail consumers
+  behind Repository-owned composition boundaries. A separate pre-freeze personal-extension brief
+  was point-in-time history and is no longer part of the current public documentation tree.
 - [PR-05](./docs/tasks/pr-05-indexeddb-v2-schema.md) created the physically isolated Canonical
   IndexedDB and additive migration framework.
 - [PR-06](./docs/tasks/pr-06-shadow-canonical-writer.md) added best-effort Shadow writes and a
@@ -58,8 +79,9 @@ It changes no Service Worker, cache, storage, schema, Legacy, provider or privat
   Repository projections.
 - [PR-17](./docs/tasks/pr-17-canonical-detail-cutover.md) cut activity detail and local Streams over
   to Canonical reads with capability degradation.
-- [PR-18](./docs/tasks/pr-18-run-plus-nsm-cutover.md) cut Run Plus and NSM over to the same Canonical
-  session façade.
+- A pre-freeze personal-extension cutover used the same Canonical session façade. Its Task Brief is
+  historical private-extension context and is no longer part of the current public documentation
+  tree.
 
 ### Identity, review, backup, diagnostics, and default Canonical
 

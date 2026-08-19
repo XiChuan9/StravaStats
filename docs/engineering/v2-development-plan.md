@@ -1,5 +1,14 @@
 # 第二部分：完整工程开发计划
 
+**文档状态：** Superseded for public product scope
+
+> Public-scope notice (2026-08-19): this plan is a pre-freeze, point-in-time
+> historical record. Its former branches, milestones, release sequence, and
+> private-extension work do not describe current public runtime functionality
+> and do not authorize continued V2 development. The current public scope is
+> defined by the
+> [Public Local Import Core Scope Freeze](../tasks/public-local-import-core-freeze.md).
+
 # 21. Git 与 Worktree 总体架构
 
 ## 21.1 长期分支

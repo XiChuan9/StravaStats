@@ -1,14 +1,16 @@
 # StravaStats
 
-StravaStats is a local-first sports analytics web application. The V2 integration branch stores a
-source-neutral Canonical activity library in the browser, imports common activity files locally,
-and keeps the existing Dashboard, sport views, activity details, Run Plus, and NSM consumers behind
-a Repository boundary.
+StravaStats is a public local-import core for local-first sports analytics. It keeps the existing
+Dashboard, sport views, activity details, and visualizations while storing a source-neutral
+Canonical activity library in the browser. FIT, TCX, GPX, CSV, ZIP, and other currently supported
+activity-file imports enter that local library through the same Repository boundary.
 
-> **Release status:** this repository contains an unverified local Alpha candidate-building head
-> with package metadata `2.0.0-alpha.1`. It is not a public Alpha or production release. G12 exact
-> candidate verification remains `NOT RUN`; there is no `v2.0.0-alpha.1` tag, GitHub Release,
-> publication, hosting, deployment, or exact-object release-owner approval.
+> **Scope status:** the public product scope is frozen by the
+> [Public Local Import Core Task Brief](./docs/tasks/public-local-import-core-freeze.md). This work
+> removes the retired personal-extension surfaces from the public runtime while preserving the
+> general analytics, local-import, Repository, storage, backup, diagnostics, privacy, and optional
+> Strava-source foundations. It is not an Alpha, Beta, Release Candidate, production release,
+> publication, hosting, or deployment action.
 
 ## Start locally
 
@@ -34,19 +36,7 @@ git diff --check
 
 Tests are offline, deterministic, and do not require Strava credentials or private fixtures.
 
-The separately authorized G13 candidate-building commands write only to an absolute, existing,
-empty directory outside the repository:
-
-```bash
-npm run build:alpha-candidate -- --output-parent /absolute/empty/directory
-npm run verify:alpha-candidate -- --bundle-root /absolute/extracted/root --container /absolute/candidate.zip
-npm run serve:alpha-candidate -- --bundle-root /absolute/extracted/root --port 0
-```
-
-These commands do not publish or deploy the candidate. The static server binds only to loopback,
-rejects `/api`, and must be used only with synthetic data and a disposable browser profile.
-
-## Current V2 workflow
+## Public local-import core workflow
 
 ### Local-first and Canonical by default
 
@@ -135,8 +125,8 @@ redacted events rather than raw causes, IDs, filenames, routes, GPS, heart-rate,
 responses, or payloads. This is deterministic current-tree evidence, not real-account or
 private-library verification.
 
-That local-first statement does **not** mean the complete application is fully offline. In the
-current V2 Source Manager, explicit Connect/Reconnect navigates to provider authorization. The
+That local-first statement does **not** mean the complete application is fully offline. In Source
+Manager, explicit Connect/Reconnect navigates to provider authorization. The
 callback exchange, explicit Disconnect revocation, and explicit `Sync latest 25` use separate
 bounded same-origin routes that perform the corresponding provider I/O. Local import and local
 Canonical browsing do not call the provider. Legacy provider paths remain separate. Weather, map,
@@ -157,12 +147,12 @@ tile requests remain a separate external boundary governed only by the per-map p
 
 ## Compatibility and verification boundary
 
-The PRD targets recent Chrome, Safari, and Firefox, macOS and Windows desktop, and basic iOS
-Safari/PWA viewing. Merged automated and actual-served evidence covers Node/fake-indexeddb and
-disposable Chromium/Chrome with deterministic synthetic data. Safari, Firefox, Windows, mobile,
-iOS/PWA, broad assistive-technology, pixel-level visual, real-account, real-private-library,
-production Service Worker, deployment, and final rollback matrices are not verified release
-evidence.
+The pre-freeze PRD targeted recent Chrome, Safari, and Firefox, macOS and Windows desktop, and basic
+iOS Safari/PWA viewing. Existing automated and actual-served evidence covers Node/fake-indexeddb
+and disposable Chromium/Chrome with deterministic synthetic data. This scope freeze makes no
+release-support claim: Safari, Firefox, Windows, mobile, iOS/PWA, broad assistive-technology,
+pixel-level visual, real-account, real-private-library, production Service Worker, deployment, and
+final rollback matrices remain unverified.
 
 ## Documentation
 
@@ -173,11 +163,10 @@ evidence.
 - [Known Limitations](./docs/guides/known-limitations.md)
 - [Privacy Guide](./docs/guides/privacy-guide.md)
 - [Troubleshooting](./docs/guides/troubleshooting.md)
-- [Release gates](./docs/engineering/release-gates.md)
-- [PR-24 historical ledger and current-tree supplement](./docs/tasks/pr-24-release-documentation.md)
+- [Scope-freeze integration gate and preserved release history](./docs/engineering/release-gates.md)
+- [PR-24 pre-freeze historical ledger](./docs/tasks/pr-24-release-documentation.md)
 
-The original PR-24 ledger is a historical V4-era evidence snapshot. Its additive superseding
-current-tree ledger records the exact post-R3-R11/D3/C1-C4/Retry status. `PASS` means only that a
-specific bounded row has accepted current code, deterministic tests, CI, Task Brief, or qualified
-served synthetic evidence. It does not mean the product was released. Ready is not merge or
-release authorization.
+PR-24 and its supplement are pre-freeze point-in-time evidence, not declarations of current public
+functionality or a live release route. The scope-freeze Task Brief and integration gate govern this
+change. No status in an older ledger authorizes merge, release, publication, deployment, or
+cleanup.

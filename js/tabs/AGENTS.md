@@ -28,13 +28,16 @@ These rules add to the repository-root `AGENTS.md`; they do not replace or weake
   chart configuration, DOM IDs/classes, ordering, or visual output.
 - Browser or visual verification that did not actually run must be recorded as `Not run`.
 
-## Run Plus / NSM read boundary
+## Injected reads and native DOM boundary
 
-- Run Plus gear labels and options use only the immutable session gear snapshot injected by the
-  application composition root. They must not fall back to a provider or metadata cache.
-- NSM activity and stream enrichment uses only the narrow injected `getActivity` and `getStreams`
-  callbacks. Run Plus must not retain a Repository, construct a provider boundary, or read auth.
+- Gear labels and options use only the immutable session snapshot injected by the application
+  composition root. Tabs must not fall back to a provider or metadata cache.
+- Activity and stream enrichment uses only narrow callbacks injected by the application
+  composition root. Tabs must not retain a Repository, construct a provider boundary, or read
+  authentication state.
 - Activity IDs crossing the injected boundary are opaque non-empty strings; do not parse, compare
   numerically, or manufacture a missing value as zero.
+- Render user-derived text and attributes through native DOM APIs such as `textContent`,
+  `setAttribute`, and `URLSearchParams`; do not construct executable markup from activity data.
 - Demo and Real use the same injected shape. Missing callbacks, malformed descriptors, malformed
   Repository envelopes, and read failures fail closed with stable safe UI behavior.

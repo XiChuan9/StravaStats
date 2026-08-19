@@ -1,20 +1,26 @@
-# StravaStats v2 Release Gates
+# Public Local Import Core Integration Gate and Pre-Freeze Release Record
 
 | 字段 | 内容 |
 | --- | --- |
-| Status | Accepted |
+| Status | Public scope-freeze integration gate; no release authorization |
 | Owner | XiChuan9 |
 | Created | 2026-07-28 |
-| Last updated | 2026-08-12 |
-| Related plan | [V2 Development Plan](./v2-development-plan.md) |
-| Decision record | [PR-47 Final V2 Release Roadmap](../tasks/pr-47-final-v2-release-roadmap.md) |
+| Last updated | 2026-08-19 |
+| Current scope | [Public Local Import Core Task Brief](../tasks/public-local-import-core-freeze.md) |
+| Pre-freeze plan | [V2 Development Plan](./v2-development-plan.md) |
+| Pre-freeze decision record | [PR-47 Final V2 Release Roadmap](../tasks/pr-47-final-v2-release-roadmap.md) |
 
 ## 1. Purpose and evidence rules
 
-This is the single authoritative current V2 release roadmap. PRD and accepted ADRs remain higher
-product/architecture authority; Task Briefs and PR-24 preserve point-in-time evidence. A historical
-Task Brief status, merged PR, green CI, Draft-to-Ready transition or synthetic browser record cannot
-promote a missing environmental or owner gate.
+The current purpose of this document is to gate the Public Local Import Core scope-freeze change.
+It does not authorize an Alpha, Beta, Release Candidate, production release, artifact publication,
+hosting, deployment, Service Worker rollout, or cleanup. The scope-freeze Task Brief defines the
+current public product boundary; accepted ADRs continue to govern the retained contracts.
+
+Sections 3 through 6 preserve the earlier G1-G13 release program as pre-freeze point-in-time
+history. Their use of words such as “current,” “approved,” or “authoritative” describes that older
+record only. They are not a live roadmap and cannot reintroduce retired public functionality or
+authorize release work. Sections 7 and 8 retain current generic integration and safety rules.
 
 Every gate records evidence, verifier/owner, date/environment, result and related task. The result
 vocabulary is `PASS deterministic`, `PASS verified`, `PARTIAL`, `BLOCKED`, `NOT RUN`,
@@ -25,39 +31,40 @@ it cannot be inferred from synthetic or earlier-head evidence. `PARTIAL`, `BLOCK
 are non-`PASS` states. A disposition closes a decision, not an unperformed test and not an erased
 historical fact.
 
-## 2. Authoritative current baseline
+## 2. Current public scope-freeze gate
 
-The authoritative postmerge baseline is:
+The exact implementation base is:
 
 ```text
-integration commit      4375d699fb1fc1142d399c158b9ad0c4e7e730dc
-integration tree        b076c4f80cd1d6de7719cebe26e327d18a1f4734
-integration divergence  0/0
-npm ci                  PASS; 6 packages
-syntax                  PASS; 283 files
-privacy                 PASS
-full test               PASS; 1,919/1,919
-npm audit               PASS; 0 vulnerabilities
-diff/worktree           PASS; clean
-integration CI          run 31578877301 / job 94057153726 SUCCESS
+base ref                origin/integration/v2
+base commit             6924e7c77036c9a743f908936a28a2719936b726
+base tree               7e771d4202e6b2be45521aaedf1fb0704fbf6426
+implementation branch   codex/public/local-import-core
 ```
 
-The exact `integration/v2@4375d699fb1fc1142d399c158b9ad0c4e7e730dc` tree contains the
-deterministic Feature Flag, Repository, V6 Storage/migration, Import, CSV/ZIP/FIT/TCX/GPX,
-Backup format 3, Source Manager, consumers, privacy, Service Worker policy/lifecycle and bounded
-performance evidence. No unresolved deterministic P0/P1 defect was found on this tree.
+Before the runtime-removal commit, the complete implementation was verified on a separate private
+remote branch, private main branch, annotated private tag, and a locally verified Git bundle. The
+public record must not disclose the private repository address.
 
-| Deterministic closure | Result | Boundary |
-| --- | --- | --- |
-| PR #57 Retry | PASS deterministic — closed deterministically | Eligible retained-byte Retry is explicit, single-use and lock/lease bounded; committed items are preserved and provider acquisition has no automatic retry |
-| PR #58 P1-DOCS | PASS deterministic — closed deterministically | Squash merge is the exact integration head; postmerge 1,913/1,913 and exact integration CI are green |
-| PR #59 FINAL-ROADMAP | PASS deterministic — closed deterministically | Squash merge publishes this Accepted roadmap at the exact integration head; postmerge 1,919/1,919 and exact integration CI are green |
-| Current P0/P1 inventory | PASS deterministic | No unresolved deterministic P0/P1; environmental and owner gates below remain non-`PASS` rather than being reclassified as defects |
+This integration gate requires all of the following on the final scope-freeze head:
 
-PR-24's additive supplement is preserved unchanged as the exact `eb0b6695...` point-in-time
-snapshot. It is historical evidence, not the live roadmap or current baseline.
+- retired personal-extension navigation, routes, runtime, styles, dedicated tests, and
+  current-feature documentation are absent from the public surface;
+- the existing analytics pages, Canonical library, Repository/Projection, Source Manager,
+  FIT/TCX/GPX/CSV/ZIP imports, exact identity, Backup/Restore, Diagnostics, optional Strava source,
+  privacy controls, and Service Worker policy remain intact;
+- no IndexedDB version, schema, store, migration, Canonical contract, Import/Repository API,
+  decoder, backup format, Service Worker generation, provider behavior, or analysis formula changes;
+- historical personal-extension LocalStorage settings are not read, copied, migrated, overwritten,
+  or deleted, and no Cache Storage cleanup is introduced;
+- required focused, syntax, privacy, full, diff, static-search, and disposable-browser checks run on
+  the exact head, with failures reported rather than reclassified; and
+- the change remains a Draft PR only. It is not a release or deployment claim.
 
-## 3. Evidence classes and current external summary
+## 3. Pre-freeze evidence classes and external summary (historical)
+
+Everything in Sections 3 through 6 is preserved only as point-in-time history from the earlier V2
+release program.
 
 Class A is automatically closable with repository/static/synthetic/disposable-browser evidence.
 Class B requires an owner material decision or waiver. Class C requires real credentials, a private
@@ -67,7 +74,7 @@ disposition. Class F requires final version, tag, artifact or release-owner appr
 
 Deterministic evidence cannot promote these environmental rows:
 
-| Evidence class | Result | Current boundary |
+| Evidence class | Historical result | Historical boundary |
 | --- | --- | --- |
 | Real account / private library | NOT RUN | G2/G3/G5/G6/G7 require separately authorized private execution; the approved G4 protocol definition is not execution authority |
 | Browser / platform | BLOCKED | Full V2 still requires Safari, Firefox, Windows, iOS/PWA, mobile and core keyboard/screen-reader evidence; only limited Alpha is macOS Chrome-only |
@@ -75,15 +82,15 @@ Deterministic evidence cannot promote these environmental rows:
 | R3 public Git history | CLOSED BY DISPOSITION | XiChuan9 accepted no-rewrite risk; current-tree removal and guard remain mandatory; this is not erasure |
 | Version / tag / artifact / release owner | PARTIAL | Package metadata and deterministic local candidate-building tooling are `2.0.0-alpha.1`; G12 is `NOT RUN` and no tag, GitHub Release, publication, hosting, deployment or exact-object owner approval exists |
 
-The Privacy Guide's pre-M34 sentence that calls the R3 decision `BLOCKED` is superseded for release
-status only by this Accepted roadmap and the recorded owner disposition. Its operational privacy,
-incident-handling and no-rewrite safety rules remain current. The five-path M34 limit does not
-authorize editing that sixth path.
+At the time of this pre-freeze record, the accepted roadmap and owner disposition superseded the
+Privacy Guide's earlier R3 status sentence for release status only. That statement is historical;
+the current Privacy Guide and scope-freeze integration gate now govern operational privacy and
+no-rewrite safety.
 
-## 4. Canonical remaining gate inventory
+## 4. Pre-freeze remaining gate inventory (historical)
 
-Only the rows below genuinely remain. Closed deterministic rows and owner decisions are not
-duplicated here.
+At the time of the pre-freeze record, the rows below remained. They are not the current public
+scope-freeze plan.
 
 | ID | Class | Result | Blocks | Gate | Exact acceptance evidence | Prohibited overclaim | Minimum next task / dependencies | Owner decision or frozen disposition | Privacy, data and rollback impact |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -98,7 +105,7 @@ duplicated here.
 | G12 | A | NOT RUN | Alpha / Beta / RC / production | Exact release-head verification | After the separately authorized G13 candidate build, verify its exact versioned commit and bundle/manifest from a true remote depth-one checkout with focused/syntax/privacy/full/audit/diff/path gates, current P0/P1 inventory and exact-head CI before any tag, Release or publication | Earlier integration, M34 CI or pre-candidate CI does not validate a later version/artifact head | `RELEASE-HEAD-VERIFICATION`, after the G13 candidate-building phase and before G13 publication approval | Mechanical once the exact versioned candidate head exists | Static/synthetic/read-only; rollback reverts candidate commits without data/cache deletion |
 | G13 | F | PARTIAL | Alpha / Beta / RC / production | Version / tag / artifact / release | The separately authorized A3 phase sets exact `2.0.0-alpha.1` metadata and deterministic local static-bundle/SHA-256 tooling; after G12 verifies the immutable exact candidate, obtain XiChuan9 exact-object/final approval before any tag, GitHub Release, publication or, only after G10, deployment; every object binds to one commit | Package metadata, local candidate bytes, CI or a Draft/Ready PR is not a verified or published release artifact | `VERSION-ARTIFACT-RELEASE`: finish candidate-building before environmental/G12 evidence; owner-approval then publication phases after G12, last for each named stage | Alpha → Beta → RC → `v2.0.0`; XiChuan9 owns tag/Release and final production approval | A3 is local, external-output and synthetic-only; later rollback/revocation preserves local data and public auditability |
 
-## 4.1 Closed G1 Alpha acceptance contract
+## 4.1 Pre-freeze closed G1 Alpha acceptance contract (historical)
 
 G1 is **CLOSED BY DISPOSITION** for the limited `v2.0.0-alpha.1` scope decision below. This closes
 only audience, distribution, support, evidence and eventual artifact shape. G1 itself did not
@@ -238,7 +245,7 @@ rescue and real parity/Shadow sign-off are deferred to RC, not waived and not `P
 tag, GitHub Release, publication and any deployment still require separate later G13 authorization;
 G12 can verify only the immutable exact A3 candidate.
 
-## 5. Shortest honest V2 Alpha path
+## 5. Pre-freeze V2 Alpha path (historical; not authorized now)
 
 The selected `v2.0.0-alpha.1` target is a **limited local, non-production static Web bundle**. Its
 supported surface is **current macOS Chrome only**, and its evidence is explicitly
@@ -263,7 +270,7 @@ This path permits no public deployment, real/private access, broader browser-sup
 artifact publication, tag or GitHub Release. M36 A3 permits only the bounded local version and
 candidate build after M34.
 
-## 6. Complete v2.0 path
+## 6. Pre-freeze complete v2.0 path (historical; not authorized now)
 
 The approved release sequence is **Alpha → Beta → RC → v2.0.0**. The eventual artifact is a static
 Web bundle with a SHA-256 manifest; XiChuan9 owns tag/GitHub Release and is final production
@@ -325,16 +332,18 @@ mandatory after expiry. Data loss, Legacy destruction, private data in Git/logs,
 back, exact duplicate creation, Disconnect deletion and unauthorized external egress remain
 non-waivable.
 
-## 7. Pull request and integration gates
+## 7. Current public scope-freeze pull request and integration gates
 
-Every PR, including documentation-only work, must have an approved Task Brief, literal path scope,
-appropriate focused checks, `npm ci`, syntax, privacy, full tests, `git diff --check`, privacy/data/
-migration/rollback reporting and exact-head CI. Unrun evidence stays explicit. Ready is not merge,
-tag, release, deployment or cleanup authority.
+This change must have the approved scope-freeze Task Brief, literal path scope, focused checks,
+`npm ci`, syntax, privacy, full tests, `git diff --check`, static search, privacy/data/rollback
+reporting, disposable-browser evidence, and exact-head CI. Unrun evidence stays explicit. The PR
+remains Draft and targets `main`; implementation does not authorize merge, tag, release,
+publication, deployment, Service Worker rollout, or cleanup.
 
-Before merge to `integration/v2`, CI must pass; Legacy startup and rollback must remain available;
-V2 writes must not damage Legacy; Repository/Storage/Import integration and additive/idempotent
-migrations must remain green; and diagnostics must not expose private data.
+Before any later merge decision, CI must pass; Legacy startup and rollback must remain available;
+Canonical writes must not damage Legacy; Repository/Storage/Import integration and existing
+additive/idempotent migrations must remain green; Diagnostics must not expose private data; and the
+protected implementation directories must have no unintended changes.
 
 ## 8. Waiver and failure policy
 

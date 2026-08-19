@@ -1,19 +1,20 @@
-# StravaStats V2 documentation
+# StravaStats public local-import core documentation
 
 | Field | Value |
 | --- | --- |
-| Status | Unverified local Alpha candidate-building head; not a public Alpha, Beta, Release Candidate, or production release |
-| Exact implementation baseline | `integration/v2@eb0b6695b5dbf618877ff794dbc76935babeb793` |
-| Package metadata | `2.0.0-alpha.1` (G13 `PARTIAL`; G12 `NOT RUN`; no tag, GitHub Release, publication, hosting or deployment) |
-| Current authoritative roadmap | [V2 release gates](./engineering/release-gates.md) |
-| Historical evidence | [PR-24 point-in-time ledger and supplement](./tasks/pr-24-release-documentation.md#superseding-current-tree-ledger) |
+| Status | Public Local Import Core scope freeze; not an Alpha, Beta, Release Candidate, production release, publication, hosting, or deployment |
+| Exact scope-freeze base | `integration/v2@6924e7c77036c9a743f908936a28a2719936b726` (tree `7e771d4202e6b2be45521aaedf1fb0704fbf6426`) |
+| Current public-scope authority | [Public Local Import Core Task Brief](./tasks/public-local-import-core-freeze.md) |
+| Current integration gate | [Scope-freeze integration gate](./engineering/release-gates.md) |
+| Pre-freeze historical evidence | [PR-24 point-in-time ledger and supplement](./tasks/pr-24-release-documentation.md#superseding-current-tree-ledger) |
 
 This directory contains durable product, architecture, migration, testing, and per-PR evidence for
-the local-first V2 migration. Accepted ADRs, the PRD, engineering plan and release gates remain the
-authority hierarchy. Historical `Proposed` status or an older baseline SHA in a durable record is
-not automatically current release evidence.
+the local-first codebase. The scope-freeze Task Brief defines the current public product boundary.
+The V2 PRD, development plan, old release roadmap, and older Task Briefs remain point-in-time
+pre-freeze history; they do not declare current public functionality or authorize release work.
+Accepted ADRs continue to govern the retained source-neutral contracts and Repository boundaries.
 
-## Current V2 guides
+## Current public guides
 
 - [Migration Guide](./guides/migration-guide.md) — physical isolation, First-run, modes, V6, and
   non-destructive rollback.
@@ -25,27 +26,20 @@ not automatically current release evidence.
   boundaries, and synthetic evidence rules.
 - [Troubleshooting](./guides/troubleshooting.md) — executable non-destructive recovery steps and
   safe error codes.
-- [Repository changelog](../CHANGELOG.md) — merged V2 work grouped by milestone, with no invented
-  tag, publication date, or deployment.
+- [Repository changelog](../CHANGELOG.md) — the public scope freeze and earlier V2 milestones, with
+  no invented tag, publication date, or deployment.
 
-The Privacy Guide's pre-M34 R3 `BLOCKED` status sentence is superseded for release status only by
-the Accepted [release-gates.md](./engineering/release-gates.md) roadmap. Its operational privacy and
-incident-handling rules remain current; M34's five-path limit does not authorize editing that guide.
+The retained current tree includes the reviewed privacy/network hardening, Service Worker policy,
+Source Manager authorization/identity/provider/recovery contracts, and explicit Retry for eligible
+failed local imports. These are bounded code/test facts, not release or deployment evidence. The
+[integration gate](./engineering/release-gates.md) records the scope-freeze checks; its preserved
+G1-G13 material is labeled pre-freeze history and is not a live release route.
 
-The exact current tree includes deterministic R3-R11 privacy/network hardening, D3 Service Worker
-code lifecycle, C1-C4 Source Manager authorization/identity/provider/recovery contracts, and
-explicit Retry for eligible failed local imports. These are bounded code/test facts, not evidence
-that every release environment is complete.
+## Pre-freeze product planning and current engineering references
 
-Use the [current authoritative release roadmap](./engineering/release-gates.md) for the exact
-remaining Alpha and full-`v2.0.0` paths, owner dispositions, evidence classes and non-`PASS` rows.
-PR-24 remains historical and must not be used as the live gate inventory.
-
-## Authority and engineering
-
-- [Product requirements](./product/stravastats-v2-prd.md)
-- [V2 development plan](./engineering/v2-development-plan.md)
-- [Release gates](./engineering/release-gates.md)
+- [Product requirements](./product/stravastats-v2-prd.md) — pre-freeze point-in-time product plan
+- [V2 development plan](./engineering/v2-development-plan.md) — pre-freeze point-in-time plan
+- [Scope-freeze integration gate and preserved release history](./engineering/release-gates.md)
 - [Architecture overview](./architecture/overview.md)
 - [Git/worktree workflow](./engineering/git-worktree-workflow.md)
 
@@ -79,6 +73,6 @@ operator steps.
 - [Task Brief index](./tasks/README.md)
 - [PR-24 historical release-gate ledger](./tasks/pr-24-release-documentation.md)
 
-Task Brief statuses capture their point-in-time workflow. A merged first-parent integration commit
-is stronger evidence of inclusion than stale phrases such as “Draft” or “Ready handoff pending” in
-an older Task Brief. Neither fact is production release authorization.
+Task Brief statuses capture their point-in-time workflow. Older Task Briefs and merged integration
+commits remain evidence of their historical scope only; they do not override the current public
+scope-freeze Task Brief. Neither history nor the current freeze is production release authorization.

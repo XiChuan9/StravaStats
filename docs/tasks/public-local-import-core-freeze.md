@@ -54,9 +54,10 @@ The public tree no longer exposes:
 - tests dedicated only to those product surfaces; or
 - documentation that presents those surfaces as current public functionality.
 
-Historical records may retain only a concise statement that the former surface
-was a historical private extension and is not part of the public current
-runtime. They must not disclose a private repository address.
+Historical records may retain either a concise scope-freeze notice or clearly
+labeled, non-runtime point-in-time content. Such records must not claim that a
+former private extension is current public functionality or disclose a private
+repository address.
 
 ## Literal allowed paths
 
@@ -231,7 +232,8 @@ guard against the prohibited areas. Scope regressions prove:
 - Demo, Legacy, Shadow, and Canonical boundaries remain intact.
 
 Every remaining case-insensitive Run Plus/NSM search hit must be reported. Only
-concise, non-executable historical scope-freeze notices may remain.
+concise scope-freeze notices and non-runtime point-in-time historical records
+that do not claim current public functionality may remain.
 
 ## Actual-browser acceptance
 

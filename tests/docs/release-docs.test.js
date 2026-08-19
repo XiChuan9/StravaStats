@@ -6,6 +6,9 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT_URL = new URL('../../', import.meta.url);
 const ROOT_PATH = fileURLToPath(ROOT_URL);
+const PUBLIC_SCOPE_BASE = '6924e7c77036c9a743f908936a28a2719936b726';
+const PUBLIC_SCOPE_TREE = '7e771d4202e6b2be45521aaedf1fb0704fbf6426';
+const PUBLIC_SCOPE_BRIEF = 'docs/tasks/public-local-import-core-freeze.md';
 
 const EXACT_ALLOWLIST = Object.freeze([
     'docs/tasks/pr-24-release-documentation.md',
@@ -65,7 +68,7 @@ function localMarkdownLinks(markdown) {
     ));
 }
 
-test('PR-24 freezes the literal ten-path release-documentation scope', async () => {
+test('pre-freeze PR-24 historical record freezes its literal ten-path scope', async () => {
     const brief = await source('docs/tasks/pr-24-release-documentation.md');
     const match = /exact cumulative hard maximum is these ten literal paths[\s\S]*?```text\n([\s\S]*?)\n```/.exec(brief);
     assert.notEqual(match, null);
@@ -111,7 +114,7 @@ test('local Markdown links in release documents resolve inside the repository', 
     }
 });
 
-test('README commands, routes, and release status match executable repository facts', async () => {
+test('README presents the current public local-import core and executable repository facts', async () => {
     const [readme, packageJson, sourceManager, backup, diagnostics] = await Promise.all([
         source('README.md'),
         source('package.json'),
@@ -127,9 +130,7 @@ test('README commands, routes, and release status match executable repository fa
         'npm run check:syntax',
         'npm run check:privacy',
         'npm test',
-        'npm run build:alpha-candidate',
-        'npm run verify:alpha-candidate',
-        'npm run serve:alpha-candidate'
+        'git diff --check'
     ]) assert.match(readme, new RegExp(command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
     for (const route of [
         '/source-manager.html?mode=real',
@@ -139,41 +140,69 @@ test('README commands, routes, and release status match executable repository fa
     assert.match(sourceManager, /<title>Sources — StravaStats<\/title>/);
     assert.match(backup, /<title>Storage &amp; Backup — StravaStats<\/title>/);
     assert.match(diagnostics, /<title>Diagnostics — StravaStats<\/title>/);
-    assert.match(readme, /not (?:a )?public Alpha or production release/i);
-    assert.match(readme, /unverified local Alpha candidate-building head/i);
-    assert.match(readme, /package metadata[\s\S]{0,40}\`2\.0\.0-alpha\.1\`/i);
-    assert.match(readme, /no[^\n]*v2\.0\.0-alpha\.1[^\n]*tag/i);
-    assert.match(readme, /no[^\n]*GitHub Release/i);
-    assert.match(readme, /G12 exact[\s\S]{0,80}NOT RUN/i);
-    assert.match(readme, /no[\s\S]{0,160}exact-object release-owner approval/i);
+    assert.match(readme, /public local-import core/i);
+    assert.match(readme, /source-neutral[\s\S]{0,120}Canonical/i);
+    assert.match(readme, /FIT, TCX, GPX, CSV, ZIP/i);
+    assert.match(readme, /Source Manager/i);
+    assert.match(readme, /Repository/i);
+    assert.match(readme, /Backup\/Restore/i);
+    assert.match(readme, /Diagnostics/i);
+    assert.match(readme, /not an Alpha, Beta, Release Candidate, production release/i);
     assert.doesNotMatch(readme, /v2\.0\.0 (?:is |has been )?(?:released|deployed|published)/i);
 });
 
-test('current documentation index and changelog share the exact post-Retry baseline', async () => {
+test('current documentation index and changelog share the public scope-freeze authority', async () => {
     const [index, changelog] = await Promise.all([
         source('docs/README.md'),
         source('CHANGELOG.md')
     ]);
     for (const document of [index, changelog]) {
-        assert.match(document, /eb0b6695b5dbf618877ff794dbc76935babeb793/);
-        assert.doesNotMatch(document, /61d7b032305fd8f12d71544315f06d553213801d/);
-        assert.match(document, /\`?2\.0\.0-alpha\.1\`?/);
-        assert.match(document, /not[^\n]*(?:public Alpha|Beta|Release Candidate|production release)/i);
+        assert.match(document, new RegExp(PUBLIC_SCOPE_BASE));
+        assert.match(document, new RegExp(PUBLIC_SCOPE_TREE));
+        assert.match(document, /Public Local Import Core/i);
+        assert.match(document, /not an Alpha, Beta, Release Candidate, production release/i);
     }
+    assert.match(index, /Current public-scope authority[\s\S]{0,160}public-local-import-core-freeze\.md/i);
+    assert.match(index, /pre-freeze point-in-time/i);
+    assert.match(changelog, /FIT, TCX, GPX, CSV, and ZIP/i);
+    assert.match(changelog, /IndexedDB version, schema, migrations, and backup format are unchanged/i);
+});
+
+test('current public scope brief freezes retained capabilities and non-destructive boundaries', async () => {
+    const brief = await source(PUBLIC_SCOPE_BRIEF);
+    assert(brief.includes(`| Base commit | \`${PUBLIC_SCOPE_BASE}\` |`));
+    assert(brief.includes(`| Base tree | \`${PUBLIC_SCOPE_TREE}\` |`));
     for (const pattern of [
-        /public (?:Git )?history|Git history/i,
-        /Safari|Firefox/i,
-        /production(?:-like)? Service Worker/i,
-        /release[- ]owner/i
-    ]) {
-        assert.match(changelog, pattern);
-    }
-    assert.match(index, /Current authoritative roadmap/);
-    assert.match(index, /V6/);
-    assert.match(index, /format 3/i);
-    for (const pattern of [/R3-R11/, /D3/, /C1-C4/, /explicit Retry/i]) {
-        assert.match(changelog, pattern);
-    }
+        /Canonical activities and streams/i,
+        /Repository, Projection, and Source Manager/i,
+        /local FIT and TCX import/i,
+        /CSV, ZIP, and GPX import/i,
+        /Exact Identity/i,
+        /Backup\/Restore/i,
+        /Diagnostics/i,
+        /optional Strava source/i
+    ]) assert.match(brief, pattern);
+
+    assert.match(brief, /public tree no longer exposes[\s\S]{0,180}navigation, tabs, routes[\s\S]{0,80}styles/i);
+    assert.match(brief, /IndexedDB V2 version, schema, stores, indexes, migrations/i);
+    assert.match(brief, /Existing Cache Storage entries are not cleared or migrated/i);
+    assert.match(brief, /must not read, remove, rename, rewrite, migrate, or exclude/i);
+
+    const retiredNamespace = ['run', 'plus'].join('_');
+    const retiredSubproduct = ['ns', 'm'].join('');
+    const expectedKeys = [
+        `${retiredNamespace}_capacity_inputs_v1`,
+        `${retiredNamespace}_${retiredSubproduct}_settings_v1`,
+        `${retiredNamespace}_${retiredSubproduct}_activity_tags_v1`,
+        `${retiredNamespace}_${retiredSubproduct}_session_inputs_v1`,
+        `${retiredNamespace}_${retiredSubproduct}_tests_v1`,
+        `${retiredNamespace}_${retiredSubproduct}_interval_analysis_v1`
+    ];
+    for (const key of expectedKeys) assert.match(brief, new RegExp(`^${key}$`, 'm'));
+
+    assert.match(brief, /Alpha, Beta, RC, or production claim is authorized/i);
+    assert.match(brief, /License change \\| Not part of this pull request/i);
+    assert.match(brief, /does not delete branches, rewrite history, clear caches, remove LocalStorage/i);
 });
 
 test('guides freeze exact Canonical, V6, backup compatibility, privacy, and rollback facts', async () => {
@@ -245,7 +274,7 @@ test('release prose keeps compatibility and external-resource evidence qualified
     assert.match(text, /third-party CDN/i);
     assert.match(text, /telemetry/i);
     assert.match(text, /not fully offline/i);
-    assert.match(text, /Ready[^\n]*not[^\n]*(?:merge|release)/i);
+    assert.match(text, /scope freeze[^\n]*(?:not|does not)[^\n]*(?:release|deployment)/i);
     assert.doesNotMatch(text, /(?:all|fully) cross-browser (?:tests? )?(?:pass|passed)/i);
     assert.doesNotMatch(text, /production (?:deployment|release|Service Worker)[^\n]*(?:pass|passed|complete)/i);
 });
@@ -263,17 +292,13 @@ test('backup and privacy guides disclose shared Legacy-compatible settings truth
     assert.match(backup, /TARGET_SETTINGS_CONFLICT/);
 });
 
-test('current release prose rejects superseded blockers and preserves external gates', async () => {
-    const [readme, gates, limitations, privacy, brief] = await Promise.all([
+test('current public prose preserves provider, privacy, cache, and rollback boundaries', async () => {
+    const [readme, gates, limitations, privacy] = await Promise.all([
         source('README.md'),
         source('docs/engineering/release-gates.md'),
         source('docs/guides/known-limitations.md'),
-        source('docs/guides/privacy-guide.md'),
-        source('docs/tasks/pr-24-release-documentation.md')
+        source('docs/guides/privacy-guide.md')
     ]);
-    const currentBrief = brief.split('## Superseding current-tree ledger')[1];
-    assert.notEqual(currentBrief, undefined);
-    assert(currentBrief.length >= 2_000);
 
     assert.doesNotMatch(readme, /Connect later/i);
     for (const pattern of [
@@ -283,10 +308,6 @@ test('current release prose rejects superseded blockers and preserves external g
         /Recover\/Abandon|Recover[^\n]*Abandon/i,
         /eligible[^\n]*Retry|Retry[^\n]*eligible/i
     ]) assert.match(readme, pattern);
-    assert.match(
-        readme,
-        /current V2\s+Source Manager[\s\S]{0,160}(?:provider|same-origin)|(?:provider|same-origin)[\s\S]{0,160}current V2\s+Source Manager/i
-    );
     assert.match(readme, /Connect\/Reconnect[\s\S]{0,120}provider authorization/i);
     assert.match(readme, /callback exchange[\s\S]{0,120}same-origin/i);
     assert.match(readme, /Disconnect[\s\S]{0,120}(?:revoke|revocation)[\s\S]{0,120}same-origin/i);
@@ -294,11 +315,12 @@ test('current release prose rejects superseded blockers and preserves external g
     assert.match(readme, /Legacy\s+provider/i);
     assert.match(readme, /weather[\s\S]{0,100}map[\s\S]{0,100}AI[\s\S]{0,100}(?:separate|consent)/i);
 
-    assert.doesNotMatch(
-        gates,
-        /Repository[^\n]*Storage[^\n]*Import[^\n]*Decoder[^\n]*(?:Not implemented|未实现)/i
-    );
-    assert.match(gates, /deterministic|确定性/i);
+    assert.match(gates, /Current public scope-freeze gate/i);
+    assert.match(gates, new RegExp(PUBLIC_SCOPE_BASE));
+    assert.match(gates, new RegExp(PUBLIC_SCOPE_TREE));
+    assert.match(gates, /FIT\/TCX\/GPX\/CSV\/ZIP imports/i);
+    assert.match(gates, /no IndexedDB version, schema, store, migration/i);
+    assert.match(gates, /no Cache Storage cleanup is introduced/i);
     for (const pattern of [
         /\| Real account \/ private library \| (?:PARTIAL|BLOCKED|NOT RUN) \|/i,
         /\| Browser \/ platform \| (?:PARTIAL|BLOCKED|NOT RUN) \|/i,
@@ -314,7 +336,7 @@ test('current release prose rejects superseded blockers and preserves external g
     assert.match(gates, /\| R3 public Git history \| CLOSED BY DISPOSITION \|/i);
     assert.match(gates, /no-rewrite[\s\S]{0,120}not erasure/i);
 
-    for (const document of [limitations, privacy, currentBrief]) {
+    for (const document of [limitations, privacy]) {
         assert.doesNotMatch(
             document,
             /raw console[^\n]*(?:server|API)[^\n]*(?:release blocker|发布阻断)|(?:server|API)[^\n]*raw console[^\n]*(?:release blocker|发布阻断)/i
@@ -330,8 +352,8 @@ test('current release prose rejects superseded blockers and preserves external g
         assert.match(document, /exact local (?:calendar )?date/i);
         assert.match(document, /explicit|consent/i);
         assert.match(document, /public (?:Git )?history|Git history/i);
-        assert.match(document, /BLOCKED/);
     }
+    assert.match(limitations, /BLOCKED/);
 
     assert.match(limitations, /stravastats-static-v2-000001/);
     assert.match(limitations, /strava-dashboard-v1[^\n]*(?:legacy|previous|preserved|recognized)/i);
@@ -339,21 +361,9 @@ test('current release prose rejects superseded blockers and preserves external g
     assert.match(limitations, /Option B|empty V1 (?:database )?shell/i);
     assert.match(limitations, /provider[^\n]*no automatic retry|no automatic retry[^\n]*provider/i);
     assert.match(limitations, /retained[^\n]*(?:bytes|byte)[^\n]*Retry|Retry[^\n]*retained[^\n]*(?:bytes|byte)/i);
-
-    assert.match(currentBrief, /eb0b6695b5dbf618877ff794dbc76935babeb793/);
-    assert.match(currentBrief, /R3[^\n]*current tree[^\n]*(?:CLOSED|PASS)/i);
-    assert.match(currentBrief, /public (?:Git )?history[^\n]*BLOCKED/i);
-    for (const pattern of [
-        /real account|private library/i,
-        /Safari|Firefox/i,
-        /production-like Service Worker|production Service Worker/i,
-        /deployment[^\n]*rollback|rollback[^\n]*deployment/i,
-        /version[^\n]*tag[^\n]*artifact|tag[^\n]*artifact/i,
-        /release-owner|release owner/i
-    ]) assert.match(currentBrief, pattern);
 });
 
-test('release-gate status does not claim a conditional PASS', async () => {
+test('pre-freeze PR-24 historical status does not claim a conditional PASS', async () => {
     const brief = await source('docs/tasks/pr-24-release-documentation.md');
     assert.doesNotMatch(brief, /advances[^\n]*`PASS`[^\n]*subject to/i);
     assert.match(brief, /Migration\/Backup\/Privacy\/Troubleshooting docs complete \| (?:PARTIAL|PASS) \|/);
@@ -379,7 +389,7 @@ test('served routes are code, not root-absolute GitHub Markdown links', async ()
     }
 });
 
-test('M34 freezes the exact five-path implementation scope and no sixth path', async () => {
+test('pre-freeze PR-47 historical record freezes its five-path scope', async () => {
     const brief = await source('docs/tasks/pr-47-final-v2-release-roadmap.md');
     const approval = brief.split('## Owner approval and frozen implementation contract')[1];
     assert.notEqual(approval, undefined);
@@ -394,7 +404,7 @@ test('M34 freezes the exact five-path implementation scope and no sixth path', a
     );
 });
 
-test('M35 freezes the exact three-path docs and test scope', async () => {
+test('pre-freeze PR-48 historical record freezes its three-path scope', async () => {
     const brief = await source('docs/tasks/pr-48-alpha-contract.md');
     const match = /### Frozen literal cumulative allowlist[\s\S]*?```text\n([\s\S]*?)\n```/.exec(brief);
     assert.notEqual(match, null);
@@ -405,23 +415,23 @@ test('M35 freezes the exact three-path docs and test scope', async () => {
     assert.match(brief, /fourth path[\s\S]{0,100}(?:new owner decision|immediate stop)/i);
 });
 
-test('canonical roadmap binds the exact postmerge baseline and deterministic P0/P1 closure', async () => {
+test('release gates separate the current public base from pre-freeze roadmap history', async () => {
     const gates = await source('docs/engineering/release-gates.md');
-    assert.match(gates, /4375d699fb1fc1142d399c158b9ad0c4e7e730dc/);
-    assert.match(gates, /b076c4f80cd1d6de7719cebe26e327d18a1f4734/);
-    assert.doesNotMatch(gates, /integration\/v2@f7f18392dc28e1f1d6ed10c1d8cc0aa297ab7628/);
-    assert.match(gates, /1,919\/1,919/);
-    assert.match(gates, /31578877301[\s\S]{0,80}94057153726/);
-    assert.match(gates, /PR #57[\s\S]{0,100}(?:PASS deterministic|closed deterministically)/i);
-    assert.match(gates, /PR #58[\s\S]{0,100}(?:PASS deterministic|closed deterministically)/i);
-    assert.match(gates, /PR #59[\s\S]{0,120}(?:PASS deterministic|closed deterministically|Accepted roadmap)/i);
-    assert.match(gates, /no unresolved deterministic P0\/P1/i);
+    const current = gates.split('## 2. Current public scope-freeze gate')[1]
+        ?.split('## 3. Pre-freeze')[0];
+    assert.notEqual(current, undefined);
+    assert.match(current, new RegExp(PUBLIC_SCOPE_BASE));
+    assert.match(current, new RegExp(PUBLIC_SCOPE_TREE));
+    assert.doesNotMatch(current, /4375d699fb1fc1142d399c158b9ad0c4e7e730dc/);
+    assert.doesNotMatch(current, /1,919\/1,919/);
+    assert.match(gates, /Sections 3 through 6[\s\S]{0,200}pre-freeze point-in-time[\s\S]{0,20}history/i);
+    assert.match(gates, /not a live roadmap/i);
 });
 
-test('G1 Alpha contract freezes local distribution, support and honest status', async () => {
+test('pre-freeze historical G1 contract records local distribution and support', async () => {
     const gates = await source('docs/engineering/release-gates.md');
-    const contract = gates.split('## 4.1 Closed G1 Alpha acceptance contract')[1]
-        ?.split('## 5.')[0];
+    const contract = gates.split('## 4.1 Pre-freeze closed G1 Alpha acceptance contract (historical)')[1]
+        ?.split('## 5. Pre-freeze')[0];
     assert.notEqual(contract, undefined);
     assert.match(contract, /G1[\s\S]{0,120}CLOSED BY DISPOSITION/i);
     assert.match(contract, /v2\.0\.0-alpha\.1/);
@@ -446,10 +456,10 @@ test('G1 Alpha contract freezes local distribution, support and honest status', 
     assert.match(contract, /G9[\s\S]{0,100}BLOCKED/i);
 });
 
-test('G1 Alpha contract freezes exact payload, manifest and reproducibility', async () => {
+test('pre-freeze historical G1 contract records payload and reproducibility', async () => {
     const gates = await source('docs/engineering/release-gates.md');
-    const contract = gates.split('## 4.1 Closed G1 Alpha acceptance contract')[1]
-        ?.split('## 5.')[0];
+    const contract = gates.split('## 4.1 Pre-freeze closed G1 Alpha acceptance contract (historical)')[1]
+        ?.split('## 5. Pre-freeze')[0];
     assert.notEqual(contract, undefined);
     for (const required of [
         'classifyBike.js', 'classifyRun.js', 'diagnostics.html', 'icon-sport.svg',
@@ -481,10 +491,10 @@ test('G1 Alpha contract freezes exact payload, manifest and reproducibility', as
     assert.match(contract, /no symlink/i);
 });
 
-test('G1 Alpha contract freezes candidate gates and disposable Chrome matrix', async () => {
+test('pre-freeze historical G1 contract records candidate and browser gates', async () => {
     const gates = await source('docs/engineering/release-gates.md');
-    const contract = gates.split('## 4.1 Closed G1 Alpha acceptance contract')[1]
-        ?.split('## 5.')[0];
+    const contract = gates.split('## 4.1 Pre-freeze closed G1 Alpha acceptance contract (historical)')[1]
+        ?.split('## 5. Pre-freeze')[0];
     assert.notEqual(contract, undefined);
     for (const command of [
         'npm ci', 'npm run check:syntax', 'npm run check:privacy', 'npm test',
@@ -504,10 +514,10 @@ test('G1 Alpha contract freezes candidate gates and disposable Chrome matrix', a
     assert.match(contract, /no[\s\S]{0,80}(?:offline|PWA|Service Worker)[\s\S]{0,80}claim/i);
 });
 
-test('G1 Alpha contract preserves privacy, rollback and remaining non-PASS gates', async () => {
+test('pre-freeze historical G1 contract records privacy and non-PASS gates', async () => {
     const gates = await source('docs/engineering/release-gates.md');
-    const contract = gates.split('## 4.1 Closed G1 Alpha acceptance contract')[1]
-        ?.split('## 5.')[0];
+    const contract = gates.split('## 4.1 Pre-freeze closed G1 Alpha acceptance contract (historical)')[1]
+        ?.split('## 5. Pre-freeze')[0];
     assert.notEqual(contract, undefined);
     assert.match(contract, /synthetic-only/i);
     assert.match(contract, /no (?:real )?Token[\s\S]{0,120}provider credential[\s\S]{0,120}private/i);
@@ -522,9 +532,10 @@ test('G1 Alpha contract preserves privacy, rollback and remaining non-PASS gates
     assert.doesNotMatch(contract, /real (?:Legacy|parity)[^\n]*(?:is|=)\s*`?PASS/i);
 });
 
-test('canonical roadmap has the exact remaining A-F gate rows and no external PASS', async () => {
+test('pre-freeze historical G2-G13 inventory keeps exact rows and no external PASS', async () => {
     const gates = await source('docs/engineering/release-gates.md');
-    const remaining = gates.split('## 4. Canonical remaining gate inventory')[1]?.split('## 5.')[0];
+    const remaining = gates.split('## 4. Pre-freeze remaining gate inventory (historical)')[1]
+        ?.split('## 4.1 Pre-freeze')[0];
     assert.notEqual(remaining, undefined);
     const actualRows = remaining.split('\n').filter(line => /^\| G\d+ \|/.test(line));
     assert.equal(actualRows.length, REMAINING_GATE_ROWS.length);
@@ -539,7 +550,7 @@ test('canonical roadmap has the exact remaining A-F gate rows and no external PA
         assert.match(remaining, row, `${id} exact row`);
     }
     assert.match(gates, /Class A[\s\S]*Class B[\s\S]*Class C[\s\S]*Class D[\s\S]*Class E[\s\S]*Class F/);
-    assert.match(gates, /\| Status \| Accepted \|/);
+    assert.match(gates, /Pre-freeze remaining gate inventory \(historical\)/i);
     assert.match(gates, /`PASS deterministic`[\s\S]{0,80}`PASS verified`/);
     assert.match(gates, /`PASS verified`[\s\S]{0,240}exact acceptance evidence[\s\S]{0,160}verifier\/owner[\s\S]{0,160}environment/i);
     for (const row of actualRows) {
@@ -548,9 +559,10 @@ test('canonical roadmap has the exact remaining A-F gate rows and no external PA
     }
 });
 
-test('shortest Alpha path stays local synthetic-only and defers real evidence to RC', async () => {
+test('pre-freeze historical Alpha path stays local synthetic-only', async () => {
     const gates = await source('docs/engineering/release-gates.md');
-    const alpha = gates.split('## 5. Shortest honest V2 Alpha path')[1]?.split('## 6.')[0];
+    const alpha = gates.split('## 5. Pre-freeze V2 Alpha path (historical; not authorized now)')[1]
+        ?.split('## 6. Pre-freeze')[0];
     assert.notEqual(alpha, undefined);
     assert.match(alpha, /v2\.0\.0-alpha\.1/);
     assert.match(alpha, /limited local[\s\S]{0,80}non-production/i);
@@ -574,9 +586,10 @@ test('shortest Alpha path stays local synthetic-only and defers real evidence to
     assert(alphaOrder.every((position, index) => index === 0 || alphaOrder[index - 1] < position));
 });
 
-test('complete v2 path freezes owner dispositions without claiming unrun evidence', async () => {
+test('pre-freeze historical complete-v2 path records owner dispositions without current authority', async () => {
     const gates = await source('docs/engineering/release-gates.md');
-    const full = gates.split('## 6. Complete v2.0 path')[1]?.split('## 7.')[0];
+    const full = gates.split('## 6. Pre-freeze complete v2.0 path (historical; not authorized now)')[1]
+        ?.split('## 7. Current public')[0];
     assert.notEqual(full, undefined);
     assert.match(full, /2026-11-12/);
     assert.match(full, /large libraries|large batches/i);
@@ -612,19 +625,20 @@ test('complete v2 path freezes owner dispositions without claiming unrun evidenc
     assert(fullOrder.every((position, index) => index === 0 || fullOrder[index - 1] < position));
 });
 
-test('documentation index and limitations point to the canonical roadmap', async () => {
-    const [index, limitations] = await Promise.all([
+test('documentation index and limitations point to current scope authority and label history', async () => {
+    const [index, limitations, gates] = await Promise.all([
         source('docs/README.md'),
-        source('docs/guides/known-limitations.md')
+        source('docs/guides/known-limitations.md'),
+        source('docs/engineering/release-gates.md')
     ]);
-    assert.match(index, /Current authoritative roadmap[\s\S]{0,120}release-gates\.md/i);
-    assert.doesNotMatch(index, /Current evidence ledger[\s\S]{0,120}PR-24/i);
+    assert.match(index, /Current public-scope authority[\s\S]{0,160}public-local-import-core-freeze\.md/i);
+    assert.match(index, /Current integration gate[\s\S]{0,160}release-gates\.md/i);
     assert.match(index, /PR-24[\s\S]{0,120}(?:historical|point-in-time)/i);
-    assert.match(
-        index,
-        /privacy guide[\s\S]{0,180}(?:pre-M34|pre-decision)[\s\S]{0,120}R3[\s\S]{0,180}superseded[\s\S]{0,120}release-gates\.md/i
-    );
-    assert.match(limitations, /authoritative[\s\S]{0,120}release-gates\.md/i);
+    assert.match(index, /V2 PRD, development plan, old release roadmap[\s\S]{0,120}pre-freeze history/i);
+    assert.match(limitations, /current public boundary[\s\S]{0,160}public-local-import-core-freeze\.md/i);
+    assert.match(limitations, /Pre-freeze production-release blockers \(historical\)/i);
+    assert.match(gates, /Current public scope-freeze pull request and integration gates/i);
+    assert.match(gates, /Sections 3 through 6[\s\S]{0,200}pre-freeze point-in-time[\s\S]{0,20}history/i);
     assert.match(limitations, /PR #57[\s\S]{0,120}(?:closed|PASS deterministic)/i);
     assert.match(limitations, /PR #58[\s\S]{0,120}(?:closed|PASS deterministic)/i);
     assert.doesNotMatch(limitations, /P1-DOCS remains open/i);
