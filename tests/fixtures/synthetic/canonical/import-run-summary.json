@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "activity": {
+    "schemaVersion": 1,
+    "id": "synthetic-import-activity-alpha",
+    "sportCategory": "run",
+    "sportVariant": "road",
+    "startTimeUtc": "2026-01-15T06:30:00.000Z",
+    "timeZone": {
+      "ianaName": "Etc/UTC",
+      "utcOffsetMinutes": 0
+    },
+    "capabilities": {
+      "hasGps": false,
+      "hasHeartRate": false,
+      "hasPower": false,
+      "hasCadence": false,
+      "hasLaps": false
+    },
+    "name": "Synthetic Five Kilometre Run",
+    "distanceMeters": 5000,
+    "movingTimeSeconds": 1500,
+    "elapsedTimeSeconds": 1530,
+    "elevationGainMeters": 0
+  },
+  "streams": {
+    "activityId": "synthetic-import-activity-alpha",
+    "series": []
+  },
+  "laps": [],
+  "events": [],
+  "sources": [
+    {
+      "id": "synthetic-import-source-alpha",
+      "activityId": "synthetic-import-activity-alpha",
+      "provider": "synthetic-provider",
+      "externalId": null,
+      "rawArtifactId": null,
+      "acquisitionMethod": "local-file",
+      "deviceId": null,
+      "importedAt": "2026-01-15T07:00:00.000Z"
+    }
+  ],
+  "devices": [],
+  "warnings": [],
+  "versionMetadata": {
+    "schemaVersion": 1,
+    "parserVersion": "synthetic-json@1",
+    "normalizerVersion": "import-normalizer@1",
+    "analysisVersion": null,
+    "settingsVersion": null,
+    "inputHash": null
+  }
+}

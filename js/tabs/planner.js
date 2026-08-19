@@ -18,6 +18,7 @@ const HISTORY_DISTANCE_OPTIONS = TARGET_DISTANCES.filter(distance =>
 );
 
 const HISTORY_COLOR_PALETTE = ['#0B6E4F', '#D35400', '#1F618D', '#B03A2E', '#6C3483', '#117864'];
+let currentPlannerRuns = [];
 
 // =====================================================
 // TRAINING READINESS REFERENCE DATA
@@ -94,6 +95,7 @@ export function renderPlannerTab(allActivities) {
         .filter(a => a.type && a.type.includes('Run'))
         .slice()
         .sort((left, right) => new Date(left.start_date_local || 0) - new Date(right.start_date_local || 0));
+    currentPlannerRuns = runs;
 
     // Render PB section first
     renderPersonalBestsSection(runs);
@@ -117,9 +119,9 @@ export function renderPlannerTab(allActivities) {
         updatePredictions(runs);
     }
 
-    sliders.forEach(s => s.addEventListener('input', updateUI));
-    if (updateBtn) updateBtn.addEventListener('click', updateUI);
-    moodRadios.forEach(r => r.addEventListener('change', updateUI));
+    sliders.forEach(s => { s.oninput = updateUI; });
+    if (updateBtn) updateBtn.onclick = updateUI;
+    moodRadios.forEach(r => { r.onchange = updateUI; });
 
     updateUI();
 }
@@ -672,6 +674,7 @@ function renderPaceChart(predictions) {
 }
 
 function initializePredictionHistoryControls(runs) {
+    currentPlannerRuns = runs;
     const fromInput = document.getElementById('prediction-history-from');
     const toInput = document.getElementById('prediction-history-to');
     const granularitySelect = document.getElementById('prediction-history-granularity');
@@ -696,22 +699,6 @@ function initializePredictionHistoryControls(runs) {
         toInput.min = minDate;
         toInput.max = maxDate;
 
-        const triggerUpdate = () => updatePredictionHistory(runs);
-        applyButton.addEventListener('click', triggerUpdate);
-        granularitySelect.addEventListener('change', triggerUpdate);
-        distancesSelect.addEventListener('change', triggerUpdate);
-        fromInput.addEventListener('change', triggerUpdate);
-        toInput.addEventListener('change', triggerUpdate);
-
-        resetButton.addEventListener('click', () => {
-            fromInput.value = minDate;
-            toInput.value = maxDate;
-            granularitySelect.value = 'month';
-            Array.from(distancesSelect.options).forEach(option => {
-                option.selected = ['5', '10'].includes(option.value);
-            });
-            updatePredictionHistory(runs);
-        });
     } else {
         fromInput.min = minDate;
         fromInput.max = maxDate;
@@ -720,6 +707,22 @@ function initializePredictionHistoryControls(runs) {
         if (!fromInput.value) fromInput.value = minDate;
         if (!toInput.value) toInput.value = maxDate;
     }
+
+    const triggerUpdate = () => updatePredictionHistory(currentPlannerRuns);
+    applyButton.onclick = triggerUpdate;
+    granularitySelect.onchange = triggerUpdate;
+    distancesSelect.onchange = triggerUpdate;
+    fromInput.onchange = triggerUpdate;
+    toInput.onchange = triggerUpdate;
+    resetButton.onclick = () => {
+        fromInput.value = minDate;
+        toInput.value = maxDate;
+        granularitySelect.value = 'month';
+        Array.from(distancesSelect.options).forEach(option => {
+            option.selected = ['5', '10'].includes(option.value);
+        });
+        updatePredictionHistory(currentPlannerRuns);
+    };
 }
 
 function updatePredictionHistory(runs) {

@@ -1,13 +1,66 @@
 // js/auth.js
 import { showLoading, handleError, hideLoading } from './ui.js';
-import { loadDemoData } from '../demo/index.js';
-import { clearCachedActivities } from '../services/activity-cache.js';
+import {
+    clearDemoData,
+    getDemoTokens,
+    isDemoMode,
+    loadDemoData
+} from '../demo/index.js';
+import {
+    AUTH_FAILURE_KIND,
+    AUTH_LIFECYCLE_STATUS,
+    createAuthLifecycle,
+    inspectLegacyIndexedDbPresence
+} from './auth-lifecycle.js';
+import {
+    consumeLegacyAuthorizationState,
+    issueLegacyAuthorizationState
+} from './source-manager-authorization.js';
+import { readBoundedResponseJson } from '../shared/bounded-response.js';
 
-const REDIRECT_URI = window.location.origin + window.location.pathname;
+const REQUIRED_SCOPES = Object.freeze(['read', 'activity:read_all']);
+const REQUIRED_SCOPE_QUERY = REQUIRED_SCOPES.join(',');
+const MAX_CONFIG_BYTES = 32_768;
+const MAX_TOKEN_BYTES = 65_536;
 
-async function getStravaClientId() {
-    const response = await fetch('/api/config');
-    const data = await response.json();
+function browserAuthLifecycle({
+    storage = globalThis.localStorage,
+    indexedDB = globalThis.indexedDB,
+    fetchImpl = globalThis.fetch
+} = {}) {
+    return createAuthLifecycle({
+        storage,
+        inspectIndexedDb: () => inspectLegacyIndexedDbPresence({
+            indexedDB
+        }),
+        revokeAccessToken: async accessToken => {
+            const response = await fetchImpl('https://www.strava.com/oauth/deauthorize', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${accessToken}` }
+            });
+            return { ok: response.ok };
+        }
+    });
+}
+
+function authFlowError(status) {
+    const error = new Error(`Authentication blocked (${status}).`);
+    error.name = 'AuthenticationLifecycleError';
+    error.code = status;
+    return error;
+}
+
+async function getStravaClientId(fetchImpl) {
+    const response = await fetchImpl('/api/config', {
+        method: 'GET',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        redirect: 'error',
+        referrerPolicy: 'no-referrer'
+    });
+    const { value: data } = await readBoundedResponseJson(response, {
+        maxBytes: MAX_CONFIG_BYTES
+    });
 
     if (!response.ok || !data.stravaClientId) {
         throw new Error(data.error || 'Unable to load Strava client ID');
@@ -16,139 +69,235 @@ async function getStravaClientId() {
     return data.stravaClientId;
 }
 
-export async function redirectToStrava() {
+export async function redirectToStrava(options = {}) {
+    const {
+        fetchImpl = globalThis.fetch,
+        sessionStorage = globalThis.sessionStorage,
+        crypto = globalThis.crypto,
+        now = () => Date.now(),
+        origin = globalThis.window.location.origin,
+        pathname = globalThis.window.location.pathname,
+        navigate = url => { globalThis.window.location.href = url; }
+    } = options || {};
     try {
-        const clientId = await getStravaClientId();
-        const scope = 'read,activity:read_all,profile:read_all';
-        const authUrl = `https://www.strava.com/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(scope)}`;
-        window.location.href = authUrl;
+        const clientId = await getStravaClientId(fetchImpl);
+        const state = issueLegacyAuthorizationState({
+            sessionStorage,
+            crypto,
+            now,
+            returnPath: pathname
+        });
+        const url = new URL('https://www.strava.com/oauth/authorize');
+        url.searchParams.set('client_id', clientId);
+        url.searchParams.set('redirect_uri', `${origin}${pathname}`);
+        url.searchParams.set('response_type', 'code');
+        url.searchParams.set('scope', REQUIRED_SCOPE_QUERY);
+        url.searchParams.set('state', state);
+        navigate(url.toString());
     } catch (error) {
         handleError('Could not start Strava login', error);
     }
 }
 
-export async function logout() {
-    const tokenDataRaw = localStorage.getItem('strava_tokens');
-    if (tokenDataRaw) {
-        const tokenData = JSON.parse(tokenDataRaw);
-        // Only try deauth if not a demo token
-        if (!tokenData.access_token?.startsWith('demo_')) {
-            try {
-                await fetch('https://www.strava.com/oauth/deauthorize', {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${tokenData.access_token}` }
-                });
-            } catch (error) {
-                console.warn('Failed to deauthorize token:', error);
-            }
-        }
+export async function logout(options = {}) {
+    const {
+        storage = globalThis.localStorage,
+        reload = () => globalThis.window.location.reload(),
+        lifecycleFactory = browserAuthLifecycle,
+        fetchImpl = globalThis.fetch
+    } = options || {};
+
+    if (isDemoMode(storage)) {
+        clearDemoData(storage);
+        reload();
+        return Object.freeze({
+            status: AUTH_LIFECYCLE_STATUS.SUCCESS,
+            demo: true
+        });
     }
-    localStorage.removeItem('strava_tokens');
-    await clearCachedActivities();
-    localStorage.removeItem('strava_athlete_data');
-    localStorage.removeItem('strava_athlete_data_timestamp');
-    localStorage.removeItem('strava_training_zones');
-    localStorage.removeItem('strava_training_zones_timestamp');
-    localStorage.removeItem('strava_gears');
-    localStorage.removeItem('strava_gears_timestamp');
-    localStorage.removeItem('dashboard_filters');
-    localStorage.removeItem('dashboard_readiness_hrv');
-    // Also clear demo data
-    localStorage.removeItem('strava_demo_mode');
-    localStorage.removeItem('strava_demo_activities');
-    window.location.reload();
+
+    const result = await lifecycleFactory({
+        storage,
+        fetchImpl
+    }).disconnect();
+    reload();
+    return result;
 }
 
-async function getTokensFromCode(code) {
+async function getTokensFromCode(code, {
+    fetchImpl = globalThis.fetch,
+    history = globalThis.window.history,
+    lifecycle = browserAuthLifecycle(),
+    pathname = globalThis.window.location.pathname
+} = {}) {
     try {
         let response;
         try {
-            response = await fetch('/api/strava-auth', {
+            response = await fetchImpl('/api/strava-auth', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ code })
+                body: JSON.stringify({
+                    code,
+                    granted_scopes: [...REQUIRED_SCOPES]
+                }),
+                credentials: 'same-origin',
+                cache: 'no-store',
+                redirect: 'error',
+                referrerPolicy: 'no-referrer'
             });
         } catch (networkErr) {
             throw new Error('Cannot reach /api/strava-auth. Run the app with "vercel dev" for local testing.');
         }
 
-        const contentType = response.headers.get('content-type') || '';
-        if (!contentType.includes('application/json')) {
-            // Endpoint returned HTML — likely a 404 (not running via vercel dev) or a Vercel error page
-            const text = await response.text().catch(() => '');
-            const hint = response.status === 404
-                ? 'Endpoint not found — make sure you are running the app with "vercel dev".'
-                : `Server returned HTTP ${response.status}. Check that STRAVA_CLIENT_SECRET is set in your Vercel environment variables.`;
-            throw new Error(hint + (text ? `\n\nServer said: ${text.slice(0, 200)}` : ''));
+        if (!response.ok) throw new Error('Authentication failed');
+        const { value: data } = await readBoundedResponseJson(response, {
+            maxBytes: MAX_TOKEN_BYTES
+        });
+
+        const result = await lifecycle.acceptOAuthTokenResponse(data);
+        if (result.status !== AUTH_LIFECYCLE_STATUS.SUCCESS) {
+            throw authFlowError(result.status);
         }
-
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Authentication failed');
-
-        localStorage.setItem('strava_tokens', JSON.stringify({
-            access_token: data.access_token,
-            refresh_token: data.refresh_token,
-            expires_at: data.expires_at
-        }));
-        await clearCachedActivities();
-
-        window.history.replaceState({}, '', window.location.pathname);
+        history.replaceState({}, '', pathname);
+        return result;
     } catch (error) {
         handleError('Authentication failed', error);
         throw error;
     }
 }
 
-export async function loginWithDemo(onAuthenticated) {
+export async function loginWithDemo(onAuthenticated, {
+    storage = globalThis.localStorage,
+    referenceDate,
+    now
+} = {}) {
     try {
         showLoading('Loading demo data with 250 sample activities...');
-        loadDemoData();
-
-        // Fake token for demo mode
-        const demoTokens = {
-            access_token: 'demo_' + Math.random().toString(36),
-            refresh_token: 'demo_refresh_' + Math.random().toString(36),
-            expires_at: Math.floor(Date.now() / 1000) + 21600,
-        };
+        const loadOptions = { storage };
+        if (referenceDate !== undefined) loadOptions.referenceDate = referenceDate;
+        if (now !== undefined) loadOptions.now = now;
+        const { demoTokens } = loadDemoData(loadOptions);
 
         await onAuthenticated(demoTokens);
         hideLoading();
+        return Object.freeze({
+            status: AUTH_LIFECYCLE_STATUS.SUCCESS,
+            demo: true
+        });
     } catch (error) {
         handleError('Demo mode failed', error);
         hideLoading();
+        return Object.freeze({
+            status: AUTH_LIFECYCLE_STATUS.UNAUTHENTICATED,
+            demo: true
+        });
     }
 }
 
-export async function handleAuth(onAuthenticated) {
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get('code');
+export async function handleAuth(onAuthenticated, options = {}) {
+    const {
+        storage = globalThis.localStorage,
+        search = globalThis.window.location.search,
+        history = globalThis.window.history,
+        now = Date.now(),
+        fetchImpl = globalThis.fetch,
+        sessionStorage = globalThis.sessionStorage,
+        pathname = globalThis.window.location.pathname,
+        lifecycleFactory = browserAuthLifecycle
+    } = options || {};
+    if (isDemoMode(storage)) {
+        const demoTokens = getDemoTokens(storage);
+        const nowMs = new Date(now).getTime();
+        const nowSeconds = Math.floor(nowMs / 1000);
 
-    if (code) {
-        showLoading('Authenticating...');
-        await getTokensFromCode(code);
+        if (
+            Number.isFinite(nowMs)
+            && demoTokens
+            && demoTokens.expires_at > nowSeconds
+        ) {
+            await onAuthenticated(demoTokens);
+            hideLoading();
+            return Object.freeze({
+                status: AUTH_LIFECYCLE_STATUS.SUCCESS,
+                demo: true
+            });
+        }
+
+        clearDemoData(storage);
+        hideLoading();
+        return Object.freeze({
+            status: demoTokens
+                ? AUTH_LIFECYCLE_STATUS.TOKEN_EXPIRED
+                : AUTH_LIFECYCLE_STATUS.UNAUTHENTICATED,
+            demo: true
+        });
     }
 
-    const tokenDataRaw = localStorage.getItem('strava_tokens');
-    if (tokenDataRaw) {
-        const tokenData = JSON.parse(tokenDataRaw);
-        const now = Math.floor(Date.now() / 1000);
-
-        if (tokenData.access_token && tokenData.expires_at > now) {
-            await onAuthenticated(tokenData);
-            return;
-        } else {
-            localStorage.removeItem('strava_tokens');
-            await clearCachedActivities();
-            localStorage.removeItem('strava_athlete_data');
-            localStorage.removeItem('strava_athlete_data_timestamp');
-            localStorage.removeItem('strava_training_zones');
-            localStorage.removeItem('strava_training_zones_timestamp');
-            localStorage.removeItem('strava_gears');
-            localStorage.removeItem('strava_gears_timestamp');
-            localStorage.removeItem('dashboard_filters');
-            localStorage.removeItem('dashboard_readiness_hrv');
+    const params = new URLSearchParams(search);
+    const callbackKeys = [...params.keys()];
+    const hasCallback = callbackKeys.some(key => ['code', 'state', 'scope'].includes(key));
+    if (hasCallback) {
+        const codeValues = params.getAll('code');
+        const stateValues = params.getAll('state');
+        const scopeValues = params.getAll('scope');
+        const validCallback = callbackKeys.length === 3
+            && new Set(callbackKeys).size === 3
+            && codeValues.length === 1
+            && stateValues.length === 1
+            && scopeValues.length === 1
+            && typeof codeValues[0] === 'string'
+            && codeValues[0].length > 0
+            && codeValues[0].length <= 512
+            && scopeValues[0] === REQUIRED_SCOPE_QUERY;
+        if (!validCallback) {
+            throw authFlowError('oauth-callback-invalid');
         }
+        consumeLegacyAuthorizationState({
+            sessionStorage,
+            now: () => new Date(now).getTime(),
+            returnPath: pathname,
+            state: stateValues[0]
+        });
+        showLoading('Authenticating...');
+        await getTokensFromCode(codeValues[0], {
+            fetchImpl,
+            history,
+            pathname,
+            lifecycle: lifecycleFactory({
+                storage,
+                fetchImpl
+            })
+        });
+    }
+
+    const tokenDataRaw = storage.getItem('strava_tokens');
+    if (tokenDataRaw) {
+        let tokenData;
+        try {
+            tokenData = JSON.parse(tokenDataRaw);
+        } catch {
+            tokenData = null;
+        }
+        const nowSeconds = Math.floor(new Date(now).getTime() / 1000);
+
+        if (tokenData?.access_token && tokenData.expires_at > nowSeconds) {
+            await onAuthenticated(tokenData);
+            return { status: AUTH_LIFECYCLE_STATUS.SUCCESS };
+        }
+
+        const result = lifecycleFactory({
+            storage,
+            fetchImpl
+        }).expireToken();
+        hideLoading();
+        return result;
     }
 
     hideLoading();
+    return lifecycleFactory({
+        storage,
+        fetchImpl
+    }).handleAuthFailure(
+        AUTH_FAILURE_KIND.UNAUTHORIZED
+    );
 }

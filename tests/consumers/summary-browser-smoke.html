@@ -1,0 +1,1206 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PR-04A Summary Browser Smoke</title>
+    <style>
+        body { font-family: system-ui, sans-serif; margin: 20px; color: #18202a; }
+        #smoke-result { white-space: pre-wrap; overflow-wrap: anywhere; background: #f5f7fa; padding: 12px; }
+        .chart-shell { min-height: 120px; }
+        canvas { width: 640px; height: 180px; }
+    </style>
+</head>
+<body data-status="running">
+    <h1>PR-04A Browser Smoke</h1>
+    <p id="smoke-status">Running synthetic browser gates.</p>
+    <pre id="smoke-result">{"status":"running"}</pre>
+
+    <section id="run-browser-evidence">
+        <h2>Run synthetic evidence</h2>
+        <p>Run chart evidence is captured from the shared Gear Gantt canvas below.</p>
+    </section>
+
+    <section id="gear-tab">
+        <h2>Gear synthetic evidence</h2>
+        <div id="gear-info-section">
+            <div id="gear-info-list"></div>
+        </div>
+        <div id="gear-chart-container" class="chart-shell">
+            <h4>Distance per Gear</h4>
+            <canvas id="gearChart"></canvas>
+        </div>
+        <div id="gear-gantt-chart-container" class="chart-shell">
+            <h4>Gear Timeline</h4>
+            <canvas id="gear-gantt-chart"></canvas>
+        </div>
+    </section>
+
+    <section id="legacy-dom-safety-evidence" hidden>
+        <div id="activity-filters"></div>
+        <table id="activities-table"></table>
+        <div id="act-counter"></div>
+        <div id="athlete-profile-card"><div class="profile-content"></div></div>
+        <div id="training-zones-card"><div class="zones-content"></div></div>
+        <div id="map-tab">
+            <input id="map-date-from">
+            <input id="map-date-to">
+            <button id="map-apply-date"></button>
+            <button id="map-reset-date"></button>
+            <select id="map-sport-filter"></select>
+            <select id="map-visualization"><option value="heat">heat</option><option value="points">points</option></select>
+            <select id="map-tiles"><option value="osm">osm</option></select>
+            <input id="map-heat-intensity">
+            <input id="map-heat-radius">
+            <input id="map-heat-blur">
+            <input id="map-color-by-sport" type="checkbox">
+            <p id="map-route-status" role="status" aria-live="polite"></p>
+            <div id="global-map"></div>
+        </div>
+    </section>
+
+    <script type="module">
+        const resultElement = document.getElementById('smoke-result');
+        const statusElement = document.getElementById('smoke-status');
+        const DOM_XSS_CANARY = '<img src=x onerror=globalThis.__domSafetyExecuted=1> double" single\' backtick` onclick=globalThis.__domSafetyExecuted=2 javascript:globalThis.__domSafetyExecuted=3 __proto__ constructor prototype 运动🏃‍♀️ é';
+        const OPAQUE_ID_CANARY = 'alpha/beta ?#%&=+;';
+        globalThis.__domSafetyExecuted = 0;
+        const gates = {};
+        const observations = {
+            pageNetwork: [],
+            storage: [],
+            console: { errors: 0, warnings: 0 },
+            chartConfigs: []
+        };
+
+        function endpoint(value, method = null) {
+            try {
+                const url = new URL(String(value), location.href);
+                return {
+                    method,
+                    origin: url.origin,
+                    pathname: url.pathname
+                };
+            } catch {
+                return { method, origin: 'invalid', pathname: 'invalid' };
+            }
+        }
+
+        const originalFetch = window.fetch.bind(window);
+        window.fetch = function instrumentedFetch(input, init = {}) {
+            const method = String(init?.method || input?.method || 'GET').toUpperCase();
+            observations.pageNetwork.push({ type: 'fetch', ...endpoint(input?.url || input, method) });
+            return originalFetch(input, init);
+        };
+
+        const originalXhrOpen = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function instrumentedOpen(method, url, ...rest) {
+            observations.pageNetwork.push({ type: 'xhr', ...endpoint(url, String(method).toUpperCase()) });
+            return originalXhrOpen.call(this, method, url, ...rest);
+        };
+
+        const NativeWebSocket = window.WebSocket;
+        window.WebSocket = class InstrumentedWebSocket extends NativeWebSocket {
+            constructor(url, protocols) {
+                observations.pageNetwork.push({ type: 'websocket', ...endpoint(url, 'CONNECT') });
+                super(url, protocols);
+            }
+        };
+
+        const originalConsoleError = console.error.bind(console);
+        const originalConsoleWarn = console.warn.bind(console);
+        console.error = (...args) => {
+            observations.console.errors += 1;
+            originalConsoleError(...args);
+        };
+        console.warn = (...args) => {
+            observations.console.warnings += 1;
+            originalConsoleWarn(...args);
+        };
+
+        const storageMethods = {
+            getItem: Storage.prototype.getItem,
+            setItem: Storage.prototype.setItem,
+            removeItem: Storage.prototype.removeItem,
+            clear: Storage.prototype.clear
+        };
+
+        function chartDataContainsNonFinite(value) {
+            if (typeof value === 'number') return !Number.isFinite(value);
+            if (value instanceof Date) return !Number.isFinite(value.getTime());
+            if (Array.isArray(value)) return value.some(chartDataContainsNonFinite);
+            if (value && typeof value === 'object') {
+                return Object.values(value).some(chartDataContainsNonFinite);
+            }
+            return false;
+        }
+
+        function chartDataContainsUndefined(value) {
+            if (value === undefined) return true;
+            if (value instanceof Date) return false;
+            if (Array.isArray(value)) return value.some(chartDataContainsUndefined);
+            if (value && typeof value === 'object') {
+                return Object.values(value).some(chartDataContainsUndefined);
+            }
+            return false;
+        }
+
+        function storageKind(target) {
+            if (target === localStorage) return 'localStorage';
+            if (target === sessionStorage) return 'sessionStorage';
+            return 'unknownStorage';
+        }
+
+        Storage.prototype.getItem = function instrumentedGetItem(key) {
+            observations.storage.push({ type: 'read', storage: storageKind(this), key: String(key) });
+            return storageMethods.getItem.call(this, key);
+        };
+        Storage.prototype.setItem = function instrumentedSetItem(key, value) {
+            observations.storage.push({ type: 'write', storage: storageKind(this), key: String(key) });
+            return storageMethods.setItem.call(this, key, value);
+        };
+        Storage.prototype.removeItem = function instrumentedRemoveItem(key) {
+            observations.storage.push({ type: 'remove', storage: storageKind(this), key: String(key) });
+            return storageMethods.removeItem.call(this, key);
+        };
+        Storage.prototype.clear = function instrumentedClear() {
+            observations.storage.push({ type: 'clear', storage: storageKind(this), key: null });
+            return storageMethods.clear.call(this);
+        };
+
+        class BrowserChartEvidence {
+            static instances = [];
+
+            static getChart(canvas) {
+                return BrowserChartEvidence.instances.find(instance => instance.canvas === canvas) || null;
+            }
+
+            constructor(canvas, config) {
+                this.canvas = canvas;
+                this.config = config;
+                this.data = config.data;
+                this.options = config.options || {};
+                BrowserChartEvidence.instances.push(this);
+                const datasets = Array.isArray(config.data?.datasets)
+                    ? config.data.datasets
+                    : [];
+                const labels = datasets.map(dataset => String(dataset.label || ''));
+                observations.chartConfigs.push({
+                    canvasId: canvas?.id || null,
+                    type: config.type || null,
+                    datasetCount: datasets.length,
+                    labels,
+                    dataPointCounts: datasets.map(dataset => (
+                        Array.isArray(dataset.data) ? dataset.data.length : 0
+                    )),
+                    allNumericDataFinite: datasets.every(dataset => (
+                        !chartDataContainsNonFinite(dataset.data)
+                    )),
+                    allDataValuesDefined: datasets.every(dataset => (
+                        !chartDataContainsUndefined(dataset.data)
+                    )),
+                    labelsContainNonFinite: labels.some(label => /NaN|Infinity/.test(label))
+                });
+            }
+
+            destroy() {}
+            getDatasetMeta() { return { hidden: false }; }
+            isDatasetVisible() { return true; }
+            setDatasetVisibility() {}
+            update() {}
+        }
+        window.Chart = BrowserChartEvidence;
+
+        function byteCount(value) {
+            return new TextEncoder().encode(String(value)).byteLength;
+        }
+
+        function webStorageSnapshot(storage) {
+            const entries = [];
+            for (let index = 0; index < storage.length; index += 1) {
+                const key = storage.key(index);
+                const value = storageMethods.getItem.call(storage, key);
+                entries.push({ key, bytes: value === null ? 0 : byteCount(value) });
+            }
+            return entries.sort((left, right) => left.key.localeCompare(right.key));
+        }
+
+        async function platformSnapshot() {
+            const databases = typeof indexedDB.databases === 'function'
+                ? (await indexedDB.databases()).map(database => ({
+                    name: database.name || null,
+                    version: database.version || null
+                }))
+                : [];
+            const cacheNames = typeof caches?.keys === 'function' ? await caches.keys() : [];
+            const registrations = navigator.serviceWorker?.getRegistrations
+                ? await navigator.serviceWorker.getRegistrations()
+                : [];
+            return {
+                localStorage: webStorageSnapshot(localStorage),
+                sessionStorage: webStorageSnapshot(sessionStorage),
+                indexedDB: databases,
+                cacheStorage: [...cacheNames].sort(),
+                serviceWorkers: registrations.map(registration => ({
+                    scope: registration.scope,
+                    scriptURL: registration.active?.scriptURL
+                        || registration.waiting?.scriptURL
+                        || registration.installing?.scriptURL
+                        || null,
+                    state: registration.active?.state
+                        || registration.waiting?.state
+                        || registration.installing?.state
+                        || null
+                }))
+            };
+        }
+
+        function exactSuccess(value) {
+            return value?.ok === true
+                && Array.isArray(value.errors)
+                && value.errors.length === 0
+                && Array.isArray(value.warnings)
+                && value.warnings.length === 0
+                && Reflect.ownKeys(value).length === 3;
+        }
+
+        function safeFailure(error) {
+            return {
+                name: error instanceof Error ? error.name : 'UnknownError',
+                code: 'BROWSER_GATE_FAILED'
+            };
+        }
+
+        async function gate(name, callback) {
+            try {
+                const evidence = await callback();
+                gates[name] = { pass: true, evidence };
+                return evidence;
+            } catch (error) {
+                gates[name] = { pass: false, error: safeFailure(error) };
+                return null;
+            }
+        }
+
+        function requireGate(condition) {
+            if (!condition) throw new Error('Browser gate failed.');
+        }
+
+        const profileInitial = await platformSnapshot();
+
+        const syntheticActivity = {
+            schemaVersion: 1,
+            id: 'browser-synthetic-activity',
+            sportCategory: 'run',
+            sportVariant: null,
+            startTimeUtc: '2026-01-02T03:04:05.006Z',
+            timeZone: { ianaName: 'Etc/UTC', utcOffsetMinutes: 0 },
+            capabilities: {
+                hasGps: false,
+                hasHeartRate: false,
+                hasPower: false,
+                hasCadence: false,
+                hasLaps: false
+            }
+        };
+        const syntheticStreamSet = {
+            activityId: syntheticActivity.id,
+            series: []
+        };
+        const syntheticBundle = {
+            schemaVersion: 1,
+            activity: syntheticActivity,
+            streams: syntheticStreamSet,
+            laps: [],
+            events: [],
+            sources: [{
+                id: 'browser-synthetic-source',
+                activityId: syntheticActivity.id,
+                provider: 'synthetic-provider',
+                acquisitionMethod: 'synthetic-browser-smoke',
+                importedAt: '2026-01-02T03:04:05.006Z'
+            }],
+            devices: [],
+            warnings: [],
+            versionMetadata: { schemaVersion: 1 }
+        };
+
+        const contracts = await gate('canonicalContracts', async () => {
+            const module = await import('/js/data/contracts/index.js');
+            const exports = Object.keys(module).sort();
+            requireGate(JSON.stringify(exports) === JSON.stringify([
+                'validateCanonicalActivity',
+                'validateCanonicalStreamSet',
+                'validateImportedActivityBundle'
+            ]));
+            const validatorResults = {
+                activity: module.validateCanonicalActivity(syntheticActivity),
+                streams: module.validateCanonicalStreamSet(syntheticStreamSet),
+                bundle: module.validateImportedActivityBundle(syntheticBundle),
+                structuredCloneActivity: module.validateCanonicalActivity(structuredClone(syntheticActivity)),
+                jsonActivity: module.validateCanonicalActivity(JSON.parse(JSON.stringify(syntheticActivity)))
+            };
+            requireGate(Object.values(validatorResults).every(exactSuccess));
+            return { exports, validatorResults };
+        });
+
+        const modules = await gate('consumerModuleImports', async () => {
+            const [repositoryModule, tabsModule, runModule, gearModule, preprocessingModule, athleteModule, mapsModule, activitiesModule] = await Promise.all([
+                import('/js/repository/index.js'),
+                import('/js/tabs/index.js'),
+                import('/js/tabs/run-analysis.js'),
+                import('/js/tabs/gear.js'),
+                import('/js/shared/preprocessing/index.js'),
+                import('/js/tabs/athlete.js'),
+                import('/js/tabs/maps.js'),
+                import('/js/tabs/activities.js')
+            ]);
+            requireGate(typeof repositoryModule.createRepository === 'function');
+            requireGate(typeof tabsModule.setRunSessionGears === 'function');
+            requireGate(typeof runModule.renderGearGanttChart === 'function');
+            requireGate(typeof gearModule.renderGearTab === 'function');
+            requireGate(typeof preprocessingModule.preprocessActivities === 'function');
+            requireGate(typeof athleteModule.renderAthleteProfile === 'function');
+            requireGate(typeof mapsModule.renderMapTab === 'function');
+            requireGate(typeof activitiesModule.renderActivitiesTab === 'function');
+            return {
+                repositoryModule,
+                tabsModule,
+                runModule,
+                gearModule,
+                preprocessingModule,
+                athleteModule,
+                mapsModule,
+                activitiesModule
+            };
+        });
+
+        const demoKeys = [
+            'strava_demo_mode',
+            'strava_demo_activities',
+            'strava_demo_athlete_data',
+            'strava_demo_training_zones',
+            'strava_demo_gears',
+            'strava_demo_athlete_data_timestamp',
+            'strava_demo_training_zones_timestamp',
+            'strava_demo_gears_timestamp',
+            'strava_tokens_demo'
+        ];
+        const realKeys = [
+            'strava_tokens',
+            'strava_activities',
+            'strava_activities_timestamp',
+            'strava_athlete_data',
+            'strava_training_zones',
+            'strava_gears'
+        ];
+        const demoActivities = [{
+            id: 'demo-browser-run',
+            type: 'Run',
+            sport_type: 'Run',
+            name: 'Synthetic Demo Run',
+            start_date_local: '2026-01-02T06:00:00.000Z',
+            distance: 5000,
+            moving_time: 1500,
+            gear_id: 'demo-shoe'
+        }];
+        const demoAthlete = {
+            id: 'demo-browser-athlete',
+            firstname: 'Synthetic',
+            lastname: 'Demo'
+        };
+        const demoZones = { heartrate: { zones: [{ min: 0, max: 140 }] } };
+        const demoGears = [{ id: 'demo-shoe', name: 'Synthetic Demo Shoe' }];
+        const demoSeed = {
+            strava_demo_mode: 'true',
+            strava_demo_activities: JSON.stringify(demoActivities),
+            strava_demo_athlete_data: JSON.stringify(demoAthlete),
+            strava_demo_training_zones: JSON.stringify(demoZones),
+            strava_demo_gears: JSON.stringify(demoGears),
+            strava_demo_athlete_data_timestamp: '1785638400000',
+            strava_demo_training_zones_timestamp: '1785638400000',
+            strava_demo_gears_timestamp: '1785638400000',
+            strava_tokens_demo: JSON.stringify({
+                access_token: 'synthetic_demo_token',
+                refresh_token: 'synthetic_demo_refresh',
+                expires_at: 4102444800
+            })
+        };
+        const realSeed = Object.fromEntries(realKeys.map(key => [key, `synthetic-forbidden-${key}`]));
+        for (const [key, value] of Object.entries({ ...demoSeed, ...realSeed })) {
+            localStorage.setItem(key, value);
+        }
+        const seededBefore = await platformSnapshot();
+        const storageBoundary = observations.storage.length;
+        const realBefore = Object.fromEntries(realKeys.map(key => [
+            key,
+            storageMethods.getItem.call(localStorage, key)
+        ]));
+
+        await gate('actualDemoFactory', async () => {
+            requireGate(modules !== null);
+            const repository = modules.repositoryModule.createRepository({
+                sessionMode: 'demo',
+                mode: 'legacy'
+            });
+            const results = [
+                await repository.listActivities({ refresh: false }),
+                await repository.getAthlete(),
+                await repository.getZones(),
+                await repository.getGears(),
+                await repository.listActivities({ refresh: true })
+            ];
+            requireGate(results.every(item => item.source === 'demo'));
+            requireGate(JSON.stringify(results[0].data) === JSON.stringify(demoActivities));
+            requireGate(JSON.stringify(results[1].data) === JSON.stringify(demoAthlete));
+            requireGate(JSON.stringify(results[2].data) === JSON.stringify(demoZones));
+            requireGate(JSON.stringify(results[3].data) === JSON.stringify(demoGears));
+            requireGate(JSON.stringify(results[4].data) === JSON.stringify(demoActivities));
+            const executionStorage = observations.storage.slice(storageBoundary);
+            requireGate(executionStorage.filter(event => realKeys.includes(event.key)).length === 0);
+            requireGate(observations.pageNetwork.length === 0);
+            const realAfter = Object.fromEntries(realKeys.map(key => [
+                key,
+                storageMethods.getItem.call(localStorage, key)
+            ]));
+            requireGate(JSON.stringify(realBefore) === JSON.stringify(realAfter));
+            return {
+                sources: results.map(item => item.source),
+                realStorageAccesses: 0,
+                pageNetworkAttempts: 0,
+                realSnapshotUnchanged: true
+            };
+        });
+
+        await gate('runAndGearConsumers', async () => {
+            requireGate(modules !== null);
+            const runGears = [
+                { id: 'shoe-2', name: 'Second Shoe' },
+                { id: 'shoe-1', name: 'First Shoe' },
+                { id: 'shoe-2', name: 'Second Shoe Duplicate' }
+            ];
+            modules.tabsModule.setRunSessionGears(runGears);
+            runGears.length = 0;
+            await modules.runModule.renderGearGanttChart([
+                {
+                    gear_id: 'shoe-2',
+                    start_date_local: '2026-01-02T06:00:00.000Z',
+                    distance: 2000
+                },
+                {
+                    gear_id: 'shoe-1',
+                    start_date_local: '2026-01-03T06:00:00.000Z',
+                    distance: 3000
+                },
+                {
+                    gear_id: 'shoe-fallback',
+                    start_date_local: '2026-01-04T06:00:00.000Z',
+                    distance: 4000
+                }
+            ]);
+            const runChart = observations.chartConfigs.at(-1);
+            requireGate(JSON.stringify(runChart.labels) === JSON.stringify([
+                'Second Shoe Duplicate',
+                'First Shoe',
+                'shoe-fallback'
+            ]));
+
+            const activities = [
+                {
+                    type: 'Run',
+                    sport_type: 'Run',
+                    gear_id: 'bike-1',
+                    start_date_local: '2026-01-01T06:00:00.000Z',
+                    distance: 5000,
+                    moving_time: 1500,
+                    total_elevation_gain: 50
+                },
+                {
+                    type: 'Run',
+                    sport_type: 'Run',
+                    gear_id: 'shoe-1',
+                    start_date_local: '2026-01-02T06:00:00.000Z',
+                    distance: 10000,
+                    moving_time: 3000,
+                    total_elevation_gain: 100
+                }
+            ];
+            const gearInput = [
+                { id: 'bike-1', name: 'Synthetic Bike', frame_type: 3, retired: true },
+                { id: 'shoe-1', name: 'Synthetic Shoe' },
+                { id: 'shoe-1', name: 'Synthetic Shoe Duplicate' }
+            ];
+            localStorage.setItem('gear-custom-shoe-1', JSON.stringify({ price: 140, durationKm: 800 }));
+            localStorage.setItem('gearEditMode', 'false');
+            const providerReadStart = observations.storage.length;
+            modules.gearModule.renderGearTab(activities, gearInput);
+            await Promise.resolve();
+            const initialText = document.getElementById('gear-info-list').textContent;
+            requireGate(initialText.includes('Synthetic Shoe Duplicate'));
+            requireGate(!initialText.includes('Synthetic Bike'));
+            const duplicateShoeCard = [...document.querySelectorAll('#gear-info-list .gear-card')]
+                .find(card => card.querySelector('h4')?.textContent === 'Synthetic Shoe Duplicate');
+            const priceStat = [...duplicateShoeCard.querySelectorAll('.stat-item')]
+                .find(item => item.querySelector('.stat-label')?.textContent === '€/km');
+            requireGate(priceStat.querySelector('.stat-value')?.textContent === '14.00');
+            requireGate(priceStat.querySelector('.stat-label')?.textContent === '€/km');
+            requireGate(duplicateShoeCard.querySelector('.durability-text')?.textContent.includes('800 km'));
+            gearInput.length = 0;
+            document.querySelector('.gear-filter-btn[data-filter="shoe"]').click();
+            const retiredToggle = document.getElementById('show-retired-check');
+            retiredToggle.checked = true;
+            retiredToggle.dispatchEvent(new Event('change', { bubbles: true }));
+            await Promise.resolve();
+            requireGate(document.getElementById('gear-info-list').textContent.includes('Synthetic Shoe Duplicate'));
+            document.getElementById('toggle-gear-edit').click();
+            requireGate(storageMethods.getItem.call(localStorage, 'gearEditMode') === 'true');
+            requireGate(document.getElementById('price-shoe-1')?.value === '140');
+            requireGate(document.getElementById('duration-shoe-1')?.value === '800');
+            document.querySelector('.gear-filter-btn[data-filter="bike"]').click();
+            requireGate(document.getElementById('gear-info-list').textContent.includes('Synthetic Bike'));
+            modules.gearModule.renderGearTab(activities, null);
+            await Promise.resolve();
+            requireGate(document.getElementById('gear-info-list').textContent.includes('No gear loaded yet.'));
+            const providerReads = observations.storage.slice(providerReadStart).filter(event => (
+                event.type === 'read' && event.key === 'strava_gears'
+            ));
+            requireGate(providerReads.length === 0);
+            return {
+                runLabels: runChart.labels,
+                callerMutationIsolated: true,
+                gearFilterSnapshotRetained: true,
+                retiredToggleRetained: true,
+                customPriceAndDurationRetained: true,
+                malformedGearEmptyState: true,
+                providerGearReads: 0,
+                uiStorageKeys: ['gear-custom-shoe-1', 'gearEditMode']
+            };
+        });
+
+        await gate('legacyAthleteAndMapDomSafety', async () => {
+            requireGate(modules !== null);
+            modules.athleteModule.renderAthleteProfile({
+                profile_medium: 'javascript:globalThis.__domSafetyExecuted=4',
+                firstname: DOM_XSS_CANARY,
+                lastname: 'Legacy',
+                city: '__proto__',
+                country: 'constructor prototype',
+                follower_count: 0,
+                friend_count: -0
+            });
+            const profile = document.querySelector('#athlete-profile-card .profile-content');
+            requireGate(profile.querySelector('img') === null);
+            requireGate(profile.querySelector('.name')?.textContent === `${DOM_XSS_CANARY} Legacy`);
+            requireGate(profile.querySelector('img[src="x"]') === null);
+
+            modules.athleteModule.renderTrainingZones({
+                heart_rate: {
+                    custom_zones: true,
+                    zones: [
+                        { min: '0', max: 100 },
+                        { min: 0, max: Infinity },
+                        { min: 0, max: 100 },
+                        { min: 100, max: 200 }
+                    ]
+                }
+            });
+            const zoneSegments = Array.from(document.querySelectorAll(
+                '#training-zones-card .zone-segment'
+            ));
+            requireGate(zoneSegments.length === 2);
+            requireGate(zoneSegments.every(segment => segment.style.flexBasis === '50%'));
+
+            const popups = [];
+            const layer = () => ({
+                addTo() { return this; },
+                addLayer() { return this; },
+                clearLayers() { return this; },
+                removeLayer() { return this; },
+                setView() { return this; },
+                fitBounds() { return this; },
+                bindPopup(value) { popups.push(value); return this; }
+            });
+            globalThis.L = {
+                map: layer,
+                layerGroup: layer,
+                tileLayer: layer,
+                heatLayer: layer,
+                polyline: layer,
+                circleMarker: layer,
+                latLngBounds: () => ({ pad() { return this; } })
+            };
+            delete globalThis._stravaMap;
+            modules.mapsModule.renderMapTab([{
+                id: OPAQUE_ID_CANARY,
+                type: 'Run',
+                sport_type: DOM_XSS_CANARY,
+                name: DOM_XSS_CANARY,
+                start_date_local: '2026-01-02T06:00:00.000Z',
+                start_latlng: [1, 2],
+                end_latlng: [3, 4]
+            }], null, null, { sessionMode: 'real' });
+            const visualization = document.getElementById('map-visualization');
+            visualization.value = 'points';
+            visualization.dispatchEvent(new Event('change', { bubbles: true }));
+            const consent = Array.from(document.querySelectorAll('#global-map button'))
+                .find(button => button.textContent === 'Load approximate OpenStreetMap tiles for this map');
+            requireGate(consent instanceof HTMLButtonElement);
+            consent.click();
+            const sportOption = Array.from(document.getElementById('map-sport-filter').options)
+                .find(option => option.value === DOM_XSS_CANARY);
+            requireGate(sportOption?.textContent === DOM_XSS_CANARY);
+            requireGate(popups.length === 2);
+            requireGate(popups.every(popup => popup instanceof HTMLElement));
+            requireGate(popups.every(popup => popup.textContent.includes(DOM_XSS_CANARY)));
+            requireGate(popups.every(popup => popup.querySelector('img[src="x"]') === null));
+            requireGate(globalThis.__domSafetyExecuted === 0);
+            return {
+                canaryRenderedAsText: true,
+                opaqueIdPreserved: OPAQUE_ID_CANARY,
+                nonHttpsProfileOmitted: true,
+                finiteTrainingZoneStyles: ['50%', '50%'],
+                leafletPopupUsesDom: true,
+                canaryExecutions: 0
+            };
+        });
+
+        await gate('canonicalGlobalMapRouteBoundary', async () => {
+            requireGate(modules !== null);
+            const routeLoads = [];
+            const networkStart = observations.pageNetwork.length;
+            const canonicalActivities = [
+                {
+                    id: 'canonical-map-run',
+                    type: 'Run',
+                    sport_type: 'Run',
+                    name: 'Synthetic Canonical Run',
+                    start_date_local: '2026-02-01T06:00:00.000Z'
+                },
+                {
+                    id: 'canonical-map-ride',
+                    type: 'Ride',
+                    sport_type: 'Ride',
+                    name: 'Synthetic Canonical Ride',
+                    start_date_local: '2026-03-01T06:00:00.000Z'
+                }
+            ];
+            const routesById = new Map([
+                ['canonical-map-run', Object.freeze([Object.freeze([10, 20]), Object.freeze([11, 21])])],
+                ['canonical-map-ride', Object.freeze([Object.freeze([30, 40]), Object.freeze([31, 41])])]
+            ]);
+            const loadCanonicalRoutes = async ids => {
+                routeLoads.push([...ids]);
+                const routes = Object.freeze(ids.map(id => routesById.get(id) || Object.freeze([])));
+                return Object.freeze({
+                    status: routes.some(route => route.length > 0) ? 'ready' : 'empty',
+                    routes,
+                    routeCount: routes.filter(route => route.length > 0).length,
+                    unavailableCount: routes.filter(route => route.length === 0).length,
+                    failedCount: 0,
+                    pointCount: routes.reduce((sum, route) => sum + route.length, 0)
+                });
+            };
+
+            const cleanupCanonicalMap = modules.mapsModule.renderMapTab(canonicalActivities, null, null, {
+                sessionMode: 'real',
+                loadCanonicalRoutes
+            });
+            requireGate(typeof cleanupCanonicalMap === 'function');
+            await new Promise(resolve => setTimeout(resolve, 0));
+            requireGate(JSON.stringify(routeLoads) === JSON.stringify([
+                ['canonical-map-run', 'canonical-map-ride']
+            ]));
+            requireGate(document.getElementById('map-route-status')?.dataset.state === 'ready');
+            requireGate(document.getElementById('map-route-status')?.textContent === 'Local routes ready: 2 routes, 4 points.');
+            requireGate(Array.from(document.querySelectorAll('#global-map button')).some(button => (
+                button.textContent === 'Load approximate OpenStreetMap tiles for this map'
+            )));
+
+            document.getElementById('map-visualization').value = 'routes';
+            document.getElementById('map-visualization').dispatchEvent(new Event('change', { bubbles: true }));
+            requireGate(routeLoads.length === 1);
+            document.getElementById('map-sport-filter').value = 'Run';
+            document.getElementById('map-sport-filter').dispatchEvent(new Event('change', { bubbles: true }));
+            await new Promise(resolve => setTimeout(resolve, 0));
+            requireGate(JSON.stringify(routeLoads.at(-1)) === JSON.stringify(['canonical-map-run']));
+            requireGate(document.getElementById('map-route-status')?.textContent === 'Local routes ready: 1 route, 2 points.');
+            requireGate(document.querySelectorAll('#map-route-status').length === 1);
+            requireGate(observations.pageNetwork.length === networkStart);
+            const loadsBeforeCleanup = routeLoads.length;
+            cleanupCanonicalMap();
+            document.getElementById('map-sport-filter').value = 'Ride';
+            document.getElementById('map-sport-filter').dispatchEvent(new Event('change', { bubbles: true }));
+            await new Promise(resolve => setTimeout(resolve, 0));
+            requireGate(routeLoads.length === loadsBeforeCleanup);
+            const staleConsent = Array.from(document.querySelectorAll('#global-map button'))
+                .find(button => button.textContent === 'Load approximate OpenStreetMap tiles for this map');
+            staleConsent?.click();
+            requireGate(observations.pageNetwork.length === networkStart);
+            return {
+                initialActivities: 2,
+                filteredActivities: 1,
+                routeLoads: routeLoads.length,
+                externalRequestsBeforeConsent: 0,
+                cleanupRevoked: true
+            };
+        });
+
+        await gate('legacyActivityIdAndDomParity', async () => {
+            requireGate(modules !== null);
+            const legacyActivities = [
+                { id: 24681357, name: 'Legacy numeric ID', type: DOM_XSS_CANARY, sport_type: DOM_XSS_CANARY },
+                { id: 0, name: 'Legacy zero ID', type: 'Run', sport_type: 'Run' },
+                { id: -0, name: 'Legacy negative zero ID', type: 'Run', sport_type: 'Run' },
+                { id: null, name: 'Legacy null ID', type: 'Run', sport_type: 'Run' },
+                { name: 'Legacy missing ID', type: 'Run', sport_type: 'Run' },
+                { id: '0', name: 'Opaque string zero ID', type: 'Run', sport_type: 'Run' }
+            ].map((activity, index) => ({
+                start_date_local: `2026-01-0${index + 1}T06:00:00.000Z`,
+                distance: 1000,
+                moving_time: 300,
+                ...activity
+            }));
+            modules.activitiesModule.renderActivitiesTab(legacyActivities);
+            const rows = Array.from(document.querySelectorAll('#activities-table tbody tr'));
+            const rowFor = name => rows.find(row => row.textContent.includes(name));
+            const queryIdFor = name => {
+                const link = rowFor(name)?.querySelector('a.act-name-link');
+                return link ? new URL(link.href).searchParams.get('id') : null;
+            };
+            requireGate(queryIdFor('Legacy numeric ID') === '24681357');
+            requireGate(queryIdFor('Legacy zero ID') === '0');
+            requireGate(queryIdFor('Legacy negative zero ID') === '0');
+            requireGate(queryIdFor('Opaque string zero ID') === '0');
+            requireGate(rowFor('Legacy null ID')?.querySelector('a') === null);
+            requireGate(rowFor('Legacy missing ID')?.querySelector('a') === null);
+            const sportCell = rowFor('Legacy numeric ID')?.children[2];
+            requireGate(sportCell?.querySelector('small')?.textContent === DOM_XSS_CANARY);
+            requireGate(sportCell.querySelector('img[src="x"]') === null);
+            requireGate(globalThis.__domSafetyExecuted === 0);
+            return {
+                numericId: '24681357',
+                zeroIds: ['0', '0'],
+                missingAndNullLinks: 0,
+                sportSmallHookRetained: true,
+                canaryExecutions: 0
+            };
+        });
+
+        async function finishAfterMainImport() {
+            const mainModule = await gate('actualMainModuleImport', async () => {
+                const module = await import('/js/app/main.js');
+                requireGate(typeof module.createSummaryRepositorySession === 'function');
+                for (const exportName of [
+                    'establishSummaryRepositorySession',
+                    'requireSummaryRepositorySession',
+                    'loadActivitiesForSession',
+                    'loadInitializeAthleteAndZones',
+                    'loadRefreshAthleteAndZones',
+                    'loadOptionalSessionGears',
+                    'resetSummarySessionGears',
+                    'applySummarySessionGearLoad',
+                    'selectPreprocessingAthlete'
+                ]) {
+                    requireGate(typeof module[exportName] === 'function');
+                }
+                return module;
+            });
+
+            const resources = performance.getEntriesByType('resource').map(entry => endpoint(entry.name));
+            const externalResources = resources.filter(resource => resource.origin !== location.origin);
+            const speedInsightsResources = resources.filter(resource => (
+                resource.pathname === '/_vercel/speed-insights/script.js'
+            ));
+            gates.externalModuleNetwork = {
+                pass: externalResources.length === 0 && speedInsightsResources.length === 0,
+                evidence: {
+                    resources: externalResources,
+                    speedInsightsResources
+                }
+            };
+
+            await gate('actualDemoFactoryThroughMainFacade', async () => {
+                requireGate(mainModule !== null && modules !== null);
+                let factoryCount = 0;
+                const factoryOptions = [];
+                const storageStart = observations.storage.length;
+                const networkStart = observations.pageNetwork.length;
+                const platformBefore = await platformSnapshot();
+                const repositoryFactory = options => {
+                    factoryCount += 1;
+                    factoryOptions.push(options);
+                    return modules.repositoryModule.createRepository(options);
+                };
+                const established = mainModule.establishSummaryRepositorySession({
+                    activeSessionMode: null,
+                    sessionRepository: null,
+                    requestedSessionMode: 'demo',
+                    repositoryFactory
+                });
+                const session = mainModule.requireSummaryRepositorySession(
+                    established.activeSessionMode,
+                    established.sessionRepository
+                );
+                const establishedAgain = mainModule.establishSummaryRepositorySession({
+                    activeSessionMode: established.activeSessionMode,
+                    sessionRepository: session,
+                    requestedSessionMode: 'demo',
+                    repositoryFactory
+                });
+                requireGate(establishedAgain.sessionRepository === session);
+                requireGate(factoryCount === 1);
+                requireGate(JSON.stringify(factoryOptions) === JSON.stringify([{
+                    sessionMode: 'demo',
+                    mode: 'legacy'
+                }]));
+
+                const initializeActivities = await mainModule.loadActivitiesForSession({
+                    sessionRepository: session,
+                    refresh: false
+                });
+                const metadata = await mainModule.loadInitializeAthleteAndZones(
+                    session,
+                    { timeoutMs: 100 }
+                );
+                const gearLoad = await mainModule.loadOptionalSessionGears(
+                    session,
+                    metadata.athlete
+                );
+                const gears = mainModule.applySummarySessionGearLoad(gearLoad);
+                const refreshActivities = await mainModule.loadActivitiesForSession({
+                    sessionRepository: session,
+                    refresh: true
+                });
+
+                requireGate(initializeActivities.source === 'demo');
+                requireGate(refreshActivities.source === 'demo');
+                requireGate(JSON.stringify(initializeActivities.data) === JSON.stringify(demoActivities));
+                requireGate(JSON.stringify(refreshActivities.data) === JSON.stringify(demoActivities));
+                requireGate(JSON.stringify(metadata.athlete) === JSON.stringify(demoAthlete));
+                requireGate(JSON.stringify(metadata.zones) === JSON.stringify(demoZones));
+                requireGate(JSON.stringify(gears) === JSON.stringify(demoGears));
+
+                const executionStorage = observations.storage.slice(storageStart);
+                const realStorageEvents = executionStorage.filter(event => realKeys.includes(event.key));
+                const platformAfter = await platformSnapshot();
+                const realAfter = Object.fromEntries(realKeys.map(key => [
+                    key,
+                    storageMethods.getItem.call(localStorage, key)
+                ]));
+                requireGate(realStorageEvents.length === 0);
+                requireGate(observations.pageNetwork.length === networkStart);
+                requireGate(JSON.stringify(platformBefore) === JSON.stringify(platformAfter));
+                requireGate(JSON.stringify(realBefore) === JSON.stringify(realAfter));
+                return {
+                    factoryCount,
+                    factoryOptions,
+                    repositoryReusedForRefresh: true,
+                    sources: [initializeActivities.source, refreshActivities.source],
+                    metadataStatuses: [metadata.athleteStatus, metadata.zonesStatus],
+                    gearStatus: gearLoad.status,
+                    realStorageEvents: 0,
+                    networkAttempts: 0,
+                    platformUnchanged: true,
+                    realSentinelUnchanged: true
+                };
+            });
+
+            await gate('realSyntheticRepositorySeam', async () => {
+                requireGate(mainModule !== null);
+                const calls = [];
+                const factoryOptions = [];
+                const realActivities = [
+                    { id: 'real-activity-b', gear_id: 'real-shoe-2' },
+                    { id: 'real-activity-a', gear_id: 'real-shoe-1' }
+                ];
+                const realAthlete = { id: 'real-synthetic-athlete', max_hr: 188 };
+                const realZones = { heartrate: { zones: [{ min: 0, max: 150 }] } };
+                const completeGears = [
+                    { id: 'real-shoe-2', name: 'Real Synthetic Shoe Two' },
+                    { id: 'real-shoe-1', name: 'Real Synthetic Shoe One' },
+                    { id: 'real-shoe-2', name: 'Real Synthetic Shoe Two Duplicate' }
+                ];
+                let activityMode = 'valid';
+                let metadataMode = 'initialize';
+                let gearMode = 'complete';
+                let factoryCount = 0;
+                const envelope = (data, {
+                    source = 'cache',
+                    warnings = [],
+                    partial = false
+                } = {}) => ({ data, source, warnings, partial });
+                const rawRepository = {
+                    async listActivities(options) {
+                        calls.push({ operation: 'listActivities', options });
+                        if (activityMode === 'partial') {
+                            return envelope(realActivities, { partial: true });
+                        }
+                        if (activityMode === 'malformed') {
+                            return envelope({ invalid: true });
+                        }
+                        return envelope(realActivities);
+                    },
+                    async getActivity(activityId) {
+                        calls.push({ operation: 'getActivity', activityId });
+                        return envelope({ id: activityId, laps: [] }, {
+                            source: 'network'
+                        });
+                    },
+                    async getStreams(activityId, options) {
+                        calls.push({ operation: 'getStreams', activityId, options });
+                        return envelope({ time: { data: [0, 1] } }, {
+                            source: 'network'
+                        });
+                    },
+                    async getAthlete() {
+                        calls.push({ operation: 'getAthlete', mode: metadataMode });
+                        if (metadataMode === 'initialize') {
+                            throw new Error('Synthetic optional athlete failure.');
+                        }
+                        return envelope(realAthlete);
+                    },
+                    async getZones() {
+                        calls.push({ operation: 'getZones', mode: metadataMode });
+                        return envelope(realZones);
+                    },
+                    async getGears() {
+                        calls.push({ operation: 'getGears', mode: gearMode });
+                        if (gearMode === 'rejected') {
+                            throw new Error('Synthetic optional gear failure.');
+                        }
+                        if (gearMode === 'empty') return envelope([]);
+                        if (gearMode === 'partial') {
+                            return envelope(completeGears.slice(0, 2), {
+                                warnings: [{
+                                    code: 'ITEM_FETCH_FAILED',
+                                    operation: 'getGears',
+                                    retryable: true,
+                                    itemIndex: 2
+                                }],
+                                partial: true
+                            });
+                        }
+                        return envelope(completeGears);
+                    }
+                };
+                const repositoryFactory = options => {
+                    factoryCount += 1;
+                    factoryOptions.push(options);
+                    return rawRepository;
+                };
+                const storageStart = observations.storage.length;
+                const networkStart = observations.pageNetwork.length;
+                const platformBefore = await platformSnapshot();
+                const established = mainModule.establishSummaryRepositorySession({
+                    activeSessionMode: null,
+                    sessionRepository: null,
+                    requestedSessionMode: 'real',
+                    repositoryFactory
+                });
+                const session = mainModule.requireSummaryRepositorySession(
+                    established.activeSessionMode,
+                    established.sessionRepository
+                );
+                const establishedAgain = mainModule.establishSummaryRepositorySession({
+                    activeSessionMode: established.activeSessionMode,
+                    sessionRepository: session,
+                    requestedSessionMode: 'real',
+                    repositoryFactory
+                });
+                requireGate(establishedAgain.sessionRepository === session);
+                requireGate(factoryCount === 1);
+                requireGate(JSON.stringify(factoryOptions) === JSON.stringify([{
+                    sessionMode: 'real',
+                    mode: 'canonical'
+                }]));
+
+                const initializeActivities = await mainModule.loadActivitiesForSession({
+                    sessionRepository: session,
+                    refresh: false
+                });
+                requireGate(initializeActivities.data === realActivities);
+                requireGate(JSON.stringify(initializeActivities.data.map(item => item.id))
+                    === JSON.stringify(['real-activity-b', 'real-activity-a']));
+                const initializeMetadata = await mainModule.loadInitializeAthleteAndZones(
+                    session,
+                    { timeoutMs: 100 }
+                );
+                requireGate(initializeMetadata.athlete === null);
+                requireGate(initializeMetadata.athleteStatus === 'rejected');
+                requireGate(initializeMetadata.zones === realZones);
+                requireGate(initializeMetadata.zonesStatus === 'fulfilled');
+
+                metadataMode = 'refresh';
+                const refreshActivities = await mainModule.loadActivitiesForSession({
+                    sessionRepository: session,
+                    refresh: true
+                });
+                requireGate(refreshActivities.data === realActivities);
+                const refreshMetadata = await mainModule.loadRefreshAthleteAndZones(session);
+                requireGate(refreshMetadata.athlete === realAthlete);
+                requireGate(refreshMetadata.zones === realZones);
+
+                const preprocessingReadStart = observations.storage.length;
+                const preprocessingContext = mainModule.selectPreprocessingAthlete(
+                    'real',
+                    realAthlete
+                );
+                const indoorSwim = {
+                    id: 'real-synthetic-indoor-swim',
+                    name: 'Synthetic Indoor Swim',
+                    type: 'Swim',
+                    sport_type: 'Swim',
+                    start_date: '2026-01-01T06:00:00.000Z',
+                    start_date_local: '2026-01-01T08:00:00.000Z',
+                    distance: 1000,
+                    moving_time: 1200,
+                    elapsed_time: 1200,
+                    average_speed: 1000 / 1200,
+                    trainer: true
+                };
+                const processed = await modules.preprocessingModule.preprocessActivities(
+                    [indoorSwim],
+                    preprocessingContext,
+                    null,
+                    []
+                );
+                const athleteFallbackReads = observations.storage
+                    .slice(preprocessingReadStart)
+                    .filter(event => event.type === 'read' && event.key === 'strava_athlete_data');
+                requireGate(processed.length === 1 && processed[0] === indoorSwim);
+                requireGate(preprocessingContext.id === realAthlete.id);
+                requireGate(preprocessingContext.max_hr === realAthlete.max_hr);
+                requireGate(preprocessingContext.preprocessingIdentitySentinel === true);
+                requireGate(athleteFallbackReads.length === 0);
+
+                const resetGears = mainModule.resetSummarySessionGears();
+                requireGate(Array.isArray(resetGears) && resetGears.length === 0);
+                const gearEvidence = {};
+                for (const mode of ['complete', 'partial', 'empty', 'rejected']) {
+                    gearMode = mode;
+                    const loaded = await mainModule.loadOptionalSessionGears(session, realAthlete);
+                    gearEvidence[mode] = {
+                        status: loaded.status,
+                        partial: loaded.partial,
+                        count: mainModule.applySummarySessionGearLoad(loaded).length
+                    };
+                }
+                requireGate(gearEvidence.complete.count === 3);
+                requireGate(gearEvidence.partial.count === 2);
+                requireGate(gearEvidence.empty.count === 0);
+                requireGate(gearEvidence.rejected.status === 'rejected');
+                requireGate(gearEvidence.rejected.count === 0);
+
+                activityMode = 'partial';
+                let partialFailedClosed = false;
+                try {
+                    await mainModule.loadActivitiesForSession({
+                        sessionRepository: session,
+                        refresh: false
+                    });
+                } catch {
+                    partialFailedClosed = true;
+                }
+                activityMode = 'malformed';
+                let malformedFailedClosed = false;
+                try {
+                    await mainModule.loadActivitiesForSession({
+                        sessionRepository: session,
+                        refresh: false
+                    });
+                } catch {
+                    malformedFailedClosed = true;
+                }
+                requireGate(partialFailedClosed && malformedFailedClosed);
+
+                const executionStorage = observations.storage.slice(storageStart);
+                const realStorageEvents = executionStorage.filter(event => realKeys.includes(event.key));
+                const platformAfter = await platformSnapshot();
+                requireGate(realStorageEvents.length === 0);
+                requireGate(observations.pageNetwork.length === networkStart);
+                requireGate(JSON.stringify(platformBefore) === JSON.stringify(platformAfter));
+                const realAfterSeam = Object.fromEntries(realKeys.map(key => [
+                    key,
+                    storageMethods.getItem.call(localStorage, key)
+                ]));
+                requireGate(JSON.stringify(realBefore) === JSON.stringify(realAfterSeam));
+                return {
+                    factoryCount,
+                    factoryOptions,
+                    calls,
+                    activityReferencePreserved: true,
+                    initializeOptionality: true,
+                    refreshRequiredSequence: true,
+                    gearEvidence,
+                    staleGearReset: true,
+                    partialFailedClosed,
+                    malformedFailedClosed,
+                    preprocessingAthleteStorageReads: 0,
+                    preprocessingContextPreservedIdAndMaxHr: true,
+                    providerStorageEvents: 0,
+                    networkAttempts: 0,
+                    platformUnchanged: true,
+                    realSentinelUnchanged: true
+                };
+            });
+
+            const finalResources = performance.getEntriesByType('resource')
+                .map(entry => endpoint(entry.name));
+            const finalExternalResources = finalResources.filter(resource => (
+                resource.origin !== location.origin
+            ));
+            const finalSpeedInsightsResources = finalResources.filter(resource => (
+                resource.pathname === '/_vercel/speed-insights/script.js'
+            ));
+            gates.externalModuleNetwork = {
+                pass: finalExternalResources.length === 0
+                    && finalSpeedInsightsResources.length === 0,
+                evidence: {
+                    resources: finalExternalResources,
+                    speedInsightsResources: finalSpeedInsightsResources
+                }
+            };
+
+            const after = await platformSnapshot();
+            const realAfter = Object.fromEntries(realKeys.map(key => [
+                key,
+                storageMethods.getItem.call(localStorage, key)
+            ]));
+            gates.realSentinelParity = {
+                pass: JSON.stringify(realBefore) === JSON.stringify(realAfter),
+                evidence: { unchanged: JSON.stringify(realBefore) === JSON.stringify(realAfter) }
+            };
+
+            const failedGates = Object.entries(gates)
+                .filter(([, value]) => value.pass !== true)
+                .map(([name]) => name);
+            const finalResult = {
+                status: failedGates.length === 0 ? 'passed' : 'failed',
+                failedGates,
+                gates,
+                observations,
+                snapshots: {
+                    profileInitial,
+                    seededBefore,
+                    after
+                },
+                demoNamespaceKeys: demoKeys
+            };
+            document.body.dataset.status = finalResult.status;
+            statusElement.textContent = finalResult.status === 'passed'
+                ? 'All browser smoke gates passed.'
+                : 'Browser smoke gate failed; inspect safe JSON evidence.';
+            resultElement.textContent = JSON.stringify(finalResult, null, 2);
+            window.__PR04A_BROWSER_SMOKE__ = finalResult;
+        }
+
+        if (document.readyState === 'loading') {
+            window.addEventListener('DOMContentLoaded', () => {
+                finishAfterMainImport();
+            }, { once: true });
+        } else {
+            finishAfterMainImport();
+        }
+    </script>
+</body>
+</html>

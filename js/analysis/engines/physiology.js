@@ -4,10 +4,14 @@
 
 export class PhysiologyEngine {
     constructor(config = {}) {
+        const contextStatus = config.analysis_context_status ?? 'legacy';
+        const contextAware = contextStatus !== 'legacy';
         this.config = {
-            max_hr: config.max_hr ?? 195,
-            lthr: config.lthr ?? 170,            // Lactate threshold HR
-            hr_rest: config.hr_rest ?? 60,
+            analysis_context_status: contextStatus,
+            max_hr: contextAware ? (config.max_hr ?? null) : (config.max_hr ?? 195),
+            lthr: contextAware ? (config.lthr ?? null) : (config.lthr ?? 170),
+            hr_rest: contextAware ? (config.hr_rest ?? null) : (config.hr_rest ?? 60),
+            hr_zones: contextAware && Array.isArray(config.hr_zones) ? config.hr_zones : null,
             ftp: config.ftp ?? 250,              // Functional Threshold Power
             threshold_pace: config.threshold_pace ?? 5.5 // min/km
         };
@@ -52,11 +56,9 @@ export class PhysiologyEngine {
         const max_hr = Math.max(...hrs);
         const min_hr = Math.min(...hrs);
 
-        // Calculate intensity factor
-        const if_hr = avg_hr / this.config.max_hr;
-
-        // Time in zones (simplified)
-        const zones = this._calculateHRZones(hrs);
+        const hasMaxHr = Number.isFinite(this.config.max_hr) && this.config.max_hr > 0;
+        const if_hr = hasMaxHr ? avg_hr / this.config.max_hr : null;
+        const zones = hasMaxHr ? this._calculateHRZones(hrs) : null;
 
         // HR drift (change in HR as activity progresses despite stable effort)
         const firstQuarter = track.points.slice(0, Math.floor(track.points.length * 0.25))
@@ -66,15 +68,19 @@ export class PhysiologyEngine {
 
         const hr_drift = this._calculateHRDrift(firstQuarter, lastQuarter);
 
-        return {
+        const result = {
             avg: Math.round(avg_hr),
             max: max_hr,
             min: min_hr,
-            intensity_factor: Math.round(if_hr * 100) / 100,
+            intensity_factor: if_hr === null ? null : Math.round(if_hr * 100) / 100,
             zones,
             drift_pct: hr_drift,
             efficiency_score: this._calculateHREfficiency(avg_hr, analysis_result)
         };
+        if (this.config.analysis_context_status !== 'legacy') {
+            result.profile_status = this.config.analysis_context_status;
+        }
+        return result;
     }
 
     /**
@@ -156,19 +162,37 @@ export class PhysiologyEngine {
         const variance = hrs.reduce((sum, hr) => sum + Math.pow(hr - mean_hr, 2), 0) / hrs.length;
         const hr_variability = Math.sqrt(variance);
 
-        // Time above threshold
-        const above_threshold = hrs.filter(hr => hr > this.config.lthr).length;
-        const time_above_threshold_pct = (above_threshold / hrs.length) * 100;
+        const thresholdAvailable = Number.isFinite(this.config.lthr) && this.config.lthr > 0;
+        const above_threshold = thresholdAvailable
+            ? hrs.filter(hr => hr > this.config.lthr).length
+            : null;
+        const time_above_threshold_pct = above_threshold === null
+            ? null
+            : (above_threshold / hrs.length) * 100;
+        const recoveryAvailable = (
+            this.config.analysis_context_status === 'legacy'
+            || (Number.isFinite(this.config.hr_rest) && this.config.hr_rest > 0)
+        );
+        const recovery_index = recoveryAvailable
+            ? (hr_variability > 5 ? 'good' : 'stressed')
+            : null;
 
-        // Recovery index
-        const recovery_index = hr_variability > 5 ? 'good' : 'stressed';
-
-        return {
+        const result = {
             hr_variability: Math.round(hr_variability),
-            time_above_threshold_pct: Math.round(time_above_threshold_pct),
+            time_above_threshold_pct: time_above_threshold_pct === null
+                ? null
+                : Math.round(time_above_threshold_pct),
             recovery_index,
-            stress_level: time_above_threshold_pct > 50 ? 'high' : time_above_threshold_pct > 25 ? 'moderate' : 'low'
+            stress_level: time_above_threshold_pct === null
+                ? null
+                : time_above_threshold_pct > 50
+                    ? 'high'
+                    : time_above_threshold_pct > 25 ? 'moderate' : 'low'
         };
+        if (this.config.analysis_context_status !== 'legacy') {
+            result.profile_status = this.config.analysis_context_status;
+        }
+        return result;
     }
 
     // ===== Helper methods =====
@@ -177,12 +201,20 @@ export class PhysiologyEngine {
         const zones = { Z1: 0, Z2: 0, Z3: 0, Z4: 0, Z5: 0 };
 
         for (const hr of hrs) {
-            const pct = (hr / this.config.max_hr) * 100;
-            if (pct < 60) zones.Z1++;
-            else if (pct < 70) zones.Z2++;
-            else if (pct < 80) zones.Z3++;
-            else if (pct < 90) zones.Z4++;
-            else zones.Z5++;
+            if (Array.isArray(this.config.hr_zones)) {
+                const zoneIndex = this.config.hr_zones.findIndex(zone => (
+                    hr >= zone.minBpm
+                    && (zone.maxBpmExclusive === null || hr < zone.maxBpmExclusive)
+                ));
+                zones[`Z${Math.min(Math.max(zoneIndex + 1, 1), 5)}`]++;
+            } else {
+                const pct = (hr / this.config.max_hr) * 100;
+                if (pct < 60) zones.Z1++;
+                else if (pct < 70) zones.Z2++;
+                else if (pct < 80) zones.Z3++;
+                else if (pct < 90) zones.Z4++;
+                else zones.Z5++;
+            }
         }
 
         const total = hrs.length;

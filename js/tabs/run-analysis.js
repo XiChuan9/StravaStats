@@ -1,17 +1,227 @@
 // js/run-analysis.js
 import * as utils from './utils.js';
-import { getCachedGears } from './api.js';
 
-function getGears() {
-    const cached = getCachedGears();
-    if (cached) return cached;
-    return JSON.parse(localStorage.getItem('strava_gears') || '[]');
+const EMPTY_RUN_SESSION_GEARS = Object.freeze([]);
+let runSessionGears = EMPTY_RUN_SESSION_GEARS;
+const UNAVAILABLE_VALUE = '—';
+const MAX_HISTOGRAM_BUCKETS = 200;
+
+function isUsableMetric(value) {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function isPositiveMetric(value) {
+    return isUsableMetric(value) && value > 0;
+}
+
+function addFiniteAggregate(total, value) {
+    const next = total + value;
+    return Number.isFinite(next) ? next : total;
+}
+
+function averageFiniteValues(values) {
+    let mean = 0;
+    let count = 0;
+    for (const value of values) {
+        if (!isUsableMetric(value)) continue;
+        count++;
+        const next = mean + (value - mean) / count;
+        if (!Number.isFinite(next)) {
+            count--;
+            continue;
+        }
+        mean = next;
+    }
+    return count > 0 ? mean : null;
+}
+
+function getActivityDate(activity) {
+    const dateLike = activity?.start_date_local || activity?.start_date;
+    if (!dateLike) return null;
+    try {
+        const date = new Date(dateLike);
+        return Number.isFinite(date.getTime()) ? date : null;
+    } catch {
+        return null;
+    }
+}
+
+function getActivityDateKey(activity) {
+    const date = getActivityDate(activity);
+    if (!date) return null;
+
+    const dateLike = activity?.start_date_local || activity?.start_date;
+    if (typeof dateLike === 'string' && /^\d{4}-\d{2}-\d{2}/.test(dateLike)) {
+        return dateLike.slice(0, 10);
+    }
+
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function getActivityMonthKey(activity) {
+    return getActivityDateKey(activity)?.slice(0, 7) || null;
+}
+
+function getDatedDistanceRuns(runs) {
+    return runs.reduce((eligible, run) => {
+        const date = getActivityDateKey(run);
+        if (!date || !isUsableMetric(run?.distance)) return eligible;
+        eligible.push({ start_date_local: date, distance: run.distance });
+        return eligible;
+    }, []);
+}
+
+function getEddingtonThresholdLimit() {
+    return MAX_HISTOGRAM_BUCKETS;
+}
+
+function readBoundedEddingtonDistance(distanceMeters, thresholdLimit) {
+    const distanceKm = distanceMeters / 1000;
+    return Number.isFinite(distanceKm)
+        ? Math.min(distanceKm, thresholdLimit)
+        : thresholdLimit;
+}
+
+function getPairedPaceSeconds(activity) {
+    if (!isPositiveMetric(activity?.distance) || !isUsableMetric(activity?.moving_time)) {
+        return null;
+    }
+    const pace = activity.moving_time / (activity.distance / 1000);
+    return Number.isFinite(pace) && pace >= 0 ? pace : null;
+}
+
+function getAverageSpeedPaceSeconds(activity) {
+    if (isPositiveMetric(activity?.average_speed)) {
+        const pace = 1000 / activity.average_speed;
+        return Number.isFinite(pace) && pace >= 0 ? pace : null;
+    }
+    return getPairedPaceSeconds(activity);
+}
+
+function formatPaceSeconds(paceSeconds) {
+    if (!isUsableMetric(paceSeconds)) return UNAVAILABLE_VALUE;
+    const rounded = Math.round(paceSeconds);
+    const minutes = Math.floor(rounded / 60);
+    const seconds = rounded % 60;
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+function buildBoundedHistogram(values, baseBinSize) {
+    if (values.length === 0) {
+        return { binSize: baseBinSize, bins: [], maxValue: 0 };
+    }
+
+    const maxValue = Math.max(...values);
+    let binSize = baseBinSize;
+    const desiredBucketCount = Math.max(1, Math.ceil(maxValue / binSize));
+    if (!Number.isFinite(desiredBucketCount) || desiredBucketCount > MAX_HISTOGRAM_BUCKETS) {
+        binSize = maxValue > 0
+            ? Math.max(baseBinSize, maxValue / MAX_HISTOGRAM_BUCKETS)
+            : baseBinSize;
+    }
+
+    const boundedCount = Math.max(1, Math.ceil(maxValue / binSize));
+    const binCount = Math.min(
+        MAX_HISTOGRAM_BUCKETS,
+        Math.max(1, Number.isFinite(boundedCount) ? boundedCount : MAX_HISTOGRAM_BUCKETS)
+    );
+    const bins = Array(binCount).fill(0);
+    for (const value of values) {
+        const rawIndex = Math.floor(value / binSize);
+        const index = Math.min(binCount - 1, Math.max(0, rawIndex));
+        bins[index]++;
+    }
+    return { binSize, bins, maxValue };
+}
+
+function buildBoundedRange(minValue, maxValue, baseStep) {
+    const alignedStartCandidate = Math.floor(minValue / baseStep) * baseStep;
+    const start = Number.isFinite(alignedStartCandidate)
+        ? alignedStartCandidate
+        : minValue;
+    const alignedEndCandidate = Math.ceil(maxValue / baseStep) * baseStep;
+    const alignedEnd = Number.isFinite(alignedEndCandidate)
+        ? alignedEndCandidate
+        : maxValue;
+    const range = alignedEnd - start;
+    const desiredCount = Math.floor(range / baseStep) + 1;
+    const step = !Number.isFinite(desiredCount) || desiredCount > MAX_HISTOGRAM_BUCKETS
+        ? Math.max(baseStep, range / (MAX_HISTOGRAM_BUCKETS - 1))
+        : baseStep;
+    const boundedCount = Math.floor(range / step) + 1;
+    const count = Math.min(
+        MAX_HISTOGRAM_BUCKETS,
+        Math.max(1, Number.isFinite(boundedCount) ? boundedCount : MAX_HISTOGRAM_BUCKETS)
+    );
+    return Array.from({ length: count }, (_, index) => {
+        const value = start + index * step;
+        return Number.isFinite(value) ? value : maxValue;
+    });
+}
+
+function createRunSessionGearSnapshot(gears) {
+    try {
+        if (
+            !Array.isArray(gears)
+            || Object.getPrototypeOf(gears) !== Array.prototype
+        ) {
+            return EMPTY_RUN_SESSION_GEARS;
+        }
+
+        const keys = Reflect.ownKeys(gears);
+        const lengthDescriptor = Object.getOwnPropertyDescriptor(gears, 'length');
+        if (
+            !lengthDescriptor
+            || !Object.hasOwn(lengthDescriptor, 'value')
+            || !Number.isSafeInteger(lengthDescriptor.value)
+            || lengthDescriptor.value < 0
+            || lengthDescriptor.enumerable !== false
+            || lengthDescriptor.configurable !== false
+            || keys.length !== lengthDescriptor.value + 1
+            || keys.some(key => typeof key !== 'string')
+        ) {
+            return EMPTY_RUN_SESSION_GEARS;
+        }
+
+        const keySet = new Set(keys);
+        if (!keySet.has('length')) return EMPTY_RUN_SESSION_GEARS;
+
+        const snapshot = [];
+        for (let index = 0; index < lengthDescriptor.value; index += 1) {
+            const key = String(index);
+            if (!keySet.has(key)) return EMPTY_RUN_SESSION_GEARS;
+            const descriptor = Object.getOwnPropertyDescriptor(gears, key);
+            if (
+                !descriptor?.enumerable
+                || !Object.hasOwn(descriptor, 'value')
+            ) {
+                return EMPTY_RUN_SESSION_GEARS;
+            }
+            Object.defineProperty(snapshot, key, {
+                value: descriptor.value,
+                enumerable: true,
+                configurable: true,
+                writable: true
+            });
+        }
+        return Object.freeze(snapshot);
+    } catch {
+        return EMPTY_RUN_SESSION_GEARS;
+    }
+}
+
+export function setRunSessionGears(gears) {
+    runSessionGears = createRunSessionGearSnapshot(gears);
+    return runSessionGears;
 }
 
 // Calculate global HR max reference using 99th percentile of all hr_max values
 function calculateGlobalHrMaxRef(runs) {
     const hrMaxValues = runs
-        .filter(r => r.max_heartrate && r.max_heartrate > 0)
+        .filter(r => isPositiveMetric(r?.max_heartrate))
         .map(r => r.max_heartrate)
         .sort((a, b) => a - b);
 
@@ -63,15 +273,50 @@ function getElement(id) {
     return document.getElementById(resolvedId);
 }
 
+function createActivityLink(activity) {
+    const label = activity?.name || '-';
+    const activityId = typeof activity?.id === 'string' && activity.id.length > 0
+        ? activity.id
+        : (Number.isSafeInteger(activity?.id) && activity.id > 0 ? String(activity.id) : null);
+    if (activityId === null) {
+        return document.createTextNode(label);
+    }
+    const params = new URLSearchParams();
+    params.set('id', activityId);
+    const link = document.createElement('a');
+    link.href = `/html/activity-router.html?${params.toString()}`;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = label;
+    return link;
+}
+
+function appendTableCell(row, value, dataValue = null) {
+    const cell = document.createElement('td');
+    if (dataValue !== null) cell.dataset.value = String(dataValue);
+    if (value instanceof Node) cell.append(value);
+    else cell.textContent = String(value);
+    row.append(cell);
+}
+
 function upsertChartInfo(canvasId, options) {
     utils.upsertChartInfo(scopedId(canvasId), options);
 }
 
 export function renderRunAnalysisTab(allActivities, dateFilterFrom, dateFilterTo, gearFilter = 'all', rollingWindowWeeks = 26, options = {}) {
     return withRunRenderContext(options, () => {
-        const filteredActivities = utils.filterActivitiesByDate(allActivities, dateFilterFrom, dateFilterTo);
+        const activities = Array.isArray(allActivities) ? allActivities : [];
+        const filteredActivities = (!dateFilterFrom && !dateFilterTo)
+            ? activities
+            : activities.filter(activity => {
+                const date = getActivityDateKey(activity);
+                if (!date) return false;
+                if (dateFilterFrom && date < dateFilterFrom) return false;
+                if (dateFilterTo && date > dateFilterTo) return false;
+                return true;
+            });
         const runs = filteredActivities
-            .filter(a => a.type && a.type.includes('Run'))
+            .filter(a => typeof a?.type === 'string' && a.type.includes('Run'))
             .filter(a => gearFilter === 'all' || a.gear_id === gearFilter);
 
         renderSummaryCards(runs);
@@ -111,10 +356,12 @@ function buildWeeklyDistanceSeries(activities, distanceGetter) {
     };
 
     activities.forEach(activity => {
-        if (!activity?.start_date_local) return;
+        const dateKey = getActivityDateKey(activity);
+        const distance = distanceGetter(activity);
+        if (!dateKey || !isUsableMetric(distance)) return;
 
-        const date = parseLocalDate(activity.start_date_local);
-        if (Number.isNaN(date.getTime())) return;
+        const date = parseLocalDate(dateKey);
+        if (!Number.isFinite(date.getTime())) return;
 
         const weekStart = new Date(date);
         const daysSinceMonday = (weekStart.getDay() + 6) % 7;
@@ -122,8 +369,8 @@ function buildWeeklyDistanceSeries(activities, distanceGetter) {
         weekStart.setHours(0, 0, 0, 0);
 
         const key = toLocalDateKey(weekStart);
-        const km = Number(distanceGetter(activity)) || 0;
-        weeklyTotals[key] = (weeklyTotals[key] || 0) + km;
+        const km = distance;
+        weeklyTotals[key] = addFiniteAggregate(weeklyTotals[key] || 0, km);
     });
 
     const weekStarts = Object.keys(weeklyTotals).sort();
@@ -192,7 +439,6 @@ function createChart(canvasId, config) {
     const resolvedCanvasId = scopedId(canvasId);
     const canvas = getElement(canvasId);
     if (!canvas) {
-        console.error(`Canvas with id ${resolvedCanvasId} not found.`);
         return;
     }
     // Si ya existe un gráfico en ese canvas, lo destruimos primero
@@ -349,10 +595,11 @@ export function renderConsistencyChart(runs, dateFilterFrom = null, dateFilterTo
     }
 
     // Agregar datos y calcular umbrales
-    const safeRuns = runs || [];
+    const safeRuns = Array.isArray(runs) ? runs : [];
     const aggregatedData = safeRuns.reduce((acc, act) => {
-        const date = act.start_date_local.substring(0, 10);
-        acc[date] = (acc[date] || 0) + (act.distance ? act.distance / 1000 : 0);
+        const date = getActivityDateKey(act);
+        if (!date || !isUsableMetric(act?.distance)) return acc;
+        acc[date] = addFiniteAggregate(acc[date] || 0, act.distance / 1000);
         return acc;
     }, {});
 
@@ -503,38 +750,46 @@ export function renderConsistencyChart(runs, dateFilterFrom = null, dateFilterTo
 export function renderActivityTypeChart(runs) {
     if (!runs || runs.length === 0) return;
 
-    const p80Distance = [...runs].map(a => a.distance)
-        .sort((a, b) => a - b)[Math.floor(0.8 * runs.length)];
-
-    const avg_tss = runs.reduce((sum, a) => sum + (a.tss || 0), 0) / runs.length;
-
-    // Clasificación de cada actividad.
-    runs.forEach(a => {
+    const distances = runs
+        .map(activity => activity?.distance)
+        .filter(isUsableMetric)
+        .sort((a, b) => a - b);
+    const p80Distance = distances.length > 0
+        ? distances[Math.min(distances.length - 1, Math.floor(0.8 * distances.length))]
+        : null;
+    const tssValues = runs
+        .map(activity => activity?.tss)
+        .filter(isUsableMetric);
+    const avgTss = averageFiniteValues(tssValues);
+    const classify = a => {
         if (a.sport_type === 'TrailRun') {
-            a.workout_type_classified = 'Trail Run';
-        } else if (a.workout_type !== 1 && a.distance >= p80Distance) {
-            a.workout_type_classified = 'Long Run';
+            return 'Trail Run';
+        } else if (
+            a.workout_type !== 1
+            && p80Distance !== null
+            && isUsableMetric(a?.distance)
+            && a.distance >= p80Distance
+        ) {
+            return 'Long Run';
         } else if (a.workout_type === 1) {
-            a.workout_type_classified = 'Race';
+            return 'Race';
         }
-        else if (a.tss && a.tss >= avg_tss * 1.5) {
-            a.workout_type_classified = 'High intensity Run';
+        else if (avgTss !== null && isUsableMetric(a?.tss) && a.tss >= avgTss * 1.5) {
+            return 'High intensity Run';
         }
-        else if (a.tss && a.tss >= avg_tss * 0.5) {
-            a.workout_type_classified = 'Moderate intensity Run';
+        else if (avgTss !== null && isUsableMetric(a?.tss) && a.tss >= avgTss * 0.5) {
+            return 'Moderate intensity Run';
         }
-        else if (a.tss && a.tss < avg_tss * 0.5) {
-            a.workout_type_classified = 'Low intensity Run';
+        else if (avgTss !== null && isUsableMetric(a?.tss) && a.tss < avgTss * 0.5) {
+            return 'Low intensity Run';
         }
-        else {
-            a.workout_type_classified = 'Other';
-        }
-    });
+        return 'Other';
+    };
 
     // Contar por categoría
     const workoutTypeCounts = {};
     runs.forEach(a => {
-        const key = a.workout_type_classified;
+        const key = classify(a);
         workoutTypeCounts[key] = (workoutTypeCounts[key] || 0) + 1;
     });
 
@@ -564,17 +819,21 @@ export function renderMonthlyDistanceChart(runs) {
 
     // Aggregate data by month
     const monthlyData = runs.reduce((acc, act) => {
-        const month = act.start_date_local.substring(0, 7);
+        const month = getActivityMonthKey(act);
+        if (!month) return acc;
         if (!acc[month]) acc[month] = { distance: 0, count: 0 };
-        acc[month].distance += act.distance / 1000;
+        if (isUsableMetric(act?.distance)) {
+            acc[month].distance = addFiniteAggregate(
+                acc[month].distance,
+                act.distance / 1000
+            );
+        }
         acc[month].count += 1;
         return acc;
     }, {});
 
     // Find the first and last month
-    const monthsSortedByDate = runs
-        .map(act => act.start_date_local.substring(0, 7))
-        .sort();
+    const monthsSortedByDate = Object.keys(monthlyData).sort();
     const firstMonth = monthsSortedByDate[0];
     const lastMonth = monthsSortedByDate[monthsSortedByDate.length - 1];
 
@@ -593,7 +852,7 @@ export function renderMonthlyDistanceChart(runs) {
         }
         return result;
     }
-    const allMonths = getMonthRange(firstMonth, lastMonth);
+    const allMonths = firstMonth && lastMonth ? getMonthRange(firstMonth, lastMonth) : [];
 
     // Fill missing months with zeros
     const monthlyDistances = allMonths.map(m => monthlyData[m]?.distance || 0);
@@ -651,10 +910,11 @@ export function renderPaceVsDistanceChart(runs) {
     const trailData = [];
 
     runs.forEach(r => {
-        if (!r.distance || !r.moving_time) return;
+        const pace = getPairedPaceSeconds(r);
+        if (pace === null) return;
         const point = {
             x: r.distance / 1000,
-            y: (r.moving_time / 60) / (r.distance / 1000) // Pace in min/km
+            y: pace / 60
         };
         if (r.workout_type === 1) {
             raceData.push(point);
@@ -699,7 +959,7 @@ export function renderPaceVsDistanceChart(runs) {
 }
 
 const formatPace = paceDecimal => {
-    if (!paceDecimal || paceDecimal <= 0) return '-';
+    if (!isUsableMetric(paceDecimal)) return UNAVAILABLE_VALUE;
     const min = Math.floor(paceDecimal);
     const sec = Math.round((paceDecimal - min) * 60);
     return `${min}:${sec.toString().padStart(2, '0')} min/km`;
@@ -710,20 +970,37 @@ export function renderPaceHistogram(runs) {
 
     // Convertimos cada actividad a ritmo medio (min/km)
     const paces = runs
-        .filter(a => a.distance > 0 && a.moving_time > 0)
-        .map(a => (a.moving_time / 60) / (a.distance / 1000));
+        .map(activity => getPairedPaceSeconds(activity))
+        .filter(pace => pace !== null)
+        .map(pace => pace / 60)
+        .filter(isUsableMetric);
 
     if (paces.length === 0) return;
 
     // Definir bins (por ejemplo, de 4 a 8 min/km en pasos de 0.25)
     const minPace = Math.min(...paces);
     const maxPace = Math.max(...paces);
-
-    const binSize = 10 / 60; // 10 segundos
-    const bins = [];
-    for (let p = Math.floor(minPace); p <= Math.ceil(maxPace) + 1; p += binSize) {
-        bins.push(+p.toFixed(2));
-    }
+    const baseBinSize = 10 / 60; // 10 segundos
+    const legacyStart = Math.floor(minPace);
+    const legacyEnd = Math.ceil(maxPace) + 1;
+    const legacyRange = legacyEnd - legacyStart;
+    const desiredBucketCount = Math.floor(legacyRange / baseBinSize) + 1;
+    const useLegacyBins = Number.isFinite(desiredBucketCount)
+        && desiredBucketCount <= MAX_HISTOGRAM_BUCKETS;
+    const rangeStart = useLegacyBins ? legacyStart : minPace;
+    const range = useLegacyBins ? legacyRange : maxPace - minPace;
+    const binSize = useLegacyBins
+        ? baseBinSize
+        : Math.max(baseBinSize, range / (MAX_HISTOGRAM_BUCKETS - 1));
+    const boundedCount = Math.floor(range / binSize) + 1;
+    const binCount = Math.min(
+        MAX_HISTOGRAM_BUCKETS,
+        Math.max(1, Number.isFinite(boundedCount) ? boundedCount : MAX_HISTOGRAM_BUCKETS)
+    );
+    const bins = Array.from({ length: binCount }, (_, index) => {
+        const value = rangeStart + index * binSize;
+        return Number.isFinite(value) ? value : maxPace;
+    });
 
     // Contar cuántos ritmos caen en cada bin
     const counts = new Array(bins.length).fill(0);
@@ -732,7 +1009,7 @@ export function renderPaceHistogram(runs) {
             bins.length - 1,
             Math.floor((p - bins[0]) / binSize)
         );
-        counts[idx]++;
+        if (idx >= 0) counts[idx]++;
     });
 
     createChart('pace-histogram-chart', {
@@ -764,25 +1041,30 @@ export function renderPaceHistogram(runs) {
 
 export function renderDistanceHistogram(runs) {
     const HISTOGRAM_BIN_SIZE_KM = 1;
-    const distances = runs.map(act => act.distance / 1000);
-    const maxDistance = Math.max(...distances, 0);
-    const binCount = Math.ceil(maxDistance / HISTOGRAM_BIN_SIZE_KM);
-    const bins = Array(binCount).fill(0);
-    distances.forEach(d => {
-        const idx = Math.floor(d / HISTOGRAM_BIN_SIZE_KM);
-        if (idx < binCount) bins[idx]++;
-    });
+    const distances = runs
+        .map(act => act?.distance)
+        .filter(isUsableMetric)
+        .map(distance => distance / 1000);
+    const { binSize, bins, maxValue } = buildBoundedHistogram(
+        distances,
+        HISTOGRAM_BIN_SIZE_KM
+    );
 
     createChart('distance-histogram', {
         type: 'bar',
         data: {
-            labels: bins.map((_, i) => `${(i * HISTOGRAM_BIN_SIZE_KM).toFixed(0)}-${((i + 1) * HISTOGRAM_BIN_SIZE_KM).toFixed(0)}`),
+            labels: bins.map((_, index) => {
+                const from = index * binSize;
+                const rawTo = (index + 1) * binSize;
+                const to = Number.isFinite(rawTo) ? rawTo : maxValue;
+                return `${from.toFixed(0)}-${to.toFixed(0)}`;
+            }),
             datasets: [{ label: '# Activities', data: bins, backgroundColor: 'rgba(252, 82, 0, 0.5)' }]
         },
         options: {
             plugins: { legend: { display: false } },
             scales: {
-                x: { title: { display: true, text: `Distance (bins of ${HISTOGRAM_BIN_SIZE_KM} km)` } },
+                x: { title: { display: true, text: `Distance (bins of ${binSize.toLocaleString()} km)` } },
                 y: { title: { display: true, text: 'Count' } }
             }
         }
@@ -792,8 +1074,13 @@ export function renderDistanceHistogram(runs) {
 
 
 export async function renderGearGanttChart(runs) {
+    const eligibleRuns = runs.filter(a => (
+        a?.gear_id
+        && getActivityMonthKey(a)
+        && isUsableMetric(a?.distance)
+    ));
     // 1. Obtener todos los IDs de gear usados
-    const gearIds = Array.from(new Set(runs.map(a => a.gear_id).filter(Boolean)));
+    const gearIds = Array.from(new Set(eligibleRuns.map(a => a.gear_id)));
 
     // 2. Si no hay gears, no hacemos nada
     if (gearIds.length === 0) return;
@@ -801,27 +1088,28 @@ export async function renderGearGanttChart(runs) {
     // 3. Traer info detallada de cada gear
     let gearIdToName = {};
     try {
-        const allGears = getGears();
+        const allGears = runSessionGears;
         allGears.forEach(gear => {
             gearIdToName[gear.id] = gear.name || [gear.brand_name, gear.model_name].filter(Boolean).join(' ');
         });
-    } catch (error) {
-        console.error("Failed to fetch gear details:", error);
+    } catch {
         return;
     }
 
     // 4. Agregar distancia por gear por mes
-    const gearMonthKm = runs.reduce((acc, a) => {
-        if (!a.gear_id) return acc;
+    const gearMonthKm = eligibleRuns.reduce((acc, a) => {
         const gearKey = a.gear_id;
-        const month = a.start_date_local.substring(0, 7);
+        const month = getActivityMonthKey(a);
         if (!acc[month]) acc[month] = {};
-        acc[month][gearKey] = (acc[month][gearKey] || 0) + a.distance / 1000;
+        acc[month][gearKey] = addFiniteAggregate(
+            acc[month][gearKey] || 0,
+            a.distance / 1000
+        );
         return acc;
     }, {});
 
     // 5. Rango de meses
-    const monthsSorted = runs.map(a => a.start_date_local.substring(0, 7)).sort();
+    const monthsSorted = Object.keys(gearMonthKm).sort();
     const firstMonth = monthsSorted[0];
     const lastMonth = monthsSorted[monthsSorted.length - 1];
     function getMonthRange(start, end) {
@@ -870,9 +1158,10 @@ export function renderDistanceVsElevationChart(runs) {
     const trailData = [];
     const roadData = [];
     runs.forEach(r => {
+        if (!isUsableMetric(r?.distance) || !isUsableMetric(r?.total_elevation_gain)) return;
         const point = {
             x: r.distance / 1000,
-            y: r.total_elevation_gain || 0
+            y: r.total_elevation_gain
         };
         if (r.sport_type === 'TrailRun') {
             trailData.push(point);
@@ -907,20 +1196,20 @@ export function renderDistanceVsElevationChart(runs) {
 }
 
 export function renderElevationHistogram(runs) {
-    const values = runs.map(r => r.total_elevation_gain || 0);
-    const binSize = 10;
-    const maxVal = Math.max(...values, 0);
-    const binCount = Math.ceil(maxVal / binSize);
-    const bins = Array(binCount).fill(0);
-    values.forEach(v => {
-        const idx = Math.floor(v / binSize);
-        if (idx < binCount) bins[idx]++;
-    });
+    const values = runs
+        .map(r => r?.total_elevation_gain)
+        .filter(isUsableMetric);
+    const { binSize, bins, maxValue } = buildBoundedHistogram(values, 10);
 
     createChart('elevation-histogram', {
         type: 'bar',
         data: {
-            labels: bins.map((_, i) => `${i * binSize}-${(i + 1) * binSize}`),
+            labels: bins.map((_, index) => {
+                const from = index * binSize;
+                const rawTo = (index + 1) * binSize;
+                const to = Number.isFinite(rawTo) ? rawTo : maxValue;
+                return `${from.toLocaleString()}-${to.toLocaleString()}`;
+            }),
             datasets: [{
                 label: '# Activities',
                 data: bins,
@@ -936,13 +1225,15 @@ export function renderAccumulatedDistanceChart(runs) {
 
     // 1. Aggregate distance per day (YYYY-MM-DD)
     const distanceByDay = runs.reduce((acc, act) => {
-        const date = act.start_date_local.substring(0, 10);
-        acc[date] = (acc[date] || 0) + (act.distance ? act.distance / 1000 : 0);
+        const date = getActivityDateKey(act);
+        if (!date || !isUsableMetric(act?.distance)) return acc;
+        acc[date] = addFiniteAggregate(acc[date] || 0, act.distance / 1000);
         return acc;
     }, {});
 
     // 2. Get all days from first to last activity
     const allDays = Object.keys(distanceByDay).sort();
+    if (allDays.length === 0) return;
     const startDate = new Date(allDays[0]);
     const endDate = new Date(allDays[allDays.length - 1]);
     const days = [];
@@ -955,7 +1246,11 @@ export function renderAccumulatedDistanceChart(runs) {
 
     // 4. Compute accumulated distance
     const accumulated = [];
-    dailyDistances.reduce((acc, d, i) => accumulated[i] = acc + d, 0);
+    dailyDistances.reduce((acc, distance, index) => {
+        const next = addFiniteAggregate(acc, distance);
+        accumulated[index] = next;
+        return next;
+    }, 0);
 
     createChart('accumulated-distance-chart', {
         type: 'line',
@@ -985,20 +1280,37 @@ export function renderRollingMeanDistanceChart(runs, rollingWindowWeeks = 26) {
     if (!runs || runs.length === 0) return;
 
     const weeklyData = runs.reduce((acc, run) => {
-        const date = new Date(run.start_date_local);
+        const date = getActivityDate(run);
+        if (!date) return acc;
         const weekStart = new Date(date);
         weekStart.setDate(date.getDate() - date.getDay() + 1); // Monday
         const weekKey = weekStart.toISOString().slice(0, 10);
-        if (!acc[weekKey]) acc[weekKey] = { distance: 0, time: 0 };
-        acc[weekKey].distance += (run.distance || 0) / 1000;
-        acc[weekKey].time += run.moving_time || 0;
+        if (!acc[weekKey]) {
+            acc[weekKey] = { distance: 0, paceDistance: 0, paceTime: 0 };
+        }
+        if (isUsableMetric(run?.distance)) {
+            acc[weekKey].distance = addFiniteAggregate(
+                acc[weekKey].distance,
+                run.distance / 1000
+            );
+        }
+        if (isPositiveMetric(run?.distance) && isUsableMetric(run?.moving_time)) {
+            acc[weekKey].paceDistance = addFiniteAggregate(
+                acc[weekKey].paceDistance,
+                run.distance / 1000
+            );
+            acc[weekKey].paceTime = addFiniteAggregate(
+                acc[weekKey].paceTime,
+                run.moving_time
+            );
+        }
         return acc;
     }, {});
     const labels = Object.keys(weeklyData).sort();
     const weeklyKm = labels.map(k => weeklyData[k].distance);
     const weeklyPace = labels.map(k => {
         const d = weeklyData[k];
-        return d.distance > 0 ? (d.time / 60) / d.distance : 0;
+        return d.paceDistance > 0 ? (d.paceTime / 60) / d.paceDistance : 0;
     });
     const rolling = utils.rollingMean(weeklyKm, rollingWindowWeeks).map(v => +v.toFixed(2));
     const rollingPace = utils.rollingMean(weeklyPace, rollingWindowWeeks).map(v => +v.toFixed(2));
@@ -1137,7 +1449,13 @@ function attachRunEddingtonInfo(canvasId, eddington, variant) {
 export function renderEddingtonDistributionChart(runs) {
     if (!runs || runs.length === 0) return;
 
-    const eddington = utils.buildEddingtonSeries(runs, run => (run.distance || 0) / 1000, { unitStep: 1 });
+    const eligibleRuns = getDatedDistanceRuns(runs);
+    const thresholdLimit = getEddingtonThresholdLimit(eligibleRuns.length);
+    const eddington = utils.buildEddingtonSeries(
+        eligibleRuns,
+        run => readBoundedEddingtonDistance(run.distance, thresholdLimit),
+        { unitStep: 1 }
+    );
     if (!eddington.distributionSeries.length) return;
 
     createChart('run-eddington-distribution-chart', {
@@ -1229,7 +1547,13 @@ export function renderEddingtonDistributionChart(runs) {
 export function renderEddingtonProgressionChart(runs) {
     if (!runs || runs.length === 0) return;
 
-    const eddington = utils.buildEddingtonSeries(runs, run => (run.distance || 0) / 1000, { unitStep: 1 });
+    const eligibleRuns = getDatedDistanceRuns(runs);
+    const thresholdLimit = getEddingtonThresholdLimit(eligibleRuns.length);
+    const eddington = utils.buildEddingtonSeries(
+        eligibleRuns,
+        run => readBoundedEddingtonDistance(run.distance, thresholdLimit),
+        { unitStep: 1 }
+    );
     if (!eddington.achievementSeries.length) return;
 
     const milestoneLabels = getRunMilestoneLabels();
@@ -1302,16 +1626,32 @@ function _drawRunEddingtonCharts(runs, mode) {
     const multiplier = isWeekly ? parseInt(mode.split('-')[1]) : 1;
     const unit = isWeekly ? 'weeks' : 'days';
 
+    const eligibleRuns = getDatedDistanceRuns(runs);
+    const thresholdLimit = getEddingtonThresholdLimit(eligibleRuns.length);
     let eddington;
     if (isWeekly) {
-        const weekly = utils.aggregateByWeek(runs, r => (r.distance || 0) / 1000);
+        const weekly = utils.aggregateByWeek(
+            eligibleRuns,
+            run => Math.min(
+                run.distance / 1000,
+                thresholdLimit * multiplier
+            )
+        );
         const pseudo = weekly.map(w => ({
             start_date_local: w.start_date_local,
             distance: (w.total / multiplier) * 1000
         }));
-        eddington = utils.buildEddingtonSeries(pseudo, a => a.distance / 1000, { unitStep: 1 });
+        eddington = utils.buildEddingtonSeries(
+            pseudo,
+            activity => readBoundedEddingtonDistance(activity.distance, thresholdLimit),
+            { unitStep: 1 }
+        );
     } else {
-        eddington = utils.buildEddingtonSeries(runs, r => (r.distance || 0) / 1000, { unitStep: 1 });
+        eddington = utils.buildEddingtonSeries(
+            eligibleRuns,
+            run => readBoundedEddingtonDistance(run.distance, thresholdLimit),
+            { unitStep: 1 }
+        );
     }
 
     if (eddington.distributionSeries.length) {
@@ -1465,81 +1805,58 @@ export function renderEddingtonSection(runs) {
 export function renderRunsHeatmap(runs) {
     const mapDiv = getElement("runs-heatmap");
     if (!mapDiv) return;
-
-    // Set container size
     mapDiv.style.width = "100%";
     mapDiv.style.height = "400px";
-
-    // Recolectar puntos (inicio y fin)
-    const markerPoints = [];
-    runs.forEach(run => {
-        if (run.start_latlng?.length >= 2) {
-            markerPoints.push({ lat: run.start_latlng[0], lng: run.start_latlng[1], type: "start" });
-        }
-        if (run.end_latlng?.length >= 2) {
-            markerPoints.push({ lat: run.end_latlng[0], lng: run.end_latlng[1], type: "end" });
-        }
-    });
-
-    if (markerPoints.length === 0) {
-        mapDiv.innerHTML = `<p>No valid coordinates found. Runs: ${runs.length}</p>`;
-        return;
-    }
-
-    // Eliminar mapa anterior si existe
     if (window.runsPointsMap) {
         window.runsPointsMap.remove();
         window.runsPointsMap = null;
     }
-    mapDiv.innerHTML = "";
-
-    // Inicializar mapa Leaflet
-    if (typeof L !== "undefined") {
-        const first = markerPoints[0];
-        window.runsPointsMap = L.map(mapDiv).setView([first.lat, first.lng], 3);
-
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-            attribution: "&copy; OpenStreetMap contributors"
-        }).addTo(window.runsPointsMap);
-
-        // Agregar marcadores
-        markerPoints.forEach(p => {
-            const color = p.type === "start" ? "green" : "red";
-            L.circleMarker([p.lat, p.lng], {
-                radius: 4,
-                color,
-                fillColor: color,
-                fillOpacity: 0.8,
-                weight: 1
-            })
-                .bindPopup(`${p.type === "start" ? "Start" : "End"} Point`)
-                .addTo(window.runsPointsMap);
-        });
-
-        // Ajustar vista
-        const bounds = markerPoints.map(p => [p.lat, p.lng]);
-        if (bounds.length > 1) window.runsPointsMap.fitBounds(bounds);
-    } else {
-        mapDiv.innerHTML = `<p>Leaflet.js is required for map visualization.</p>`;
-    }
+    mapDiv.textContent = `Run location maps are unavailable here. Runs: ${Array.isArray(runs) ? runs.length : 0}`;
 }
 
 
 function renderSummaryCards(runs) {
     const summaryContainer = getElement('run-summary-cards');
     if (summaryContainer) {
-        const totalDistance = runs.reduce((s, a) => s + a.distance, 0) / 1000;
-        const totalElevation = runs.reduce((s, a) => s + a.total_elevation_gain, 0);
-        const totalTime = runs.reduce((s, a) => s + a.moving_time, 0);
-        const avgPaceSeconds = totalDistance > 0 ? (totalTime / totalDistance) : 0;
-        const paceMin = Math.floor(avgPaceSeconds / 60);
-        const paceSec = Math.round(avgPaceSeconds % 60);
+        const distanceValues = runs
+            .map(activity => activity?.distance)
+            .filter(isUsableMetric);
+        const elevationValues = runs
+            .map(activity => activity?.total_elevation_gain)
+            .filter(isUsableMetric);
+        const pairedRuns = runs.filter(activity => (
+            isPositiveMetric(activity?.distance)
+            && isUsableMetric(activity?.moving_time)
+        ));
+        const totalDistance = distanceValues.reduce(addFiniteAggregate, 0) / 1000;
+        const totalElevation = elevationValues.reduce(addFiniteAggregate, 0);
+        const pairedDistance = pairedRuns.reduce(
+            (sum, activity) => addFiniteAggregate(sum, activity.distance),
+            0
+        ) / 1000;
+        const pairedTime = pairedRuns.reduce(
+            (sum, activity) => addFiniteAggregate(sum, activity.moving_time),
+            0
+        );
+        const rawAveragePaceSeconds = pairedDistance > 0 ? pairedTime / pairedDistance : null;
+        const avgPaceSeconds = isUsableMetric(rawAveragePaceSeconds)
+            ? rawAveragePaceSeconds
+            : null;
+        const distanceText = distanceValues.length > 0
+            ? `${totalDistance.toFixed(0)} km`
+            : UNAVAILABLE_VALUE;
+        const elevationText = elevationValues.length > 0
+            ? `${totalElevation.toLocaleString()} m`
+            : UNAVAILABLE_VALUE;
+        const paceText = avgPaceSeconds === null
+            ? UNAVAILABLE_VALUE
+            : `${formatPaceSeconds(avgPaceSeconds)} /km`;
 
         summaryContainer.innerHTML = `
             <div class="card"><h3>Runs</h3><p>${runs.length}</p></div>
-            <div class="card"><h3>Total Distance</h3><p>${totalDistance.toFixed(0)} km</p></div>
-            <div class="card"><h3>Total Elevation</h3><p>${totalElevation.toLocaleString()} m</p></div>
-            <div class="card"><h3>Avg Pace</h3><p>${paceMin}:${paceSec.toString().padStart(2, '0')} /km</p></div>
+            <div class="card"><h3>Total Distance</h3><p>${distanceText}</p></div>
+            <div class="card"><h3>Total Elevation</h3><p>${elevationText}</p></div>
+            <div class="card"><h3>Avg Pace</h3><p>${paceText}</p></div>
         `;
     }
 }
@@ -1800,19 +2117,19 @@ function renderTopRuns(runs) {
     if (!el) return;
 
     const topDistance = [...runs]
+        .filter(activity => isUsableMetric(activity?.distance))
         .sort((a, b) => b.distance - a.distance)
         .slice(0, 10);
 
     const topElevation = [...runs]
+        .filter(activity => isUsableMetric(activity?.total_elevation_gain))
         .sort((a, b) => b.total_elevation_gain - a.total_elevation_gain)
         .slice(0, 10);
 
     // Calculate pace (seconds per km) and sort by fastest (lowest pace)
     const topFastest = [...runs]
-        .map(a => ({
-            ...a,
-            pace: a.distance > 0 ? (a.moving_time / (a.distance / 1000)) : Infinity
-        }))
+        .map(activity => ({ activity, pace: getPairedPaceSeconds(activity) }))
+        .filter(entry => entry.pace !== null)
         .sort((a, b) => a.pace - b.pace)
         .slice(0, 10);
 
@@ -1822,20 +2139,13 @@ function renderTopRuns(runs) {
         return `${h}h ${m}m`;
     };
 
-    const activityLink = a => {
-        if (!a?.id) return a?.name || '-';
-        return `<a href="/html/activity-router.html?id=${encodeURIComponent(a.id)}" target="_blank" rel="noopener noreferrer">${a.name}</a>`;
-    };
-
     el.innerHTML = `
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin: 2rem 0;">
             <div class="top-box" style="padding: 1.5rem; background: rgba(252, 82, 0, 0.08); border: 1px solid rgba(252, 82, 0, 0.25); border-radius: 12px;">
                 <h3 style="margin-top: 0; color: #FC5200;">🏃 Longest Runs</h3>
                 <table class="compact-table" id="${idAttr('run-top-distance-table')}">
                 <thead><tr style="background: #FC5200; color: #fff;"><th>#</th><th>Run</th><th data-sort="num">km</th></tr></thead>
-                <tbody>
-                    ${topDistance.map((a, i) => `<tr><td>${i + 1}</td><td>${activityLink(a)}</td><td data-value="${a.distance / 1000}">${(a.distance / 1000).toFixed(1)} km</td></tr>`).join("")}
-                </tbody>
+                <tbody></tbody>
                 </table>
             </div>
 
@@ -1843,9 +2153,7 @@ function renderTopRuns(runs) {
                 <h3 style="margin-top: 0; color: #FC5200;">⛰️ Most Elevation</h3>
                 <table class="compact-table" id="${idAttr('run-top-elevation-table')}">
                 <thead><tr style="background: #FC5200; color: #fff;"><th>#</th><th>Run</th><th data-sort="num">Elev (m)</th></tr></thead>
-                <tbody>
-                    ${topElevation.map((a, i) => `<tr><td>${i + 1}</td><td>${activityLink(a)}</td><td data-value="${a.total_elevation_gain}">${a.total_elevation_gain} m</td></tr>`).join("")}
-                </tbody>
+                <tbody></tbody>
                 </table>
             </div>
 
@@ -1853,13 +2161,41 @@ function renderTopRuns(runs) {
                 <h3 style="margin-top: 0; color: #FC5200;">⚡ Fastest Races</h3>
                 <table class="compact-table" id="${idAttr('run-top-pace-table')}">
                 <thead><tr style="background: #FC5200; color: #fff;"><th>#</th><th>Run</th><th data-sort="num">Pace</th></tr></thead>
-                <tbody>
-                    ${topFastest.map((a, i) => `<tr><td>${i + 1}</td><td>${activityLink(a)}</td><td data-value="${a.pace}">${utils.formatPace(a.pace, 1)}</td></tr>`).join("")}
-                </tbody>
+                <tbody></tbody>
                 </table>
             </div>
         </div>
     `;
+
+    const populateTopTable = (tableId, activities, valueFor, textFor, activityFor = entry => entry) => {
+        const body = getElement(tableId)?.querySelector('tbody');
+        if (!body) return;
+        if (activities.length === 0) {
+            const row = document.createElement('tr');
+            appendTableCell(row, UNAVAILABLE_VALUE);
+            appendTableCell(row, UNAVAILABLE_VALUE);
+            appendTableCell(row, UNAVAILABLE_VALUE);
+            body.replaceChildren(row);
+            return;
+        }
+        const rows = activities.map((activity, index) => {
+            const row = document.createElement('tr');
+            appendTableCell(row, index + 1);
+            appendTableCell(row, createActivityLink(activityFor(activity)));
+            appendTableCell(row, textFor(activity), valueFor(activity));
+            return row;
+        });
+        body.replaceChildren(...rows);
+    };
+    populateTopTable('run-top-distance-table', topDistance, a => a.distance / 1000, a => `${(a.distance / 1000).toFixed(1)} km`);
+    populateTopTable('run-top-elevation-table', topElevation, a => a.total_elevation_gain, a => `${a.total_elevation_gain} m`);
+    populateTopTable(
+        'run-top-pace-table',
+        topFastest,
+        entry => entry.pace,
+        entry => `${formatPaceSeconds(entry.pace)} /km`,
+        entry => entry.activity
+    );
 
     makeSortable(getElement('run-top-distance-table'));
     makeSortable(getElement('run-top-elevation-table'));
@@ -1871,26 +2207,21 @@ function renderActivitiesTable(runs) {
     const el = getElement("run-activities-table");
     if (!el) return;
 
-    const rows = runs
-        .sort((a, b) => new Date(b.start_date) - new Date(a.start_date))
-        .map(a => {
-            const pace = utils.formatPace(1000 / a.average_speed, 1);
-            const paceVal = a.average_speed > 0 ? (1000 / a.average_speed) : 9999;
-            const activityLink = a.id
-                ? `<a href="/html/activity-router.html?id=${encodeURIComponent(a.id)}" target="_blank" rel="noopener noreferrer">${a.name}</a>`
-                : a.name;
-            return `
-            <tr>
-                <td>${a.start_date_local.substring(0, 10)}</td>
-                <td>${activityLink}</td>
-                <td data-value="${(a.distance / 1000).toFixed(2)}">${(a.distance / 1000).toFixed(2)}</td>
-                <td data-value="${a.total_elevation_gain || 0}">${a.total_elevation_gain || 0}</td>
-                <td data-value="${paceVal}">${pace}</td>
-                <td data-value="${a.average_heartrate || 0}">${a.average_heartrate ? Math.round(a.average_heartrate) : "-"}</td>
-            </tr>
-            `;
-        })
-        .join("");
+    const sortedRuns = [...runs].sort((a, b) => {
+        const aTime = getActivityDate(a)?.getTime();
+        const bTime = getActivityDate(b)?.getTime();
+        if (aTime === undefined && bTime === undefined) return 0;
+        if (aTime === undefined) return 1;
+        if (bTime === undefined) return -1;
+        return bTime - aTime;
+    });
+    const rowValues = sortedRuns.map(a => {
+        const paceVal = getAverageSpeedPaceSeconds(a);
+        const pace = paceVal === null
+            ? UNAVAILABLE_VALUE
+            : `${formatPaceSeconds(paceVal)} /km`;
+        return { activity: a, pace, paceVal };
+    });
 
     el.innerHTML = `
         <table id="${idAttr('run-all-table')}" style="width: 100%; border-collapse: collapse; margin-top: 2rem; border: 1px solid rgba(252, 82, 0, 0.25); border-radius: 10px; overflow: hidden;">
@@ -1904,20 +2235,44 @@ function renderActivitiesTable(runs) {
                     <th data-sort="num" style="padding: 12px; text-align: left; border-bottom: 2px solid rgba(255,255,255,0.2);">Avg HR</th>
                 </tr>
             <tbody>
-                ${rows}
             </tbody>
         </table>
     `;
+
+    const body = getElement('run-all-table')?.querySelector('tbody');
+    const rows = rowValues.map(({ activity, pace, paceVal }) => {
+        const row = document.createElement('tr');
+        const date = getActivityDateKey(activity);
+        const distance = isUsableMetric(activity?.distance) ? activity.distance / 1000 : null;
+        const elevation = isUsableMetric(activity?.total_elevation_gain)
+            ? activity.total_elevation_gain
+            : null;
+        const heartRate = isUsableMetric(activity?.average_heartrate)
+            ? Math.round(activity.average_heartrate)
+            : null;
+        appendTableCell(row, date || UNAVAILABLE_VALUE);
+        appendTableCell(row, createActivityLink(activity));
+        appendTableCell(row, distance === null ? UNAVAILABLE_VALUE : distance.toFixed(2), distance);
+        appendTableCell(row, elevation === null ? UNAVAILABLE_VALUE : elevation, elevation);
+        appendTableCell(row, pace, paceVal);
+        appendTableCell(row, heartRate === null ? UNAVAILABLE_VALUE : heartRate, heartRate);
+        return row;
+    });
+    body?.replaceChildren(...rows);
 
     makeSortable(getElement('run-all-table'));
 }
 
 export function renderPaceHrCurveChart(runs) {
-    const validRuns = runs.filter(r => r.average_heartrate && r.distance && r.moving_time);
+    const validRuns = runs.filter(r => (
+        getActivityDate(r)
+        && isUsableMetric(r?.average_heartrate)
+        && getPairedPaceSeconds(r) !== null
+    ));
     if (validRuns.length === 0) return;
 
     // Sort runs by date
-    const sortedRuns = validRuns.sort((a, b) => new Date(a.start_date_local) - new Date(b.start_date_local));
+    const sortedRuns = validRuns.sort((a, b) => getActivityDate(a) - getActivityDate(b));
 
     // Split into first and last 33%
     const third = Math.floor(sortedRuns.length * 0.33);
@@ -1928,20 +2283,17 @@ export function renderPaceHrCurveChart(runs) {
     const binSize = 5;
     const minHr = Math.min(...validRuns.map(r => r.average_heartrate));
     const maxHr = Math.max(...validRuns.map(r => r.average_heartrate));
-    const minBin = Math.floor(minHr / binSize) * binSize;
-    const maxBin = Math.ceil(maxHr / binSize) * binSize;
+    const bins = buildBoundedRange(minHr, maxHr, binSize);
+    const binTolerance = bins.length > 1
+        ? (bins[1] - bins[0]) / 2
+        : Number.POSITIVE_INFINITY;
 
-    const bins = [];
-    for (let hr = minBin; hr <= maxBin; hr += binSize) {
-        bins.push(hr);
-    }
-
-    const calculatePace = r => (r.moving_time / 60) / (r.distance / 1000); // min/km
+    const calculatePace = run => getPairedPaceSeconds(run) / 60;
 
     const buildDatasetStats = (runsSubset) => {
         return bins.map(hr => {
             const binRuns = runsSubset.filter(
-                r => Math.abs(r.average_heartrate - hr) < binSize / 2
+                r => Math.abs(r.average_heartrate - hr) < binTolerance
             );
 
             if (binRuns.length === 0) {
@@ -1952,10 +2304,10 @@ export function renderPaceHrCurveChart(runs) {
                 };
             }
 
-            const paces = binRuns.map(calculatePace);
+            const paces = binRuns.map(calculatePace).filter(isUsableMetric);
 
             return {
-                avg: paces.reduce((sum, p) => sum + p, 0) / paces.length,
+                avg: averageFiniteValues(paces),
             };
         });
     };
@@ -2053,7 +2405,12 @@ export function renderPaceHrCurveChart(runs) {
 
 export function renderConsistencyImprovementChart(runs) {
     const validRuns = runs.filter(
-        r => r.average_heartrate && r.distance && r.moving_time
+        r => (
+            getActivityDate(r)
+            && isUsableMetric(r?.average_heartrate)
+            && isUsableMetric(r?.efficiency)
+            && getPairedPaceSeconds(r) !== null
+        )
     );
 
     if (validRuns.length === 0) return;
@@ -2064,7 +2421,7 @@ export function renderConsistencyImprovementChart(runs) {
     const monthlyData = {};
 
     validRuns.forEach(run => {
-        const date = new Date(run.start_date_local);
+        const date = getActivityDate(run);
         const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 
         if (!monthlyData[monthKey]) {
@@ -2082,17 +2439,17 @@ export function renderConsistencyImprovementChart(runs) {
         const runsCount = monthRuns.length;
 
         const efficiencies = monthRuns.map(calculateEfficiency);
-
-        const mean =
-            efficiencies.reduce((a, b) => a + b, 0) / efficiencies.length;
-
-        const std = Math.sqrt(
-            efficiencies
-                .reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) /
-            efficiencies.length
-        );
-
-        const cv = mean !== 0 ? std / mean : 0;
+        const mean = averageFiniteValues(efficiencies);
+        const scale = Math.max(...efficiencies, 0);
+        const normalized = scale > 0
+            ? efficiencies.map(value => value / scale)
+            : efficiencies.map(() => 0);
+        const normalizedMean = averageFiniteValues(normalized) ?? 0;
+        const normalizedVariance = averageFiniteValues(
+            normalized.map(value => Math.pow(value - normalizedMean, 2))
+        ) ?? 0;
+        const normalizedStd = Math.sqrt(normalizedVariance);
+        const cv = normalizedMean !== 0 ? normalizedStd / normalizedMean : 0;
 
         return {
             month,
@@ -2100,7 +2457,11 @@ export function renderConsistencyImprovementChart(runs) {
             cv,
             meanEfficiency: mean
         };
-    }).filter(stat => stat.runsCount >= 5);
+    }).filter(stat => (
+        stat.runsCount >= 5
+        && isUsableMetric(stat.cv)
+        && isUsableMetric(stat.meanEfficiency)
+    ));
 
     if (monthlyStats.length < 2) return;
 
@@ -2117,9 +2478,11 @@ export function renderConsistencyImprovementChart(runs) {
                   previous.meanEfficiency
                 : 0;
 
+        const change = improvement * 100;
+        if (!Number.isFinite(change)) continue;
         improvementData.push({
             x: current.cv,
-            y: improvement * 100,
+            y: change,
             month: current.month
         });
     }
@@ -2224,20 +2587,28 @@ export function renderConsistencyImprovementChart(runs) {
 }
 
 export function renderVolumeImprovementChart(runs) {
-    const validRuns = runs.filter(r => r.average_heartrate && r.distance && r.moving_time);
+    const validRuns = runs.filter(r => (
+        getActivityDate(r)
+        && isUsableMetric(r?.average_heartrate)
+        && isUsableMetric(r?.efficiency)
+        && getPairedPaceSeconds(r) !== null
+    ));
     if (validRuns.length === 0) return;
 
     // Group by month and calculate volume and efficiency
     const monthlyData = {};
     validRuns.forEach(run => {
-        const date = new Date(run.start_date_local);
+        const date = getActivityDate(run);
         const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 
         if (!monthlyData[monthKey]) {
             monthlyData[monthKey] = { runs: [], volume: 0 };
         }
         monthlyData[monthKey].runs.push(run);
-        monthlyData[monthKey].volume += run.distance / 1000; // km
+        monthlyData[monthKey].volume = addFiniteAggregate(
+            monthlyData[monthKey].volume,
+            run.distance / 1000
+        );
     });
 
     const calculateEfficiency = r => r.efficiency;
@@ -2245,9 +2616,10 @@ export function renderVolumeImprovementChart(runs) {
     const monthlyStats = Object.entries(monthlyData)
         .map(([month, data]) => {
             const efficiencies = data.runs.map(calculateEfficiency);
-            const meanEfficiency = efficiencies.reduce((a, b) => a + b, 0) / efficiencies.length;
+            const meanEfficiency = averageFiniteValues(efficiencies);
             return { month, volume: data.volume, meanEfficiency };
         })
+        .filter(stat => isUsableMetric(stat.meanEfficiency))
         .sort((a, b) => a.volume - b.volume);
 
     if (monthlyStats.length < 6) return; // Need enough months for quintiles
@@ -2282,7 +2654,7 @@ export function renderVolumeImprovementChart(runs) {
         return {
             quintile: `Q${idx + 1} (${quintile[0].volume.toFixed(1)}-${quintile[quintile.length - 1].volume.toFixed(1)} km)`,
             improvementRate,
-            avgVolume: quintile.reduce((sum, m) => sum + m.volume, 0) / quintile.length
+            avgVolume: averageFiniteValues(quintile.map(month => month.volume)) ?? 0
         };
     });
 
@@ -2317,14 +2689,19 @@ export function renderVolumeImprovementChart(runs) {
 
 export function renderEfficiencyEvolutionChart(runs) {
     const validRuns = runs.filter(
-        r => r.average_heartrate && r.distance && r.moving_time
+        r => (
+            getActivityDate(r)
+            && isUsableMetric(r?.average_heartrate)
+            && isUsableMetric(r?.efficiency)
+            && getPairedPaceSeconds(r) !== null
+        )
     );
 
     if (validRuns.length === 0) return;
 
     // Sort by date
     const sortedRuns = [...validRuns].sort(
-        (a, b) => new Date(a.start_date_local) - new Date(b.start_date_local)
+        (a, b) => getActivityDate(a) - getActivityDate(b)
     );
 
     // Efficiency = pace / HR
@@ -2335,9 +2712,9 @@ export function renderEfficiencyEvolutionChart(runs) {
         const pace = (run.moving_time / 60) / (run.distance / 1000);
 
         return {
-            x: new Date(run.start_date_local),
+            x: getActivityDate(run),
             y: calculateEfficiency(run),
-            date: run.start_date_local,
+            date: run.start_date_local || run.start_date,
             name: run.name,
             distance: run.distance / 1000,
             hr: run.average_heartrate,
@@ -2361,6 +2738,7 @@ export function renderEfficiencyEvolutionChart(runs) {
 
         let weightedSum = 0;
         let weightSum = 0;
+        const valueScale = Math.max(...window.map(value => value.y), 0);
 
         window.forEach(w => {
             const distance = Math.abs(w.index - i);
@@ -2370,13 +2748,19 @@ export function renderEfficiencyEvolutionChart(runs) {
                 ? 0
                 : Math.pow(1 - Math.pow(normalized, 3), 3);
 
-            weightedSum += w.y * weight;
-            weightSum += weight;
+            const normalizedValue = valueScale > 0 ? w.y / valueScale : 0;
+            weightedSum = addFiniteAggregate(weightedSum, normalizedValue * weight);
+            weightSum = addFiniteAggregate(weightSum, weight);
         });
+
+        const normalizedAverage = weightSum > 0 ? weightedSum / weightSum : null;
+        const smoothedValue = normalizedAverage === null
+            ? point.y
+            : normalizedAverage * valueScale;
 
         smoothedData.push({
             x: point.x,
-            y: weightSum > 0 ? weightedSum / weightSum : point.y
+            y: Number.isFinite(smoothedValue) ? smoothedValue : point.y
         });
     });
 
@@ -2474,54 +2858,71 @@ export function renderEfficiencyEvolutionChart(runs) {
 }
 
 export function renderDistanceEfficiencyChart(runs) {
-    const validRuns = runs.filter(r => r.average_heartrate && r.distance && r.moving_time);
-    if (validRuns.length === 0) return;
+    const data = runs
+        .filter(r => (
+            getActivityDate(r)
+            && isPositiveMetric(r?.distance)
+            && isUsableMetric(r?.efficiency)
+        ))
+        .map(r => ({
+            x: r.distance / 1000,
+            y: r.efficiency,
+            date: r.start_date_local || r.start_date
+        }));
+    if (data.length === 0) return;
 
-    const calculateEfficiency = r => r.efficiency;
+    function calculateRegression(dataPoints) {
+        const n = dataPoints.length;
+        if (n < 2) return null;
+        const sumX = dataPoints.reduce((sum, d) => sum + d.x, 0);
+        const sumY = dataPoints.reduce((sum, d) => sum + d.y, 0);
+        const sumXY = dataPoints.reduce((sum, d) => sum + d.x * d.y, 0);
+        const sumXX = dataPoints.reduce((sum, d) => sum + d.x * d.x, 0);
+        const denominator = n * sumXX - sumX * sumX;
+        if (!Number.isFinite(denominator) || denominator === 0) return null;
 
-    const data = validRuns.map(r => ({
-        x: r.distance / 1000,
-        y: calculateEfficiency(r),
-        date: r.start_date
-    }));
+        const slope = (n * sumXY - sumX * sumY) / denominator;
+        const intercept = (sumY - slope * sumX) / n;
+        if (!Number.isFinite(slope) || !Number.isFinite(intercept)) return null;
 
-    // Simple linear regression
-    const n = data.length;
-    const sumX = data.reduce((sum, d) => sum + d.x, 0);
-    const sumY = data.reduce((sum, d) => sum + d.y, 0);
-    const sumXY = data.reduce((sum, d) => sum + d.x * d.y, 0);
-    const sumXX = data.reduce((sum, d) => sum + d.x * d.x, 0);
+        const minX = Math.min(...dataPoints.map(d => d.x));
+        const maxX = Math.max(...dataPoints.map(d => d.x));
+        if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return null;
 
-    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
-    const intercept = (sumY - slope * sumX) / n;
+        const line = [
+            { x: minX, y: slope * minX + intercept },
+            { x: maxX, y: slope * maxX + intercept }
+        ];
+        if (line.some(point => !Number.isFinite(point.x) || !Number.isFinite(point.y))) {
+            return null;
+        }
 
-    const minX = Math.min(...data.map(d => d.x));
-    const maxX = Math.max(...data.map(d => d.x));
-    const regressionLine = [
-        { x: minX, y: slope * minX + intercept },
-        { x: maxX, y: slope * maxX + intercept }
-    ];
+        return { slope, intercept, line };
+    }
+
+    const regression = calculateRegression(data);
+    const datasets = [{
+        label: 'Run Data',
+        data: data,
+        backgroundColor: 'rgba(252, 82, 0, 0.7)',
+        pointRadius: 4
+    }];
+    if (regression) {
+        datasets.push({
+            label: `Regression (slope: ${regression.slope.toFixed(4)})`,
+            data: regression.line,
+            borderColor: 'rgba(93, 22, 1, 1)',
+            backgroundColor: 'rgba(93, 22, 1, 0.1)',
+            type: 'line',
+            pointRadius: 0,
+            tension: 0
+        });
+    }
 
     createChart('distance-efficiency-chart', {
         type: 'scatter',
         data: {
-            datasets: [
-                {
-                    label: 'Run Data',
-                    data: data,
-                    backgroundColor: 'rgba(252, 82, 0, 0.7)',
-                    pointRadius: 4
-                },
-                {
-                    label: `Regression (slope: ${slope.toFixed(4)})`,
-                    data: regressionLine,
-                    borderColor: 'rgba(93, 22, 1, 1)',
-                    backgroundColor: 'rgba(93, 22, 1, 0.1)',
-                    type: 'line',
-                    pointRadius: 0,
-                    tension: 0
-                }
-            ]
+            datasets
         },
         options: {
             plugins: {
@@ -2570,12 +2971,16 @@ export function renderDistanceEfficiencyChart(runs) {
 }
 
 export function renderPaceHrEfficiencyChart(runs, mode = 'single') {
-    const validRuns = runs.filter(r => r.average_heartrate && r.distance && r.moving_time);
+    const validRuns = runs.filter(r => (
+        getActivityDate(r)
+        && isUsableMetric(r?.average_heartrate)
+        && getPairedPaceSeconds(r) !== null
+    ));
     if (validRuns.length === 0) return;
 
     const calculatePace = r => (r.moving_time / 60) / (r.distance / 1000); // min/km
 
-    const sortedRuns = [...validRuns].sort((a, b) => new Date(a.start_date_local) - new Date(b.start_date_local));
+    const sortedRuns = [...validRuns].sort((a, b) => getActivityDate(a) - getActivityDate(b));
 
     const data = sortedRuns.map(r => ({
         x: r.average_heartrate,
@@ -2589,17 +2994,29 @@ export function renderPaceHrEfficiencyChart(runs, mode = 'single') {
         const sumY = dataPoints.reduce((sum, d) => sum + d.y, 0);
         const sumXY = dataPoints.reduce((sum, d) => sum + d.x * d.y, 0);
         const sumXX = dataPoints.reduce((sum, d) => sum + d.x * d.x, 0);
-        const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+        const denominator = n * sumXX - sumX * sumX;
+        if (!Number.isFinite(denominator) || denominator === 0) return null;
+
+        const slope = (n * sumXY - sumX * sumY) / denominator;
         const intercept = (sumY - slope * sumX) / n;
+        if (!Number.isFinite(slope) || !Number.isFinite(intercept)) return null;
+
         const minX = Math.min(...dataPoints.map(d => d.x));
         const maxX = Math.max(...dataPoints.map(d => d.x));
+        if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return null;
+
+        const line = [
+            { x: minX, y: slope * minX + intercept },
+            { x: maxX, y: slope * maxX + intercept }
+        ];
+        if (line.some(point => !Number.isFinite(point.x) || !Number.isFinite(point.y))) {
+            return null;
+        }
+
         return {
             slope,
             intercept,
-            line: [
-                { x: minX, y: slope * minX + intercept },
-                { x: maxX, y: slope * maxX + intercept }
-            ]
+            line
         };
     }
 
@@ -2609,14 +3026,14 @@ export function renderPaceHrEfficiencyChart(runs, mode = 'single') {
 
     if (mode === 'single') {
         const regression = calculateRegression(data);
-        datasets = [
-            {
-                label: 'Run Data',
-                data: data,
-                backgroundColor: 'rgba(252, 82, 0, 0.7)',
-                pointRadius: 4
-            },
-            {
+        datasets = [{
+            label: 'Run Data',
+            data: data,
+            backgroundColor: 'rgba(252, 82, 0, 0.7)',
+            pointRadius: 4
+        }];
+        if (regression) {
+            datasets.push({
                 label: `Regression (slope: ${regression.slope.toFixed(4)} min/km per bpm)`,
                 data: regression.line,
                 borderColor: 'rgba(93, 22, 1, 1)',
@@ -2624,8 +3041,8 @@ export function renderPaceHrEfficiencyChart(runs, mode = 'single') {
                 type: 'line',
                 pointRadius: 0,
                 tension: 0
-            }
-        ];
+            });
+        }
         title = 'Pace vs Heart Rate';
         bodyHtml = `
         <button class="toggle-regression-btn" style="margin-bottom: 10px;">Show Progress Regressions</button><br>

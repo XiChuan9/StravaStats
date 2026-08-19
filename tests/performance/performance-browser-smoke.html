@@ -1,0 +1,614 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'none'">
+    <title>PR-22 browser performance gates</title>
+</head>
+<body data-status="running">
+    <h1>PR-22 browser performance gates</h1>
+    <p id="summary">Running deterministic Repository, Activities, and Stream checks.</p>
+    <pre id="evidence">RUNNING</pre>
+    <div id="activity-filters"></div>
+    <div id="act-counter"></div>
+    <table id="activities-table"></table>
+    <script type="module">
+        import {
+            prepareStreamChartPresentation,
+            prepareStreamMapPresentation
+        } from '../../js/pages/detail/stream-presentation.js';
+        import {
+            GLOBAL_MAP_ROUTE_LIMITS,
+            createGlobalMapRouteSession
+        } from '../../js/app/global-map-routes.js';
+
+        const ACTIVITY_COUNTS = Object.freeze([5_000, 10_000]);
+        const POINT_COUNT = 200_000;
+        const REPETITIONS = 5;
+        const FAILURE_CODES = Object.freeze(new Set([
+            'REPOSITORY_5K_COUNT',
+            'REPOSITORY_10K_COUNT',
+            'REPOSITORY_PAGE_BOUNDARY',
+            'REPOSITORY_5K_P95',
+            'ACTIVITIES_5K_P95',
+            'STARTUP_STREAM_READ',
+            'GLOBAL_MAP_STATUS',
+            'GLOBAL_MAP_CONCURRENCY',
+            'GLOBAL_MAP_POINT_CAP',
+            'GLOBAL_MAP_ROUTE_CAP',
+            'GLOBAL_MAP_REPEAT_READ',
+            'GLOBAL_MAP_EXTERNAL_REQUEST',
+            'GLOBAL_MAP_LONG_TASK_CAP',
+            'CHART_ALIGNMENT',
+            'CHART_CAP',
+            'MAP_CAP',
+            'MAP_LAYER_CAP',
+            'RUNTIME_EXCEPTION',
+            'LONG_TASK_CAP'
+        ]));
+        const initialEffects = {
+            serviceWorkers: navigator.serviceWorker
+                ? (await navigator.serviceWorker.getRegistrations()).length : 0,
+            caches: typeof caches === 'object' ? (await caches.keys()).length : 0
+        };
+        const runtime = {
+            uncaught: 0,
+            unhandled: 0,
+            longTasks: [],
+            longTaskEntries: [],
+            chartPointMaximum: 0,
+            mapPointMaximum: 0,
+            mapLayers: 0,
+            globalMapReads: 0,
+            globalMapActiveReads: 0,
+            globalMapMaximumActiveReads: 0,
+            startupGetStreams: 0,
+            workerRequests: 0,
+            repositoryPageReads: 0,
+            repositoryInitializations: 0
+        };
+
+        addEventListener('error', event => {
+            runtime.uncaught += 1;
+            event.preventDefault();
+        });
+        addEventListener('unhandledrejection', event => {
+            runtime.unhandled += 1;
+            event.preventDefault();
+        });
+
+        function invariant(value, code) {
+            if (!value) throw new Error(code);
+        }
+
+        function stats(samples) {
+            const sorted = [...samples].sort((left, right) => left - right);
+            return Object.freeze({
+                medianMs: sorted[Math.floor(sorted.length / 2)],
+                p95Ms: sorted[Math.ceil(sorted.length * 0.95) - 1],
+                maximumMs: sorted.at(-1)
+            });
+        }
+
+        function secondAnimationFrame() {
+            return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        }
+
+        function syntheticCanonicalActivities(count) {
+            const newest = Date.parse('2026-01-31T12:00:00.000Z');
+            return Object.freeze(Array.from({ length: count }, (_, index) => Object.freeze({
+                id: `synthetic-${String(index).padStart(5, '0')}`,
+                sportCategory: index % 2 === 0 ? 'run' : 'ride',
+                sportVariant: null,
+                startTimeUtc: new Date(newest - index * 1_000).toISOString(),
+                timeZone: Object.freeze({ ianaName: null, utcOffsetMinutes: 0 }),
+                distanceMeters: 5_000 + (index % 10) * 100,
+                movingTimeSeconds: 1_500 + (index % 60),
+                elevationGainMeters: index % 200
+            })));
+        }
+
+        function deterministicCanonicalStore(data) {
+            const positions = new Map(data.map((activity, index) => [
+                `${activity.startTimeUtc}\u0000${activity.id}`,
+                index
+            ]));
+            return Object.freeze({
+                async initialize() {
+                    runtime.repositoryInitializations += 1;
+                },
+                async listActivities({ limit, direction, cursor } = {}) {
+                    invariant(limit === 500 && direction === 'desc', 'REPOSITORY_PAGE_BOUNDARY');
+                    runtime.repositoryPageReads += 1;
+                    const start = cursor === undefined
+                        ? 0
+                        : (positions.get(`${cursor.startTimeUtc}\u0000${cursor.id}`) ?? data.length) + 1;
+                    return Object.freeze(data.slice(start, start + limit));
+                }
+            });
+        }
+
+        function repositoryFactoryFor(factoryModule, data) {
+            return () => {
+                const repository = factoryModule.createRepositoryWithDependencies({
+                    sessionMode: 'real',
+                    mode: 'canonical'
+                }, {
+                    canonicalStoreFactory: () => deterministicCanonicalStore(data)
+                });
+                return Object.freeze({
+                    listActivities: options => repository.listActivities(options),
+                    getActivity: id => repository.getActivity(id),
+                    getStreams(id, options) {
+                        runtime.startupGetStreams += 1;
+                        return repository.getStreams(id, options);
+                    },
+                    getAthlete: () => repository.getAthlete(),
+                    getZones: () => repository.getZones(),
+                    getGears: () => repository.getGears(),
+                    getGear: id => repository.getGear(id)
+                });
+            };
+        }
+
+        function resetActivitiesSurface() {
+            const filters = document.getElementById('activity-filters');
+            const counter = document.getElementById('act-counter');
+            const table = document.getElementById('activities-table');
+            filters.replaceChildren();
+            counter.replaceChildren();
+            table.replaceChildren();
+            delete filters._built;
+            delete table._actState;
+        }
+
+        class RecordingChart {
+            constructor(_canvas, config) {
+                const lengths = [
+                    config.data.labels.length,
+                    ...config.data.datasets.map(dataset => dataset.data.length)
+                ];
+                invariant(new Set(lengths).size === 1, 'CHART_ALIGNMENT');
+                runtime.chartPointMaximum = Math.max(runtime.chartPointMaximum, ...lengths);
+            }
+        }
+
+        const RecordingLeaflet = {
+            renderRoute(points, routeValues) {
+                runtime.mapPointMaximum = Math.max(runtime.mapPointMaximum, points.length);
+                let layers = 0;
+                if (Array.isArray(routeValues)) {
+                    for (let index = 1; index < points.length; index += 1) layers += 1;
+                } else if (points.length > 0) {
+                    layers = 1;
+                }
+                runtime.mapLayers = Math.max(runtime.mapLayers, layers);
+            }
+        };
+
+        async function run() {
+            let observer = null;
+            let currentStage = 'modules';
+            try {
+                if (typeof PerformanceObserver === 'function') {
+                    try {
+                        observer = new PerformanceObserver(list => {
+                            for (const entry of list.getEntries()) {
+                                runtime.longTasks.push(entry.duration);
+                                runtime.longTaskEntries.push(Object.freeze({
+                                    startTime: entry.startTime,
+                                    duration: entry.duration
+                                }));
+                            }
+                        });
+                        observer.observe({ type: 'longtask' });
+                    } catch { observer = null; }
+                }
+                await secondAnimationFrame();
+                await new Promise(resolve => setTimeout(resolve, 0));
+                runtime.longTasks.length = 0;
+                runtime.longTaskEntries.length = 0;
+                await new Promise(resolve => setTimeout(resolve, 0));
+
+                currentStage = 'global-map-5k';
+                document.getElementById('summary').textContent = 'Running 5,000-activity global Map hydration gate.';
+                const globalMapIds = Array.from(
+                    { length: GLOBAL_MAP_ROUTE_LIMITS.maxActivityCount },
+                    (_, index) => `map-${String(index).padStart(5, '0')}`
+                );
+                const globalMapSession = createGlobalMapRouteSession({
+                    readRoute: async id => {
+                        runtime.globalMapReads += 1;
+                        runtime.globalMapActiveReads += 1;
+                        runtime.globalMapMaximumActiveReads = Math.max(
+                            runtime.globalMapMaximumActiveReads,
+                            runtime.globalMapActiveReads
+                        );
+                        try {
+                            if (runtime.globalMapReads % 25 === 0) {
+                                await new Promise(resolve => setTimeout(resolve, 0));
+                            } else {
+                                await Promise.resolve();
+                            }
+                            const offset = Number(id.slice(4)) % 100;
+                            const shift = offset / 1_000;
+                            return [
+                                [10 + shift, 20 + shift],
+                                [-80 + shift, 22 + shift],
+                                [80 - shift, 23 + shift],
+                                [14 + shift, -170 + shift],
+                                [15 + shift, 170 - shift],
+                                [0, 24 + shift],
+                                [16 + shift, 25 + shift],
+                                [17 + shift, 26 + shift],
+                                [18 + shift, 27 + shift],
+                                [19 + shift, 28 + shift],
+                                [20 + shift, 29 + shift],
+                                [11 + shift, 21 + shift]
+                            ];
+                        } finally {
+                            runtime.globalMapActiveReads -= 1;
+                        }
+                    }
+                });
+                const globalMapExternalBefore = performance.getEntriesByType('resource')
+                    .filter(entry => new URL(entry.name).origin !== location.origin)
+                    .length;
+                await new Promise(resolve => setTimeout(resolve, 0));
+                const globalMapStarted = performance.now();
+                const globalMapResult = await globalMapSession.load(globalMapIds);
+                const globalMapHydrationEnded = performance.now();
+                const globalMapHydrationMs = performance.now() - globalMapStarted;
+                invariant(globalMapResult.status === 'ready', 'GLOBAL_MAP_STATUS');
+                invariant(
+                    runtime.globalMapReads === globalMapIds.length
+                    && globalMapResult.routes.length === globalMapIds.length
+                    && globalMapResult.routeCount === globalMapIds.length,
+                    'GLOBAL_MAP_STATUS'
+                );
+                invariant(
+                    runtime.globalMapMaximumActiveReads <= GLOBAL_MAP_ROUTE_LIMITS.concurrency,
+                    'GLOBAL_MAP_CONCURRENCY'
+                );
+                invariant(
+                    globalMapResult.pointCount === GLOBAL_MAP_ROUTE_LIMITS.maxPointCount,
+                    'GLOBAL_MAP_POINT_CAP'
+                );
+                invariant(
+                    globalMapResult.routes.every(route => (
+                        route.length === GLOBAL_MAP_ROUTE_LIMITS.minimumTargetPoints
+                    )),
+                    'GLOBAL_MAP_ROUTE_CAP'
+                );
+                const globalMapReadCount = runtime.globalMapReads;
+                const globalMapCachedStarted = performance.now();
+                const globalMapCachedResult = await globalMapSession.load(globalMapIds);
+                const globalMapCachedEnded = performance.now();
+                invariant(globalMapCachedResult.status === 'ready', 'GLOBAL_MAP_STATUS');
+                invariant(runtime.globalMapReads === globalMapReadCount, 'GLOBAL_MAP_REPEAT_READ');
+                invariant(
+                    globalMapCachedResult.pointCount <= GLOBAL_MAP_ROUTE_LIMITS.maxPointCount,
+                    'GLOBAL_MAP_POINT_CAP'
+                );
+                const globalMapExternalRequests = performance.getEntriesByType('resource')
+                    .filter(entry => new URL(entry.name).origin !== location.origin)
+                    .length - globalMapExternalBefore;
+                invariant(globalMapExternalRequests === 0, 'GLOBAL_MAP_EXTERNAL_REQUEST');
+                globalMapSession.dispose();
+                await secondAnimationFrame();
+                const maximumPhaseLongTask = (
+                    started,
+                    ended,
+                    entries = runtime.longTaskEntries
+                ) => {
+                    const values = entries
+                        .filter(entry => (
+                            entry.startTime < ended
+                            && entry.startTime + entry.duration > started
+                        ))
+                        .map(entry => entry.duration);
+                    return values.length ? Math.max(...values) : 0;
+                };
+                invariant(
+                    maximumPhaseLongTask(100, 200, [{ startTime: 99, duration: 150 }]) === 150,
+                    'GLOBAL_MAP_LONG_TASK_CAP'
+                );
+                const globalMapHydrationMaximumLongTask = maximumPhaseLongTask(
+                    globalMapStarted,
+                    globalMapHydrationEnded
+                );
+                const globalMapCachedMaximumLongTask = maximumPhaseLongTask(
+                    globalMapCachedStarted,
+                    globalMapCachedEnded
+                );
+                const globalMapMaximumLongTask = Math.max(
+                    globalMapHydrationMaximumLongTask,
+                    globalMapCachedMaximumLongTask
+                );
+                globalThis.__PR54_GLOBAL_MAP_PERFORMANCE_EVIDENCE__ = Object.freeze({
+                    status: globalMapMaximumLongTask < 100 ? 'passed' : 'failed',
+                    activities: globalMapIds.length,
+                    routeCount: globalMapResult.routeCount,
+                    pointCount: globalMapResult.pointCount,
+                    hydrationMs: globalMapHydrationMs,
+                    reads: runtime.globalMapReads,
+                    maximumConcurrentReads: runtime.globalMapMaximumActiveReads,
+                    repeatedLoadReads: runtime.globalMapReads - globalMapReadCount,
+                    externalRequests: globalMapExternalRequests,
+                    hydrationMaximumLongTask: globalMapHydrationMaximumLongTask,
+                    cachedMaximumLongTask: globalMapCachedMaximumLongTask,
+                    maximumLongTask: globalMapMaximumLongTask
+                });
+                invariant(globalMapMaximumLongTask < 100, 'GLOBAL_MAP_LONG_TASK_CAP');
+
+                currentStage = 'modules';
+                document.getElementById('summary').textContent = 'Loading local performance modules.';
+                Object.defineProperty(globalThis, '__STRAVASTATS_FEATURE_FLAGS__', {
+                    configurable: true,
+                    value: Object.freeze({
+                        dataRepositoryMode: 'canonical',
+                        localImportEnabled: false,
+                        canonicalShadowWriteEnabled: false
+                    })
+                });
+                const [app, { renderActivitiesTab }, factoryModule] = await Promise.all([
+                    import('../../js/app/main.js'),
+                    import('../../js/tabs/activities.js'),
+                    import('../../js/repository/factory.js')
+                ]);
+                const canonicalDatasets = new Map(ACTIVITY_COUNTS.map(count => [
+                    count,
+                    syntheticCanonicalActivities(count)
+                ]));
+                const repositorySamples = [];
+                const activitySamples = [];
+                let activities5k = null;
+
+                currentStage = 'repository-5k';
+                document.getElementById('summary').textContent = 'Running 5,000-activity Repository gate.';
+                for (let repetition = 0; repetition < REPETITIONS; repetition += 1) {
+                    const established = app.establishSummaryRepositorySession({
+                        activeSessionMode: null,
+                        sessionRepository: null,
+                        requestedSessionMode: app.APP_SESSION_MODE.REAL,
+                        repositoryFactory: repositoryFactoryFor(
+                            factoryModule,
+                            canonicalDatasets.get(5_000)
+                        )
+                    });
+                    const session = app.requireSummaryRepositorySession(
+                        established.activeSessionMode,
+                        established.sessionRepository
+                    );
+                    const started = performance.now();
+                    const adapted = await app.loadActivitiesForSession({
+                        sessionRepository: session,
+                        refresh: false
+                    });
+                    invariant(adapted.data.length === 5_000, 'REPOSITORY_5K_COUNT');
+                    repositorySamples.push(performance.now() - started);
+                    activities5k = adapted.data;
+                    if (repetition === 0) {
+                        const metadata = await app.loadInitializeAthleteAndZones(
+                            session,
+                            { timeoutMs: 1_000 }
+                        );
+                        await app.loadOptionalSessionGears(session, metadata.athlete);
+                    }
+                }
+
+                currentStage = 'activities-5k';
+                document.getElementById('summary').textContent = 'Running 5,000-activity Activities gate.';
+                for (let repetition = 0; repetition < REPETITIONS; repetition += 1) {
+                    resetActivitiesSurface();
+                    const started = performance.now();
+                    renderActivitiesTab(activities5k);
+                    await secondAnimationFrame();
+                    activitySamples.push(performance.now() - started);
+                }
+
+                currentStage = 'repository-10k';
+                document.getElementById('summary').textContent = 'Running 10,000-activity record-only gate.';
+                resetActivitiesSurface();
+                const established10k = app.establishSummaryRepositorySession({
+                    activeSessionMode: null,
+                    sessionRepository: null,
+                    requestedSessionMode: app.APP_SESSION_MODE.REAL,
+                    repositoryFactory: repositoryFactoryFor(
+                        factoryModule,
+                        canonicalDatasets.get(10_000)
+                    )
+                });
+                const session10k = app.requireSummaryRepositorySession(
+                    established10k.activeSessionMode,
+                    established10k.sessionRepository
+                );
+                const repository10kStarted = performance.now();
+                const adapted10k = await app.loadActivitiesForSession({
+                    sessionRepository: session10k,
+                    refresh: false
+                });
+                const repository10kMs = performance.now() - repository10kStarted;
+                invariant(adapted10k.data.length === 10_000, 'REPOSITORY_10K_COUNT');
+                currentStage = 'activities-10k';
+                const activities10kStarted = performance.now();
+                renderActivitiesTab(adapted10k.data);
+                await secondAnimationFrame();
+                const activities10kSecondRafMs = performance.now() - activities10kStarted;
+
+                currentStage = 'thresholds';
+                const repositoryStats = stats(repositorySamples);
+                const activityStats = stats(activitySamples);
+                const repositoryEnvelopeP95Ms = repositoryStats.p95Ms;
+                const activitiesSecondRafP95Ms = activityStats.p95Ms;
+
+                currentStage = 'thresholds';
+                invariant(repositoryEnvelopeP95Ms <= 1_000, 'REPOSITORY_5K_P95');
+                invariant(activitiesSecondRafP95Ms <= 1_500, 'ACTIVITIES_5K_P95');
+                invariant(runtime.startupGetStreams === 0, 'STARTUP_STREAM_READ');
+
+                currentStage = 'stream-reset';
+                resetActivitiesSurface();
+                await secondAnimationFrame();
+                currentStage = 'stream-200k';
+                document.getElementById('summary').textContent = 'Running 200,000-point Stream gate.';
+                const labels = new Array(POINT_COUNT);
+                const series = Array.from({ length: 5 }, () => new Array(POINT_COUNT));
+                const coordinates = new Array(POINT_COUNT);
+                for (let index = 0; index < POINT_COUNT; index += 1) {
+                    labels[index] = Math.floor(index / 2);
+                    for (let seriesIndex = 0; seriesIndex < series.length; seriesIndex += 1) {
+                        series[seriesIndex][index] = ((index * (seriesIndex + 11)) % 2_003) - 1_001;
+                    }
+                    coordinates[index] = [index % 89, index % 179];
+                }
+                series[0][11] = 0;
+                series[0][12] = -0;
+                series[1][90_000] = null;
+                series[1][90_001] = null;
+
+                await secondAnimationFrame();
+                runtime.longTasks.length = 0;
+                runtime.longTaskEntries.length = 0;
+                const streamPerformanceStarted = performance.now();
+                const streamSamples = [];
+                for (let repetition = 0; repetition < REPETITIONS; repetition += 1) {
+                    const started = performance.now();
+                    const chartPresentation = prepareStreamChartPresentation(
+                        labels,
+                        series.map((data, index) => ({ label: `series-${index}`, data }))
+                    );
+                    new RecordingChart({}, {
+                        data: { labels: chartPresentation.labels, datasets: chartPresentation.datasets }
+                    });
+                    const mapPresentation = prepareStreamMapPresentation(coordinates, series[0]);
+                    RecordingLeaflet.renderRoute(mapPresentation.coordinates, mapPresentation.routeValues);
+                    streamSamples.push(performance.now() - started);
+                    await new Promise(resolve => requestAnimationFrame(resolve));
+                }
+
+                await secondAnimationFrame();
+                const streamPerformanceEnded = performance.now();
+                observer?.disconnect();
+                const streamStats = stats(streamSamples);
+                const maximumLongTask = maximumPhaseLongTask(
+                    streamPerformanceStarted,
+                    streamPerformanceEnded
+                );
+                invariant(runtime.chartPointMaximum <= 1_000, 'CHART_CAP');
+                invariant(runtime.mapPointMaximum <= 2_000, 'MAP_CAP');
+                invariant(runtime.mapLayers <= 2_000, 'MAP_LAYER_CAP');
+                invariant(runtime.uncaught === 0 && runtime.unhandled === 0, 'RUNTIME_EXCEPTION');
+                invariant(maximumLongTask < 100, 'LONG_TASK_CAP');
+
+                document.body.dataset.status = 'passed';
+                document.getElementById('summary').textContent = 'Passed deterministic browser performance gates.';
+                const browserEffects = {
+                    serviceWorkersBefore: initialEffects.serviceWorkers,
+                    serviceWorkersAfter: navigator.serviceWorker
+                        ? (await navigator.serviceWorker.getRegistrations()).length : 0,
+                    cachesBefore: initialEffects.caches,
+                    cachesAfter: typeof caches === 'object' ? (await caches.keys()).length : 0,
+                providerOrAuthRequests: performance.getEntriesByType('resource')
+                    .filter(entry => {
+                        const url = new URL(entry.name);
+                        return url.pathname.startsWith('/api/')
+                            || (url.origin !== location.origin
+                                && /strava|oauth/i.test(url.href));
+                    })
+                    .length
+                };
+                const evidence = Object.freeze({
+                    status: 'passed',
+                    runtime: navigator.userAgent,
+                    hardwareConcurrency: navigator.hardwareConcurrency ?? null,
+                    warmups: 0,
+                    repetitions: REPETITIONS,
+                    activities: {
+                        fiveThousand: {
+                            repositoryEnvelope: repositoryStats,
+                            activitiesSecondRaf: activityStats
+                        },
+                        tenThousandRecordOnly: {
+                            repositoryEnvelopeMs: repository10kMs,
+                            activitiesSecondRafMs: activities10kSecondRafMs
+                        }
+                    },
+                    stream: {
+                        points: POINT_COUNT,
+                        alignedSeries: 5,
+                        abstractGeometry: true,
+                        ...streamStats,
+                        chartPointMaximum: runtime.chartPointMaximum,
+                        mapPointMaximum: runtime.mapPointMaximum,
+                        mapLayers: runtime.mapLayers,
+                        maximumLongTask
+                    },
+                    globalMap: {
+                        activities: globalMapIds.length,
+                        routeCount: globalMapResult.routeCount,
+                        pointCount: globalMapResult.pointCount,
+                        hydrationMs: globalMapHydrationMs,
+                        reads: runtime.globalMapReads,
+                        maximumConcurrentReads: runtime.globalMapMaximumActiveReads,
+                        repeatedLoadReads: runtime.globalMapReads - globalMapReadCount,
+                        externalRequests: globalMapExternalRequests,
+                        maximumLongTask: globalMapMaximumLongTask
+                    },
+                    startupGetStreams: runtime.startupGetStreams,
+                    startupBoundary: [
+                        'establishSummaryRepositorySession',
+                        'requireSummaryRepositorySession',
+                        'loadActivitiesForSession',
+                        'loadInitializeAthleteAndZones',
+                        'loadOptionalSessionGears'
+                    ],
+                    repositoryPageReads: runtime.repositoryPageReads,
+                    repositoryInitializations: runtime.repositoryInitializations,
+                    uncaught: runtime.uncaught,
+                    unhandled: runtime.unhandled,
+                    workerRequests: runtime.workerRequests,
+                    storageBehavior: {
+                        boundary: 'deterministic read-only paginated Canonical Store stub',
+                        writeMethodsExposed: 0
+                    },
+                    externalResources: performance.getEntriesByType('resource')
+                        .filter(entry => new URL(entry.name).origin !== location.origin)
+                        .length,
+                    browserEffects,
+                    recordingStubs: [
+                        'RecordingChart',
+                        'RecordingLeaflet',
+                        'DeterministicCanonicalStore'
+                    ]
+                });
+                globalThis.__PR22_STREAM_PERFORMANCE_EVIDENCE__ = evidence;
+                document.getElementById('evidence').textContent = JSON.stringify(evidence);
+            } catch (error) {
+                observer?.disconnect();
+                document.body.dataset.status = 'failed';
+                document.getElementById('summary').textContent = 'A deterministic gate failed.';
+                globalThis.__PR22_STREAM_PERFORMANCE_EVIDENCE__ = Object.freeze({
+                    status: 'failed',
+                    code: error instanceof Error && FAILURE_CODES.has(error.message)
+                        ? error.message : 'UNKNOWN',
+                    stage: currentStage,
+                    uncaught: runtime.uncaught,
+                    unhandled: runtime.unhandled
+                });
+                document.getElementById('evidence').textContent = JSON.stringify(
+                    globalThis.__PR22_STREAM_PERFORMANCE_EVIDENCE__
+                );
+            }
+        }
+
+        if (document.readyState === 'loading') {
+            addEventListener('DOMContentLoaded', () => { void run(); }, { once: true });
+        } else {
+            void run();
+        }
+    </script>
+</body>
+</html>

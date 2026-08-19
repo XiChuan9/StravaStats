@@ -462,9 +462,21 @@ function bestWeekAndMonth(activities) {
     return { topWeek, topMonth };
 }
 
-function activityLink(activity, label) {
-    if (!activity?.id) return label;
-    return `<a href="html/activity-router.html?id=${activity.id}" target="_blank">${label}</a>`;
+function createActivityLink(activity, label) {
+    const activityId = typeof activity?.id === 'string' && activity.id.length > 0
+        ? activity.id
+        : (Number.isSafeInteger(activity?.id) && activity.id > 0 ? String(activity.id) : null);
+    if (activityId === null) {
+        return document.createTextNode(label);
+    }
+    const params = new URLSearchParams();
+    params.set('id', activityId);
+    const link = document.createElement('a');
+    link.href = `html/activity-router.html?${params.toString()}`;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = label;
+    return link;
 }
 
 function renderSummarySection(container, year, current, previous) {
@@ -552,9 +564,21 @@ function renderSportsSection(container, current, previous) {
     const previousMap = new Map(byTypePrevious.map(item => [item.type, item]));
     const maxTypeHours = Math.max(...byTypeCurrent.map(sport => (Number(sport.moving_time) || 0) / 3600), 1);
 
-    const sportCards = byTypeCurrent
-        .filter(sport => (Number(sport.moving_time) || 0) > 0)
-        .map(item => {
+    container.innerHTML = `
+        <div class="section-header">
+            <h3>⏱️ Hours by Sport</h3>
+            <p class="section-subtitle">All sport types shown equally (no grouping into Other).</p>
+        </div>
+        <div class="sport-breakdown"></div>
+        <div class="chart-section">
+            <h4 class="chart-title">Detailed Sport Types</h4>
+            <div class="chart-container-compact"></div>
+        </div>
+    `;
+    const sportBreakdown = container.querySelector('.sport-breakdown');
+    const typeChart = container.querySelector('.chart-container-compact');
+    const visibleSports = byTypeCurrent.filter(sport => (Number(sport.moving_time) || 0) > 0);
+    const sportCards = visibleSports.map(item => {
             const currentHours = (Number(item.moving_time) || 0) / 3600;
             const currentKm = (Number(item.distance) || 0) / 1000;
             const currentElevation = Number(item.elevation) || 0;
@@ -572,39 +596,57 @@ function renderSportsSection(container, current, previous) {
                             ? '🏋️'
                             : '🎯';
 
-            return `
-                <div class="sport-card fade-in-up">
-                    <div class="sport-card-header">
-                        <div class="sport-icon">${icon}</div>
-                        <div class="sport-title">
-                            <h4>${item.type}</h4>
-                            <span class="sport-hours">${currentHours.toFixed(1)} h</span>
-                            <span class="sport-hours-caption">Hours</span>
-                        </div>
-                    </div>
-                    <div class="sport-metrics">
-                        <div class="metric">
-                            <div class="metric-label">Distance</div>
-                            <div class="metric-value">${currentKm.toFixed(1)} km</div>
-                        </div>
-                        <div class="metric">
-                            <div class="metric-label">Elevation</div>
-                            <div class="metric-value">${Math.round(currentElevation)} m</div>
-                        </div>
-                        <div class="metric">
-                            <div class="metric-label">Sessions</div>
-                            <div class="metric-value">${currentSessions}</div>
-                        </div>
-                    </div>
-                    <div class="metric-change">${formatChange(change)}</div>
-                </div>
-            `;
-        })
-        .join('');
+            const card = document.createElement('div');
+            card.className = 'sport-card fade-in-up';
+            const header = document.createElement('div');
+            header.className = 'sport-card-header';
+            const iconEl = document.createElement('div');
+            iconEl.className = 'sport-icon';
+            iconEl.textContent = icon;
+            const title = document.createElement('div');
+            title.className = 'sport-title';
+            const heading = document.createElement('h4');
+            heading.textContent = item.type;
+            const hours = document.createElement('span');
+            hours.className = 'sport-hours';
+            hours.textContent = `${currentHours.toFixed(1)} h`;
+            const caption = document.createElement('span');
+            caption.className = 'sport-hours-caption';
+            caption.textContent = 'Hours';
+            title.append(heading, hours, caption);
+            header.append(iconEl, title);
+            const metrics = document.createElement('div');
+            metrics.className = 'sport-metrics';
+            for (const [label, value] of [
+                ['Distance', `${currentKm.toFixed(1)} km`],
+                ['Elevation', `${Math.round(currentElevation)} m`],
+                ['Sessions', String(currentSessions)]
+            ]) {
+                const metric = document.createElement('div');
+                metric.className = 'metric';
+                const metricLabel = document.createElement('div');
+                metricLabel.className = 'metric-label';
+                metricLabel.textContent = label;
+                const metricValue = document.createElement('div');
+                metricValue.className = 'metric-value';
+                metricValue.textContent = value;
+                metric.append(metricLabel, metricValue);
+                metrics.append(metric);
+            }
+            const changeEl = document.createElement('div');
+            changeEl.className = 'metric-change';
+            changeEl.textContent = formatChange(change);
+            card.append(header, metrics, changeEl);
+            return card;
+        });
+    if (sportCards.length) sportBreakdown.replaceChildren(...sportCards);
+    else {
+        const empty = document.createElement('p');
+        empty.textContent = 'No sport data for this year.';
+        sportBreakdown.replaceChildren(empty);
+    }
 
-    const topTypes = byTypeCurrent
-        .filter(sport => (Number(sport.moving_time) || 0) > 0)
-        .map((sport, index) => {
+    const topTypes = visibleSports.map((sport, index) => {
             const previousSport = previousMap.get(sport.type);
             const currentHours = sport.moving_time / 3600;
             const prevHours = (previousSport?.moving_time || 0) / 3600;
@@ -613,32 +655,46 @@ function renderSportsSection(container, current, previous) {
             const accent = `hsl(${hueSat[0]} ${hueSat[1]}% 46%)`;
             const width = (currentHours / maxTypeHours) * 100;
 
-            return `
-            <div class="chart-row fade-in-up" style="animation-delay:${Math.min(index * 0.03, 0.35)}s; align-items:center;">
-                <div style="width:170px; font-weight:600; color:#1f2937;">${sport.type}</div>
-                <div class="chart-bar-container chart-bar-container-sm" style="flex:1; display:flex; align-items:center;">
-                    <div class="chart-bar" style="width:${width}%; background:${accent}; height:12px; border-radius:999px;"></div>
-                </div>
-                <div style="width:84px; text-align:right; font-weight:700;">${currentHours.toFixed(1)} h</div>
-                <div style="width:96px; text-align:right; font-size:.85rem;">${formatChange(change)}</div>
-            </div>
-        `;
-        })
-        .join('');
-
-    container.innerHTML = `
-        <div class="section-header">
-            <h3>⏱️ Hours by Sport</h3>
-            <p class="section-subtitle">All sport types shown equally (no grouping into Other).</p>
-        </div>
-
-        <div class="sport-breakdown">${sportCards || '<p>No sport data for this year.</p>'}</div>
-
-        <div class="chart-section">
-            <h4 class="chart-title">Detailed Sport Types</h4>
-            <div class="chart-container-compact">${topTypes || '<p>No sport data.</p>'}</div>
-        </div>
-    `;
+            const row = document.createElement('div');
+            row.className = 'chart-row fade-in-up';
+            row.style.animationDelay = `${Math.min(index * 0.03, 0.35)}s`;
+            row.style.alignItems = 'center';
+            const label = document.createElement('div');
+            label.style.width = '170px';
+            label.style.fontWeight = '600';
+            label.style.color = '#1f2937';
+            label.textContent = sport.type;
+            const barContainer = document.createElement('div');
+            barContainer.className = 'chart-bar-container chart-bar-container-sm';
+            barContainer.style.flex = '1';
+            barContainer.style.display = 'flex';
+            barContainer.style.alignItems = 'center';
+            const bar = document.createElement('div');
+            bar.className = 'chart-bar';
+            bar.style.width = `${width}%`;
+            bar.style.background = accent;
+            bar.style.height = '12px';
+            bar.style.borderRadius = '999px';
+            barContainer.append(bar);
+            const hours = document.createElement('div');
+            hours.style.width = '84px';
+            hours.style.textAlign = 'right';
+            hours.style.fontWeight = '700';
+            hours.textContent = `${currentHours.toFixed(1)} h`;
+            const changeEl = document.createElement('div');
+            changeEl.style.width = '96px';
+            changeEl.style.textAlign = 'right';
+            changeEl.style.fontSize = '.85rem';
+            changeEl.textContent = formatChange(change);
+            row.append(label, barContainer, hours, changeEl);
+            return row;
+        });
+    if (topTypes.length) typeChart.replaceChildren(...topTypes);
+    else {
+        const empty = document.createElement('p');
+        empty.textContent = 'No sport data.';
+        typeChart.replaceChildren(empty);
+    }
 }
 
 function renderTemporalSection(container, current) {
@@ -752,37 +808,37 @@ function renderRecordsSection(container, current) {
         {
             title: 'Longest Activity',
             value: records.longest ? utils.formatDistance(records.longest.distance || 0) : 'N/A',
-            detail: records.longest ? activityLink(records.longest, records.longest.name || 'View activity') : ''
+            activity: records.longest
         },
         {
             title: 'Longest Run',
             value: records.longestRun ? utils.formatDistance(records.longestRun.distance || 0) : 'N/A',
-            detail: records.longestRun ? activityLink(records.longestRun, records.longestRun.name || 'View activity') : ''
+            activity: records.longestRun
         },
         {
             title: 'Longest Ride',
             value: records.longestRide ? utils.formatDistance(records.longestRide.distance || 0) : 'N/A',
-            detail: records.longestRide ? activityLink(records.longestRide, records.longestRide.name || 'View activity') : ''
+            activity: records.longestRide
         },
         {
             title: 'Longest Swim',
             value: records.longestSwim ? utils.formatDistance(records.longestSwim.distance || 0) : 'N/A',
-            detail: records.longestSwim ? activityLink(records.longestSwim, records.longestSwim.name || 'View activity') : ''
+            activity: records.longestSwim
         },
         {
             title: 'Most Elevation',
             value: records.mostElevation ? `${Math.round(records.mostElevation.total_elevation_gain || 0)} m` : 'N/A',
-            detail: records.mostElevation ? activityLink(records.mostElevation, records.mostElevation.name || 'View activity') : ''
+            activity: records.mostElevation
         },
         {
             title: 'Fastest Run Pace',
             value: records.fastestRunPace ? utils.formatPace(records.fastestRunPace.moving_time || 0, (records.fastestRunPace.distance || 0) / 1000) : 'N/A',
-            detail: records.fastestRunPace ? activityLink(records.fastestRunPace, records.fastestRunPace.name || 'View activity') : ''
+            activity: records.fastestRunPace
         },
         {
             title: 'Highest TSS',
             value: records.highestTSS ? `${Math.round(records.highestTSS.tss || 0)} TSS` : 'N/A',
-            detail: records.highestTSS ? activityLink(records.highestTSS, records.highestTSS.name || 'View activity') : ''
+            activity: records.highestTSS
         }
     ];
 
@@ -792,18 +848,31 @@ function renderRecordsSection(container, current) {
             <p class="section-subtitle">Your standout sessions this year.</p>
         </div>
 
-        <div class="insights-grid">
-            ${cards.map((card, i) => `
-                <div class="insight-card fade-in-up" style="animation-delay:${Math.min(i * 0.04, 0.25)}s">
-                    <div class="insight-content">
-                        <div class="insight-label">${card.title}</div>
-                        <div class="insight-value">${card.value}</div>
-                        <div class="insight-detail">${card.detail}</div>
-                    </div>
-                </div>
-            `).join('')}
-        </div>
+        <div class="insights-grid"></div>
     `;
+    const grid = container.querySelector('.insights-grid');
+    const cardElements = cards.map((card, index) => {
+        const cardEl = document.createElement('div');
+        cardEl.className = 'insight-card fade-in-up';
+        cardEl.style.animationDelay = `${Math.min(index * 0.04, 0.25)}s`;
+        const content = document.createElement('div');
+        content.className = 'insight-content';
+        const label = document.createElement('div');
+        label.className = 'insight-label';
+        label.textContent = card.title;
+        const value = document.createElement('div');
+        value.className = 'insight-value';
+        value.textContent = card.value;
+        const detail = document.createElement('div');
+        detail.className = 'insight-detail';
+        if (card.activity) {
+            detail.append(createActivityLink(card.activity, card.activity.name || 'View activity'));
+        }
+        content.append(label, value, detail);
+        cardEl.append(content);
+        return cardEl;
+    });
+    grid.replaceChildren(...cardElements);
 }
 
 function renderTopActivitiesSection(container, current) {
@@ -818,19 +887,32 @@ function renderTopActivitiesSection(container, current) {
             <p class="section-subtitle">Ranked by TSS.</p>
         </div>
 
-        <div class="efforts-list efforts-list-compact">
-            ${scored.map((activity, i) => `
-                <div class="effort-card effort-card-compact fade-in-up" style="animation-delay:${Math.min(i * 0.03, 0.25)}s">
-                    <div class="effort-rank">#${i + 1}</div>
-                    <div class="effort-content-compact">
-                        <h4 class="effort-title-compact">${activityLink(activity, activity.name || 'Untitled')}</h4>
-                        <div class="effort-meta-compact">${getType(activity)} · ${utils.formatDate(activity.start_date_local || activity.start_date)}</div>
-                    </div>
-                    <div class="effort-score-compact">${Math.round(Number(activity.tss) || 0)}</div>
-                </div>
-            `).join('')}
-        </div>
+        <div class="efforts-list efforts-list-compact"></div>
     `;
+    const list = container.querySelector('.efforts-list');
+    const cards = scored.map((activity, index) => {
+        const card = document.createElement('div');
+        card.className = 'effort-card effort-card-compact fade-in-up';
+        card.style.animationDelay = `${Math.min(index * 0.03, 0.25)}s`;
+        const rank = document.createElement('div');
+        rank.className = 'effort-rank';
+        rank.textContent = `#${index + 1}`;
+        const content = document.createElement('div');
+        content.className = 'effort-content-compact';
+        const title = document.createElement('h4');
+        title.className = 'effort-title-compact';
+        title.append(createActivityLink(activity, activity.name || 'Untitled'));
+        const meta = document.createElement('div');
+        meta.className = 'effort-meta-compact';
+        meta.textContent = `${getType(activity)} · ${utils.formatDate(activity.start_date_local || activity.start_date)}`;
+        content.append(title, meta);
+        const score = document.createElement('div');
+        score.className = 'effort-score-compact';
+        score.textContent = String(Math.round(Number(activity.tss) || 0));
+        card.append(rank, content, score);
+        return card;
+    });
+    list.replaceChildren(...cards);
 }
 
 function renderActivitiesTable(container, current, year) {
@@ -855,22 +937,35 @@ function renderActivitiesTable(container, current, year) {
                         <th>TSS</th>
                     </tr>
                 </thead>
-                <tbody>
-                    ${sorted.map(activity => `
-                        <tr>
-                            <td class="table-date">${utils.formatDate(activity.start_date_local || activity.start_date)}</td>
-                            <td class="table-name">${activityLink(activity, activity.name || 'Untitled')}</td>
-                            <td class="table-type"><span class="type-badge">${getType(activity)}</span></td>
-                            <td class="table-distance">${utils.formatDistance(Number(activity.distance) || 0)}</td>
-                            <td class="table-time">${utils.formatTime(Number(activity.moving_time) || 0)}</td>
-                            <td>${Math.round(Number(activity.total_elevation_gain) || 0)} m</td>
-                            <td>${Number.isFinite(activity.tss) ? Math.round(activity.tss) : '—'}</td>
-                        </tr>
-                    `).join('')}
-                </tbody>
+                <tbody></tbody>
             </table>
         </div>
     `;
+    const body = container.querySelector('tbody');
+    const rows = sorted.map(activity => {
+        const row = document.createElement('tr');
+        const appendCell = (value, className = '') => {
+            const cell = document.createElement('td');
+            cell.className = className;
+            if (value instanceof Node) cell.append(value);
+            else cell.textContent = String(value);
+            row.append(cell);
+            return cell;
+        };
+        appendCell(utils.formatDate(activity.start_date_local || activity.start_date), 'table-date');
+        appendCell(createActivityLink(activity, activity.name || 'Untitled'), 'table-name');
+        const typeCell = appendCell('', 'table-type');
+        const badge = document.createElement('span');
+        badge.className = 'type-badge';
+        badge.textContent = getType(activity);
+        typeCell.replaceChildren(badge);
+        appendCell(utils.formatDistance(Number(activity.distance) || 0), 'table-distance');
+        appendCell(utils.formatTime(Number(activity.moving_time) || 0), 'table-time');
+        appendCell(`${Math.round(Number(activity.total_elevation_gain) || 0)} m`);
+        appendCell(Number.isFinite(activity.tss) ? Math.round(activity.tss) : '—');
+        return row;
+    });
+    body.replaceChildren(...rows);
 }
 
 function renderSoloVsGroupSection(current) {
@@ -953,9 +1048,14 @@ export async function renderWrappedTab(allActivities, options = {}) {
 
     const yearSelect = document.getElementById('wrapped-year');
     if (yearSelect) {
-        yearSelect.innerHTML = years
-            .map(year => `<option value="${year}" ${year === selectedYear ? 'selected' : ''}>${year}</option>`)
-            .join('');
+        const yearOptions = years.map(year => {
+            const option = document.createElement('option');
+            option.value = String(year);
+            option.textContent = String(year);
+            option.selected = year === selectedYear;
+            return option;
+        });
+        yearSelect.replaceChildren(...yearOptions);
         yearSelect.onchange = () => renderWrappedTab(activities, { fullActivities: activities, selectedYear: Number(yearSelect.value) });
     }
 

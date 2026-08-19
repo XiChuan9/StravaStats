@@ -22,7 +22,7 @@ Worktree 只是分支的另一个检出目录，不是第二套分支系统。
 
 ```text
 origin    → XiChuan9/StravaStats，个人维护仓库
-upstream  → alexgasconn/StravaStats，原作者仓库
+upstream  → synthetic-athlete-alias-3/StravaStats，原作者仓库
 ```
 
 `upstream` 只允许 fetch，不应作为 push 目标。推荐本地配置：
@@ -81,20 +81,20 @@ codex/v2/decoder-fit
 长期 worktree：
 
 ```text
-/Users/wangchuanliang/Documents/StravaStats
+<repo-root>
     → main
 
-/Users/wangchuanliang/Documents/StravaStats-worktrees/v1
+<worktree-root>/v1
     → maintenance/v1
 
-/Users/wangchuanliang/Documents/StravaStats-worktrees/v2
+<worktree-root>/v2
     → integration/v2
 ```
 
 短期功能 worktree：
 
 ```text
-/Users/wangchuanliang/Documents/StravaStats-worktrees/<task-name>
+<worktree-root>/<task-name>
     → codex/v2/<task-name>
 ```
 
@@ -172,8 +172,6 @@ Hotfix 合入 `main` 后必须同步到仍然活跃的 `integration/v2`。已开
 | `package.json` / `package-lock.json` | 单一 Owner |
 | `js/app/main.js` | 单一 Owner |
 | `js/app/auth.js` | 单一 Owner |
-| `js/tabs/run-plus.js` | 单一 Owner |
-| `styles/run-plus.css` | 单一 Owner |
 | `sw.js` | 单一 Owner |
 | Decoder Registry | 单一 Owner |
 | IndexedDB Schema/Migration | 单一 Owner |

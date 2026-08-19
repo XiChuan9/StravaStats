@@ -2,7 +2,7 @@
 
 ## 产品需求文档 v1.0
 
-**文档状态：** Proposed
+**文档状态：** Superseded for public product scope
 **工程代号：** StravaStats v2
 **产品名称：** StravaStats v2 — Local-First Multi-Source Sports Analytics
 **当前稳定基线：** `main` 已合并 Run Plus / NSM 的 PR #1，合并提交为 `8b16ebe1a706f1713602ab5266e47000caf31a17`。
@@ -10,6 +10,12 @@
 **目标版本：** v2.0.0
 **主要终端：** 桌面浏览器优先，移动浏览器/PWA 作为辅助
 **风险等级：** 需要专业工程支持的正式产品
+
+> Public-scope notice (2026-08-19): this document is a pre-freeze,
+> point-in-time historical record. It does not describe current public runtime
+> functionality or authorize continued V2 feature development. The current
+> public scope is defined by the
+> [Public Local Import Core Scope Freeze](../tasks/public-local-import-core-freeze.md).
 
 本项目涉及运动轨迹、心率、功率、设备信息等隐私数据，还涉及数据库迁移、原始文件解析和多来源合并。它不是支付、医疗诊断或金融系统，但也不应被当作低风险页面功能处理。
 

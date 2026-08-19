@@ -2,7 +2,7 @@
 //          RUN TYPE CLASSIFIER (SIMPLIFIED + ROBUST)
 // =================================================================
 
-window.classifyRun = function classifyRun(act = {}, streams = {}) {
+window.classifyRun = function classifyRun(act = {}, streams = {}, zones = null) {
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     const sum = arr => arr.reduce((s, x) => s + (x || 0), 0);
     const avg = arr => {
@@ -56,14 +56,11 @@ window.classifyRun = function classifyRun(act = {}, streams = {}) {
         }
     }
 
-    function readHrZonesFromStorage() {
+    function normalizeHrZones(value) {
         try {
-            const raw = localStorage?.getItem?.('strava_training_zones');
-            if (!raw) return [];
-            const parsed = JSON.parse(raw);
-            const zones = parsed?.heart_rate?.zones;
-            if (!Array.isArray(zones)) return [];
-            return zones
+            const definitions = value?.heart_rate?.zones;
+            if (!Array.isArray(definitions)) return [];
+            return definitions
                 .map(z => ({ min: Number(z?.min), max: Number(z?.max) }))
                 .filter(z => Number.isFinite(z.min) && Number.isFinite(z.max))
                 .sort((a, b) => a.min - b.min);
@@ -207,7 +204,7 @@ window.classifyRun = function classifyRun(act = {}, streams = {}) {
         hrCV = parseStoredVariability(act.hr_variability_stream || act.hr_variability_laps);
     }
 
-    const zoneDefs = readHrZonesFromStorage();
+    const zoneDefs = normalizeHrZones(zones);
     const pctZ = computeZoneBuckets(zoneDefs, streams?.heartrate?.data, streams?.time?.data);
 
     let negativeSplitRatio = 1;

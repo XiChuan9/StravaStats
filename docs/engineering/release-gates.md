@@ -1,165 +1,362 @@
-# StravaStats v2 Release Gates
+# Public Local Import Core Integration Gate and Pre-Freeze Release Record
 
 | 字段 | 内容 |
 | --- | --- |
-| Status | Proposed |
+| Status | Public scope-freeze integration gate; no release authorization |
 | Owner | XiChuan9 |
 | Created | 2026-07-28 |
-| Last updated | 2026-07-28 |
-| Related plan | [V2 Development Plan](./v2-development-plan.md) |
+| Last updated | 2026-08-19 |
+| Current scope | [Public Local Import Core Task Brief](../tasks/public-local-import-core-freeze.md) |
+| Pre-freeze plan | [V2 Development Plan](./v2-development-plan.md) |
+| Pre-freeze decision record | [PR-47 Final V2 Release Roadmap](../tasks/pr-47-final-v2-release-roadmap.md) |
 
-## 1. 目的
+## 1. Purpose and evidence rules
 
-Release Gate 是阻断条件，不是建议清单。功能“看起来可用”不能替代测试、迁移、隐私和回滚证据。
+The current purpose of this document is to gate the Public Local Import Core scope-freeze change.
+It does not authorize an Alpha, Beta, Release Candidate, production release, artifact publication,
+hosting, deployment, Service Worker rollout, or cleanup. The scope-freeze Task Brief defines the
+current public product boundary; accepted ADRs continue to govern the retained contracts.
 
-每项 Gate 必须记录：
+Sections 3 through 6 preserve the earlier G1-G13 release program as pre-freeze point-in-time
+history. Their use of words such as “current,” “approved,” or “authoritative” describes that older
+record only. They are not a live roadmap and cannot reintroduce retired public functionality or
+authorize release work. Sections 7 and 8 retain current generic integration and safety rules.
 
-| 字段 | 说明 |
-| --- | --- |
-| Evidence | 日志、测试结果、截图、报告或 PR 链接 |
-| Verified by | 验证者 |
-| Verified at | 日期与环境 |
-| Result | Pass / Fail / Blocked / Not applicable |
-| Related PR | 引入或修复该能力的 PR |
+Every gate records evidence, verifier/owner, date/environment, result and related task. The result
+vocabulary is `PASS deterministic`, `PASS verified`, `PARTIAL`, `BLOCKED`, `NOT RUN`,
+`NOT APPLICABLE`, or `CLOSED BY DISPOSITION`. Only a specific bounded deterministic row may use
+`PASS deterministic`. An executed C/D/F or other environmental gate may use `PASS verified` only
+when its exact acceptance evidence, verifier/owner, date, environment and related task are recorded;
+it cannot be inferred from synthetic or earlier-head evidence. `PARTIAL`, `BLOCKED` and `NOT RUN`
+are non-`PASS` states. A disposition closes a decision, not an unperformed test and not an erased
+historical fact.
 
-没有证据的检查项不得标记为 Pass。
+## 2. Current public scope-freeze gate
 
-## 2. 当前能力声明
-
-当前仓库只能自动执行：
+The exact implementation base is:
 
 ```text
-npm run check:syntax
+base ref                origin/integration/v2
+base commit             6924e7c77036c9a743f908936a28a2719936b726
+base tree               7e771d4202e6b2be45521aaedf1fb0704fbf6426
+implementation branch   codex/public/local-import-core
 ```
 
-`npm test`、GitHub Actions、E2E 和隐私自动检查计划由 PR-00 Repository Safety 建立。在 PR-00 合并前，这些检查必须标记为 `Not implemented`，不得声称已通过。
+Before the runtime-removal commit, the complete implementation was verified on a separate private
+remote branch, private main branch, annotated private tag, and a locally verified Git bundle. The
+public record must not disclose the private repository address.
 
-## 3. PR Gate
+This integration gate requires all of the following on the final scope-freeze head:
 
-每个功能 PR 必须满足：
+- retired personal-extension navigation, routes, runtime, styles, dedicated tests, and
+  current-feature documentation are absent from the public surface;
+- the existing analytics pages, Canonical library, Repository/Projection, Source Manager,
+  FIT/TCX/GPX/CSV/ZIP imports, exact identity, Backup/Restore, Diagnostics, optional Strava source,
+  privacy controls, and Service Worker policy remain intact;
+- no IndexedDB version, schema, store, migration, Canonical contract, Import/Repository API,
+  decoder, backup format, Service Worker generation, provider behavior, or analysis formula changes;
+- historical personal-extension LocalStorage settings are not read, copied, migrated, overwritten,
+  or deleted, and no Cache Storage cleanup is introduced;
+- required focused, syntax, privacy, full, diff, static-search, and disposable-browser checks run on
+  the exact head, with failures reported rather than reclassified; and
+- the change remains a Draft PR only. It is not a release or deployment claim.
 
-- [ ] Task Brief 状态为 `Approved for implementation`；
-- [ ] 依赖 PR 已合并；
-- [ ] 必需 ADR 已为 `Accepted`，或任务明确不依赖未决部分；
-- [ ] 修改文件没有超出允许范围；
-- [ ] `npm ci` 成功；
-- [ ] `npm run check:syntax` 成功；
-- [ ] `npm test` 成功；
-- [ ] 本任务专项测试成功；
-- [ ] `git diff --check` 无错误；
-- [ ] 无真实运动、GPS、健康数据或凭据；
-- [ ] 数据迁移影响已说明；
-- [ ] 回滚步骤可执行；
-- [ ] 人工验收项目已列出；
-- [ ] 未执行的验证被明确报告，没有伪装成 Pass。
+## 3. Pre-freeze evidence classes and external summary (historical)
 
-纯文档 PR 在 `npm test` 尚不存在时，可以按当前仓库能力执行 syntax 和 diff 检查，但必须在 PR 中说明测试基础尚未建立。
+Everything in Sections 3 through 6 is preserved only as point-in-time history from the earlier V2
+release program.
 
-## 4. Integration Gate
+Class A is automatically closable with repository/static/synthetic/disposable-browser evidence.
+Class B requires an owner material decision or waiver. Class C requires real credentials, a private
+library or user-device evidence. Class D requires production deployment, Service Worker or rollback
+authority. Class E requires destructive/public-history incident action or an explicit no-rewrite
+disposition. Class F requires final version, tag, artifact or release-owner approval.
 
-功能 PR 合入 `integration/v2` 前后必须满足：
+Deterministic evidence cannot promote these environmental rows:
 
-- [ ] `integration/v2` CI 通过；
-- [ ] Feature Flag 默认值符合当前迁移阶段；
-- [ ] Legacy 路径仍可启动；
-- [ ] Canonical 写入或读取失败不会破坏 Legacy 数据；
-- [ ] 跨 PR Repository、Storage 和 Import 集成测试通过；
-- [ ] 热点文件没有未解决的并行冲突；
-- [ ] 数据库 migration 可重复执行；
-- [ ] 新增错误有可观察、无隐私泄漏的诊断信息。
+| Evidence class | Historical result | Historical boundary |
+| --- | --- | --- |
+| Real account / private library | NOT RUN | G2/G3/G5/G6/G7 require separately authorized private execution; the approved G4 protocol definition is not execution authority |
+| Browser / platform | BLOCKED | Full V2 still requires Safari, Firefox, Windows, iOS/PWA, mobile and core keyboard/screen-reader evidence; only limited Alpha is macOS Chrome-only |
+| Production Service Worker / deployment / combined rollback | BLOCKED | Planning/rehearsal execution, native worker/cache evidence, deployment and rollback remain unauthorized |
+| R3 public Git history | CLOSED BY DISPOSITION | XiChuan9 accepted no-rewrite risk; current-tree removal and guard remain mandatory; this is not erasure |
+| Version / tag / artifact / release owner | PARTIAL | Package metadata and deterministic local candidate-building tooling are `2.0.0-alpha.1`; G12 is `NOT RUN` and no tag, GitHub Release, publication, hosting, deployment or exact-object owner approval exists |
 
-## 5. Alpha Gate
+At the time of this pre-freeze record, the accepted roadmap and owner disposition superseded the
+Privacy Guide's earlier R3 status sentence for release status only. That statement is historical;
+the current Privacy Guide and scope-freeze integration gate now govern operational privacy and
+no-rewrite safety.
 
-`v2.0.0-alpha.1` 重点验证架构与 Shadow Mode：
+## 4. Pre-freeze remaining gate inventory (historical)
 
-- [ ] Baseline Tag 和 `maintenance/v1` 存在；
-- [ ] Legacy Cache 可导出、验证和恢复；
-- [ ] Canonical Contracts 已接受；
-- [ ] Repository 收口完成；
-- [ ] IndexedDB v2 与 Legacy 数据物理隔离；
-- [ ] Shadow Writer 不改变页面读取路径；
-- [ ] Parity Report 可以导出并解释差异；
-- [ ] Feature Flag 可以切回 Legacy。
+At the time of the pre-freeze record, the rows below remained. They are not the current public
+scope-freeze plan.
 
-## 6. Beta Gate
+| ID | Class | Result | Blocks | Gate | Exact acceptance evidence | Prohibited overclaim | Minimum next task / dependencies | Owner decision or frozen disposition | Privacy, data and rollback impact |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| G2 | C | NOT RUN | RC / production | Real Legacy rescue | Authorized Legacy cache export, validation and restore into a fresh isolated target with permitted redacted counts/hashes and unchanged source | Synthetic rescue is not a real private-library drill | `REAL-LEGACY-RESCUE`, after separate execution authority under G4 | Deferred from synthetic-only Alpha to RC; not waived and not `PASS` | Raw private data stays off Git; target is disposable; source Legacy/V2 data is never cleared or overwritten |
+| G3 | B + C | PARTIAL | RC / production | Real parity | Export and explain a redacted real-library Shadow/parity report with zero unresolved P0 discrepancy and XiChuan9 sign-off for every explained non-P0 difference | Synthetic parity or equal counts alone is not real semantic parity | `REAL-PARITY-SHADOW`, after separate G4 execution authority | Tolerance rule frozen; execution deferred from Alpha to RC | Read-only private comparison; publish permitted aggregates only; no merge/delete/rewrite |
+| G5 | C | NOT RUN | RC / production | Real provider / Disconnect | Authorized Connect/Reconnect, one bounded `Sync latest 25`, auth/rate degradation and Disconnect with preserved Legacy/V2 counts | Provider doubles are not real account evidence; Disconnect is not Delete Local Data | `REAL-PROVIDER-DISCONNECT`, after separate G4 execution authority | Source mix and custodian frozen; actual access not authorized by M34 | Token/provider evidence stays off Git; rollback revokes connection only and preserves local libraries |
+| G6 | C | NOT RUN | RC / production | Real import / Backup | Representative FIT/TCX/GPX/CSV/ZIP import plus format-3 Backup/Restore into a fresh isolated target with redacted manifest/count/hash reconciliation | Synthetic formats do not prove a private library or unsupported vendor coverage | `REAL-IMPORT-BACKUP`, after separate G4 execution authority | Required source mix frozen; actual access not authorized by M34 | Private files remain off Git; disposable target only; original files and Legacy data preserved |
+| G7 | B + C | BLOCKED | RC / production | Real parity sign-off | XiChuan9 disposition for every G3/G5/G6 discrepancy with zero unresolved P0 discrepancy | Unreviewed warnings, missing tolerances or counts-only comparison cannot be `PASS` | `REAL-PARITY-SIGNOFF`, after G3/G5/G6 | XiChuan9 is sign-off owner | Redacted derived evidence only; no automatic merge/delete; rollback withdraws evidence, not data |
+| G8 | B | PARTIAL | RC / production after 2026-11-12 | Performance budget | The waiver temporarily satisfies the absolute 10,000-activity and 1,000-FIT threshold blocker through 2026-11-12 while existing functional/resource hard limits and 5k/200k hard evidence remain; complete a representative real-hardware budget task before expiry or obtain a new explicit disposition | Waiver and record-only 10k/1,000-FIT timings are not performance `PASS` or production-wide speed claims | `PERFORMANCE-REAL-HARDWARE-BUDGET`, before waiver expiry | XiChuan9 waiver through 2026-11-12 | Synthetic until separately authorized; no correctness/privacy weakening; rollback reverts policy/test changes only |
+| G9 | B + C | BLOCKED | RC / production | Browser / platform / accessibility | PRD matrix: supported Safari/Firefox/Chrome versions, macOS/Windows, iOS/PWA/mobile basic use and core keyboard/screen-reader evidence, or a separately approved time-bounded waiver | macOS Chrome Alpha or disposable Chromium is not the full matrix | `BROWSER-MATRIX`, after release-head freeze; private smoke additionally requires G4 | No permanent narrowing; any waiver needs owner and expiry | Prefer synthetic disposable profiles; no user profile mutation; private evidence stays off Git |
+| G10 | B + D | BLOCKED | RC / production | Production Service Worker / deployment / rollback | Approved non-production Vercel preview/staging plan then authorized rehearsal of two worker generations/tabs, wait/drain, mixed version, cold offline, owned-cache eviction, failed deploy/install, rollback trigger/time objective and preserved Legacy/V2 counts | Injected D3 evidence is not native SW/Cache Storage, deployment, rehearsal or production rollout | Planning/rehearsal Task Brief only after M34 merge; execution needs separate authority | XiChuan9 owns future plan; no public Alpha or rehearsal is authorized now | Isolated staging first; never delete Legacy/V2; rollback restores prior deployment/worker while preserving libraries |
+| G12 | A | NOT RUN | Alpha / Beta / RC / production | Exact release-head verification | After the separately authorized G13 candidate build, verify its exact versioned commit and bundle/manifest from a true remote depth-one checkout with focused/syntax/privacy/full/audit/diff/path gates, current P0/P1 inventory and exact-head CI before any tag, Release or publication | Earlier integration, M34 CI or pre-candidate CI does not validate a later version/artifact head | `RELEASE-HEAD-VERIFICATION`, after the G13 candidate-building phase and before G13 publication approval | Mechanical once the exact versioned candidate head exists | Static/synthetic/read-only; rollback reverts candidate commits without data/cache deletion |
+| G13 | F | PARTIAL | Alpha / Beta / RC / production | Version / tag / artifact / release | The separately authorized A3 phase sets exact `2.0.0-alpha.1` metadata and deterministic local static-bundle/SHA-256 tooling; after G12 verifies the immutable exact candidate, obtain XiChuan9 exact-object/final approval before any tag, GitHub Release, publication or, only after G10, deployment; every object binds to one commit | Package metadata, local candidate bytes, CI or a Draft/Ready PR is not a verified or published release artifact | `VERSION-ARTIFACT-RELEASE`: finish candidate-building before environmental/G12 evidence; owner-approval then publication phases after G12, last for each named stage | Alpha → Beta → RC → `v2.0.0`; XiChuan9 owns tag/Release and final production approval | A3 is local, external-output and synthetic-only; later rollback/revocation preserves local data and public auditability |
 
-`v2.0.0-beta.1` 重点验证导入和本地使用：
+## 4.1 Pre-freeze closed G1 Alpha acceptance contract (historical)
 
-- [ ] Synthetic JSON 纵向切片通过；
-- [ ] `activities.csv` 导入通过；
-- [ ] Strava ZIP 安全与关联测试通过；
-- [ ] FIT、TCX、GPX Decoder 矩阵通过；
-- [ ] 同一文件重复导入不生成重复活动；
-- [ ] 单文件失败不影响同批成功项目；
-- [ ] 无 Strava Token 可以启动并浏览本地数据；
-- [ ] Summary-only 和缺失能力场景可以降级；
-- [ ] Source Manager 和 Import Report 可用。
+G1 is **CLOSED BY DISPOSITION** for the limited `v2.0.0-alpha.1` scope decision below. This closes
+only audience, distribution, support, evidence and eventual artifact shape. G1 itself did not
+create a candidate, close G12 or authorize G13; the later M36 A3 owner decision separately
+authorized only the bounded local candidate-building phase.
 
-## 7. Release Candidate Gate
+### Audience, distribution and support
 
-`v2.0.0-rc.1` 必须满足：
+- XiChuan9 is release owner. Distribution is one owner-provided local, non-production static Web
+  bundle delivered directly to a named evaluator and served only from a loopback origin. It is not
+  publicly hosted, publicly indexed, deployed or described as a public web Alpha.
+- “Current macOS Chrome” means the latest stable Google Chrome generally available for macOS when
+  the future G13 candidate-head freeze occurs. G12 evidence records the exact full Chrome version,
+  exact macOS version and architecture. If stable Chrome changes before publication, the disposable
+  matrix must retest the new latest stable version; an earlier record is stale.
+- Chrome Beta, Dev and Canary; Chromium; Safari; Firefox; Edge; Windows; Linux; iOS; Android;
+  mobile layouts; installed PWA/offline use; background operation; keyboard-only and screen-reader
+  support are explicitly unsupported and unclaimed for Alpha. These exclusions do not narrow the
+  PRD contract for RC/production: G9 remains `BLOCKED`.
 
-- [ ] CSV/FIT/TCX/GPX 全部通过回归矩阵；
-- [ ] 完整资料库备份与新环境恢复通过；
-- [ ] Exact Identity Resolver 通过；
-- [ ] 模糊重复不会自动合并；
-- [ ] 汇总页面 Legacy/Canonical Parity 已审阅；
-- [ ] Activity Detail 能读取本地 Streams；
-- [ ] Run Plus / NSM 回归通过；
-- [ ] Service Worker 更新与旧缓存淘汰策略通过；
-- [ ] 5,000/10,000 活动和大 Stream 性能达到预算或记录豁免；
-- [ ] 迁移和发布回滚演练完成；
-- [ ] 未解决的 P0/P1 缺陷为零。
+### Static payload and manifest
 
-## 8. Production Release Gate
+The future G13 candidate task must copy, without source transformation or minification, exactly the
+tracked regular files selected at that exact candidate commit by this rule:
 
-`v2.0.0` 发布必须满足：
+```text
+top-level exact files:
+  classifyBike.js
+  classifyRun.js
+  diagnostics.html
+  icon-sport.svg
+  index.html
+  manifest.json
+  source-manager.html
+  storage-backup.html
+  sw.js
+  js/vendor/THIRD_PARTY_NOTICES.md
+  media/bg-bike.jpg
+  media/bg-run.jpg
+  media/bg-swim.jpg
 
-- [ ] 无 Strava Token 正常启动；
-- [ ] Strava Disconnect 不删除本地资料库；
-- [ ] Legacy Cache 可恢复；
-- [ ] CI 全部通过；
-- [ ] 所有 P0 数据源导入通过；
-- [ ] 数据库备份恢复通过；
-- [ ] Exact Duplicate 通过；
-- [ ] 汇总页面 Parity 通过；
-- [ ] 详情页能力降级通过；
-- [ ] Run Plus / NSM 通过；
-- [ ] Shadow 差异已审阅；
-- [ ] Canonical 可以切回 Legacy；
-- [ ] 无隐私数据进入 Git、日志或外部埋点；
-- [ ] Migration、Backup、Privacy、Troubleshooting 文档完成；
-- [ ] 最终回滚演练完成；
-- [ ] 发布负责人明确批准。
+recursive tracked regular files:
+  html/   with extension .html
+  js/     with extension .js
+  styles/ with extension .css
+```
 
-## 9. 豁免政策
+In literal terms, recursive tracked regular selection includes `html/` files with `.html`, `js/`
+files with `.js`, and `styles/` files with `.css`; no other recursive extension is selected.
 
-以下项目不得豁免：
+The rule excludes every other path, including `api/`, `docs/`, `tests/`, `scripts/`, `.github/`,
+`package.json`, `package-lock.json`, `vercel.json`, every `.env*` file, every `AGENTS.md`, Git
+metadata, local/private data, fixtures, logs, source maps and pre-existing build output. No symlink,
+socket, device, untracked file, Token, credential or generated secret may appear. Client modules
+that contain dormant provider or consented-egress capability are source code, not credentials or
+authority; the browser matrix below must prove they remain unused.
 
-- 数据丢失风险；
-- 破坏 Legacy Cache；
-- 真实隐私数据进入 Git 或日志；
-- 无法回滚；
-- Exact Duplicate 产生第二条活动；
-- Strava Disconnect 删除本地活动；
-- 未经授权把活动数据发送外部服务。
+The bundle root additionally contains exactly two G13-generated metadata files:
 
-性能、浏览器边缘兼容等非数据安全项可以提出限时豁免，但必须记录：
+- `PROVENANCE.json`: canonical UTF-8 JSON with a terminal newline and exact schema-owned fields for
+  `version` (`v2.0.0-alpha.1`), exact candidate commit, exact candidate tree, source repository,
+  build command identifier, Node/npm versions, `sourceDateEpoch` equal to the candidate commit time,
+  and payload-selection rule version. It contains no digest of `SHA256SUMS` or the final container;
+- `SHA256SUMS`: UTF-8, LF-only text with one row per payload file plus `PROVENANCE.json`, ordered by
+  POSIX-relative path using bytewise lexicographic order and ending in a terminal newline. Each row is
+  exactly 64 lowercase hexadecimal SHA-256 characters, two ASCII spaces, then its normalized
+  POSIX-relative path. It never hashes itself and paths contain no absolute prefix, `..`, backslash,
+  control character or newline.
 
-- 原因；
-- 用户影响；
-- 临时缓解；
-- Owner；
-- 到期日期；
-- 后续任务。
+The SHA-256 manifest must enumerate every file in the delivered bundle except `SHA256SUMS`, with no
+missing, duplicate or extra file. The archive/container format, filename and compression parameters
+must be frozen by the future G13 candidate task; M35 authorizes none of them. G12 records the
+SHA-256 of the complete `SHA256SUMS` bytes and the final container outside the bundle, in the
+candidate verification evidence, so the in-bundle digest graph is acyclic.
 
-## 10. Gate 失败处理
+Reproducibility means two independent builds from two fresh true remote depth-one checkouts of the
+same exact candidate commit, with a clean environment, identical documented Node/npm versions and
+`SOURCE_DATE_EPOCH` set to the recorded candidate time, produce byte-identical payload files,
+`PROVENANCE.json`, `SHA256SUMS` and final container. G12 records both whole-container SHA-256 values
+and rejects environmental paths, timestamps or nondeterministic ordering.
 
-Gate 失败时：
+### Exact candidate gates and disposable browser matrix
 
-1. 停止合并或发布；
-2. 保存失败证据和环境信息；
-3. 判断是代码缺陷、测试缺陷还是环境问题；
-4. 创建范围明确的修复任务；
-5. 重新执行全部受影响 Gate；
-6. 不通过修改检查结果或删除失败测试来绕过。
+Only after a separately authorized G13 candidate build exists may G12 run, on its exact candidate
+commit and delivered bytes:
+
+```text
+npm ci
+npm run check:syntax
+npm run check:privacy
+npm test
+npm audit
+git diff --check
+literal candidate-task changed-path gate
+payload selection/exclusion and symlink gate
+manifest grammar, recomputation and no-extra-file gate
+two-build reproducibility gate
+true remote depth-one checkout and exact-head CI
+current P0/P1 inventory with zero unresolved P0/P1
+```
+
+The Alpha browser record uses only synthetic deterministic inputs on the exact manifest-verified
+bundle and a static-only loopback no-API server with directory listing and API execution disabled.
+It uses a fresh disposable Chrome profile with no extensions, sync, saved credentials, existing
+storage or user-profile reuse. It records browser/OS versions and covers:
+
+- first-run and Demo entry, core Dashboard/Run/Ride/Swim summaries and an activity detail route;
+- synthetic FIT, TCX, GPX, CSV and ZIP local imports, exact duplicate handling and explicit Retry;
+- synthetic format-3 Backup, validation and Restore into a second fresh disposable profile;
+- explicit Legacy feature-flag startup/rollback with only synthetic Legacy data and no V2/Legacy
+  clearing; and
+- zero requests to `/api`, Strava, Weather, AI, map tiles, telemetry or any other non-loopback host,
+  with zero real Token, provider credential, private activity/file or identifiable athlete data.
+
+The query `enable-sw=1` is prohibited. No offline, PWA or Service Worker claim may be made, nor any
+deployment or cache-lifecycle claim. Browser evidence failure stops the candidate; it is not
+repaired by weakening the matrix or deleting data.
+
+### Privacy, withdrawal and remaining status
+
+Alpha evidence is synthetic-only. The payload, metadata, logs and evidence contain no real Token,
+provider credential, account identifier, private activity/file, GPS track, heart-rate, power,
+browser profile or user data. An evaluator must not connect an account or import private material.
+
+Withdrawal is non-production and out of band: XiChuan9 stops sharing the named artifact, marks its
+SHA-256 withdrawn in the release record and, if needed, replaces it with a prior verified artifact.
+The evaluator closes the loopback server and may remove only the downloaded artifact/profile under
+their own disposal policy. Withdrawal and rollback never clear or delete Legacy, V2, Cache Storage,
+settings or any user library, never invoke Disconnect/Delete Local Data, and never mutate public Git
+history.
+
+The closed G1 decision does not promote another row. G2 remains `NOT RUN`; G3 remains `PARTIAL`; G5
+and G6 remain `NOT RUN`; G7 remains `BLOCKED`; G8 remains `PARTIAL`; G9 and G10 remain `BLOCKED`;
+G12 remains `NOT RUN`; G13 is `PARTIAL` because only the bounded local candidate-building phase is
+authorized. Real Legacy
+rescue and real parity/Shadow sign-off are deferred to RC, not waived and not `PASS`. The actual
+tag, GitHub Release, publication and any deployment still require separate later G13 authorization;
+G12 can verify only the immutable exact A3 candidate.
+
+## 5. Pre-freeze V2 Alpha path (historical; not authorized now)
+
+The selected `v2.0.0-alpha.1` target is a **limited local, non-production static Web bundle**. Its
+supported surface is **current macOS Chrome only**, and its evidence is explicitly
+**synthetic-only**. A public web Alpha is not authorized.
+
+G2 real Legacy rescue and G3 real parity are deferred to RC. They remain `NOT RUN`/`PARTIAL`, are
+not waived and must never be called `PASS` for Alpha. The bounded local candidate-building phase is
+authorized and G13 is `PARTIAL`; G12, exact-object approval, tag, Release, publication, hosting and
+deployment remain pending separate later authority.
+
+Dependency order:
+
+```text
+M34 canonical roadmap merge
+→ separately authorized G13 versioned Alpha candidate and static-bundle/SHA-256-manifest build
+→ G12 exact candidate-head, artifact and current P0/P1 verification
+→ XiChuan9 exact-object approval
+→ separately authorized G13 tag/Release/publication action
+```
+
+This path permits no public deployment, real/private access, broader browser-support claim,
+artifact publication, tag or GitHub Release. M36 A3 permits only the bounded local version and
+candidate build after M34.
+
+## 6. Pre-freeze complete v2.0 path (historical; not authorized now)
+
+The approved release sequence is **Alpha → Beta → RC → v2.0.0**. The eventual artifact is a static
+Web bundle with a SHA-256 manifest; XiChuan9 owns tag/GitHub Release and is final production
+approver. All actual version, artifact, tag, Release, deployment and rollback actions remain
+separately unauthorized.
+
+### Owner dispositions that constrain the path
+
+- **Private evidence:** the approved protocol names XiChuan9 as custodian, keeps raw Tokens,
+  accounts, private activity/files and browser profiles out of Git, uses an authorized disposable
+  profile/isolated target, and publishes only permitted redacted aggregate counts/statuses/hashes.
+  The protocol is approved, but real/private evidence execution is **NOT RUN** and not authorized by
+  M34.
+- **Parity:** zero unresolved P0 discrepancies; XiChuan9 must explain and sign off every non-P0
+  difference.
+- **Performance:** the waiver temporarily satisfies the absolute 10,000-activity and 1,000-FIT
+  threshold blocker and therefore does not block RC/production through **2026-11-12**. Large
+  libraries or large batches may be slower or reach memory/quota limits earlier. The reason is that
+  existing functional/resource hard limits and 5k/200k bounded hard evidence stay unchanged while
+  absolute 10k/1,000-FIT evidence is record-only and the
+  representative real-hardware budget task has not yet run. Bounded chunks, cancellation and explicit
+  Retry/Recover/Abandon mitigate impact. That real-hardware task is required before expiry, and no
+  release performance overclaim is permitted. Expiry without that evidence or a new explicit
+  disposition makes G8 blocking again; it never weakens privacy, correctness or data safety gates.
+- **Browser/platform:** full V2 requires Safari, Firefox, Windows, iOS/PWA and mobile evidence plus
+  core keyboard and screen-reader evidence. macOS Chrome-only applies solely to the limited Alpha;
+  any later time-bounded waiver requires separate owner/expiry approval.
+- **History:** XiChuan9 approved no-rewrite risk acceptance after no evidence of credential exposure
+  was found. Current-tree removal and regression guard remain mandatory. The disposition is not
+  erasure and does not authorize rewriting history, force-pushing, deleting refs/tags/Releases/PR
+  artifacts, repeating exposed values or external notification.
+- **Deployment/SW/rollback:** the future target is non-production Vercel preview/staging. Authority
+  extends only to a planning/rehearsal Task Brief after M34 merge. A later authorized rehearsal must
+  cover two Service Worker generations and two tabs, waiting/drain, mixed version, cold offline,
+  owned-cache eviction, failed deploy/install, rollback trigger/time objective and preserved
+  Legacy/V2 counts. Production deployment remains **BLOCKED** and not authorized.
+
+### Dependency order
+
+```text
+M34 canonical roadmap merge
+→ separately authorized G13 versioned candidate build and release-head freeze
+→ separately authorized G2/G3/G5/G6 private evidence tasks
+→ G7 XiChuan9 parity sign-off
+→ while the G8 waiver is active, schedule its real-hardware follow-up without blocking later gates
+→ after 2026-11-12, G8 evidence or a new explicit disposition is required before proceeding
+→ G9 PRD browser/platform/accessibility matrix
+→ post-M34 G10 planning Task Brief and separately authorized staging rehearsal
+→ G12 final exact candidate-head/artifact verification and zero-P0/P1 inventory
+→ XiChuan9 final exact-object approval
+→ separately authorized G13 publication/tag/Release and, after G10, deployment action
+```
+
+Beta/RC naming never erases a row. RC requires G2/G3/G5-G7/G9/G10 plus the G13 candidate-building
+phase, G12 verification of that exact candidate, XiChuan9 exact-object approval and only then the G13
+RC publication action. G8 additionally blocks RC after waiver expiry unless its evidence or a new
+explicit disposition exists. Production requires every non-waived remaining row; G8 likewise becomes
+mandatory after expiry. Data loss, Legacy destruction, private data in Git/logs, inability to roll
+back, exact duplicate creation, Disconnect deletion and unauthorized external egress remain
+non-waivable.
+
+## 7. Current public scope-freeze pull request and integration gates
+
+This change must have the approved scope-freeze Task Brief, literal path scope, focused checks,
+`npm ci`, syntax, privacy, full tests, `git diff --check`, static search, privacy/data/rollback
+reporting, disposable-browser evidence, and exact-head CI. Unrun evidence stays explicit. The PR
+remains Draft and targets `main`; implementation does not authorize merge, tag, release,
+publication, deployment, Service Worker rollout, or cleanup.
+
+Before any later merge decision, CI must pass; Legacy startup and rollback must remain available;
+Canonical writes must not damage Legacy; Repository/Storage/Import integration and existing
+additive/idempotent migrations must remain green; Diagnostics must not expose private data; and the
+protected implementation directories must have no unintended changes.
+
+## 8. Waiver and failure policy
+
+The following cannot be waived:
+
+- data loss or damage to Legacy Cache;
+- private activity, GPS, health data, Tokens or credentials entering Git/logs;
+- inability to roll back without deleting user data;
+- exact duplicates producing another activity;
+- Disconnect deleting local activities; or
+- unauthorized activity-data egress.
+
+A permitted time-bounded waiver must record reason, user impact, mitigation, owner, expiry and
+follow-up task. On gate failure, stop release work, preserve redacted evidence, classify the failure,
+open a bounded task and rerun affected gates. Never weaken status copy or delete a failing test to
+manufacture `PASS`.

@@ -39,6 +39,33 @@ function getSwimEfficiency(swim) {
     return swim?.efficiency ?? null;
 }
 
+function createActivityLink(activity) {
+    const label = activity?.name || '-';
+    const activityId = typeof activity?.id === 'string' && activity.id.length > 0
+        ? activity.id
+        : (Number.isSafeInteger(activity?.id) && activity.id > 0 ? String(activity.id) : null);
+    if (activityId === null) {
+        return document.createTextNode(label);
+    }
+    const params = new URLSearchParams();
+    params.set('id', activityId);
+    const link = document.createElement('a');
+    link.href = `html/activity-router.html?${params.toString()}`;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = label;
+    return link;
+}
+
+function appendTableCell(row, value, dataValue = null) {
+    const cell = document.createElement('td');
+    if (dataValue !== null) cell.dataset.value = String(dataValue);
+    if (value instanceof Node) cell.append(value);
+    else cell.textContent = String(value);
+    row.append(cell);
+    return cell;
+}
+
 
 
 // ------------------------
@@ -989,11 +1016,6 @@ function renderTopSwims(swims) {
         .sort((a, b) => a.pace_min100 - b.pace_min100)
         .slice(0, 10);
 
-    const activityLink = s => {
-        if (!s?.id) return s?.name || '-';
-        return `<a href="html/activity-router.html?id=${encodeURIComponent(s.id)}" target="_blank" rel="noopener noreferrer">${s.name}</a>`;
-    };
-
     el.innerHTML = `
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin: 2rem 0;">
             <div class="top-box">
@@ -1007,15 +1029,7 @@ function renderTopSwims(swims) {
                 <th data-sort="pace">Pace</th>
                 </tr>
                 </thead>
-                <tbody>
-                ${topDistance.map((s, i) => `
-                <tr>
-                <td>${i + 1}</td>
-                <td>${activityLink(s)}</td>
-                <td data-value="${s.distance_km}">${s.distance_km.toFixed(2)} km</td>
-                <td data-value="${s.pace_min100 || 9999}">${formatPace(s.pace_min100)}</td>
-                </tr>`).join("")}
-                </tbody>
+                <tbody></tbody>
                 </table>
             </div>
 
@@ -1030,19 +1044,27 @@ function renderTopSwims(swims) {
                 <th data-sort="pace">Pace</th>
                 </tr>
                 </thead>
-                <tbody>
-                ${topPace.map((s, i) => `
-                <tr>
-                <td>${i + 1}</td>
-                <td>${activityLink(s)}</td>
-                <td data-value="${s.distance_km}">${s.distance_km.toFixed(2)} km</td>
-                <td data-value="${s.pace_min100 || 9999}">${formatPace(s.pace_min100)}</td>
-                </tr>`).join("")}
-                </tbody>
+                <tbody></tbody>
                 </table>
             </div>
         </div>
 `;
+
+    const populateTopTable = (tableId, activities) => {
+        const body = document.getElementById(tableId)?.querySelector('tbody');
+        if (!body) return;
+        const rows = activities.map((swim, index) => {
+            const row = document.createElement('tr');
+            appendTableCell(row, index + 1);
+            appendTableCell(row, createActivityLink(swim));
+            appendTableCell(row, `${swim.distance_km.toFixed(2)} km`, swim.distance_km);
+            appendTableCell(row, formatPace(swim.pace_min100), swim.pace_min100 || 9999);
+            return row;
+        });
+        body.replaceChildren(...rows);
+    };
+    populateTopTable('swim-top-distance-table', topDistance);
+    populateTopTable('swim-top-pace-table', topPace);
 
     makeSortable(document.getElementById('swim-top-distance-table'));
     makeSortable(document.getElementById('swim-top-pace-table'));
@@ -1057,29 +1079,9 @@ function renderSwimsTable(swims) {
     const el = document.getElementById("swim-table");
     if (!el) return;
 
-    const rows = swims
+    const sortedSwims = swims
         .sort((a, b) => new Date(b.start_date) - new Date(a.start_date))
-        .map(s => {
-            const activityLink = s.id
-                ? `<a href="html/activity-router.html?id=${encodeURIComponent(s.id)}" target="_blank" rel="noopener noreferrer">${s.name}</a>`
-                : s.name;
-            return `
-                <tr>
-                    <td>${s.start_date_local.substring(0, 10)}</td>
-                    <td>${activityLink}</td>
-                    <td data-value="${s.distance_km}">${s.distance_km.toFixed(2)}</td>
-                    <td data-value="${s.pace_min100 || 9999}">${s.pace_min100 ? formatPace(s.pace_min100) : "-"}</td>
-                    <td data-value="${s.average_heartrate || 0}">${s.average_heartrate ? s.average_heartrate.toFixed(0) : "-"}</td>
-                    <td>
-                        <span class="swim-badge ${s.swim_type}">
-                        ${s.swim_type}
-                        </span>
-                        </td>
-                    <td data-value="${(s.moving_ratio * 100).toFixed(2)}">${(s.moving_ratio * 100).toFixed(2)}%</td>
-                    <td>${poolLengthInt(s.pool_length)}</td>
-                </tr>
-            `;
-        }).join("");
+        ;
 
     el.innerHTML = `
         <table id="swim-all-table">
@@ -1095,9 +1097,29 @@ function renderSwimsTable(swims) {
                     <th data-sort="text">Pool</th>
                 </tr>
             </thead>
-            <tbody>${rows}</tbody>
+            <tbody></tbody>
         </table>
     `;
+
+    const body = document.getElementById('swim-all-table')?.querySelector('tbody');
+    const rows = sortedSwims.map(swim => {
+        const row = document.createElement('tr');
+        appendTableCell(row, swim.start_date_local.substring(0, 10));
+        appendTableCell(row, createActivityLink(swim));
+        appendTableCell(row, swim.distance_km.toFixed(2), swim.distance_km);
+        appendTableCell(row, swim.pace_min100 ? formatPace(swim.pace_min100) : '-', swim.pace_min100 || 9999);
+        appendTableCell(row, swim.average_heartrate ? swim.average_heartrate.toFixed(0) : '-', swim.average_heartrate || 0);
+        const typeCell = appendTableCell(row, '');
+        const badge = document.createElement('span');
+        badge.classList.add('swim-badge');
+        if (swim.swim_type) badge.classList.add(swim.swim_type);
+        badge.textContent = swim.swim_type;
+        typeCell.replaceChildren(badge);
+        appendTableCell(row, `${(swim.moving_ratio * 100).toFixed(2)}%`, (swim.moving_ratio * 100).toFixed(2));
+        appendTableCell(row, poolLengthInt(swim.pool_length));
+        return row;
+    });
+    body?.replaceChildren(...rows);
 
     makeSortable(document.getElementById('swim-all-table'));
 }

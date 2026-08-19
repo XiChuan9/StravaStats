@@ -6,6 +6,17 @@
 
 import { formatDate as sharedFormatDate, formatPace as sharedFormatPace, formatPaceRun } from '../../shared/utils/index.js';
 import { renderWeatherAnalysis, renderWeatherMapDetails } from '../../shared/utils/weather-analysis.js';
+import { createMapLocationBoundary, readValidatedRouteGeometry } from '../../app/map-location-egress.js';
+import {
+    prepareStreamChartPresentation,
+    prepareStreamMapPresentation,
+    restoreStreamGapMask
+} from '../detail/stream-presentation.js';
+import {
+    calculateHeartRateZoneSeconds,
+    formatHeartRateZoneLabels,
+    readHeartRateZones
+} from '../detail/heart-rate-zone-presentation.js';
 
 // =====================================================
 // 1. INITIALIZATION & CONFIGURATION
@@ -22,29 +33,6 @@ const CONFIG = {
     NUM_SEGMENTS: 40,
 };
 
-const MAP_LAYERS = {
-    osm: {
-        url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-        options: { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' },
-    },
-    'carto-light': {
-        url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-        options: { maxZoom: 20, attribution: '&copy; OpenStreetMap contributors &copy; CARTO' },
-    },
-    'carto-dark': {
-        url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-        options: { maxZoom: 20, attribution: '&copy; OpenStreetMap contributors &copy; CARTO' },
-    },
-    'open-topo': {
-        url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-        options: { maxZoom: 17, attribution: 'Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap' },
-    },
-    'esri-sat': {
-        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        options: { maxZoom: 20, attribution: 'Tiles &copy; Esri' },
-    },
-};
-
 // DOM References
 const DOM = {
     details: document.getElementById('activity-details'),
@@ -58,10 +46,6 @@ const DOM = {
     hrZonesChart: document.getElementById('hr-zones-chart'),
 };
 
-// Parse activity ID from URL
-const params = new URLSearchParams(window.location.search);
-const activityId = parseInt(params.get('id'), 10);
-
 // Chart instances registry for cleanup
 const chartInstances = {};
 
@@ -70,6 +54,8 @@ let currentSmoothingLevel = 100;
 let originalStreamData = null; // Store unsmoothed data
 let lastStreamData = null;
 let lastActivityData = null;
+let weatherFeatureEnabledForPage = true;
+let mapLocationBoundaryForPage = null;
 
 // Dynamic chart data storage
 let dynamicChartData = {
@@ -205,41 +191,36 @@ function formatPace(speedInMps) {
     return formatPaceRun(1000 / speedInMps);
 }
 
+function formatElevationPerKm(activity, digits = 2) {
+    const distance = activity?.distance;
+    const elevation = activity?.total_elevation_gain;
+    if (
+        !Number.isFinite(distance)
+        || distance <= 0
+        || !Number.isFinite(elevation)
+    ) return null;
+    const value = elevation / (distance / 1000);
+    return Number.isFinite(value) ? value.toFixed(digits) : null;
+}
+
 /**
  * Decodes Strava polyline encoding to lat/lng coordinates
  */
-function decodePolyline(str) {
-    let index = 0, lat = 0, lng = 0, coordinates = [];
-    while (index < str.length) {
-        let b, shift = 0, result = 0;
-        do {
-            b = str.charCodeAt(index++) - 63;
-            result |= (b & 0x1f) << shift;
-            shift += 5;
-        } while (b >= 0x20);
-        const dlat = (result & 1) ? ~(result >> 1) : (result >> 1);
-        lat += dlat;
-
-        shift = 0;
-        result = 0;
-        do {
-            b = str.charCodeAt(index++) - 63;
-            result |= (b & 0x1f) << shift;
-            shift += 5;
-        } while (b >= 0x20);
-        const dlng = (result & 1) ? ~(result >> 1) : (result >> 1);
-        lng += dlng;
-
-        coordinates.push([lat / 1e5, lng / 1e5]);
-    }
-    return coordinates;
+export function getActivityRouteCoordinates(activity, streams) {
+    return readValidatedRouteGeometry(activity, streams);
 }
 
 /**
  * Estimates VO2max from activity data using Karvonen formula
  */
 function estimateVO2max(act, userMaxHr = CONFIG.USER_MAX_HR) {
-    if (!act.distance || !act.moving_time || !act.average_heartrate) return '-';
+    if (
+        !Number.isFinite(userMaxHr)
+        || userMaxHr <= 0
+        || !act.distance
+        || !act.moving_time
+        || !act.average_heartrate
+    ) return '-';
     const vel_m_min = (act.distance / act.moving_time) * 60;
     const vo2_at_pace = (vel_m_min * 0.2) + 3.5;
     const percent_max_hr = act.average_heartrate / userMaxHr;
@@ -290,37 +271,6 @@ function calculateVariability(data, smoothingWindow = 0) {
 }
 
 /**
- * Calculates time spent in each HR zone
- */
-function calculateTimeInZones(heartrateStream, timeStream, zones) {
-    if (!heartrateStream || !timeStream || !zones || zones.length === 0) {
-        return [];
-    }
-
-    const timeInZones = Array(zones.length).fill(0);
-
-    for (let i = 1; i < heartrateStream.data.length; i++) {
-        const hr = heartrateStream.data[i];
-        if (hr === null) continue;
-        const deltaTime = timeStream.data[i] - timeStream.data[i - 1];
-
-        let zoneIndex = -1;
-        for (let j = 0; j < zones.length; j++) {
-            const zone = zones[j];
-            const max = zone.max === -1 ? Infinity : zone.max;
-            if (hr >= zone.min && hr < max) {
-                zoneIndex = j;
-                break;
-            }
-        }
-        if (zoneIndex !== -1) {
-            timeInZones[zoneIndex] += deltaTime;
-        }
-    }
-    return timeInZones;
-}
-
-/**
  * Creates or updates a Chart.js instance with cleanup
  */
 function createChart(canvasId, config) {
@@ -335,6 +285,47 @@ function createChart(canvasId, config) {
     }
 
     chartInstances[canvasId] = new Chart(canvas, config);
+}
+
+function createStreamPresentationChart(canvasId, config) {
+    const presentation = prepareStreamChartPresentation(
+        config.data.labels,
+        config.data.datasets
+    );
+    const canvas = document.getElementById(canvasId);
+    if (canvas?.dataset) canvas.dataset.presentationState = presentation.status;
+    let status = document.getElementById(`${canvasId}-presentation-status`);
+    if (canvas && !status) {
+        status = document.createElement('p');
+        status.id = `${canvasId}-presentation-status`;
+        status.setAttribute('role', 'status');
+        canvas.insertAdjacentElement('afterend', status);
+    }
+    if (presentation.status === 'too-fragmented') {
+        if (chartInstances[canvasId]) {
+            chartInstances[canvasId].destroy();
+            delete chartInstances[canvasId];
+        }
+        if (canvas) canvas.hidden = true;
+        if (status) {
+            status.hidden = false;
+            status.textContent = 'Too fragmented to plot.';
+        }
+        return null;
+    }
+    if (canvas) canvas.hidden = false;
+    if (status) {
+        status.hidden = true;
+        status.textContent = '';
+    }
+    return createChart(canvasId, {
+        ...config,
+        data: {
+            ...config.data,
+            labels: presentation.labels,
+            datasets: presentation.datasets
+        }
+    });
 }
 
 /**
@@ -500,7 +491,10 @@ function renderDynamicChart(primaryData, primaryType, primaryShow, secondaryData
         const primaryColor = chartColors[primaryData];
         datasets.push({
             label: getDataLabel(primaryData),
-            data: dynamicChartData[primaryData],
+            data: restoreStreamGapMask(
+                dynamicChartData[primaryData],
+                originalDynamicChartData[primaryData]
+            ),
             borderColor: primaryColor.primary,
             backgroundColor: primaryColor.secondary,
             borderWidth: 2,
@@ -523,7 +517,10 @@ function renderDynamicChart(primaryData, primaryType, primaryShow, secondaryData
         const secondaryColor = chartColors[secondaryData];
         datasets.push({
             label: getDataLabel(secondaryData),
-            data: dynamicChartData[secondaryData],
+            data: restoreStreamGapMask(
+                dynamicChartData[secondaryData],
+                originalDynamicChartData[secondaryData]
+            ),
             borderColor: secondaryColor.primary,
             backgroundColor: secondaryColor.secondary,
             borderWidth: 2,
@@ -594,7 +591,7 @@ function renderDynamicChart(primaryData, primaryType, primaryShow, secondaryData
         plugins: backgroundPlugin ? [backgroundPlugin] : [],
     };
 
-    createChart('dynamic-custom-chart', config);
+    createStreamPresentationChart('dynamic-custom-chart', config);
 }
 
 /**
@@ -745,61 +742,25 @@ function populateDynamicChartData(streams, isOriginal = false) {
 }
 
 // =====================================================
-// 3. API FUNCTIONS
-// =====================================================
-
-/**
- * Retrieves and decodes auth token from localStorage
- */
-function getAuthPayload() {
-    const tokenString = localStorage.getItem('strava_tokens');
-    if (!tokenString) return null;
-    return btoa(tokenString);
-}
-
-/**
- * Fetches data from backend API
- */
-async function fetchFromApi(url, authPayload) {
-    const response = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${authPayload}` }
-    });
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`API Error ${response.status}: ${errorText}`);
-    }
-    const result = await response.json();
-    if (result.tokens) {
-        localStorage.setItem('strava_tokens', JSON.stringify(result.tokens));
-    }
-    return result;
-}
-
-/**
- * Fetches detailed activity information
- */
-async function fetchActivityDetails(activityId, authPayload) {
-    const result = await fetchFromApi(`/api/strava-activity?id=${activityId}`, authPayload);
-    return result.activity;
-}
-
-/**
- * Fetches activity stream data (distance, time, HR, altitude, cadence)
- */
-async function fetchActivityStreams(activityId, authPayload) {
-    const streamTypes = 'distance,time,heartrate,altitude,cadence,watts,velocity_smooth';
-    const result = await fetchFromApi(`/api/strava-streams?id=${activityId}&type=${streamTypes}`, authPayload);
-    return result.streams;
-}
-
-// =====================================================
 // 4. RENDERING FUNCTIONS - ACTIVITY INFO
 // =====================================================
 
 /**
  * Renders basic activity information (title, date, type, gear, etc.)
  */
-function renderActivityInfo(activity) {
+function providerActivityUrl(activity, activitySource) {
+    const id = activity?.id;
+    const numericId = (
+        typeof id === 'number' && Number.isSafeInteger(id) && id >= 0
+    ) || (
+        typeof id === 'string' && /^(?:0|[1-9]\d*)$/.test(id)
+    );
+    return ['cache', 'network', 'mixed', 'demo'].includes(activitySource) && numericId
+        ? `https://www.strava.com/activities/${encodeURIComponent(String(id))}`
+        : null;
+}
+
+function renderActivityInfo(activity, activitySource) {
 
     const name = activity.name;
     const pageTitle = document.getElementById('activity-page-title');
@@ -818,7 +779,7 @@ function renderActivityInfo(activity) {
     const kudos = Number.isFinite(kudosValue) ? kudosValue : null;
     const commentCount = Number.isFinite(commentValue) ? commentValue : null;
     const tempStr = activity.average_temp !== undefined && activity.average_temp !== null ? `${activity.average_temp}°C` : null;
-    const stravaUrl = activity.id ? `https://www.strava.com/activities/${activity.id}` : null;
+    const stravaUrl = providerActivityUrl(activity, activitySource);
 
     const heroDate = document.getElementById('activity-hero-date');
     const heroDescription = document.getElementById('activity-hero-description');
@@ -832,13 +793,26 @@ function renderActivityInfo(activity) {
     if (heroDescription) heroDescription.textContent = description || 'No description provided.';
     if (heroType) heroType.textContent = activityType;
     if (heroGear) {
-        heroGear.innerHTML = gearId
-            ? `<a href="../html/gear.html?id=${gearId}">${gear || gearId}</a>`
-            : (gear || 'No gear');
+        if (gearId) {
+            const params = new URLSearchParams();
+            params.set('id', String(gearId));
+            const url = new URL('/html/gear.html', new URL(document.baseURI).origin);
+            url.search = params.toString();
+            const gearLink = document.createElement('a');
+            gearLink.href = url.href;
+            gearLink.textContent = gear || gearId;
+            heroGear.replaceChildren(gearLink);
+        } else {
+            heroGear.textContent = gear || 'No gear';
+        }
     }
     if (heroKudos) heroKudos.textContent = `❤️ ${kudos !== null ? kudos : '—'}`;
     if (heroComments) heroComments.textContent = `💬 ${commentCount !== null ? commentCount : '—'}`;
-    if (heroLink && stravaUrl) heroLink.href = stravaUrl;
+    if (heroLink) {
+        heroLink.hidden = stravaUrl === null;
+        if (stravaUrl === null) heroLink.removeAttribute('href');
+        else heroLink.href = stravaUrl;
+    }
 }
 
 /**
@@ -851,9 +825,7 @@ function renderActivityStats(activity) {
     const duration = formatTime(activity.moving_time);
     const pace = formatPace(activity.average_speed);
     const elevation = activity.total_elevation_gain !== undefined ? activity.total_elevation_gain : '-';
-    const elevationPerKm = activity.distance > 0
-        ? (activity.total_elevation_gain / (activity.distance / 1000)).toFixed(2)
-        : '-';
+    const elevationPerKm = formatElevationPerKm(activity);
     const calories = activity.calories !== undefined && activity.calories !== null ? activity.calories : null;
     const hrAvg = activity.average_heartrate !== undefined && activity.average_heartrate !== null ? Math.round(activity.average_heartrate) : null;
     const hrMax = activity.max_heartrate !== undefined && activity.max_heartrate !== null ? Math.round(activity.max_heartrate) : null;
@@ -868,7 +840,10 @@ function renderActivityStats(activity) {
     pushField('Distance', `${distanceKm} km`);
     pushField('Pace', pace !== '-' && pace !== '—' ? pace : null);
     pushField('Elevation Gain', `${elevation} m`);
-    pushField('Elevation per Km', `${elevationPerKm} m`);
+    pushField(
+        'Elevation per Km',
+        elevationPerKm === null ? null : `${elevationPerKm} m`
+    );
     pushField('Calories', calories);
     pushField('HR Avg', hrAvg ? `${hrAvg} bpm` : null);
     pushField('HR Max', hrMax ? `${hrMax} bpm` : null);
@@ -885,12 +860,10 @@ function renderActivityStats(activity) {
 /**
  * Renders advanced statistics (VO2max, variability, achievements)
  */
-function renderAdvancedStats(activity) {
+function renderAdvancedStats(activity, analysisContext = null) {
     if (!DOM.advanced) return;
 
-    const elevationPerKm = activity.distance > 0
-        ? (activity.total_elevation_gain / (activity.distance / 1000)).toFixed(2)
-        : '-';
+    const elevationPerKm = formatElevationPerKm(activity);
     const moveRatio = activity.moving_ratio !== null && activity.moving_ratio !== undefined
         ? `${(activity.moving_ratio * 100).toFixed(1)}%`
         : '-';
@@ -900,7 +873,14 @@ function renderAdvancedStats(activity) {
     const effort = activity.suffer_score !== undefined && activity.suffer_score !== null
         ? activity.suffer_score
         : (activity.perceived_exertion !== undefined && activity.perceived_exertion !== null ? activity.perceived_exertion : null);
-    const vo2max = estimateVO2max(activity);
+    const configuredMax = analysisContext?.status === 'configured'
+        ? analysisContext.heartRate?.maxBpm
+        : analysisContext?.status === 'unconfigured'
+            ? null
+            : CONFIG.USER_MAX_HR;
+    const vo2max = analysisContext?.status === 'unconfigured'
+        ? 'Requires local heart-rate profile'
+        : estimateVO2max(activity, configuredMax);
     const paceVariabilityLaps = activity.pace_variability_laps || '-';
     const hrVariabilityLaps = activity.hr_variability_laps || '-';
     const prCount = activity.pr_count !== undefined && activity.pr_count !== null ? activity.pr_count : null;
@@ -912,7 +892,10 @@ function renderAdvancedStats(activity) {
         fields.push(`<li><b>${label}:</b> ${value}</li>`);
     };
 
-    pushField('Elevation per Km', `${elevationPerKm} m`);
+    pushField(
+        'Elevation per Km',
+        elevationPerKm === null ? null : `${elevationPerKm} m`
+    );
     pushField('Move Ratio', moveRatio);
     pushField('Efficiency', efficiency);
     pushField('Effort', effort);
@@ -989,81 +972,73 @@ function getRouteColorSeries(streams, mode, pointCount) {
 /**
  * Renders interactive map with route polyline
  */
-function renderActivityMap(activity, streams) {
+function renderActivityMap(activity, streams, routeCoordinates) {
     if (!DOM.map) return;
+    const coords = routeCoordinates === undefined
+        ? getActivityRouteCoordinates(activity, streams)
+        : routeCoordinates;
+    const routeSelect = document.getElementById('route-color-mode');
+    const availableModes = getAvailableRouteColorModes(streams);
+    if (routeSelect) {
+        const currentValue = routeSelect.value;
+        routeSelect.replaceChildren(...availableModes.map(mode => {
+            const option = document.createElement('option');
+            option.value = mode.value;
+            option.textContent = mode.label;
+            return option;
+        }));
+        routeSelect.value = availableModes.some(mode => mode.value === currentValue) ? currentValue : 'route';
+    }
+    const routeValues = getRouteColorSeries(streams, routeSelect?.value || 'route', coords.length);
+    const presentation = prepareStreamMapPresentation(coords, routeValues);
+    const displayCoords = presentation.coordinates;
+    const displayRouteValues = presentation.routeValues;
+    const weatherToggle = document.getElementById('show-weather-details');
 
-    if (activity.map?.summary_polyline && window.L) {
-        const coords = decodePolyline(activity.map.summary_polyline);
-        if (coords.length > 0) {
-            DOM.map.innerHTML = '';
-            if (window.activityRouteMap) {
-                window.activityRouteMap.remove();
-                window.activityRouteMap = null;
-            }
-            const map = L.map('activity-map').setView(coords[0], 13);
-            window.activityRouteMap = map;
-            const style = document.getElementById('activity-map-style')?.value || 'osm';
-            const layer = MAP_LAYERS[style] || MAP_LAYERS.osm;
-            L.tileLayer(layer.url, layer.options).addTo(map);
-
-            const routeSelect = document.getElementById('route-color-mode');
-            const availableModes = getAvailableRouteColorModes(streams);
-            if (routeSelect) {
-                const currentValue = routeSelect.value;
-                routeSelect.innerHTML = availableModes.map(mode => `<option value="${mode.value}">${mode.label}</option>`).join('');
-                routeSelect.value = availableModes.some(mode => mode.value === currentValue) ? currentValue : 'route';
-            }
-
-            const colorMode = routeSelect?.value || 'route';
-            const routeValues = getRouteColorSeries(streams, colorMode, coords.length);
-
-            if (routeValues) {
-                const finiteValues = routeValues.filter(Number.isFinite);
+    mapLocationBoundaryForPage?.present({
+        container: DOM.map,
+        coordinates: presentation.status === 'too-fragmented' ? [] : coords,
+        revisionKey: 'run-detail',
+        providerControlId: 'activity-map-style',
+        leaflet: globalThis.L,
+        unavailableCopy: presentation.status === 'too-fragmented'
+            ? 'Too fragmented to plot.'
+            : 'No local route location is available for this map.',
+        drawOverlay(map) {
+            const group = L.featureGroup().addTo(map);
+            if (displayRouteValues) {
+                const finiteValues = displayRouteValues.filter(Number.isFinite);
                 const minValue = Math.min(...finiteValues);
                 const maxValue = Math.max(...finiteValues);
-                const group = L.featureGroup().addTo(map);
-
-                for (let i = 1; i < coords.length; i++) {
-                    const value = routeValues[i] ?? routeValues[i - 1];
-                    const color = valueToRouteColor(value, minValue, maxValue);
-                    L.polyline([coords[i - 1], coords[i]], { color, weight: 4, opacity: 0.9 }).addTo(group);
+                for (let index = 1; index < displayCoords.length; index += 1) {
+                    const value = displayRouteValues[index] ?? displayRouteValues[index - 1];
+                    L.polyline([displayCoords[index - 1], displayCoords[index]], {
+                        color: valueToRouteColor(value, minValue, maxValue),
+                        weight: 4,
+                        opacity: 0.9
+                    }).addTo(group);
                 }
-
-                map.fitBounds(group.getBounds());
-            } else {
-                const polyline = L.polyline(coords, { color: '#FC5200', weight: 4 }).addTo(map);
-                map.fitBounds(polyline.getBounds());
+            } else if (displayCoords.length === 1) {
+                L.circleMarker(displayCoords[0], { radius: 5, color: '#FC5200', fillOpacity: 0.8 }).addTo(group);
+            } else if (displayCoords.length) {
+                L.polyline(displayCoords, { color: '#FC5200', weight: 4 }).addTo(group);
             }
-
-            const mapStyleSelect = document.getElementById('activity-map-style');
-            if (mapStyleSelect && !mapStyleSelect.dataset.bound) {
-                mapStyleSelect.dataset.bound = '1';
-                mapStyleSelect.addEventListener('change', () => renderActivityMap(activity, streams));
+            if (weatherFeatureEnabledForPage) {
+                renderWeatherMapDetails(activity, coords, map, weatherToggle?.checked);
             }
-
-            if (routeSelect && !routeSelect.dataset.bound) {
-                routeSelect.dataset.bound = '1';
-                routeSelect.addEventListener('change', () => renderActivityMap(activity, streams));
-            }
-
-            const weatherToggle = document.getElementById('show-weather-details');
-            if (weatherToggle && !weatherToggle.dataset.bound) {
-                weatherToggle.dataset.bound = '1';
-                weatherToggle.addEventListener('change', () => renderActivityMap(activity, streams));
-            }
-
-            renderWeatherAnalysis(activity, coords);
-            renderWeatherMapDetails(activity, coords, map, weatherToggle?.checked);
-        } else {
-            DOM.map.innerHTML = '<p>No route data available (empty polyline).</p>';
-            renderWeatherAnalysis(activity, []);
-            renderWeatherMapDetails(activity, [], null, false);
+            return group;
         }
-    } else {
-        DOM.map.innerHTML = '<p>No route data available or Leaflet not loaded.</p>';
-        renderWeatherAnalysis(activity, []);
-        renderWeatherMapDetails(activity, [], null, false);
+    });
+
+    if (routeSelect && !routeSelect.dataset.bound) {
+        routeSelect.dataset.bound = '1';
+        routeSelect.addEventListener('change', () => renderActivityMap(activity, streams, coords));
     }
+    if (weatherToggle && !weatherToggle.dataset.bound) {
+        weatherToggle.dataset.bound = '1';
+        weatherToggle.addEventListener('change', () => renderActivityMap(activity, streams, coords));
+    }
+    if (weatherFeatureEnabledForPage) renderWeatherAnalysis(activity, coords);
 }
 
 /**
@@ -1166,7 +1141,7 @@ function renderStreamCharts(streams, activity, smoothingLevel = 100) {
         const color = colors[colorKey] ? colors[colorKey].primary : chartColors[colorKey].primary;
         const bgColor = colors[colorKey] ? colors[colorKey].secondary : chartColors[colorKey].secondary;
 
-        createChart(canvasId, {
+        createStreamPresentationChart(canvasId, {
             type: 'line',
             data: {
                 labels: distLabels,
@@ -1217,7 +1192,10 @@ function renderStreamCharts(streams, activity, smoothingLevel = 100) {
 
     // Altitude chart
     if (hasAltitude) {
-        const smoothAltitude = rollingMean(altitude.data, windowSizes.altitude);
+        const smoothAltitude = restoreStreamGapMask(
+            rollingMean(altitude.data, windowSizes.altitude),
+            originalStreamData?.altitude?.data || altitude.data
+        );
         createStreamChart('chart-altitude', 'Altitud (m)', smoothAltitude, 'altitude');
     }
 
@@ -1234,14 +1212,17 @@ function renderStreamCharts(streams, activity, smoothingLevel = 100) {
                 paceStreamData.push(null);
             }
         }
-        const smoothPaceStreamData = rollingMean(paceStreamData, windowSizes.pace);
+        const smoothPaceStreamData = restoreStreamGapMask(
+            rollingMean(paceStreamData, windowSizes.pace),
+            paceStreamData
+        );
         const paceLabels = distLabels.slice(1);
 
         const colors = getClassificationBasedColors();
         const paceColor = colors.pace ? colors.pace.primary : chartColors.pace.primary;
         const paceBgColor = colors.pace ? colors.pace.secondary : chartColors.pace.secondary;
 
-        createChart('chart-pace-distance', {
+        createStreamPresentationChart('chart-pace-distance', {
             type: 'line',
             data: {
                 labels: paceLabels,
@@ -1270,20 +1251,29 @@ function renderStreamCharts(streams, activity, smoothingLevel = 100) {
 
     // Heart rate chart
     if (hasHeartrate) {
-        const smoothHeartrate = rollingMean(heartrate.data, windowSizes.heartrate);
+        const smoothHeartrate = restoreStreamGapMask(
+            rollingMean(heartrate.data, windowSizes.heartrate),
+            originalStreamData?.heartrate?.data || heartrate.data
+        );
         createStreamChart('chart-heart-distance', 'FC (bpm)', smoothHeartrate, 'heartrate');
     }
 
     // Cadence chart
     if (hasCadence) {
         const cadenceData = activity.type === 'Run' ? cadence.data.map(c => c * 2) : cadence.data;
-        const smoothCadence = rollingMean(cadenceData, windowSizes.cadence);
+        const smoothCadence = restoreStreamGapMask(
+            rollingMean(cadenceData, windowSizes.cadence),
+            originalStreamData?.cadence?.data || cadence.data
+        );
         createStreamChart('chart-cadence-distance', 'Cadencia (spm)', smoothCadence, 'cadence');
     }
 
     // Power (watts) chart
     if (hasWatts) {
-        const smoothWatts = rollingMean(watts.data, windowSizes.watts);
+        const smoothWatts = restoreStreamGapMask(
+            rollingMean(watts.data, windowSizes.watts),
+            originalStreamData?.watts?.data || watts.data
+        );
         createStreamChart('chart-watts-distance', 'Power (W)', smoothWatts, 'watts');
     }
 }
@@ -1307,35 +1297,33 @@ function renderBestEfforts(bestEfforts) {
 
     section.classList.remove('hidden');
 
-    const tableHeader = `
-    <thead>
-        <tr>
-            <th>Distance</th>
-            <th>Time</th>
-            <th>Pace</th>
-            <th>Achievements</th>
-        </tr>
-    </thead>`;
-
-    const tableBody = bestEfforts.map(effort => {
+    const tableHead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    for (const label of ['Distance', 'Time', 'Pace', 'Achievements']) {
+        const cell = document.createElement('th');
+        cell.textContent = label;
+        headerRow.append(cell);
+    }
+    tableHead.append(headerRow);
+    const tableBody = document.createElement('tbody');
+    for (const effort of bestEfforts) {
         const pace = formatPace(effort.distance / effort.moving_time);
         const achievements = effort.pr_rank ? `🏆 PR #${effort.pr_rank}` : (effort.achievements.length > 0 ? '🏅' : '');
-        return `
-        <tr>
-            <td>${effort.name}</td>
-            <td>${formatTime(effort.moving_time)}</td>
-            <td>${pace}</td>
-            <td>${achievements}</td>
-        </tr>`;
-    }).join('');
-
-    table.innerHTML = tableHeader + `<tbody>${tableBody}</tbody>`;
+        const row = document.createElement('tr');
+        for (const value of [effort.name, formatTime(effort.moving_time), pace, achievements]) {
+            const cell = document.createElement('td');
+            cell.textContent = String(value);
+            row.append(cell);
+        }
+        tableBody.append(row);
+    }
+    table.replaceChildren(tableHead, tableBody);
 }
 
 /**
  * Renders laps table
  */
-function renderLaps(laps) {
+export function renderLaps(laps) {
     const section = document.getElementById('laps-section');
     const table = document.getElementById('laps-table');
     if (!section || !table) return;
@@ -1361,13 +1349,16 @@ function renderLaps(laps) {
 
     const tableBody = laps.map(lap => {
         const pace = formatPace(lap.average_speed);
+        const distance = Number.isFinite(lap.distance) ? `${(lap.distance / 1000).toFixed(2)} km` : '-';
+        const movingTime = Number.isFinite(lap.moving_time) ? formatTime(lap.moving_time) : '-';
+        const elevation = Number.isFinite(lap.total_elevation_gain) ? `${Math.round(lap.total_elevation_gain)} m` : '-';
         return `
         <tr>
             <td>${lap.lap_index}</td>
-            <td>${(lap.distance / 1000).toFixed(2)} km</td>
-            <td>${formatTime(lap.moving_time)}</td>
+            <td>${distance}</td>
+            <td>${movingTime}</td>
             <td>${pace}</td>
-            <td>${Math.round(lap.total_elevation_gain)} m</td>
+            <td>${elevation}</td>
             <td>${lap.average_heartrate ? Math.round(lap.average_heartrate) : '-'} bpm</td>
         </tr>`;
     }).join('');
@@ -1378,15 +1369,20 @@ function renderLaps(laps) {
 /**
  * Renders laps pace chart
  */
-function renderLapsChart(laps) {
+export function renderLapsChart(laps) {
     const canvas = document.getElementById('laps-chart');
     const section = document.getElementById('laps-chart-section');
     if (!canvas || !section || !laps || laps.length === 0) return;
 
+    const chartLaps = laps.filter(lap => Number.isFinite(lap.average_speed) && lap.average_speed > 0);
+    if (chartLaps.length === 0) {
+        section.classList.add('hidden');
+        return;
+    }
     section.classList.remove('hidden');
 
-    const labels = laps.map((_, i) => `Lap ${i + 1}`);
-    const paces = laps.map(lap => 1000 / lap.average_speed);
+    const labels = chartLaps.map((lap, i) => `Lap ${lap.lap_index ?? i + 1}`);
+    const paces = chartLaps.map(lap => 1000 / lap.average_speed);
     const minPace = Math.min(...paces);
     const maxPace = Math.max(...paces);
 
@@ -1424,15 +1420,15 @@ function renderLapsChart(laps) {
                     callbacks: {
                         title: ctx => labels[ctx[0].dataIndex],
                         label: ctx => {
-                            const lap = laps[ctx.dataIndex];
+                            const lap = chartLaps[ctx.dataIndex];
                             return `Pace: ${formatPace(lap.average_speed)}`;
                         },
                         afterLabel: ctx => {
-                            const lap = laps[ctx.dataIndex];
+                            const lap = chartLaps[ctx.dataIndex];
                             return [
-                                `Distance: ${(lap.distance / 1000).toFixed(2)} km`,
-                                `Time: ${formatTime(lap.moving_time)}`,
-                                `Elevation: ${Math.round(lap.total_elevation_gain)} m`,
+                                `Distance: ${Number.isFinite(lap.distance) ? `${(lap.distance / 1000).toFixed(2)} km` : '-'}`,
+                                `Time: ${Number.isFinite(lap.moving_time) ? formatTime(lap.moving_time) : '-'}`,
+                                `Elevation: ${Number.isFinite(lap.total_elevation_gain) ? `${Math.round(lap.total_elevation_gain)} m` : '-'}`,
                                 `Avg HR: ${lap.average_heartrate ? Math.round(lap.average_heartrate) : '-'} bpm`
                             ];
                         }
@@ -1458,18 +1454,16 @@ function renderSegments(segments) {
 
     section.classList.remove('hidden');
 
-    const tableHeader = `
-    <thead>
-        <tr>
-            <th>Segment Name</th>
-            <th>Time</th>
-            <th>Pace</th>
-            <th>Avg HR</th>
-            <th>Rank</th>
-        </tr>
-    </thead>`;
-
-    const tableBody = segments.map(effort => {
+    const tableHead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    for (const label of ['Segment Name', 'Time', 'Pace', 'Avg HR', 'Rank']) {
+        const cell = document.createElement('th');
+        cell.textContent = label;
+        headerRow.append(cell);
+    }
+    tableHead.append(headerRow);
+    const tableBody = document.createElement('tbody');
+    for (const effort of segments) {
         const pace = formatPace(effort.distance / effort.moving_time);
         let rank = '';
         if (effort.pr_rank === 1) {
@@ -1481,17 +1475,28 @@ function renderSegments(segments) {
         } else if (effort.kom_rank) {
             rank = `Top ${effort.kom_rank}`;
         }
-        return `
-        <tr>
-            <td><a href="https://www.strava.com/segments/${effort.segment.id}" target="_blank">${effort.name}</a></td>
-            <td>${formatTime(effort.moving_time)}</td>
-            <td>${pace}</td>
-            <td>${effort.average_heartrate ? Math.round(effort.average_heartrate) : '-'} bpm</td>
-            <td>${rank}</td>
-        </tr>`;
-    }).join('');
-
-    table.innerHTML = tableHeader + `<tbody>${tableBody}</tbody>`;
+        const row = document.createElement('tr');
+        const nameCell = document.createElement('td');
+        const segmentLink = document.createElement('a');
+        segmentLink.href = `https://www.strava.com/segments/${encodeURIComponent(String(effort.segment.id))}`;
+        segmentLink.target = '_blank';
+        segmentLink.rel = 'noopener noreferrer';
+        segmentLink.textContent = String(effort.name);
+        nameCell.append(segmentLink);
+        row.append(nameCell);
+        for (const value of [
+            formatTime(effort.moving_time),
+            pace,
+            `${effort.average_heartrate ? Math.round(effort.average_heartrate) : '-'} bpm`,
+            rank
+        ]) {
+            const cell = document.createElement('td');
+            cell.textContent = String(value);
+            row.append(cell);
+        }
+        tableBody.append(row);
+    }
+    table.replaceChildren(tableHead, tableBody);
 }
 
 // =====================================================
@@ -1501,7 +1506,7 @@ function renderSegments(segments) {
 /**
  * Renders HR zone distribution chart
  */
-function renderHrZoneDistributionChart(streams) {
+function renderHrZoneDistributionChart(streams, zones, analysisContext = null) {
     const canvas = document.getElementById('hr-zones-chart');
     const section = document.getElementById('hr-zones-section');
     if (!canvas || !section) return;
@@ -1511,22 +1516,34 @@ function renderHrZoneDistributionChart(streams) {
     }
     section.style.display = '';
 
-    const zonesDataText = localStorage.getItem('strava_training_zones');
-    if (!zonesDataText) {
-        console.warn('Training zones not found in localStorage.');
+    let message = section.querySelector?.('[data-analysis-profile-message]') ?? null;
+    const unconfigured = analysisContext?.status === 'unconfigured';
+    if (unconfigured && message === null && document?.createElement) {
+        message = document.createElement('p');
+        message.className = 'empty-state';
+        message.dataset.analysisProfileMessage = 'true';
+        message.textContent = 'Configure your local heart rate profile to see personalized zones.';
+        canvas.parentElement?.append(message);
+    }
+    canvas.hidden = unconfigured;
+    if (message) message.hidden = !unconfigured;
+    if (unconfigured) return;
+
+    const hrZones = readHeartRateZones(zones);
+
+    if (hrZones.length === 0) {
         return;
     }
 
-    const allZones = JSON.parse(zonesDataText);
-    const hrZones = allZones?.heart_rate?.zones?.filter(z => z.max > 0);
-
-    if (!hrZones || hrZones.length === 0) {
-        console.warn('Valid HR zones not found.');
-        return;
-    }
-
-    const timeInZones = calculateTimeInZones(streams.heartrate, streams.time, hrZones);
-    const labels = hrZones.map((zone, i) => `Z${i + 1} (${zone.min}-${zone.max === -1 ? '∞' : zone.max})`);
+    const timeInZones = calculateHeartRateZoneSeconds(
+        streams.heartrate,
+        streams.time,
+        hrZones
+    );
+    const labels = formatHeartRateZoneLabels(
+        hrZones,
+        analysisContext?.status === 'configured'
+    );
     const data = timeInZones.map(time => +(time / 60).toFixed(1));
 
     const gradientColors = ['#fde0e0', '#fababa', '#fa7a7a', '#f44336', '#b71c1c'];
@@ -1846,30 +1863,17 @@ function renderClassifierResults(classificationData) {
 /**
  * Main entry point - loads activity data and renders all sections
  */
-async function main() {
-    // Validate activity ID
-    if (!activityId) {
-        if (DOM.details) DOM.details.innerHTML = '<p>Error: No Activity ID provided.</p>';
-        return;
-    }
+export async function renderRunPage({ activity, streams, zones, athlete, activityId, analysisContext = null, activitySource, mapLocationMode, weatherFeatureEnabled }) {
+    const mapCoordinates = getActivityRouteCoordinates(activity, streams);
+    moveAndHideCustomChartSection();
+    weatherFeatureEnabledForPage = weatherFeatureEnabled === true;
+    mapLocationBoundaryForPage?.dispose();
+    mapLocationBoundaryForPage = createMapLocationBoundary({ sessionMode: mapLocationMode });
 
-    // Check authentication
-    const authPayload = getAuthPayload();
-    if (!authPayload) {
-        if (DOM.details) DOM.details.innerHTML = '<p>You must be logged in to view activity details.</p>';
-        return;
-    }
+    if (DOM.streamCharts) DOM.streamCharts.style.display = 'grid';
 
-    try {
-        moveAndHideCustomChartSection();
-
-        if (DOM.streamCharts) DOM.streamCharts.style.display = 'grid';
-
-        // Fetch activity data in parallel
-        const [activityData, streamData] = await Promise.all([
-            fetchActivityDetails(activityId, authPayload),
-            fetchActivityStreams(activityId, authPayload)
-        ]);
+    const activityData = structuredClone(activity);
+    const streamData = structuredClone(streams);
 
         // Calculate variability metrics from streams
         let paceVariabilityStream = '-';
@@ -1927,18 +1931,18 @@ async function main() {
         populateDynamicChartData(initialSmoothedStreams, false);
 
         // Render all sections
-        renderActivityInfo(activityData);
+        renderActivityInfo(activityData, activitySource);
         renderActivityStats(activityData);
-        renderAdvancedStats(activityData);
-        renderActivityMap(activityData, streamData);
+        renderAdvancedStats(activityData, analysisContext);
+        renderActivityMap(activityData, streamData, mapCoordinates);
         renderSplitsCharts(activityData);
         renderStreamCharts(initialSmoothedStreams, activityData, currentSmoothingLevel);
         renderBestEfforts(activityData.best_efforts);
         renderLaps(activityData.laps);
         renderLapsChart(activityData.laps);
         renderSegments(activityData.segment_efforts);
-        renderClassifierResults(classifyRun(activityData, streamData));
-        renderHrZoneDistributionChart(streamData);
+        renderClassifierResults(classifyRun(activityData, streamData, zones));
+        renderHrZoneDistributionChart(streamData, zones, analysisContext);
         renderHrMinMaxAreaChart(initialSmoothedStreams, currentSmoothingLevel);
         renderPaceMinMaxAreaChart(initialSmoothedStreams, currentSmoothingLevel);
         syncSideBySideContainers();
@@ -1947,13 +1951,5 @@ async function main() {
         // Initialize dynamic chart controls
         initDynamicChartControls();
 
-        if (DOM.streamCharts) DOM.streamCharts.style.display = '';
-
-    } catch (error) {
-        console.error('Failed to load activity page:', error);
-        if (DOM.details) DOM.details.innerHTML = `<p><strong>Error loading activity:</strong> ${error.message}</p>`;
-    }
+    if (DOM.streamCharts) DOM.streamCharts.style.display = '';
 }
-
-// Initialize on DOM ready
-document.addEventListener('DOMContentLoaded', main);

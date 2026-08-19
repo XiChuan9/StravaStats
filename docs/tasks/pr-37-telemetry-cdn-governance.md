@@ -1,0 +1,524 @@
+# PR-37: Telemetry and CDN Runtime Governance
+
+## Metadata
+
+| Field | Value |
+| --- | --- |
+| Milestone | V2 release hardening / R11 |
+| Status | A3 Option A frozen; implementation in progress |
+| Base branch | `integration/v2` |
+| Feature branch | `codex/v2/telemetry-cdn-governance` |
+| Exact base | `integration/v2@189a743c99af86fba38433ecdad20a09bfc39385` |
+| Owner | Codex |
+| Reviewer | Independent findings-first reviewer required after implementation |
+| Dependency | Exact-base integration CI run `31290651916`, completed successfully |
+| Pull request | Draft PR #43 |
+| Control tower | `019fa697-6cbf-70f1-a120-bf31ecc9e2ba` |
+
+## Goal and authority
+
+Close the R11 production telemetry and CDN-governance release blocker. Every production-reachable
+Google Tag Manager, Google Analytics, Microsoft Clarity, Vercel telemetry, and third-party runtime
+asset must have an explicit, frozen default and consent contract, page/mode matrix, literal request
+allowlist, version/integrity policy, privacy boundary, failure/offline behavior, and evidence that
+unapproved requests cannot occur. The final implementation must preserve the approved product
+behavior while failing closed when a resource, consent state, runtime value, or request boundary is
+missing, malformed, hostile, unavailable, or offline.
+
+This task does not authorize D3 Service Worker lifecycle, production deployment or release, real
+accounts or private data, the R3 public-Git-history incident disposition, provider/auth changes,
+schema or public API changes, analysis changes, dependency expansion, a Worker or Service Worker
+contract change, destructive cache/data work, or any real telemetry/CDN/provider request. R8 has
+already closed the separate external tile-location consent boundary; R11 may govern the Leaflet
+runtime asset but must not reopen or weaken the R8 tile contract.
+
+Conflicts resolve in this order: accepted ADRs, product PRD, engineering plans and release gates,
+this Task Brief, then implementation details. Proposed ADRs and historical conversations are
+evidence, not authority to freeze an undecided telemetry or CDN contract.
+
+## Global invariants
+
+- Missing or `null` values never become numeric zero; genuine finite numeric zero remains distinct.
+- Activity IDs remain opaque strings and are never parsed, normalized numerically, or placed in a
+  telemetry field, URL, cache key, log, or third-party request.
+- Demo never reads or sends Real activity, identity, consent, provider, cache, or user-owned state.
+- Legacy rollback and all Legacy/V2 data remain intact. Disconnect, deletion, migration, cache
+  cleanup, and data overwrite remain separate and unauthorized.
+- No public API, schema, algorithm, dependency, Worker, Service Worker, provider, authentication,
+  deployment, or release contract expands silently.
+- Evidence uses deterministic synthetic values, loopback serving, interception registered before
+  navigation/import, and disposable browser state only. Real Tokens, accounts, activities, routes,
+  GPS, health, power, browser profiles, external requests, and private fixtures are prohibited.
+
+## A0 exact-base evidence
+
+- The assigned worktree began detached and clean at exact SHA
+  `189a743c99af86fba38433ecdad20a09bfc39385`.
+- After an explicit remote fetch, `HEAD`, `FETCH_HEAD`, local
+  `refs/remotes/origin/integration/v2`, and the assigned SHA all resolved exactly to
+  `189a743c99af86fba38433ecdad20a09bfc39385`. Status and diff were clean before branch creation.
+- GitHub App evidence independently verified PR-triggered CI run `31290651916` at the exact base as
+  `completed/success`. The combined legacy status API had no additional contexts.
+- Untouched local gates passed before branch creation: `npm ci`; syntax for 249 files; privacy;
+  full tests 1682/1682; `git diff --check`; clean status.
+- Local `gh` authentication is invalid and will not be repaired through Chrome, interactive login,
+  or the user's browser profile. A GitHub App `403` write will be delegated exactly to the control
+  tower.
+- No real Token, account, identity, activity, route, coordinate, heart-rate, power, setting,
+  export, screenshot, browser profile, private fixture, external request, telemetry record, CDN
+  response, Legacy library, or V2 library was read.
+
+## A1 Task-Brief publication boundary
+
+The first feature-branch commit contains only this Task Brief. It must be pushed normally and used
+to open a Draft PR targeting `integration/v2` with the exact title:
+
+```text
+fix(v2): govern telemetry and CDN runtime dependencies
+```
+
+If the GitHub App returns `403` or `Resource not accessible by integration` for create, update, or
+Ready operations, delegate the exact operation directly to the control tower. Do not use Chrome,
+interactive login, a user profile, or a materially different GitHub write path.
+
+From Task-Brief publication through the material decision gate, A2 is strictly read-only. The
+cumulative write allowlist is exactly:
+
+```text
+docs/tasks/pr-37-telemetry-cdn-governance.md
+```
+
+No production, test, harness, fixture, documentation, lockfile, dependency, generated artifact,
+Worker, or Service Worker may be edited before the owner choice is returned through the control
+tower.
+
+## A2 findings-first investigation contract
+
+Audit every production-reachable telemetry and third-party runtime-asset path end to end:
+
+```text
+root / detail / gear / source / backup / diagnostics / direct navigation
+-> Demo or Real and Legacy / Shadow / Canonical mode selection
+-> eager or lazy document/module/library activation
+-> source declaration, bootstrap, injected runtime, or dynamic loader
+-> DOM/runtime execution and event/payload construction
+-> URL/origin/path/query/header/referrer/credential request construction
+-> network, response, redirect, CORS, SRI, CSP, browser cache, Cache Storage, and SW boundary
+-> cookie/localStorage/sessionStorage/IndexedDB/global/console side effects
+-> success, denial, malformed input, load failure, offline, refresh, and mode-switch behavior
+```
+
+The audit must inventory, with exact source locations and production reachability:
+
+1. Google Tag Manager, `gtag`, Google Analytics, Microsoft Clarity, Vercel Analytics/Insights and
+   Speed Insights, beacons, pixels, `sendBeacon`, `fetch`, image, iframe, script, module, injected
+   global, dynamic import, and same-origin `/_vercel/` telemetry paths;
+2. every root, detail, gear, source-manager, backup, diagnostics, analysis, Legacy, Shadow,
+   Canonical, Demo, direct-route, reload, mode-switch, eager/lazy, click, timer, visibility,
+   navigation, error, performance, and page-lifecycle trigger;
+3. every CDN declaration and runtime import for Chart.js, D3, Cal-Heatmap, Leaflet,
+   Leaflet.heat, their styles/plugins/icons/workers/fonts, and any other third-party runtime asset;
+4. exact origin, scheme, host, port, path, query, version/pin, redirect, module/classic script,
+   integrity/SRI, `crossorigin`, CSP, CORS, referrer policy, credentials, response type, MIME, and
+   global-symbol behavior;
+5. telemetry fields and transformations, including URL/title/referrer, opaque IDs, activity and
+   gear attributes, routes/coordinates, errors, timing, user/session/client IDs, consent state,
+   IP-derived metadata, and missing/null/zero behavior;
+6. cookie, local/session storage, IndexedDB, memory/global state, browser/HTTP cache, Cache Storage,
+   Service Worker interception, preconnect, DNS-prefetch, preload/prefetch, console, and unload or
+   background-delivery behavior;
+7. load failure, partial dependency failure, tamper/integrity failure, timeout, retry, fallback,
+   offline, cold load, refresh, direct navigation, duplicate bootstrap, race, and late-event
+   behavior, including whether a failure broadens origins or changes private-data handling;
+8. production-reachable versus declared-but-unreachable assets and requests, with R8-approved map
+   tile requests reported separately and never counted as an R11 telemetry/CDN authorization;
+9. existing tests, browser harnesses, docs, CSP/hosting files, package/lock data, release claims,
+   and known limitations that freeze or contradict current behavior; and
+10. the exact smallest candidate file and literal network allowlists, plus any dependency,
+    Service Worker, deployment, or public-surface collision that requires stopping before A3.
+
+### Evidence rules
+
+- Static source, deterministic VM/DOM execution, loopback serving, fixed synthetic canaries, and
+  interception-before-import/navigation are permitted.
+- No request may reach a real telemetry, CDN, provider, map, weather, AI, or auth host. Browser
+  evidence must abort or fulfill from the harness before any external socket and retain only fixed
+  category/origin/path/count facts.
+- Never record a credential, identity, private payload, activity, route/GPS, health/power value,
+  user-owned storage/profile, raw telemetry body, or external response.
+- Findings lead with release-blocking behavior and the complete source-to-DOM/runtime/network/
+  storage/cache/SW/console graph. A declaration alone is not proof of execution, and a blocked
+  network request is not proof that third-party code did not execute.
+
+## Material A/B/C decision gate
+
+Before any production or test implementation, deliver one complete, mutually exclusive A/B/C
+package directly to the control tower and obtain the owner's explicit material choice. The package
+must freeze all related choices together; no value below may be inferred from the recommendation:
+
+- telemetry default, exact affirmative consent if any, disclosure, scope, expiry, persistence,
+  revocation, re-prompt, and complete-disable versus opt-in behavior;
+- root/detail/gear/source/backup/diagnostics/analysis and Demo/Legacy/Shadow/Canonical matrix,
+  including direct navigation, reload, offline, failure, and mode switch;
+- exact telemetry events/fields, URL/referrer/title handling, identifiers, retention/cache/storage,
+  IP/browser metadata, consent signaling, failure UI, and late/background delivery;
+- each third-party origin and URL, exact version/pin, SRI, CSP, referrer, CORS, credentials,
+  redirect, MIME/global, load order, timeout/retry/fallback, failure, offline, and cache semantics;
+- whether each runtime asset is removed, vendored/localized, package-managed, or remotely pinned,
+  and the compatibility, privacy, performance, provenance, update, rollback, and cache impact;
+- exact hard network allowlist and deny behavior, distinguishing authorized CDN assets, disabled or
+  opted-in telemetry, and R8-approved tile requests;
+- dependency, lockfile, Worker, Service Worker, deployment, hosting/CSP, public-surface, schema,
+  migration, privacy, rollback, and known-limitation impact; and
+- exact cumulative file allowlist plus focused/full/browser verification and review requirements.
+
+The package must contain one privacy-first recommendation and at least two materially distinct
+alternatives. A choice cannot silently mix options. A required additional path, origin, dependency,
+public contract, Service Worker/deployment change, or collision with an accepted decision stops
+implementation and is delegated as a new minimum decision package.
+
+## Post-decision implementation and closure contract
+
+After the explicit owner choice is relayed, freeze the selected A3 contract and literal file,
+origin, URL, event, field, storage, and cache allowlists in this Task Brief before production
+changes. Implement failure-first and remain inside the approved paths. Required closure evidence:
+
+1. focused failure-first tests for default and consent behavior, page/mode isolation, exact
+   origins/URLs/versions/SRI/CSP/referrer/CORS, fields, storage/cache, duplicate/late execution,
+   failure/offline/refresh/mode switch, missing/null/zero, and literal allowlists;
+2. full `npm test`, `npm run check:syntax`, `npm run check:privacy`, and `git diff --check`;
+3. actual-served disposable-browser evidence with interception registered before navigation or
+   production import, proving default and Demo zero telemetry/unauthorized third-party requests,
+   approved resource behavior, failure/offline/refresh/mode switching, and zero real external
+   request;
+4. one genuinely independent findings-first review, fixes for every finding, and a fresh
+   independent no-findings re-review;
+5. a Task-Brief-only Final Review Closure commit, normal push, true remote depth-1 exact-head
+   readback, and exact-head GitHub CI success; and
+6. a safe final PR body with exact base/head/tree/changed paths/CI/review/browser evidence and the
+   control-tower Draft-to-Ready handoff.
+
+Stop at Ready. Squash merge, auto-merge, cleanup, deploy, release, cache deletion, data mutation,
+branch/worktree deletion, and any history rewrite require separate user authorization.
+
+## A3 owner decision and frozen implementation contract
+
+The owner selected Option A exactly on 2026-08-09 through the control tower. The selection also
+authorizes one build-source-only acquisition in a disposable temporary directory for the exact npm
+package versions below. It does not authorize an application or browser CDN request. Acquisition
+material must be removed after the selected distribution bytes, package provenance, license,
+tarball integrity, and hashes are verified and the approved local assets are created.
+
+`package.json`, `package-lock.json`, and `tests/import/decoder-registry-wiring.test.js` remain
+byte-for-byte unchanged. The exact-locked `@vercel/speed-insights@2.0.0` package remains an
+install-only, runtime-unreachable dependency because PR-14 freezes the package files by whole-file
+digest. Any need to change one of those three paths or a forty-second path is a new collision and
+stops implementation.
+
+### Telemetry and page-mode contract
+
+- Runtime telemetry is completely disabled. There is no telemetry opt-in, consent record, event,
+  queue, identifier, cookie, storage key, retry, unload/background delivery, or fallback.
+- The runtime telemetry allowlist is empty: Google Tag Manager, direct Google Analytics, Microsoft
+  Clarity, Vercel Analytics, Vercel Insights, and Vercel Speed Insights are all denied.
+- Root, every rewritten root tab route, activity router, Generic/Run/Bike/Swim detail, Gear, Source
+  Manager, Storage Backup, and Diagnostics make zero telemetry request in Demo, Legacy, Shadow, and
+  Canonical modes, including direct navigation, reload, refresh, and mode changes.
+- Root GTM/`gtag`/noscript markup, every `/_vercel/insights/script.js` declaration, and every
+  production import of `js/shared/utils/speed-insights.js` are removed. The utility may remain
+  tracked but must be unreachable from every production entry.
+- An opaque activity or Gear ID, URL/query/hash, document title/referrer, activity/athlete/gear
+  field, coordinate/route, health/power value, Token, error, timing, IP-derived value, or browser
+  metadata never enters telemetry because no telemetry code or collector is reachable.
+
+### Local runtime asset contract
+
+The only approved third-party visualization runtime is the following exact same-origin set:
+
+```text
+/js/vendor/d3-7.9.0.min.js
+/js/vendor/cal-heatmap-4.2.2.min.js
+/styles/vendor/cal-heatmap-4.2.2.css
+/js/vendor/chart-4.5.0.umd.min.js
+/js/vendor/chartjs-adapter-date-fns-3.0.0.bundle.min.js
+/js/vendor/chartjs-chart-matrix-3.0.0.min.js
+/styles/vendor/leaflet-1.9.4.css
+/js/vendor/leaflet-1.9.4.min.js
+/js/vendor/leaflet-heat-0.2.0.min.js
+/js/vendor/html2canvas-1.4.1.min.js
+/js/vendor/jspdf-2.5.1.umd.min.js
+```
+
+The package provenance is exactly D3 `7.9.0`, Cal-Heatmap `4.2.2`, Chart.js `4.5.0`,
+chartjs-adapter-date-fns `3.0.0`, chartjs-chart-matrix `3.0.0`, Leaflet `1.9.4`, Leaflet.heat
+`0.2.0`, html2canvas `1.4.1`, and jsPDF `2.5.1`. The selected distribution bytes and licenses are
+tracked; no package is added to the manifest or lockfile. A later A3 evidence subsection must
+freeze each acquired tarball integrity, selected-file SHA-256, and HTML SHA-384 SRI before a
+production HTML change is committed.
+
+Every local third-party `script` and `link` uses the exact versioned path, `crossorigin="anonymous"`,
+and its exact `integrity="sha384-..."`. There is no alternate origin, unversioned path, redirect,
+query, retry, fallback CDN, dynamic loader, `eval`, or remote module. A missing, malformed, or
+integrity-failing core Chart runtime stops root/detail/Gear before Repository or private-data reads
+and shows only fixed unavailable copy. Missing optional Cal-Heatmap, Leaflet/Leaflet.heat,
+html2canvas, or jsPDF degrades only its visualization/export with fixed unavailable copy and never
+broadens the request boundary.
+
+The VDOT calculator iframe is removed. Its feature becomes an explicit user-initiated navigation
+with `target="_blank"` and `rel="noopener noreferrer"`. External athlete profile images are denied:
+the summary renderer accepts only the exact same-origin local placeholder `/icon-sport.svg`, and
+Demo uses that path. Provider-controlled or other external HTTPS image values remain data only and
+never become a request.
+
+### Referrer, CSP, CORS, cache, and offline contract
+
+Root, router, detail, and Gear documents declare `Referrer-Policy: no-referrer`. Their meta CSP has
+no broad `https:`, `data:` script, `unsafe-eval`, external frame, object, or base permission:
+
+```text
+default-src 'self'
+script-src 'self' plus only the exact SHA-256 hashes of retained static inline blocks
+script-src-attr 'unsafe-hashes' plus only exact hashes of retained fixed handlers
+style-src 'self' 'unsafe-inline'
+img-src 'self' data: blob:
+worker-src 'self'
+manifest-src 'self'
+object-src 'none'
+base-uri 'none'
+form-action 'none'
+frame-src 'none'
+```
+
+`connect-src` is page-minimal: activity router is `'self'`; Gear is `'self'` plus the exact three
+R8 OpenStreetMap tile origins; Generic/Run/Bike are `'self'` plus the R6 Open-Meteo origin and the
+three R8 tile origins; Swim is `'self'` plus R6 Open-Meteo; root is `'self'` plus the exact R6, R7,
+and R8 origins. CSP is defense in depth; the accepted R6/R7/R8 modules continue to enforce their
+exact paths, fields, methods, credentials, referrer, consent, cancellation, and limits.
+
+Local vendor JavaScript under `/js/vendor/` and CSS under `/styles/vendor/` uses R9's existing
+queryless same-origin static classifier. A successful online response may receive the existing
+network-first validated Cache Storage behavior and later fallback. No Service Worker file,
+classifier, install seed, cache name, lifecycle, deletion, eviction, or D3 contract changes. There
+is no alternate resource request when offline. Cold first-ever offline remains unsupported; a
+missing warm fallback fails with fixed local unavailable copy. Browser HTTP cache behavior is not
+promoted to a product guarantee.
+
+### Exact external request allowlist retained from R6/R7/R8
+
+R11 adds no external origin. The only authorized automatic application request candidates remain
+behind their previously accepted affirmative controls:
+
+```text
+R6 GET  https://archive-api.open-meteo.com/v1/archive
+R7 POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent
+R8 GET  https://a.tile.openstreetmap.org/{z}/{x}/{y}.png
+R8 GET  https://b.tile.openstreetmap.org/{z}/{x}/{y}.png
+R8 GET  https://c.tile.openstreetmap.org/{z}/{x}/{y}.png
+```
+
+All other automatic external origins and paths are denied. Explicit user navigation to existing
+Strava, Ko-fi, Reddit, or VDOT pages is not a runtime fetch authorization and must use
+`noopener noreferrer`. R8 tiles remain separate location requests, not CDN or telemetry approval.
+
+### A3 literal cumulative hard maximum
+
+Implementation, tests, review repairs, documentation, and Closure may modify exactly these 41
+paths. Every unlisted path is prohibited:
+
+```text
+.gitattributes
+docs/tasks/pr-37-telemetry-cdn-governance.md
+index.html
+html/activity-router.html
+html/activity.html
+html/run.html
+html/bike.html
+html/swim.html
+html/gear.html
+js/app/main.js
+js/app/map-location-egress.js
+js/pages/activity/index.js
+js/pages/run/index.js
+js/pages/bike/index.js
+js/pages/swim/index.js
+js/pages/gear/index.js
+js/demo/generator.js
+js/tabs/athlete.js
+js/vendor/d3-7.9.0.min.js
+js/vendor/cal-heatmap-4.2.2.min.js
+js/vendor/chart-4.5.0.umd.min.js
+js/vendor/chartjs-adapter-date-fns-3.0.0.bundle.min.js
+js/vendor/chartjs-chart-matrix-3.0.0.min.js
+js/vendor/leaflet-1.9.4.min.js
+js/vendor/leaflet-heat-0.2.0.min.js
+js/vendor/html2canvas-1.4.1.min.js
+js/vendor/jspdf-2.5.1.umd.min.js
+js/vendor/THIRD_PARTY_NOTICES.md
+styles/vendor/cal-heatmap-4.2.2.css
+styles/vendor/leaflet-1.9.4.css
+tests/privacy/external-runtime.test.js
+tests/privacy/map-location-egress.test.js
+tests/consumers/external-runtime-browser-smoke.html
+tests/consumers/summary-boundaries.test.js
+tests/consumers/detail-consumers.test.js
+README.md
+LOCAL_SETUP.md
+PWA_GUIA.md
+TECHNICAL_GUIDE.md
+docs/guides/privacy-guide.md
+docs/guides/known-limitations.md
+```
+
+No schema, public API, analysis algorithm, package/lock, Worker, Service Worker, provider/auth,
+deployment, release, Legacy/V2 data, migration, deletion, cleanup, or R3 incident-disposition
+change is authorized. Rollback is a code-and-static-asset revert only and never clears Cache
+Storage, Service Worker state, settings, credentials, Legacy data, or V2 data.
+
+On 2026-08-09 the owner approved the exact R11 A3 collision Option A after the implementation
+audit proved that the production R8 consent UI still displayed an obsolete statement that Leaflet
+was loaded from `unpkg.com`. The cumulative hard maximum therefore expands from 38 to exactly 40
+paths by adding only `js/app/map-location-egress.js` and
+`tests/privacy/map-location-egress.test.js`. Those paths may change only the fixed disclosure and
+its matching frozen assertion: the map drawing runtime is exact-version-pinned and served
+same-origin, while OpenStreetMap tile requests remain a separate external request governed by the
+unchanged R8 per-map consent boundary. No R8 consent state, action label, endpoint, URL grammar,
+zoom, geometry validation, fetch, credential, referrer, cache, timeout, cancellation, algorithm,
+provider, public API, schema, Service Worker, or data behavior may change.
+
+On 2026-08-09 the owner approved the exact second R11 A3 collision Option A after the staged
+failure-first gate proved that the two byte-for-byte upstream distribution files contain their
+own whitespace forms: `styles/vendor/leaflet-1.9.4.css` uses CRLF and
+`js/vendor/jspdf-2.5.1.umd.min.js` has trailing spaces in bundled license comments. Standard
+`git diff --cached --check` failed only on those acquired bytes. A disposable
+`core.attributesFile=/private/tmp/r11-attributes` proof made that same staged check pass without
+changing either file. The cumulative hard maximum therefore expands from 40 to exactly 41 paths
+by adding only `.gitattributes`; its entire R11 content is exactly:
+
+```gitattributes
+/js/vendor/jspdf-2.5.1.umd.min.js -diff
+/styles/vendor/leaflet-1.9.4.css -diff
+```
+
+No other attributes rule is authorized. Both vendor files, their frozen SHA-256/SHA-384 SRI, and
+their provenance remain byte-for-byte unchanged. The disposable proof file must be removed after
+the repository rule is verified. Any forty-second path or material contract change is a new
+collision and stops implementation.
+
+### A3 acquisition, provenance, license, and integrity evidence
+
+The owner-authorized acquisition ran once in disposable directory
+`/private/tmp/r11-acquire.vPCgwJ`. Each archive was produced by `npm pack` for the exact frozen
+version. No application or browser loaded a CDN URL, and no package was installed into the
+repository. The npm-tarball SHA-512 integrities are:
+
+| Package | Declared / packaged license | Tarball integrity |
+| --- | --- | --- |
+| `d3@7.9.0` | ISC / packaged `LICENSE` | `sha512-e1U46jVP+w7Iut8Jt8ri1YsPOvFpg46k+K8TpCb0P+zjCkjkPnV7WzfDJzMHy1LnA+wj5pLT1wjO901gLXeEhA==` |
+| `cal-heatmap@4.2.2` | MIT / packaged `LICENCE` | `sha512-jzLyf8qpbGwWjFIPYXjVRfcMHnZv+wdd/l45s2e99rMW/n/qscoCRgrE+A+gSme5sTJWkA90YunkhyNmlDmLRw==` |
+| `chart.js@4.5.0` | MIT / packaged `LICENSE.md` | `sha512-aYeC/jDgSEx8SHWZvANYMioYMZ2KX02W6f6uVfyteuCGcadDLcYVHdfdygsTQkQ4TKn5lghoojAsPj5pu0SnvQ==` |
+| `chartjs-adapter-date-fns@3.0.0` | MIT / packaged `LICENSE.md` | `sha512-Rs3iEB3Q5pJ973J93OBTpnP7qoGwvq3nUnoMdtxO+9aoJof7UFcRbWcIDteXuYd1fgAvct/32T9qaLyLuZVwCg==` |
+| `chartjs-chart-matrix@3.0.0` | MIT / packaged `LICENSE` | `sha512-lUWC1UaWkxGdG02dBJ5r1ppbSYB/uWmwAh11VEs7V3ZQItNCk4am+rmacwkgeb+SQeEj2hP9Qq4oGsUmPl/1lQ==` |
+| `leaflet@1.9.4` | BSD-2-Clause / packaged `LICENSE` | `sha512-nxS1ynzJOmOlHp+iL3FyWqK89GtNL8U8rvlMOsQdTTssxZwCXh8N2NB3GDQOL+YR3XnWyZAxwQixURb+FA74PA==` |
+| `leaflet.heat@0.2.0` | packaged BSD-style `LICENSE`; package metadata omits `license` | `sha512-Cd5PbAA/rX3X3XKxfDoUGi9qp78FyhWYurFg3nsfhntcM/MCNK08pRkf4iEenO1KNqwVPKCmkyktjW3UD+h9bQ==` |
+| `html2canvas@1.4.1` | MIT / packaged `LICENSE` | `sha512-fPU6BHNpsyIhr8yyMpTLLxAbkaK8ArIBcmZIRiBLiDhjeqvXolaEmDGmELFuX9I4xDcaKKcJl+TKZLqruBbmWA==` |
+| `jspdf@2.5.1` | MIT / packaged `LICENSE` | `sha512-hXObxz7ZqoyhxET78+XR34Xu2qFGrJJ2I2bE5w4SM8eFaFEkW2xcGRVUss360fYelwRSid/jT078kbNvmoW0QA==` |
+
+The selected bytes are copied without transformation. The exact source member, byte count,
+SHA-256 audit digest, and HTML SHA-384 SRI are:
+
+| Approved local path | Package member | Bytes | SHA-256 | SRI |
+| --- | --- | ---: | --- | --- |
+| `/js/vendor/d3-7.9.0.min.js` | `d3@7.9.0/dist/d3.min.js` | 279706 | `f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539` | `sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i` |
+| `/js/vendor/cal-heatmap-4.2.2.min.js` | `cal-heatmap@4.2.2/dist/cal-heatmap.min.js` | 155936 | `e6f941bd8de686b2a5f3fbd104517fe00930d1ab09b75f50c4e171a8617d3abb` | `sha384-u6mWlT25qeWOoRQiqXuzYVkUZPu34+SHGP5MJB5FTBu1q4C1HGfjDC6UZZvtN1lt` |
+| `/styles/vendor/cal-heatmap-4.2.2.css` | `cal-heatmap@4.2.2/dist/cal-heatmap.css` | 1607 | `20c8e128cc432909ddac71206d40522820d94e8dac91d706d9f57886c79ce22f` | `sha384-CqhcQLOCMzvuMykgRLOtzD9FJW+nHHcILVVDD6EjiRjc3Ecn71ZKehgvlHUnK5q+` |
+| `/js/vendor/chart-4.5.0.umd.min.js` | `chart.js@4.5.0/dist/chart.umd.min.js` | 208341 | `2f27bcf471b2d69dd78494f6e2172fb28470eb843820e2f96bb85d39f9618d30` | `sha384-XcdcwHqIPULERb2yDEM4R0XaQKU3YnDsrTmjACBZyfdVVqjh6xQ4/DCMd7XLcA6Y` |
+| `/js/vendor/chartjs-adapter-date-fns-3.0.0.bundle.min.js` | `chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js` | 50650 | `ea7ab30d26c38dcf1f2d26bb43e73a94537b58f1906f55e1a546dd09321b5615` | `sha384-cVMg8E3QFwTvGCDuK+ET4PD341jF3W8nO1auiXfuZNQkzbUUiBGLsIQUE+b1mxws` |
+| `/js/vendor/chartjs-chart-matrix-3.0.0.min.js` | `chartjs-chart-matrix@3.0.0/dist/chartjs-chart-matrix.min.js` | 3555 | `079bc5983bc06fd5c00d8581cf61a65f2c5d754c2e3545ee180b1d595db502d8` | `sha384-rJ/i5dnMG9QpsJqCMvR1ItW0deXppx40qBosSeiEI3hb9B8msI7j0D22p2rp010u` |
+| `/styles/vendor/leaflet-1.9.4.css` | `leaflet@1.9.4/dist/leaflet.css` | 14806 | `a7837102824184820dfa198d1ebcd109ff6d0ff9a2672a074b9a1b4d147d04c6` | `sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H` |
+| `/js/vendor/leaflet-1.9.4.min.js` | `leaflet@1.9.4/dist/leaflet.js` | 147552 | `db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a` | `sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH` |
+| `/js/vendor/leaflet-heat-0.2.0.min.js` | `leaflet.heat@0.2.0/dist/leaflet-heat.js` | 5158 | `eb952aae5806a1102729f291bab887dde783ace859819a354827a776e73e486a` | `sha384-mFKkGiGvT5vo1fEyGCD3hshDdKmW3wzXW/x+fWriYJArD0R3gawT6lMvLboM22c0` |
+| `/js/vendor/html2canvas-1.4.1.min.js` | `html2canvas@1.4.1/dist/html2canvas.min.js` | 198689 | `e87e550794322e574a1fda0c1549a3c70dae5a93d9113417a429016838eab8cb` | `sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H` |
+| `/js/vendor/jspdf-2.5.1.umd.min.js` | `jspdf@2.5.1/dist/jspdf.umd.min.js` | 364463 | `98ccf17aa10c20bb1301762618fcc9b6ab3a4e7f26b6071d64d0b41154df3875` | `sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk` |
+
+The packaged license texts are retained verbatim in the approved consolidated notices file. The
+temporary archives and extraction tree are not evidence artifacts and must be removed after the
+local copies and their recorded hashes are independently rechecked.
+
+## Final Review Closure
+
+R11 implementation and review closed on 2026-08-09 against exact base
+`189a743c99af86fba38433ecdad20a09bfc39385`. The implementation commit is `9692cf7`; the
+independent-review repair commit is `540ad999273077c126f6d8f173317f9f7e68cc62`. The cumulative
+base-to-repair diff and this Closure use exactly the 41 literal paths above, with no forty-second
+path. `package.json`, `package-lock.json`, and
+`tests/import/decoder-registry-wiring.test.js` retain their frozen SHA-256 values. All 11 selected
+vendor assets retain the recorded byte counts, SHA-256 values, SHA-384 SRI, versions, and
+provenance. The acquisition directory, temporary attributes proof, disposable Chrome profile,
+and browser runner were removed after verified use.
+
+### Failure-first and implementation evidence
+
+- The initial R11 contract test produced one pass and six failures before production changes, then
+  passed after telemetry removal, local vendoring, SRI/CSP/referrer enforcement, failure guards,
+  VDOT navigation replacement, and athlete-image denial.
+- The first collision test exposed obsolete `unpkg.com` map-runtime disclosure before the approved
+  two-path disclosure-only repair. The unchanged R8 consent endpoint and request behavior remained
+  covered by its focused suite.
+- Standard staged `git diff --cached --check` exposed only the exact upstream CRLF/license-comment
+  whitespace in Leaflet CSS and jsPDF. The owner-approved two-line `.gitattributes` rule made both
+  standard staged and unstaged checks pass without changing either vendor byte.
+- The independent findings-first review found one P1 exact-contract mismatch: Run, Bike, and Swim
+  Strava links used only `noreferrer`. A new regression assertion failed first; all three links were
+  then repaired to exact `rel="noopener noreferrer"` inside the existing allowlist.
+
+### Actual-served disposable-browser evidence
+
+A pure static loopback server served the final repaired working tree without `.env`, credentials,
+private fixtures, or a user browser/profile. Headless Chrome used a disposable empty context with
+Service Workers blocked; the global request interceptor was registered before the first page and
+navigation, and Chrome host resolution separately mapped non-loopback hosts to `0.0.0.0`.
+
+- The ten-page default matrix covered root, activity router, Generic/Run/Bike/Swim detail, Gear,
+  Source Manager, Storage Backup, and Diagnostics. Every page had no `dataLayer`, no `gtag`, no
+  remote runtime element, and no telemetry performance entry.
+- Synthetic Demo initialization, refresh, and dark-mode change retained Demo mode, produced no
+  external athlete image, and exposed no telemetry global.
+- All nine approved runtime globals passed: D3, Cal-Heatmap, Chart.js, the date adapter, matrix
+  controller, Leaflet, Leaflet.heat, html2canvas, and jsPDF.
+- A tampered core Chart response failed SRI, left `Chart` undefined, displayed only fixed local
+  unavailable copy, and wrote no Demo state. A blocked optional Cal-Heatmap response preserved the
+  core controls and Chart runtime with no fallback.
+- Warm offline refresh made the document unavailable without an alternate request; cold offline
+  failed closed as unsupported. The excluded Service Worker lifecycle was not exercised or
+  changed.
+- Final result: 886 same-origin requests, zero local failures, zero external attempts, and zero
+  telemetry attempts. No real provider, telemetry, CDN, tile, Token, account, or private-data
+  request occurred.
+
+### Verification and independent review evidence
+
+- Focused R11/R8/detail/summary/release checks: 311/311 before review repair; repair-focused
+  284/284 after the failure-first link assertion; fresh independent re-review focused checks
+  300/300; final Closure tree 312/312.
+- Final Closure tree full `npm test`: 1696/1696. `npm run check:syntax`: 259 files.
+  `npm run check:privacy`: pass. Standard staged, unstaged, and base-range diff checks: pass.
+- Exact path audit: Task Brief allowlist 41, base-to-repair changed paths 41, unexpected paths 0,
+  missing paths 0. Working tree was clean before this Task-Brief-only Closure.
+- Independent findings-first reviewer `/root/r11_findings_review` inspected the complete
+  base-to-implementation range, reported the single Strava-link P1 above, and made no write.
+- A fresh reviewer `/root/r11_no_findings_rereview` independently inspected the complete
+  base-to-repair range and returned **NO FINDINGS**. It independently reconfirmed the 41/41 path
+  match, exact two-line attributes rule, frozen package/lock/decoder hashes, every vendor hash/SRI,
+  telemetry unreachability, page-minimal CSP/referrer matrix, core and optional failure behavior,
+  VDOT/image egress, R8 preservation, documentation truthfulness, and the repaired link test. It
+  made no write.
+
+Residual exclusions remain production deployment/release, real accounts or private data, D3
+Service Worker lifecycle, npm registry reacquisition, and Safari/Firefox evidence. They are not
+claimed. Rollback remains a code/static-asset revert only and never removes or migrates user data,
+settings, Cache Storage, or Service Worker state.
+
+This is the final Task-Brief-only Review Closure. After its normal push, completion additionally
+requires true remote depth-1 exact-head readback and exact-head GitHub CI success. The safe PR body
+and Draft-to-Ready operation are delegated to the control tower under standing authorization.
+Ready is not merge authorization; merge, cleanup, deploy, release, and D3 remain prohibited.

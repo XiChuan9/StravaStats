@@ -1,5 +1,14 @@
 # 第二部分：完整工程开发计划
 
+**文档状态：** Superseded for public product scope
+
+> Public-scope notice (2026-08-19): this plan is a pre-freeze, point-in-time
+> historical record. Its former branches, milestones, release sequence, and
+> private-extension work do not describe current public runtime functionality
+> and do not authorize continued V2 development. The current public scope is
+> defined by the
+> [Public Local Import Core Scope Freeze](../tasks/public-local-import-core-freeze.md).
+
 # 21. Git 与 Worktree 总体架构
 
 ## 21.1 长期分支
@@ -49,10 +58,10 @@ codex/v2/backup-restore
 ## 21.3 Worktree 目录
 
 ```text
-/Users/wangchuanliang/Documents/StravaStats
+<repo-root>
 └── main
 
-/Users/wangchuanliang/Documents/StravaStats-worktrees/
+<worktree-root>/
 ├── v1
 ├── v2
 ├── repo-safety
@@ -88,7 +97,7 @@ codex/v2/backup-restore
 ## 22.1 创建基线
 
 ```bash
-cd /Users/wangchuanliang/Documents/StravaStats
+cd "$HOME/Documents/StravaStats"
 
 git switch main
 git pull --ff-only origin main
@@ -101,10 +110,10 @@ PORT=3001 npm run dev
 验证主要页面后：
 
 ```bash
-git tag -a baseline-strava-api-2026-07-27 \
-  -m "Stable Strava API version with Run Plus and NSM before local-first v2 migration"
+git tag -a baseline-strava-api-2026-07-28 \
+  -m "Stable Strava API baseline before the local-first v2 migration"
 
-git push origin baseline-strava-api-2026-07-27
+git push origin baseline-strava-api-2026-07-28
 ```
 
 ## 22.2 创建长期分支
@@ -120,7 +129,7 @@ git push -u origin integration/v2
 ## 22.3 创建永久 Worktree
 
 ```bash
-WT_ROOT=/Users/wangchuanliang/Documents/StravaStats-worktrees
+WT_ROOT="$HOME/Documents/StravaStats-worktrees"
 
 mkdir -p "$WT_ROOT"
 
@@ -1006,7 +1015,7 @@ origin/integration/v2
 codex/v2/<task-name>
 
 Worktree：
-/Users/wangchuanliang/Documents/StravaStats-worktrees/<task-name>
+<worktree-root>/<task-name>
 
 任务目标：
 <一句话描述>

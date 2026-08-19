@@ -1,23 +1,156 @@
 // weather-analytics.js
 import * as utils from './utils.js';
+import {
+    WEATHER_CONSENT_COPY,
+    grantWeatherConsent,
+    isWeatherConsentGranted,
+    requestHistoricalWeather,
+    revokeWeatherConsent
+} from '../app/weather-consent.js';
 
-export async function renderWeatherTab(allActivities) {
+function clearWeatherPresentation() {
+    for (const id of [
+        'weather-histogram',
+        'monthly-weather',
+        'condition-pie',
+        'custom-scatter-chart'
+    ]) {
+        try { Chart.getChart?.(document.getElementById(id))?.destroy(); } catch { /* optional UI */ }
+    }
+    for (const id of ['runs-container', 'prediction-result', 'corr-matrix']) {
+        const element = document.getElementById(id);
+        if (element) element.textContent = '';
+    }
+    for (const id of ['monthly-table', 'runs-table']) {
+        const body = document.getElementById(id)?.querySelector('tbody');
+        if (body) body.textContent = '';
+    }
+}
+
+function consentMarkup() {
+    return `
+        <div class="weather-consent" role="group" aria-label="External weather permission">
+            <h3>Historical weather permission</h3>
+            <p>${WEATHER_CONSENT_COPY}</p>
+            <div class="weather-consent__actions">
+                <button type="button" data-weather-consent-allow>Allow for this tab</button>
+                <button type="button" data-weather-consent-deny>Not now</button>
+            </div>
+            <p class="weather-consent__status" role="status" aria-live="polite"></p>
+        </div>
+    `;
+}
+
+function renderConsent(summaryContainer, rerender) {
+    clearWeatherPresentation();
+    if (!summaryContainer) return;
+    summaryContainer.innerHTML = consentMarkup();
+    const status = summaryContainer.querySelector?.('.weather-consent__status');
+    summaryContainer.querySelector?.('[data-weather-consent-allow]')
+        ?.addEventListener('click', () => {
+            if (grantWeatherConsent()) void rerender();
+            else if (status) status.textContent = 'Weather access remains unavailable in this tab.';
+        }, { once: true });
+    summaryContainer.querySelector?.('[data-weather-consent-deny]')
+        ?.addEventListener('click', () => {
+            if (status) status.textContent = 'Weather access was not granted.';
+        });
+}
+
+function bindRevoke(summaryContainer, rerender) {
+    summaryContainer?.querySelector?.('[data-weather-consent-revoke]')
+        ?.addEventListener('click', () => {
+            revokeWeatherConsent();
+            clearWeatherPresentation();
+            void rerender();
+        }, { once: true });
+}
+
+function renderActiveConsent(summaryContainer, rerender) {
+    clearWeatherPresentation();
+    if (!summaryContainer) return;
+    summaryContainer.innerHTML = `
+        <div class="wa-card">
+            <h4>Permission</h4>
+            <button type="button" data-weather-consent-revoke>Revoke weather access</button>
+        </div>
+        <p role="status" aria-live="polite">Loading approved historical weather...</p>
+    `;
+    bindRevoke(summaryContainer, rerender);
+}
+
+function formatValue(value, digits, suffix = '') {
+    return Number.isFinite(value) ? `${value.toFixed(digits)}${suffix}` : 'N/A';
+}
+
+function readSessionMode(options) {
+    try {
+        if (
+            options === null
+            || typeof options !== 'object'
+            || Array.isArray(options)
+            || Object.getPrototypeOf(options) !== Object.prototype
+        ) return null;
+        const keys = Reflect.ownKeys(options);
+        if (keys.length !== 1 || keys[0] !== 'sessionMode') return null;
+        const descriptor = Object.getOwnPropertyDescriptor(options, 'sessionMode');
+        if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) return null;
+        return ['demo', 'real'].includes(descriptor.value) ? descriptor.value : null;
+    } catch {
+        return null;
+    }
+}
+
+function demoWeatherResult(run) {
+    try {
+        const weather = run?.weather;
+        if (weather === null || typeof weather !== 'object' || Array.isArray(weather)) return null;
+        const condition = ['Clear', 'Overcast', 'Rain'].includes(weather.condition)
+            ? weather.condition
+            : 'N/A';
+        return {
+            run,
+            temperature: Number.isFinite(weather.temperature) ? weather.temperature : null,
+            precipitation: Number.isFinite(weather.precipitation) ? weather.precipitation : null,
+            wind_speed: Number.isFinite(weather.wind_speed) ? weather.wind_speed : null,
+            wind_direction: null,
+            weather_code: null,
+            weather_text: condition,
+            humidity: Number.isFinite(weather.humidity) ? weather.humidity : null,
+            cloudcover: Number.isFinite(weather.cloud_cover) ? weather.cloud_cover : null,
+            pressure: Number.isFinite(weather.pressure) ? weather.pressure : null
+        };
+    } catch {
+        return null;
+    }
+}
+
+export async function renderWeatherTab(allActivities, options) {
 
 
     const weatherTabContainer = document.getElementById("weather-tab");
     const summaryCardsContainer = document.getElementById("wa-stats-row");
 
     if (!weatherTabContainer) {
-        return console.error("weather-tab container not found. Ensure the main container has this ID.");
+        return;
+    }
+
+    const sessionMode = readSessionMode(options);
+    if (sessionMode === null) {
+        clearWeatherPresentation();
+        if (summaryCardsContainer) {
+            summaryCardsContainer.innerHTML = '<p>Weather is unavailable for this session.</p>';
+        }
+        return;
     }
 
     const runs = allActivities.filter(
         (a) => a.type?.toLowerCase().includes("run") && a.start_latlng && a.start_date_local
     );
 
-    const outActivities = allActivities.filter(
-        (a) => a.start_latlng && a.start_date_local
-    );
+    const outActivities = sessionMode === 'demo'
+        ? allActivities.filter(a => a.start_date_local && a.weather)
+        : allActivities.filter(a => a.start_latlng && a.start_date_local);
 
     if (!runs.length) {
         if (summaryCardsContainer) {
@@ -28,6 +161,13 @@ export async function renderWeatherTab(allActivities) {
         return;
     }
 
+    const rerender = () => renderWeatherTab(allActivities, options);
+    if (sessionMode === 'real' && !isWeatherConsentGranted()) {
+        renderConsent(summaryCardsContainer, rerender);
+        return;
+    }
+    if (sessionMode === 'real') renderActiveConsent(summaryCardsContainer, rerender);
+
 
     async function fetchWeatherForRuns(runs) {
         const results = [];
@@ -36,22 +176,30 @@ export async function renderWeatherTab(allActivities) {
             const batch = runs.slice(i, i + batches);
             const batchResults = await Promise.all(batch.map(async run => {
                 try {
-                    const w = await getWeatherForRun(run);
+                    const w = await requestHistoricalWeather({
+                        coordinate: run.start_latlng,
+                        startDateLocal: run.start_date_local
+                    });
                     return w ? { run, ...w } : null;
-                } catch (e) {
-                    console.error(e);
+                } catch {
                     return null;
                 }
             }));
             results.push(...batchResults.filter(Boolean));
-            sleep(10);
+            await sleep(10);
         }
         return results;
     }
 
 
     // const weatherResults = await fetchWeatherForRuns(runs);
-    const weatherResults = await fetchWeatherForRuns(outActivities);
+    const weatherResults = sessionMode === 'demo'
+        ? outActivities.map(demoWeatherResult).filter(Boolean)
+        : await fetchWeatherForRuns(outActivities);
+    if (sessionMode === 'real' && !isWeatherConsentGranted()) {
+        renderConsent(summaryCardsContainer, rerender);
+        return;
+    }
 
     const combinedWeatherData = weatherResults.map((wr, index) => {
         const run = wr.run; // Acceder al objeto run directamente
@@ -60,9 +208,16 @@ export async function renderWeatherTab(allActivities) {
         const wind = wr.wind_speed;
 
         // Calculate environmental difficulty using utils helper
-        const envDifficulty = utils.calculateEnvironmentalDifficulty({ weather: { temperature: temp, humidity: hum, wind_speed: wind, precipitation: wr.precipitation, pressure: wr.pressure } });
-
-        console.log(`🌧️ Run: "${run.name}" - Env Difficulty: ${envDifficulty}% (Temp: ${temp}°C, Wind: ${wind}km/h, Rain: ${wr.precipitation}mm)`);
+        const difficultyWeather = Object.fromEntries(Object.entries({
+            temperature: temp,
+            humidity: hum,
+            wind_speed: wind,
+            precipitation: wr.precipitation,
+            pressure: wr.pressure
+        }).filter(([, value]) => Number.isFinite(value)));
+        const envDifficulty = Object.keys(difficultyWeather).length > 0
+            ? utils.calculateEnvironmentalDifficulty({ weather: difficultyWeather })
+            : null;
 
         return {
             run, // Include the full run object for table rendering
@@ -71,7 +226,7 @@ export async function renderWeatherTab(allActivities) {
             wind_speed: wind,
             wind_direction: wr.wind_direction,
             weather_code: wr.weather_code,
-            weather_text: wr.weather_text,
+            weather_text: wr.weather_text ?? weatherCodeToText(wr.weather_code),
             humidity: hum,
             cloudcover: wr.cloudcover,
             pressure: wr.pressure,
@@ -103,14 +258,18 @@ export async function renderWeatherTab(allActivities) {
     // 1. Summary cards (rellenar el div #wa-stats-row existente)
     if (summaryCardsContainer) {
         summaryCardsContainer.innerHTML = `
-        <div class="wa-card"><h4>🌡️ Avg Temp</h4><div class="wa-val">${mean(temps).toFixed(1)}°C</div></div>
-        <div class="wa-card"><h4>💨 Avg Wind</h4><div class="wa-val">${mean(winds).toFixed(1)} km/h</div></div>
-        <div class="wa-card"><h4>💧 Avg Humidity</h4><div class="wa-val">${mean(humidities).toFixed(1)}%</div></div>
-        <div class="wa-card"><h4>🌧️ Total Rain</h4><div class="wa-val">${sum(rains).toFixed(1)} mm</div></div>
+        ${sessionMode === 'real'
+            ? '<div class="wa-card"><h4>Permission</h4><button type="button" data-weather-consent-revoke>Revoke weather access</button></div>'
+            : '<div class="wa-card"><h4>Source</h4><div class="wa-val">Demo synthetic weather</div></div>'}
+        <div class="wa-card"><h4>🌡️ Avg Temp</h4><div class="wa-val">${formatValue(mean(temps), 1, '°C')}</div></div>
+        <div class="wa-card"><h4>💨 Avg Wind</h4><div class="wa-val">${formatValue(mean(winds), 1, ' km/h')}</div></div>
+        <div class="wa-card"><h4>💧 Avg Humidity</h4><div class="wa-val">${formatValue(mean(humidities), 1, '%')}</div></div>
+        <div class="wa-card"><h4>🌧️ Total Rain</h4><div class="wa-val">${formatValue(sum(rains), 1, ' mm')}</div></div>
         <div class="wa-card"><h4>☁️ Common</h4><div class="wa-val">${mode(conditions)}</div></div>
-        <div class="wa-card"><h4>🌬️ Common Wind Dir</h4><div class="wa-val">${mode(windDirections)}°</div></div>
-        <div class="wa-card"><h4>🧭 Pressure Avg</h4><div class="wa-val">${mean(pressures).toFixed(1)} hPa</div></div>
+        <div class="wa-card"><h4>🌬️ Common Wind Dir</h4><div class="wa-val">${formatValue(mode(windDirections), 0, '°')}</div></div>
+        <div class="wa-card"><h4>🧭 Pressure Avg</h4><div class="wa-val">${formatValue(mean(pressures), 1, ' hPa')}</div></div>
     `;
+        if (sessionMode === 'real') bindRevoke(summaryCardsContainer, rerender);
     }
 
     // Weather Predictor
@@ -138,15 +297,12 @@ export async function renderWeatherTab(allActivities) {
             else if (v === "cloudcover") { dataToRender = cloudcovers; labelText = "Cloud Cover (%)"; }
             else if (v === "pressure") { dataToRender = pressures; labelText = "Pressure (hPa)"; }
             else {
-                console.warn(`Unknown histogram type selected: ${v}`);
                 histogramTitle.innerText = "Histogram (Invalid Type)";
                 return;
             }
             histChart = renderHistogram(ctxHist, dataToRender, labelText);
             histogramTitle.innerText = `${e.target.options[e.target.selectedIndex].text} Histogram`;
         });
-    } else {
-        console.warn("Histogram elements (canvas weather-histogram, select histogram-select, title histogram-title) not found.");
     }
 
     // 3. Renderizar todos los demás gráficos en sus respectivos canvases/divs del HTML
@@ -154,8 +310,6 @@ export async function renderWeatherTab(allActivities) {
     const monthlyWeatherCtx = document.getElementById("monthly-weather");
     if (monthlyWeatherCtx) {
         renderMonthlyMulti(monthlyWeatherCtx, weatherResults);
-    } else {
-        console.warn("#monthly-weather canvas not found.");
     }
 
 
@@ -163,24 +317,18 @@ export async function renderWeatherTab(allActivities) {
     const conditionPieCtx = document.getElementById("condition-pie");
     if (conditionPieCtx) {
         renderPie(conditionPieCtx, conditions);
-    } else {
-        console.warn("#condition-pie canvas not found.");
     }
 
     // Tabla de Estadísticas Mensuales
     const monthlyTableBody = document.getElementById("monthly-table")?.querySelector("tbody");
     if (monthlyTableBody) {
         renderMonthlyStatsTable(monthlyTableBody, weatherResults);
-    } else {
-        console.warn("#monthly-table tbody not found.");
     }
 
     // Matriz de Correlación
     const corrMatrixDiv = document.getElementById("corr-matrix");
     if (corrMatrixDiv) {
         renderCorrelationMatrix(corrMatrixDiv, { temps, rains, winds, humidities, paces, distances, pressures, cloudcovers });
-    } else {
-        console.warn("#corr-matrix div not found.");
     }
 
 
@@ -195,8 +343,6 @@ export async function renderWeatherTab(allActivities) {
             runsTableContainer.classList.toggle("hidden");
             toggleRunsButton.textContent = runsTableContainer.classList.contains("hidden") ? "Show/Hide Runs" : "Hide Runs";
         });
-    } else {
-        console.warn("Runs list elements (runs-table tbody, toggle-runs button, runs-table-container) not found.");
     }
 
     // --- NUEVA SECCIÓN: Interactive Scatter Plot ---
@@ -284,64 +430,12 @@ export async function renderWeatherTab(allActivities) {
         // Renderizar el gráfico inicial
         updateScatterChart();
 
-    } else {
-        console.warn("Interactive Scatter Plot elements (canvas custom-scatter-chart, selects, inputs) not found.");
     }
     // --- FIN NUEVA SECCIÓN ---
 }
 
-// ---------------- FETCH WEATHER ----------------
-async function getWeatherForRun(run) {
-    if (!run.start_latlng || run.start_latlng.length < 2) {
-        console.warn(`Run ${run.name} does not have valid start latitude/longitude.`);
-        return null;
-    }
-
-    const [lat, lon] = run.start_latlng;
-    const start = new Date(run.start_date_local);
-    const dateStr = start.toISOString().split("T")[0];
-
-    const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,precipitation,wind_speed_10m,wind_direction_10m,weathercode,cloudcover,surface_pressure,relativehumidity_2m&start_date=${dateStr}&end_date=${dateStr}&timezone=auto`;
-
-    try {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`HTTP ${res.status} - ${res.statusText}`);
-        const data = await res.json();
-
-        if (!data.hourly || !data.hourly.time || !data.hourly.time.length) {
-            console.warn("No hourly weather data available for run", run.name, dateStr);
-            return null;
-        }
-
-        const hour = start.getHours();
-        let idx = data.hourly.time.findIndex(t => new Date(t).getHours() === hour);
-
-        if (idx === -1) {
-            console.warn(`Exact hour ${hour} not found for ${dateStr}. Using closest available index.`);
-            idx = Math.min(hour, data.hourly.time.length - 1);
-        }
-
-        return {
-            temperature: numericSafe(data.hourly.temperature_2m[idx]),
-            precipitation: numericSafe(data.hourly.precipitation[idx]),
-            wind_speed: numericSafe(data.hourly.wind_speed_10m[idx]),
-            wind_direction: numericSafe(data.hourly.wind_direction_10m[idx]),
-            weather_code: data.hourly.weathercode ? data.hourly.weathercode[idx] : null,
-            weather_text: weatherCodeToText(data.hourly.weathercode ? data.hourly.weathercode[idx] : null),
-            humidity: numericSafe(data.hourly.relativehumidity_2m ? data.hourly.relativehumidity_2m[idx] : null),
-            cloudcover: numericSafe(data.hourly.cloudcover ? data.hourly.cloudcover[idx] : null),
-            pressure: numericSafe(data.hourly.surface_pressure ? data.hourly.surface_pressure[idx] : null),
-        };
-
-    } catch (err) {
-        console.error(`Weather fetch for ${run.name} (${dateStr}) failed:`, err);
-        return null;
-    }
-}
-
-
-
 function weatherCodeToText(code, general = true) {
+    if (!Number.isFinite(code)) return 'N/A';
     const specificMap = {
         0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
         45: "Fog", 48: "Depositing rime fog",
@@ -384,8 +478,8 @@ function renderHistogram(ctx, data, label) {
     if (existingChart) existingChart.destroy();
 
     const bins = 10;
-    if (!data || data.length === 0) {
-        console.warn(`No data for histogram: ${label}`);
+    const values = Array.isArray(data) ? data.filter(Number.isFinite) : [];
+    if (values.length === 0) {
         const chart = new Chart(ctx, { type: "bar", data: { labels: [], datasets: [{ label, data: [] }] } });
         // Intentar dibujar un mensaje en el canvas si está vacío
         const ctx2d = ctx.getContext('2d');
@@ -397,13 +491,13 @@ function renderHistogram(ctx, data, label) {
         return chart;
     }
 
-    const minv = Math.min(...data);
-    const maxv = Math.max(...data);
+    const minv = Math.min(...values);
+    const maxv = Math.max(...values);
 
     if (minv === maxv) { // Todos los valores son iguales
         const chart = new Chart(ctx, {
             type: "bar",
-            data: { labels: [`${minv.toFixed(1)} ${label.split('(')[1]?.replace(')', '') || ''}`], datasets: [{ label, data: [data.length], backgroundColor: 'rgba(75, 192, 192, 0.6)' }] },
+            data: { labels: [`${minv.toFixed(1)} ${label.split('(')[1]?.replace(')', '') || ''}`], datasets: [{ label, data: [values.length], backgroundColor: 'rgba(75, 192, 192, 0.6)' }] },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
@@ -420,7 +514,7 @@ function renderHistogram(ctx, data, label) {
     const width = (maxv - minv) / bins;
     const counts = new Array(bins).fill(0);
 
-    data.forEach((v) => {
+    values.forEach((v) => {
         let binIndex = Math.floor((v - minv) / width);
         if (binIndex >= bins) binIndex = bins - 1;
         if (binIndex < 0) binIndex = 0;
@@ -531,7 +625,7 @@ function getGradientColor(value, min, max, type = 'temp') {
 
 function getMinMax(dataArray, prop) {
     if (!dataArray || dataArray.length === 0) return { min: 0, max: 1 };
-    const values = dataArray.map(item => item[prop]).filter(v => typeof v === 'number' && !isNaN(v));
+    const values = dataArray.map(item => item[prop]).filter(Number.isFinite);
     if (values.length === 0) return { min: 0, max: 1 };
     return { min: Math.min(...values), max: Math.max(...values) };
 }
@@ -543,7 +637,6 @@ function renderCustomScatter(ctx, data, xVar, yVar, pointSize, colorScheme) {
     if (existingChart) existingChart.destroy();
 
     if (!data || data.length === 0 || !xVar || !yVar) {
-        console.warn(`No data or variables for custom scatter plot: ${xVar} vs ${yVar}`);
         const chart = new Chart(ctx, { type: "scatter", data: { datasets: [] } });
         const ctx2d = ctx.getContext('2d');
         if (ctx2d) {
@@ -599,7 +692,7 @@ function renderCustomScatter(ctx, data, xVar, yVar, pointSize, colorScheme) {
             datasets: [
                 {
                     label: `${xlabel} vs ${ylabel}`,
-                    data: data.map((item) => ({
+                    data: data.filter(item => Number.isFinite(item[xVar]) && Number.isFinite(item[yVar])).map((item) => ({
                         x: item[xVar],
                         y: item[yVar]
                     })),
@@ -702,12 +795,12 @@ function renderMonthlyStatsTable(tbodyElement, data) {
     const months = Object.keys(byMonth).sort((a, b) => a - b);
     months.forEach((m) => {
         const arr = byMonth[m];
-        const avgTemp = mean(arr.map((a) => a.temperature)).toFixed(1);
-        const avgWind = mean(arr.map((a) => a.wind_speed)).toFixed(1);
-        const totalRain = sum(arr.map((a) => a.precipitation)).toFixed(1);
-        const avgHumidity = mean(arr.map((a) => a.humidity)).toFixed(1);
-        const avgPressure = mean(arr.map((a) => a.pressure)).toFixed(1);
-        const avgCloudcover = mean(arr.map((a) => a.cloudcover)).toFixed(1);
+        const avgTemp = formatValue(mean(arr.map((a) => a.temperature)), 1);
+        const avgWind = formatValue(mean(arr.map((a) => a.wind_speed)), 1);
+        const totalRain = formatValue(sum(arr.map((a) => a.precipitation)), 1);
+        const avgHumidity = formatValue(mean(arr.map((a) => a.humidity)), 1);
+        const avgPressure = formatValue(mean(arr.map((a) => a.pressure)), 1);
+        const avgCloudcover = formatValue(mean(arr.map((a) => a.cloudcover)), 1);
 
         const row = tbodyElement.insertRow();
         row.insertCell().textContent = monthName(+m);
@@ -728,7 +821,7 @@ function renderCorrelationMatrix(divElement, data) {
         for (let j of vars) {
             const corr = correlation(data[i], data[j]);
             const color = corrColor(corr);
-            html += `<td style="background:${color}">${corr.toFixed(2)}</td>`;
+            html += `<td style="background:${color}">${Number.isFinite(corr) ? corr.toFixed(2) : 'N/A'}</td>`;
         }
         html += `</tr>`;
     }
@@ -774,8 +867,6 @@ function getUnit(metric) {
 function renderRunsList(tbodyElement, weatherResults) {
     tbodyElement.innerHTML = "";
 
-    console.log(`📋 Rendering ${weatherResults.length} runs with environmental difficulty data...`);
-
     weatherResults.forEach((item, idx) => {
         const { run, temperature, precipitation, wind_speed, humidity, pressure, cloudcover, weather_text, envDifficulty } = item;
 
@@ -794,11 +885,13 @@ function renderRunsList(tbodyElement, weatherResults) {
         
         // Environmental difficulty cell with color coding
         const difficultyCell = row.insertCell();
-        difficultyCell.textContent = `${envDifficulty ?? 0}%`;
+        difficultyCell.textContent = Number.isFinite(envDifficulty) ? `${envDifficulty}%` : 'N/A';
         
         // Color code: green (easy) to red (hard)
-        const difficulty = envDifficulty ?? 0;
-        if (difficulty < 30) {
+        const difficulty = envDifficulty;
+        if (!Number.isFinite(difficulty)) {
+            difficultyCell.style.color = '#64748b';
+        } else if (difficulty < 30) {
             difficultyCell.style.color = '#28a745'; // Green - Easy
         } else if (difficulty < 60) {
             difficultyCell.style.color = '#ffc107'; // Yellow - Medium
@@ -807,16 +900,16 @@ function renderRunsList(tbodyElement, weatherResults) {
         }
     });
     
-    console.log(`✅ Rendered ${weatherResults.length} runs with environmental difficulty`);
 }
 
 
 function listRuns(arr, prop, unit) {
-    if (!arr || arr.length === 0) return '<ul><li>No runs found.</li></ul>';
-    return `<ul>${arr
+    const present = Array.isArray(arr) ? arr.filter(r => Number.isFinite(r[prop])) : [];
+    if (present.length === 0) return '<ul><li>No runs found.</li></ul>';
+    return `<ul>${present
         .map(
             (r) => {
-                const diff = r.envDifficulty !== undefined ? ` — difficulty: ${r.envDifficulty}%` : '';
+                const diff = Number.isFinite(r.envDifficulty) ? ` — difficulty: ${r.envDifficulty}%` : '';
                 return `<li>${utils.formatDate(new Date(r.run.start_date_local))} — ${r[prop].toFixed(1)}${unit} (${r.weather_text})${diff}</li>`;
             }
         )
@@ -825,38 +918,54 @@ function listRuns(arr, prop, unit) {
 
 // ---------------- UTILITIES ----------------
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
-const sum = (a) => (a.length ? a.reduce((x, y) => x + y, 0) : 0);
+const mean = (a) => {
+    const values = Array.isArray(a) ? a.filter(Number.isFinite) : [];
+    return values.length ? values.reduce((x, y) => x + y, 0) / values.length : null;
+};
+const sum = (a) => {
+    const values = Array.isArray(a) ? a.filter(Number.isFinite) : [];
+    return values.length ? values.reduce((x, y) => x + y, 0) : null;
+};
 const mode = (arr) => {
     if (!arr || arr.length === 0) return "N/A";
-    const map = {};
-    arr.forEach((v) => (map[v] = (map[v] || 0) + 1));
-    const sorted = Object.entries(map).sort((a, b) => b[1] - a[1]);
+    const counts = new Map();
+    arr.filter(value => (
+        value !== null
+        && value !== undefined
+        && value !== ''
+        && (typeof value !== 'number' || Number.isFinite(value))
+    )).forEach(value => counts.set(value, (counts.get(value) || 0) + 1));
+    const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
     return sorted.length > 0 ? sorted[0][0] : "N/A";
 };
 
 function correlation(x, y) {
-    const n = x.length;
-    if (n === 0 || n !== y.length) return 0;
-
-    const mx = mean(x), my = mean(y);
+    if (!Array.isArray(x) || !Array.isArray(y) || x.length !== y.length) return null;
+    const pairs = x.map((value, index) => [value, y[index]])
+        .filter(([left, right]) => Number.isFinite(left) && Number.isFinite(right));
+    const n = pairs.length;
+    if (n < 2) return null;
+    const left = pairs.map(pair => pair[0]);
+    const right = pairs.map(pair => pair[1]);
+    const mx = mean(left), my = mean(right);
     let num = 0;
     let denX = 0;
     let denY = 0;
 
     for (let i = 0; i < n; i++) {
-        const dx = x[i] - mx;
-        const dy = y[i] - my;
+        const dx = left[i] - mx;
+        const dy = right[i] - my;
         num += dx * dy;
         denX += dx * dx;
         denY += dy * dy;
     }
 
     const den = Math.sqrt(denX * denY);
-    return den === 0 ? 0 : num / den;
+    return den === 0 ? null : num / den;
 }
 
 function corrColor(corr) {
+    if (!Number.isFinite(corr)) return 'rgb(220,220,220)';
     const absCorr = Math.abs(corr);
     let r = 0, g = 0, b = 0;
 
@@ -940,10 +1049,10 @@ function renderWeatherPredictor(weatherData, currentWeatherData) {
             <h4>Predicted Weather for ${utils.formatDate(targetDate)}</h4>
             <p>Based on ${combinedData.length} historical & recent data points (±10 days from past years).</p>
             <ul>
-                <li>Temperature: ${avgTemp.toFixed(1)}°C</li>
-                <li>Rainfall: ${avgRain.toFixed(1)} mm</li>
-                <li>Wind Speed: ${avgWind.toFixed(1)} km/h</li>
-                <li>Humidity: ${avgHumidity.toFixed(1)}%</li>
+                <li>Temperature: ${formatValue(avgTemp, 1, '°C')}</li>
+                <li>Rainfall: ${formatValue(avgRain, 1, ' mm')}</li>
+                <li>Wind Speed: ${formatValue(avgWind, 1, ' km/h')}</li>
+                <li>Humidity: ${formatValue(avgHumidity, 1, '%')}</li>
                 <li>Common Condition: ${commonCondition}</li>
             </ul>
         `;
@@ -955,8 +1064,3 @@ function renderWeatherPredictor(weatherData, currentWeatherData) {
         resultDiv.innerHTML = prediction;
     });
 }
-
-function numericSafe(v) {
-    return v === null || v === undefined || isNaN(v) ? 0 : Number(v);
-}
-

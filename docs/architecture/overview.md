@@ -2,11 +2,12 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| Status | Proposed |
+| Status | Active public local-import core |
 | Owner | XiChuan9 |
 | Created | 2026-07-28 |
-| Last updated | 2026-07-28 |
-| Code baseline | `8b16ebe1a706f1713602ab5266e47000caf31a17` |
+| Last updated | 2026-08-19 |
+| Code baseline | `6924e7c77036c9a743f908936a28a2719936b726` |
+| Current scope | [Public Local Import Core Scope Freeze](../tasks/public-local-import-core-freeze.md) |
 
 ## 1. 背景
 
@@ -24,15 +25,15 @@ V2 不重写现有 UI 和分析体系，而是在数据来源与消费者之间�
 - Progressive：先 Legacy，再 Shadow，最后 Canonical；
 - Reversible：任何切换都有 Feature Flag 和数据回退路径。
 
-## 3. 当前 V1 数据流
+## 3. 当前公开兼容数据流
 
 ```text
-Strava OAuth/API
-→ Vercel Serverless Proxy
-→ js/services/api.js 或页面直接 fetch
-→ Legacy Cache / allActivities
+Strava OAuth/API 或本地活动文件
+→ 可选 Strava Proxy 或 Source Manager / Import Pipeline
+→ Legacy Cache 或 Canonical IndexedDB v2
+→ Repository / Projection
 → preprocessActivities
-→ Tabs / Activity Detail / Run Plus / NSM
+→ 公开通用 Tabs / Activity Detail / Source Manager
 ```
 
 当前主要问题：
@@ -62,7 +63,7 @@ flowchart LR
     Store --> Repo["Repository Layer"]
     Analysis --> Repo
     Repo --> Projection["Read Models / Legacy Projection"]
-    Projection --> UI["Existing UI + Source UI"]
+    Projection --> UI["Public Analytics UI + Source Manager"]
 ```
 
 ## 5. 运行模式

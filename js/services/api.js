@@ -3,7 +3,19 @@
 // ===================================================================
 // CACHE CONFIGURATION
 // ===================================================================
-import { isDemoMode, getDemoActivities, getDemoGears } from '../demo/index.js';
+import {
+    getDemoActivities,
+    getDemoAthlete,
+    getDemoGears,
+    getDemoTrainingZones,
+    isDemoMode,
+    setDemoGears
+} from '../demo/index.js';
+import {
+    STRAVA_CONNECTOR_ERROR_CODE,
+    StravaApiConnector,
+    StravaConnectorError
+} from '../connectors/strava/strava-api-connector.js';
 const CACHE_DURATIONS = {
     athlete: 24 * 60 * 60 * 1000,      // 24 hours
     zones: 24 * 60 * 60 * 1000,        // 24 hours
@@ -27,8 +39,7 @@ function getFromCache(key, ttlKey = 'activities') {
 
     try {
         return JSON.parse(cached);
-    } catch (e) {
-        console.warn(`Cache parse error for ${key}:`, e);
+    } catch {
         return null;
     }
 }
@@ -37,14 +48,40 @@ function saveToCache(key, data) {
     try {
         localStorage.setItem(key, JSON.stringify(data));
         localStorage.setItem(`${key}_timestamp`, Date.now().toString());
-    } catch (e) {
-        console.warn(`Cache save error for ${key}:`, e);
+    } catch {
     }
 }
 
 // ===================================================================
 // AUTH & HELPERS
 // ===================================================================
+export const API_AUTH_STATUS = Object.freeze({
+    UNAUTHENTICATED: 'unauthenticated',
+    FORBIDDEN: 'forbidden',
+    REFRESH_FAILED: 'refresh-failed'
+});
+
+export class ApiResponseError extends Error {
+    constructor(message, {
+        httpStatus = null,
+        authStatus = null
+    } = {}) {
+        super(message);
+        this.name = 'ApiResponseError';
+        this.httpStatus = httpStatus;
+        this.authStatus = authStatus;
+    }
+}
+
+export function classifyApiAuthFailure(httpStatus, {
+    refreshFailure = false
+} = {}) {
+    if (refreshFailure) return API_AUTH_STATUS.REFRESH_FAILED;
+    if (httpStatus === 401) return API_AUTH_STATUS.UNAUTHENTICATED;
+    if (httpStatus === 403) return API_AUTH_STATUS.FORBIDDEN;
+    return null;
+}
+
 function getAuthPayload() {
     const tokenData = localStorage.getItem('strava_tokens');
     if (!tokenData) throw new Error('User not authenticated');
@@ -58,18 +95,22 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
-async function handleApiResponse(response) {
+export async function handleApiResponse(response, options = {}) {
     if (!response.ok) {
-        const contentType = response.headers.get('content-type') || '';
-        if (contentType.includes('application/json')) {
-            const result = await response.json();
-            throw new Error(result.error || `API call failed (${response.status})`);
-        }
-        throw new Error(`API call failed (${response.status} ${response.statusText})`);
+        const authStatus = classifyApiAuthFailure(response.status, options);
+        throw new ApiResponseError(
+            authStatus
+                ? `Authentication request failed (${authStatus}).`
+                : `API call failed (${response.status}).`,
+            {
+                httpStatus: response.status,
+                authStatus
+            }
+        );
     }
 
     const result = await response.json();
-    if (result.tokens) {
+    if (result.tokens && !isDemoMode()) {
         localStorage.setItem('strava_tokens', JSON.stringify(result.tokens));
     }
     return result;
@@ -81,16 +122,37 @@ export async function fetchAllActivities() {
         return getDemoActivities();
     }
 
-    const response = await fetch('/api/strava-activities', {
-        headers: {
-            Authorization: `Bearer ${getAuthPayload()}`
+    try {
+        return await new StravaApiConnector().fetchActivities();
+    } catch (error) {
+        if (error instanceof StravaConnectorError) {
+            const compatibility = {
+                [STRAVA_CONNECTOR_ERROR_CODE.HTTP_UNAUTHENTICATED]: {
+                    httpStatus: 401,
+                    authStatus: API_AUTH_STATUS.UNAUTHENTICATED
+                },
+                [STRAVA_CONNECTOR_ERROR_CODE.HTTP_FORBIDDEN]: {
+                    httpStatus: 403,
+                    authStatus: API_AUTH_STATUS.FORBIDDEN
+                }
+            }[error.code];
+
+            if (compatibility) {
+                throw new ApiResponseError(
+                    `Authentication request failed (${compatibility.authStatus}).`,
+                    compatibility
+                );
+            }
         }
-    });
-    const result = await handleApiResponse(response);
-    return result.activities;
+        throw error;
+    }
 }
 
 export async function fetchGearById(gearId) {
+    if (isDemoMode()) {
+        return getDemoGears().find(gear => gear?.id === gearId) || null;
+    }
+
     // Check cache first with 24h TTL
     const cacheKey = `strava_gear_${gearId}`;
     const cached = getFromCache(cacheKey, 'gear');
@@ -126,26 +188,15 @@ export function renderAthleteProfile(athlete) {
 }
 
 export async function fetchAthleteData() {
+    if (isDemoMode()) {
+        return getDemoAthlete();
+    }
+
     // Check cache first with 24h TTL
     const cacheKey = 'strava_athlete_data';
     const cached = getFromCache(cacheKey, 'athlete');
     if (cached) {
-        if (!isDemoMode()) {
-            console.log('[Athlete] cached profile', {
-                id: cached?.id,
-                name: `${cached?.firstname || ''} ${cached?.lastname || ''}`.trim(),
-                username: cached?.username || null,
-            });
-        }
         return cached;
-    }
-
-    // If in demo mode, get from localStorage
-    if (isDemoMode()) {
-        const stored = localStorage.getItem('strava_athlete_data');
-        if (stored) {
-            return JSON.parse(stored);
-        }
     }
 
     const response = await fetch('/api/strava-athlete', {
@@ -154,30 +205,20 @@ export async function fetchAthleteData() {
     const result = await handleApiResponse(response);
     const athlete = result.athlete;
 
-    console.log('[Athlete] fetched profile', {
-        id: athlete?.id,
-        name: `${athlete?.firstname || ''} ${athlete?.lastname || ''}`.trim(),
-        username: athlete?.username || null,
-    });
-
     saveToCache(cacheKey, athlete);
     return athlete;
 }
 
 export async function fetchTrainingZones() {
+    if (isDemoMode()) {
+        return getDemoTrainingZones();
+    }
+
     // Check cache first with 24h TTL
     const cacheKey = 'strava_training_zones';
     const cached = getFromCache(cacheKey, 'zones');
     if (cached) {
         return cached;
-    }
-
-    // If in demo mode, get from localStorage
-    if (isDemoMode()) {
-        const stored = localStorage.getItem('strava_training_zones');
-        if (stored) {
-            return JSON.parse(stored);
-        }
     }
 
     const response = await fetch('/api/strava-zones', {
@@ -192,7 +233,7 @@ export async function fetchTrainingZones() {
 
 export async function fetchAllGears(athlete) {
     if (isDemoMode()) {
-        return getDemoGears(athlete);
+        return getDemoGears();
     }
 
     const rawGearIds = [...(athlete.shoes || []), ...(athlete.bikes || [])];
@@ -214,6 +255,10 @@ export async function fetchAllGears(athlete) {
 }
 
 export function getCachedGears() {
+    if (isDemoMode()) {
+        return getDemoGears();
+    }
+
     // Try to read cached gears array with 24h TTL
     const cached = getFromCache('strava_gears', 'gear');
     if (cached) {
@@ -222,7 +267,12 @@ export function getCachedGears() {
     return null;
 }
 
-export function setCachedGears(gearsList) {
+export function setCachedGears(gearsList, options = {}) {
+    if (isDemoMode()) {
+        setDemoGears(gearsList, options);
+        return;
+    }
+
     // Save gears array to cache with 24h TTL
     saveToCache('strava_gears', gearsList);
 }

@@ -2,7 +2,12 @@
 //          CLASIFICADOR DE TIPO DE CICLISMO
 // =================================================================
 
-window.classifyBike = function classifyBike(act = {}, streams = {}) {
+window.classifyBike = function classifyBike(
+    act = {},
+    streams = {},
+    zones = null,
+    { exclusiveHeartRateZoneBounds = false } = {}
+) {
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     const sum = arr => arr.reduce((s, x) => s + (x || 0), 0);
 
@@ -51,38 +56,49 @@ window.classifyBike = function classifyBike(act = {}, streams = {}) {
     const speedCV = calculateCV(speedStream);
     const hrCV = Number(String(act.hr_variability_stream || act.hr_variability_laps || '').replace('%', '')) || 0;
 
+    function normalizeHrZones(value) {
+        try {
+            const definitions = value?.heart_rate?.zones;
+            if (!Array.isArray(definitions)) return [];
+            return definitions
+                .map(zone => ({ min: Number(zone?.min), max: Number(zone?.max) }))
+                .filter(zone => Number.isFinite(zone.min) && Number.isFinite(zone.max));
+        } catch {
+            return [];
+        }
+    }
+
     // ---------- HR zones (similar to run) ----------
     let pctZ = { low: 0, midlow: 0, midhigh: 0, high: 0 };
-    try {
-        const zonesObj = JSON.parse(localStorage?.getItem?.('strava_training_zones') || '{}')?.heart_rate?.zones || null;
-        if (zonesObj && streams?.heartrate?.data && streams?.time?.data) {
-            const tPerZone = [0, 0, 0, 0];
-            const hr = streams.heartrate.data, times = streams.time.data;
+    const zonesObj = normalizeHrZones(zones);
+    if (zonesObj.length && streams?.heartrate?.data && streams?.time?.data) {
+        const tPerZone = [0, 0, 0, 0];
+        const hr = streams.heartrate.data, times = streams.time.data;
 
-            let bounds = [0, 0, 0, 0, 0];
-            for (let i = 0; i < 4; i++) {
-                bounds[i] = zonesObj[i]?.max || 0;
-            }
-            bounds[4] = zonesObj[3]?.max || 200;
-
-            for (let i = 1; i < Math.min(hr.length, times.length); i++) {
-                const dt = times[i] - times[i - 1];
-                if (dt <= 0) continue;
-                const h = hr[i];
-                if (h <= bounds[0]) tPerZone[0] += dt;
-                else if (h <= bounds[1]) tPerZone[1] += dt;
-                else if (h <= bounds[2]) tPerZone[2] += dt;
-                else tPerZone[3] += dt;
-            }
-
-            const total = sum(tPerZone) || 1;
-            pctZ.low = tPerZone[0] / total * 100;
-            pctZ.midlow = tPerZone[1] / total * 100;
-            pctZ.midhigh = tPerZone[2] / total * 100;
-            pctZ.high = tPerZone[3] / total * 100;
+        let bounds = [0, 0, 0, 0, 0];
+        for (let i = 0; i < 4; i++) {
+            bounds[i] = zonesObj[i]?.max || 0;
         }
-    } catch (e) {
-        console.warn('Error calculando pctZ', e);
+        bounds[4] = zonesObj[3]?.max || 200;
+        const below = exclusiveHeartRateZoneBounds
+            ? (value, bound) => value < bound
+            : (value, bound) => value <= bound;
+
+        for (let i = 1; i < Math.min(hr.length, times.length); i++) {
+            const dt = times[i] - times[i - 1];
+            if (dt <= 0) continue;
+            const h = hr[i];
+            if (below(h, bounds[0])) tPerZone[0] += dt;
+            else if (below(h, bounds[1])) tPerZone[1] += dt;
+            else if (below(h, bounds[2])) tPerZone[2] += dt;
+            else tPerZone[3] += dt;
+        }
+
+        const total = sum(tPerZone) || 1;
+        pctZ.low = tPerZone[0] / total * 100;
+        pctZ.midlow = tPerZone[1] / total * 100;
+        pctZ.midhigh = tPerZone[2] / total * 100;
+        pctZ.high = tPerZone[3] / total * 100;
     }
 
     // ---------- Scoring ----------

@@ -2,6 +2,8 @@
  * EXPORT - CSV.JS — Export track data to CSV format
  */
 
+import { serializeCsvCell } from '../../shared/csv-security.js';
+
 export class CSVExporter {
     /**
      * Convert ActivityTrack to CSV string
@@ -32,7 +34,7 @@ export class CSVExporter {
             'moving'
         ];
 
-        let csv = headers.join(',') + '\n';
+        let csv = headers.map(header => serializeCsvCell(header)).join(',') + '\n';
 
         for (const point of track.points) {
             const row = [
@@ -56,13 +58,7 @@ export class CSVExporter {
                 point.moving ? 'true' : 'false'
             ];
 
-            csv += row.map(cell => {
-                // Escape cells containing commas or quotes
-                if (typeof cell === 'string' && (cell.includes(',') || cell.includes('"'))) {
-                    return `"${cell.replace(/"/g, '""')}"`;
-                }
-                return cell;
-            }).join(',') + '\n';
+            csv += row.map(cell => serializeCsvCell(cell)).join(',') + '\n';
         }
 
         return csv;

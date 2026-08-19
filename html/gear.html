@@ -5,13 +5,13 @@
     <meta charset="UTF-8">
     <title>Gear Details</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="referrer" content="no-referrer">
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'sha256-9C8xxthlh9pfzo75MGRZCm4CZq0D8csdn6Uic8HKvbA='; script-src-attr 'unsafe-hashes' 'sha256-3twywiVOjkum7R0Dfaj4LqnqTBj//9Uzd/4+lECHbbs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
     <link rel="stylesheet" href="../styles/style.css">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-    <!-- Vercel Analytics -->
-    <script defer src="/_vercel/insights/script.js"></script>
+    <link rel="stylesheet" href="/styles/vendor/leaflet-1.9.4.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous">
+    <script src="/js/vendor/leaflet-1.9.4.min.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
+    <script src="/js/vendor/chart-4.5.0.umd.min.js" integrity="sha384-XcdcwHqIPULERb2yDEM4R0XaQKU3YnDsrTmjACBZyfdVVqjh6xQ4/DCMd7XLcA6Y" crossorigin="anonymous"></script>
 </head>
 
 <body>
@@ -84,14 +84,35 @@
     <script type="module">
         import { renderGearDetailPage } from '../js/pages/gear/index.js';
 
-        const urlParams = new URLSearchParams(window.location.search);
-        const gearId = urlParams.get('id');
-
-        if (gearId) {
-            renderGearDetailPage(gearId);
-        } else {
-            document.body.innerHTML = '<div style="padding:2rem;text-align:center;"><h2>No gear ID provided</h2><button onclick="window.history.back()" style="margin-top:1rem;padding:8px 16px;border:1px solid #ddd;border-radius:6px;cursor:pointer;">← Back</button></div>';
+        function showFixedError(message) {
+            const container = document.createElement('div');
+            container.style.cssText = 'padding:2rem;text-align:center;';
+            const title = document.createElement('h2');
+            title.textContent = message;
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.textContent = '← Back';
+            button.style.cssText = 'margin-top:1rem;padding:8px 16px;border:1px solid #ddd;border-radius:6px;cursor:pointer;';
+            button.addEventListener('click', () => window.history.back());
+            container.append(title, button);
+            document.body.replaceChildren(container);
         }
+
+        async function startGearPage() {
+            if (typeof globalThis.Chart !== 'function') {
+                showFixedError('Visualization runtime unavailable');
+                return;
+            }
+            const urlParams = new URLSearchParams(window.location.search);
+            const gearId = urlParams.get('id');
+            if (!gearId) {
+                showFixedError('No gear ID provided');
+                return;
+            }
+            await renderGearDetailPage(gearId);
+        }
+
+        void startGearPage();
     </script>
 </body>
 

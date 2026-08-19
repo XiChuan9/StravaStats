@@ -56,7 +56,10 @@ export async function runAnalysis() {
         button.textContent = '⏳ Analyzing...';
 
         // Initialize analyzer
-        const analyzer = await initializeActivityAnalyzer(parseInt(activityId, 10));
+        if (typeof activityId !== 'string' || activityId.trim().length === 0) {
+            throw new TypeError('Activity ID must be a non-empty opaque string');
+        }
+        const analyzer = await initializeActivityAnalyzer(activityId);
 
         // Fetch data
         console.log('📥 Fetching activity data...');

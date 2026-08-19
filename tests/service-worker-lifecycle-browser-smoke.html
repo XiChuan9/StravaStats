@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Service Worker lifecycle browser smoke</title>
+</head>
+<body>
+    <output id="result">pending</output>
+    <script type="module">
+        import {
+            applyServiceWorkerPolicy,
+            SERVICE_WORKER_LIFECYCLE_CODE
+        } from '../js/app/service-worker-policy.js';
+
+        const states = [];
+        const registered = [];
+        let updateChecks = 0;
+        const syntheticCaches = new Set([
+            'strava-dashboard-v1',
+            'stravastats-static-v2-000001',
+            'unrelated-cache'
+        ]);
+        const syntheticClients = new Map([
+            ['tab-a', { pageBuild: 'legacy', worker: 'legacy' }],
+            ['tab-b', { pageBuild: 'legacy', worker: 'legacy' }]
+        ]);
+        let syntheticActiveWorker = 'legacy';
+        let syntheticWaitingWorker = 'v2-000001';
+        const closeSyntheticClient = id => {
+            syntheticClients.delete(id);
+            if (syntheticClients.size === 0) {
+                syntheticActiveWorker = syntheticWaitingWorker;
+                syntheticWaitingWorker = null;
+            }
+        };
+        const waiting = Object.freeze({
+            scriptURL: `${location.origin}/sw.js`,
+            state: 'installed',
+            addEventListener() {}
+        });
+        const registration = {
+            scope: `${location.origin}/`,
+            installing: null,
+            waiting,
+            active: Object.freeze({ scriptURL: `${location.origin}/sw.js` }),
+            addEventListener() {},
+            async update() {
+                updateChecks += 1;
+                return this;
+            }
+        };
+        const serviceWorker = {
+            controller: registration.active,
+            addEventListener() {},
+            async register(url, options) {
+                registered.push({ url, options });
+                return registration;
+            }
+        };
+
+        try {
+            const result = await applyServiceWorkerPolicy({
+                navigatorObject: { serviceWorker },
+                locationObject: {
+                    hostname: 'synthetic.invalid',
+                    origin: location.origin,
+                    search: ''
+                },
+                logger: {},
+                onLifecycleState(value) { states.push(value); }
+            });
+            closeSyntheticClient('tab-a');
+            const oneTabStillWaiting = syntheticActiveWorker === 'legacy'
+                && syntheticWaitingWorker === 'v2-000001'
+                && syntheticClients.has('tab-b');
+            closeSyntheticClient('tab-b');
+            const drainedActivation = syntheticActiveWorker === 'v2-000001'
+                && syntheticWaitingWorker === null
+                && syntheticClients.size === 0;
+            const cachePreservation = JSON.stringify([...syntheticCaches]) === JSON.stringify([
+                'strava-dashboard-v1',
+                'stravastats-static-v2-000001',
+                'unrelated-cache'
+            ]);
+            const passed = result.updateStatus === 'checked'
+                && updateChecks === 1
+                && registered.length === 1
+                && registered[0].url === '/sw.js'
+                && registered[0].options.scope === '/'
+                && registered[0].options.updateViaCache === 'none'
+                && states.length === 1
+                && states[0].code === SERVICE_WORKER_LIFECYCLE_CODE.UPDATE_WAITING
+                && oneTabStillWaiting
+                && drainedActivation
+                && cachePreservation;
+            document.body.dataset.status = passed ? 'pass' : 'fail';
+            document.querySelector('#result').textContent = JSON.stringify({
+                passed,
+                result,
+                registered,
+                states,
+                updateChecks,
+                oneTabStillWaiting,
+                drainedActivation,
+                cachePreservation,
+                evidenceKind: 'served-synthetic-in-memory'
+            });
+        } catch {
+            document.body.dataset.status = 'fail';
+            document.querySelector('#result').textContent = JSON.stringify({ passed: false });
+        }
+    </script>
+</body>
+</html>

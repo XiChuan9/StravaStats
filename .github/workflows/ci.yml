@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - maintenance/v1
+      - integration/v2
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.19.0
+          cache: npm
+
+      - name: Pin and verify toolchain and exact head
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global npm@11.17.0
+          test "$(node --version)" = "v24.19.0"
+          test "$(npm --version)" = "11.17.0"
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse --is-shallow-repository)" = "true"
+          test "$(git rev-list --count HEAD)" = "1"
+
+      - name: Fetch fixed public scope-freeze base
+        if: github.event_name == 'pull_request' && github.head_ref == 'codex/public/local-import-core'
+        run: git fetch --no-tags --depth=1 origin 6924e7c77036c9a743f908936a28a2719936b726
+
+      - name: Guard public scope-freeze changed paths
+        if: github.event_name == 'pull_request' && github.head_ref == 'codex/public/local-import-core'
+        run: node scripts/check-public-scope-freeze.mjs
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check syntax
+        run: npm run check:syntax
+
+      - name: Check repository privacy
+        run: npm run check:privacy
+
+      - name: Run tests
+        run: npm test
+
+      - name: Audit dependencies
+        run: npm audit
+
+      - name: Check patch whitespace
+        run: git diff --check
+
+      - name: Build, verify, and compare local Alpha candidates
+        if: github.event_name == 'pull_request' && github.head_ref == 'codex/v2/alpha-candidate-planning'
+        shell: bash
+        env:
+          ALPHA_CANDIDATE_AUTHORIZED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          first="$(mktemp -d)"
+          second="$(mktemp -d)"
+          trap 'rm -rf "$first" "$second"' EXIT
+          npm run build:alpha-candidate -- --output-parent "$first"
+          npm run build:alpha-candidate -- --output-parent "$second"
+          root="stravastats-v2.0.0-alpha.1"
+          npm run verify:alpha-candidate -- \
+            --bundle-root "$first/$root" \
+            --container "$first/$root.zip"
+          diff --recursive --brief "$first/$root" "$second/$root"
+          cmp "$first/$root.zip" "$second/$root.zip"
+          cmp "$first/$root.evidence.json" "$second/$root.evidence.json"

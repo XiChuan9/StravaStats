@@ -4,11 +4,11 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| Status | Ready for investigation |
+| Status | Approved for merge |
 | Base branch | `integration/v2` |
 | Feature branch | `codex/v2/repo-safety` |
-| Worktree | `/Users/wangchuanliang/Documents/StravaStats-worktrees/repo-safety` |
-| Owner | 待指定 |
+| Worktree | `<worktree-root>/repo-safety` |
+| Owner | XiChuan9 |
 | Reviewer | 独立 Codex 线程 + XiChuan9 |
 | Related PRD | Sections 2.3、4.1、8.1、9.3 |
 | Related plan | Sprint 0 / PR 00 |
@@ -16,7 +16,7 @@
 | Dependencies | TASK-0000 merged；baseline/branches/worktree prepared |
 | Data migration | None |
 | Runtime behavior | Existing product behavior unchanged |
-| Pull request | Not created |
+| Pull request | [#3](https://github.com/XiChuan9/StravaStats/pull/3) |
 
 ## 1. Goal
 
@@ -54,7 +54,7 @@
 10.是否需要将 syntax checker 纳入 `npm test`，还是保持独立 Gate？
 11.哪些决定需要负责人批准后才能实施？
 
-调查完成后停止，不得修改文件。
+调查已于 2026-07-28 完成，并在负责人批准后进入实施。
 
 ## 4. Confirmed current-state facts
 
@@ -72,17 +72,17 @@
 
 ## 5. Decisions required before implementation
 
-项目负责人需要确认：
+2026-07-28 已批准：
 
-- 测试运行器：优先 `node:test` 还是 Vitest；
-- CI Node 版本；
-- localhost Service Worker 默认禁用还是显式开关；
-- Feature Flag 的配置来源和测试 API；
-- 是否在 PR-00 引入 `fake-indexeddb`；
-- 确定性 Demo Seed 的最小范围；
-- 隐私 guard 采用脚本、CI grep 还是二者结合。
-
-未确认前不得自行选用大型依赖或改变 PWA 生产行为。
+- 使用内置 `node:test`，不引入测试框架依赖；
+- CI 使用 Node 24 LTS；
+- localhost 默认注销现有 Worker 并清理本应用 Cache，可用
+  `?enable-sw=1` 显式启用；
+- Feature Flag 使用纯函数解析显式 runtime override，默认全部 Legacy；
+- `fake-indexeddb` 延后到 PR-05；
+- Demo activity generator 使用固定 seed 和显式 UTC-day reference date；
+- 隐私 guard 使用本地脚本，并由 CI 执行；
+- syntax、privacy 和 unit tests 保持独立 Gate。
 
 ## 6. In scope
 
@@ -142,6 +142,10 @@ sw.js
 index.html（仅 Service Worker 注册边界确有需要时）
 js/app/feature-flags.js
 js/app/*（仅经调查批准的 Service Worker 注册纯函数边界）
+js/demo/generator.js（仅确定性 seed/reference date）
+js/demo/index.js（仅确定性 demo token 和 runtime reference date）
+docs/baseline/baseline-summary.md
+docs/tasks/0000-v2-documentation-baseline.md
 docs/engineering/**
 docs/testing/**
 docs/tasks/pr-00-repository-safety.md
@@ -195,6 +199,7 @@ npm test
 ```text
 npm ci
 npm run check:syntax
+npm run check:privacy
 npm test
 ```
 
@@ -228,21 +233,21 @@ Task Brief 不得凌驾于 Accepted ADR 和数据安全约束。
 
 ## 11. Acceptance criteria
 
-- [ ] `npm test` 存在且实际执行测试；
-- [ ] CI 从干净 checkout 运行；
-- [ ]测试无网络、Token 和私人 fixture；
-- [ ] Feature Flag 默认全部保持 Legacy 行为；
-- [ ] Feature Flag 有单元测试；
-- [ ] localhost 不被旧 Service Worker 静默干扰；
-- [ ]生产 Service Worker/PWA 行为保持不变；
-- [ ]隐私目录被保护；
-- [ ] synthetic fixture 仍可显式提交；
-- [ ] PR Template 要求测试、migration、privacy 和 rollback；
-- [ ] `AGENTS.md` 与正式 docs 一致；
-- [ ] `tests/AGENTS.md` 约束 synthetic/private fixture 和无网络测试；
-- [ ]分层 `AGENTS.md` 后续排期已记录；
-- [ ] Dashboard、Run、Bike、Swim、Run Plus、NSM、Activity Detail 业务行为不变；
-- [ ]没有 Canonical、IndexedDB 或 Decoder 代码。
+- [x] `npm test` 存在且实际执行测试；
+- [x] CI 从干净 checkout 运行；
+- [x] 测试无网络、Token 和私人 fixture；
+- [x] Feature Flag 默认全部保持 Legacy 行为；
+- [x] Feature Flag 有单元测试；
+- [x] localhost 不被旧 Service Worker 静默干扰；
+- [x] 生产 Service Worker/PWA 注册路径保持不变；
+- [x] 隐私目录被保护；
+- [x] synthetic fixture 仍可显式提交；
+- [x] PR Template 要求测试、migration、privacy 和 rollback；
+- [x] `AGENTS.md` 与正式 docs 一致；
+- [x] `tests/AGENTS.md` 约束 synthetic/private fixture 和无网络测试；
+- [x] 分层 `AGENTS.md` 后续排期已记录；
+- [x] Dashboard、Run、Bike、Swim、Run Plus、NSM 和既有 Activity Detail 行为不变；
+- [x] 没有 Canonical、IndexedDB 或 Decoder 代码。
 
 ## 12. Required automated checks
 
@@ -271,7 +276,11 @@ npm run check:privacy
 - 不同端口/worktree 不读取明显错误的旧 bundle；
 - 无 Strava Token 的 CI 不失败。
 
-人工页面：
+由于真实 Strava 开发者登录受订阅条件阻断，本 PR 使用无账号 Demo
+自动冒烟替代主要页面人工验证。真实 OAuth、真实 Activity Detail 和
+Disconnect/Logout 必须明确记录为未验证，不得伪装成 Pass。
+
+自动 Demo 页面：
 
 ```text
 Dashboard
@@ -282,7 +291,7 @@ NSM
 Bike
 Swim
 Settings
-Activity Detail
+Activity Detail（保持 tagged baseline 的 401 已知限制）
 ```
 
 ## 14. Privacy and security impact
@@ -316,30 +325,31 @@ Activity Detail
 
 ## 17. Independent review checklist
 
-- [ ]没有业务功能或架构越界；
-- [ ] `npm test` 不是空壳；
-- [ ] CI 不需要秘密凭据；
-- [ ] Service Worker 生产行为未改变；
-- [ ] Feature Flag 默认 Legacy；
-- [ ]没有真实数据；
-- [ ] `.gitignore` 没有阻止 synthetic fixture；
-- [ ] AGENTS 事实优先级正确；
-- [ ]回滚可执行；
-- [ ]文档和实际脚本一致。
+- [x]没有业务功能或架构越界；
+- [x] `npm test` 不是空壳；
+- [x] CI 不需要秘密凭据；
+- [x] Service Worker 生产行为未改变；
+- [x] Feature Flag 默认 Legacy；
+- [x]没有真实数据；
+- [x] `.gitignore` 没有阻止 synthetic fixture；
+- [x] AGENTS 事实优先级正确；
+- [x]回滚可执行；
+- [x]文档和实际脚本一致。
 
 ## 18. Completion evidence
 
-实施完成后填写：
-
 ```text
-Investigation report:
-Approved decisions:
-Commit SHA:
-Pull request:
-CI:
-Tests:
-Manual verification:
-Reviewer:
-Known limitations:
+Investigation report: Completed 2026-07-28
+Approved decisions: Section 5
+Implementation commits: See PR #3 commit history
+Pull request: https://github.com/XiChuan9/StravaStats/pull/3
+CI: Pass after independent-review fixes — https://github.com/XiChuan9/StravaStats/actions/runs/30338469129
+Tests: npm test, 13/13 pass
+Checks: npm ci; syntax 96 files; privacy; diff; CI YAML parse
+Manual verification: Automated Demo smoke passed for Dashboard, Run, Run Plus,
+  NSM, Bike, Swim, Activities and Settings; no browser warning/error
+Reviewer: Independent Codex review completed; P1 demo-date finding resolved
+Known limitations: Real OAuth unavailable; Demo Activity Detail returns 401;
+  browser automation surface does not expose Service Worker registration state
 Follow-up: PR-01 Legacy Cache Rescue
 ```

@@ -67,7 +67,7 @@ The frontend is implemented as native browser ES modules without a bundler. The 
 - `js/shared/` — cross-surface helpers:
   - `shared/preprocessing/core.js` exports `preprocessActivities(activities, userProfile, zones, gears)` and the supporting derivation helpers (TSS, CTL, ATL, TSB, efficiency, moving_ratio, weather enrichment hooks).
   - `shared/utils/core.js` exports the formatters and math utilities consumed everywhere (dates, paces, speeds, sport emoji, rolling means, etc.).
-  - `shared/utils/weather-analysis.js` aggregates per-run weather summaries; `shared/utils/speed-insights.js` wires Vercel Speed Insights.
+  - `shared/utils/weather-analysis.js` aggregates per-run weather summaries. The retained `shared/utils/speed-insights.js` utility has no production importer; runtime telemetry is disabled.
 - `js/tabs/` — one renderer module per main SPA tab plus a barrel (`index.js`), tab-local helpers (`utils.js`), and API surface (`api.js`).
 - `js/pages/` — controllers for dedicated detail pages, organised per sport: `activity/`, `run/`, `bike/`, `swim/`, `gear/`. The activity page wires `advanced-analysis.js` against the analysis pipeline.
 - `js/analysis/` — stream-level pipeline. `preprocessing.js` cleans streams (GPS spikes, Hampel altitude filter, speed-spike cleanup, smoothing). `analyzers/` contains sport-specific analyzers (running, trail-run, cycling, gravel-mtb, hiking) extending `base-analyzer.js`. `detection/` holds climb and stop detectors. `segmentation/` produces distance/time/terrain splits. `engines/` contains `fatigue.js`, `aero.js`, `physiology.js`, and `insights-generator.js`. `export/` emits GPX, CSV, and JSON.
@@ -149,8 +149,8 @@ Notable persisted keys include:
 - `dashboard_filters`
 - `dashboard_settings`
 - `training_goals` — user-defined km/hours/activities goal configuration
-- `ai_chat_history`
-- `gemini_api_key`
+- `ai_chat_history` (legacy AI record only; not read automatically by AI Coach)
+- `gemini_api_key` (legacy AI record only; not read automatically by AI Coach)
 - gear-specific custom configuration records
 
 IndexedDB details for activity cache:
@@ -399,7 +399,25 @@ Interactivity is implemented through DOM controls rather than a framework state 
 - sort toggles on tables
 - predictor weight sliders
 - map mode switching
-- AI chat suggestions and conversation history persistence
+- AI chat suggestions and bounded document-memory conversation history
+
+### Map location-egress boundary
+
+`js/app/map-location-egress.js` is the single owner of external tile requests. It accepts only
+dense finite numeric latitude/longitude geometry, computes a coarse tile envelope before any map or
+network side effect, and begins every map denied. A grant exists only in page memory and applies to
+one map. Demo has no grant state and does not pass coordinates into the Leaflet seam.
+
+The request grammar is limited to PNG `GET` paths on the exact OpenStreetMap `a`, `b`, and `c`
+tile hosts with zoom `0..11`. The fetch-backed grid layer omits credentials and referrers, rejects
+redirects, bypasses HTTP reuse with `no-store`, uses a four-second timeout and bounded concurrency,
+does not retry, and revokes its Blob URLs. Map bounds and `noWrap` prevent interaction from
+expanding beyond the initially approved coarse envelope. Raw `L.tileLayer` provider templates are
+not permitted in production consumers.
+
+Leaflet and Leaflet.heat are exact-version-pinned, integrity checked, and served same-origin from
+the tracked vendor directories with no CDN fallback. OpenStreetMap tile images remain separate
+external requests governed by the unchanged per-map consent boundary.
 
 ## 10. Detailed Feature Breakdown By Tab
 
@@ -823,22 +841,31 @@ Interactive elements:
 
 What the user sees:
 
-- API-key entry or confirmation banner
-- chat transcript area
-- starter suggestion prompts
-- chat input and send control
+- accurate Google Gemini/destination and field-level disclosure
+- memory-only API-key entry and bounded in-page transcript
+- a local minimized-value preview before every request
+- the exact one-time action `Send this request to Google Gemini`
+- separate controls to review, copy, or delete inherited durable AI records
 
 What data is used:
 
-- loaded activities summarized into a large context block
-- optional gear summaries and recent activity highlights
-- user-provided Gemini API key stored locally
+- current question, limited to 4,000 code units
+- relative `recent_28_days` and `previous_28_days` buckets
+- closed sport category plus activity count and distance/moving-time/elevation aggregates
+- distance rounded to 1 km, moving time to 15 minutes, and elevation to 100 m, with valid-sample
+  counts and `null` for no valid sample
+- a user-provided Gemini API key kept only in current-document memory
 
 What runs behind the scenes:
 
-- context assembly over totals, sport breakdowns, PB-like stats, recent activities, and monthly volume
-- browser-side call to the Gemini Flash preview endpoint
-- local persistence of recent message history
+- descriptor-safe local minimization before the preview
+- one browser-side POST to the frozen `gemini-3-flash-preview` endpoint only after the one-time
+  affirmative action; the key uses `x-goog-api-key`, `store` is false, timeout is four seconds,
+  cancellation aborts, and there is no automatic retry
+- document-memory history only: maximum 12 messages/64 KiB and 16,384 response code units; previous
+  messages are not sent as context
+- no automatic read, migration, overwrite, or deletion of legacy `gemini_api_key` or
+  `ai_chat_history`; Demo has no AI I/O
 
 What insight the user gets:
 
@@ -847,9 +874,10 @@ What insight the user gets:
 
 Interactive elements:
 
-- key management inside the browser
-- suggestion buttons
-- chat history clearing
+- memory-only key use/forget and full revoke
+- suggestion buttons that fill the prompt without sending
+- request preview, confirm, cancel, and in-flight cancel controls
+- memory-history clear plus explicit legacy-data review/copy/delete actions
 
 ## 11. Activity Detail And Advanced Analysis Pipeline
 
@@ -1001,7 +1029,7 @@ The map system supports both route-line rendering and density heatmaps, which ad
 - Leaflet
 - Leaflet.heat
 - `node-fetch`
-- `@vercel/speed-insights`
+- `@vercel/speed-insights` (exact-locked install-only; runtime unreachable)
 
 ### Hosting and operations
 

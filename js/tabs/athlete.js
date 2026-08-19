@@ -10,12 +10,144 @@ let uiCharts = {}; // cache chart instances for athlete tab
 let interactiveMatrixChart;
 let athleteActivities = [];
 
+const UNAVAILABLE_VALUE = '—';
+const MAX_DURATION_HISTOGRAM_BUCKETS = 200;
+
+function readNonnegativeFiniteNumber(value) {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0
+        ? value
+        : null;
+}
+
+function readAthleteCount(value) {
+    return Number.isSafeInteger(value) && value >= 1 ? value : null;
+}
+
+function readActivityDate(activity) {
+    const rawDate = activity?.start_date_local || activity?.start_date;
+    const date = new Date(rawDate);
+    return Number.isFinite(date.getTime()) ? date : null;
+}
+
+function readActivityDateKey(activity) {
+    const date = readActivityDate(activity);
+    if (!date) return null;
+
+    const rawDate = activity?.start_date_local || activity?.start_date;
+    if (typeof rawDate === 'string' && /^\d{4}-\d{2}-\d{2}/.test(rawDate)) {
+        return rawDate.slice(0, 10);
+    }
+    return date.toISOString().slice(0, 10);
+}
+
+function clearUiChart(canvasId) {
+    const chart = uiCharts[canvasId];
+    if (chart && typeof chart.destroy === 'function') chart.destroy();
+    delete uiCharts[canvasId];
+}
+
+function normalizeTrendsDataType(dataType) {
+    return ['count', 'time', 'distance'].includes(dataType) ? dataType : 'count';
+}
+
+function readTrendsMetric(activity, dataType) {
+    if (dataType === 'count') return 1;
+    if (dataType === 'time') {
+        const movingTime = readNonnegativeFiniteNumber(activity?.moving_time);
+        return movingTime === null ? null : movingTime / 3600;
+    }
+    if (dataType === 'distance') {
+        const distance = readNonnegativeFiniteNumber(activity?.distance);
+        return distance === null ? null : distance / 1000;
+    }
+    return null;
+}
+
+function addFiniteAggregate(total, value) {
+    const next = total + value;
+    return Number.isFinite(next) ? next : total;
+}
+
+function summarizeMetric(activities, property) {
+    let total = 0;
+    let count = 0;
+    for (const activity of activities) {
+        const value = readNonnegativeFiniteNumber(activity?.[property]);
+        if (value === null) continue;
+        const next = total + value;
+        if (!Number.isFinite(next)) continue;
+        total = next;
+        count++;
+    }
+    return { total, count };
+}
+
+function formatActivityDate(activity, date) {
+    const rawDate = activity?.start_date_local || activity?.start_date;
+    if (typeof rawDate === 'string' && rawDate.length >= 10) {
+        return rawDate.substring(0, 10);
+    }
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function createActivityLink(activityId, label = 'View') {
+    const routeId = typeof activityId === 'string' && activityId.length > 0
+        ? activityId
+        : (Number.isSafeInteger(activityId) && activityId >= 0 ? String(activityId) : null);
+    if (routeId === null) {
+        return document.createTextNode(label);
+    }
+    const params = new URLSearchParams();
+    params.set('id', routeId);
+    const link = document.createElement('a');
+    link.href = `html/activity-router.html?${params.toString()}`;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = label;
+    return link;
+}
+
+function createChartError() {
+    const errorText = document.createElement('p');
+    errorText.style.color = 'red';
+    errorText.style.padding = '20px';
+    errorText.textContent = 'Error rendering chart.';
+    return errorText;
+}
+
 // -------------------------
 // Public API
 // -------------------------
-export function renderTrendsTab(allActivities, dateFilterFrom, dateFilterTo, sportFilter = 'all', dataType = 'time') {
+export function selectTrendsMetadataContext(context = {}) {
+    const athleteData = context?.athleteData;
+    const zonesData = context?.zonesData;
+    const analysisProfileStatus = context?.analysisProfileStatus;
+    return Object.freeze({
+        athleteData: athleteData && typeof athleteData === 'object' && !Array.isArray(athleteData)
+            ? athleteData
+            : null,
+        zonesData: zonesData && typeof zonesData === 'object' && !Array.isArray(zonesData)
+            ? zonesData
+            : null,
+        analysisProfileStatus: ['configured', 'unconfigured'].includes(analysisProfileStatus)
+            ? analysisProfileStatus
+            : null
+    });
+}
+
+export function renderTrendsTab(
+    allActivities,
+    dateFilterFrom,
+    dateFilterTo,
+    sportFilter = 'all',
+    dataType = 'time',
+    metadataContext = {}
+) {
     // Public entry to render the Trends tab. Keeps signature used by `main.js`.
-    currentDataType = dataType;
+    currentDataType = normalizeTrendsDataType(dataType);
     athleteActivities = Array.isArray(allActivities) ? allActivities : [];
 
     // Ensure filters UI exists (will insert only once)
@@ -34,67 +166,69 @@ export function renderTrendsTab(allActivities, dateFilterFrom, dateFilterTo, spo
 
         populateAthleteSportOptions(sportSelect, selectedSports);
     }
-    if (dataTypeSelect) dataTypeSelect.value = dataType;
+    if (dataTypeSelect) dataTypeSelect.value = currentDataType;
     if (dateFromInput) dateFromInput.value = utils.isoToDisplayDate(dateFilterFrom);
     if (dateToInput) dateToInput.value = utils.isoToDisplayDate(dateFilterTo);
 
     // Apply filtering using the unified helper
-    const filteredActivities = filterActivities(allActivities, dateFilterFrom, dateFilterTo, sportFilter);
+    const filteredActivities = filterActivities(athleteActivities, dateFilterFrom, dateFilterTo, sportFilter);
 
-    const athleteData = JSON.parse(localStorage.getItem('strava_athlete_data'));
-    const zonesData = JSON.parse(localStorage.getItem('strava_training_zones'));
-
-    if (athleteData) {
-        console.log('[Athlete Tab] active athlete', {
-            id: athleteData?.id,
-            name: `${athleteData?.firstname || ''} ${athleteData?.lastname || ''}`.trim(),
-            username: athleteData?.username || null,
-        });
-    }
+    const { athleteData, zonesData, analysisProfileStatus } =
+        selectTrendsMetadataContext(metadataContext);
 
     if (athleteData) renderAthleteProfile(athleteData);
-    if (zonesData) renderTrainingZones(zonesData);
+    renderTrainingZones(zonesData, {
+        localHeartRateProfile: analysisProfileStatus !== null,
+        analysisProfileStatus
+    });
 
     // Render panels & charts (order: summary, records, charts)
     renderAllTimeStats(filteredActivities);
     renderRecordStats(filteredActivities);
-    renderAthleteCountHistogram(filteredActivities, dataType);
+    renderAthleteCountHistogram(filteredActivities, currentDataType);
     renderActivityFrequencyHistogram(filteredActivities, currentActivityFrequencyPeriod);
     renderTransitions(filteredActivities);
 
     // Charts: use the filtered activity set for all visualizations
-    renderStartTimeHistogram(filteredActivities, dataType);
+    renderStartTimeHistogram(filteredActivities, currentDataType);
     renderDurationHistogram(filteredActivities);
-    renderYearlyComparison(filteredActivities, dataType);
-    renderWeeklyMixChart(filteredActivities, dataType);
-    renderMonthlyMixChart(filteredActivities, dataType);
-    renderHourMatrix(filteredActivities, dataType);
-    renderYearMonthMatrix(filteredActivities, dataType);
-    renderMonthWeekdayMatrix(filteredActivities, dataType);
-    renderMonthDayMatrix(filteredActivities, dataType);
-    renderMonthHourMatrix(filteredActivities, dataType);
-    renderYearHourMatrix(filteredActivities, dataType);
-    renderYearWeekdayMatrix(filteredActivities, dataType);
-    renderInteractiveMatrix(filteredActivities, dataType);
+    renderYearlyComparison(filteredActivities, currentDataType);
+    renderWeeklyMixChart(filteredActivities, currentDataType);
+    renderMonthlyMixChart(filteredActivities, currentDataType);
+    renderHourMatrix(filteredActivities, currentDataType);
+    renderYearMonthMatrix(filteredActivities, currentDataType);
+    renderMonthWeekdayMatrix(filteredActivities, currentDataType);
+    renderMonthDayMatrix(filteredActivities, currentDataType);
+    renderMonthHourMatrix(filteredActivities, currentDataType);
+    renderYearHourMatrix(filteredActivities, currentDataType);
+    renderYearWeekdayMatrix(filteredActivities, currentDataType);
+    renderInteractiveMatrix(filteredActivities, currentDataType);
 
 }
 function renderAllTimeStats(activities) {
     const container = document.getElementById('all-time-stats-cards');
     if (!container) return;
-    const totalDist = (activities.reduce((s, a) => s + a.distance, 0) / 1000).toFixed(0);
-    const totalTime = (activities.reduce((s, a) => s + a.moving_time, 0) / 3600).toFixed(1);
-    const totalElev = activities.reduce((s, a) => s + a.total_elevation_gain, 0).toLocaleString();
+    const distance = summarizeMetric(activities, 'distance');
+    const movingTime = summarizeMetric(activities, 'moving_time');
+    const elevation = summarizeMetric(activities, 'total_elevation_gain');
+    const totalDist = distance.count > 0 ? `${(distance.total / 1000).toFixed(0)} km` : UNAVAILABLE_VALUE;
+    const totalTime = movingTime.count > 0 ? `${(movingTime.total / 3600).toFixed(1)} h` : UNAVAILABLE_VALUE;
+    const totalElev = elevation.count > 0 ? `${elevation.total.toLocaleString()} m` : UNAVAILABLE_VALUE;
     container.innerHTML = `
         <div class="card"><h3>Total Activities</h3><p>${activities.length}</p></div>
-        <div class="card"><h3>Total Distance</h3><p>${totalDist} km</p></div>
-        <div class="card"><h3>Total Time</h3><p>${totalTime} h</p></div>
-        <div class="card"><h3>Total Elevation</h3><p>${totalElev} m</p></div>
+        <div class="card"><h3>Total Distance</h3><p>${totalDist}</p></div>
+        <div class="card"><h3>Total Time</h3><p>${totalTime}</p></div>
+        <div class="card"><h3>Total Elevation</h3><p>${totalElev}</p></div>
     `;
 }
 
 function renderAthleteCountHistogram(activities, dataType = 'count') {
     const container = document.getElementById('athlete-count-histogram');
-    if (!container || activities.length === 0) return;
+    if (!container) return;
+    if (activities.length === 0) {
+        clearUiChart('athlete-count-histogram');
+        return;
+    }
 
     const categories = {
         solo: {
@@ -123,15 +257,10 @@ function renderAthleteCountHistogram(activities, dataType = 'count') {
         }
     };
 
-    const getMetric = activity => {
-        if (dataType === 'distance') return (Number(activity.distance) || 0) / 1000;
-        if (dataType === 'time') return (Number(activity.moving_time) || 0) / 3600;
-        return 1;
-    };
-
     activities.forEach(activity => {
-        const athleteCount = Number(activity.athlete_count) || 1;
-        const value = getMetric(activity);
+        const athleteCount = readAthleteCount(activity?.athlete_count);
+        const value = readTrendsMetric(activity, dataType);
+        if (athleteCount === null || value === null) return;
 
         let bucket;
         if (athleteCount === 1) bucket = categories.solo;
@@ -140,8 +269,13 @@ function renderAthleteCountHistogram(activities, dataType = 'count') {
         else bucket = categories.largeGroup;
 
         bucket.count++;
-        bucket.total += value;
+        bucket.total = addFiniteAggregate(bucket.total, value);
     });
+
+    if (Object.values(categories).every(category => category.count === 0)) {
+        clearUiChart('athlete-count-histogram');
+        return;
+    }
 
     const labels = Object.values(categories).map(c => c.label);
     const data = Object.values(categories).map(c => c.total);
@@ -219,18 +353,14 @@ function renderActivityFrequencyHistogram(activities, period = 'daily') {
         monthly: date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
     };
 
-    const getMetric = activity => {
-        if (currentDataType === 'distance') return (Number(activity.distance) || 0) / 1000;
-        if (currentDataType === 'time') return (Number(activity.moving_time) || 0) / 3600;
-        return 1;
-    };
-
     const totals = {};
     activities.forEach(activity => {
-        const date = new Date(activity.start_date_local || activity.start_date);
-        if (Number.isNaN(date.getTime())) return;
+        const date = readActivityDate(activity);
+        if (!date) return;
+        const value = readTrendsMetric(activity, currentDataType);
+        if (value === null) return;
         const key = frequency[period](date);
-        totals[key] = (totals[key] || 0) + getMetric(activity);
+        totals[key] = addFiniteAggregate(totals[key] || 0, value);
     });
 
     const entries = Object.entries(totals).sort((a, b) => a[0].localeCompare(b[0]));
@@ -298,22 +428,21 @@ function renderPerPeriodDistribution(activities, period = 'daily') {
         monthly: date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
     };
 
-    const getMetric = activity => {
-        if (currentDataType === 'distance') return (Number(activity.distance) || 0) / 1000;
-        if (currentDataType === 'time') return (Number(activity.moving_time) || 0) / 3600;
-        return 1;
-    };
-
     const totals = {};
     activities.forEach(activity => {
-        const date = new Date(activity.start_date_local || activity.start_date);
-        if (Number.isNaN(date.getTime())) return;
+        const date = readActivityDate(activity);
+        if (!date) return;
+        const value = readTrendsMetric(activity, currentDataType);
+        if (value === null) return;
         const key = frequency[period](date);
-        totals[key] = (totals[key] || 0) + getMetric(activity);
+        totals[key] = addFiniteAggregate(totals[key] || 0, value);
     });
 
     const values = Object.values(totals);
-    if (values.length === 0) return;
+    if (values.length === 0) {
+        clearUiChart('per-period-distribution');
+        return;
+    }
 
     // Build histogram of "how many periods had N activities/km/hours"
     const max = Math.max(...values);
@@ -377,17 +506,19 @@ function renderTransitions(activities) {
     if (!canvas && !detailsEl) return;
 
     // Sort activities by start time
-    const sorted = [...activities]
-        .filter(a => a.start_date_local)
-        .sort((a, b) => new Date(a.start_date_local) - new Date(b.start_date_local));
+    const sorted = activities
+        .map(activity => ({ activity, date: readActivityDate(activity) }))
+        .filter(entry => entry.date !== null)
+        .sort((a, b) => a.date.getTime() - b.date.getTime());
 
     // Normalize sport type to simplified category
     const normalizeSport = a => {
-        const t = (a.sport_type || a.type || '').toLowerCase();
+        const rawType = a?.sport_type || a?.type || '';
+        const t = typeof rawType === 'string' ? rawType.toLowerCase() : '';
         if (t.includes('swim')) return 'Swim';
         if (t.includes('ride') || t.includes('bike') || t.includes('cycling')) return 'Bike';
         if (t.includes('run')) return 'Run';
-        return a.type || 'Other';
+        return typeof a?.type === 'string' && a.type.length > 0 ? a.type : 'Other';
     };
 
     // Find transitions: activities within 2 hours of each other
@@ -396,12 +527,15 @@ function renderTransitions(activities) {
     const transitionExamples = {};
 
     for (let i = 0; i < sorted.length - 1; i++) {
-        const curr = sorted[i];
-        const currEnd = new Date(curr.start_date_local).getTime() + (curr.moving_time || 0) * 1000;
+        const curr = sorted[i].activity;
+        const movingTime = readNonnegativeFiniteNumber(curr?.moving_time);
+        if (movingTime === null) continue;
+        const currEnd = sorted[i].date.getTime() + movingTime * 1000;
+        if (!Number.isFinite(currEnd)) continue;
 
         for (let j = i + 1; j < sorted.length; j++) {
-            const next = sorted[j];
-            const nextStart = new Date(next.start_date_local).getTime();
+            const next = sorted[j].activity;
+            const nextStart = sorted[j].date.getTime();
             const gap = nextStart - currEnd;
 
             if (gap > MAX_GAP_MS) break; // No more candidates
@@ -415,14 +549,20 @@ function renderTransitions(activities) {
             transitionCounts[key] = (transitionCounts[key] || 0) + 1;
             if (!transitionExamples[key]) transitionExamples[key] = [];
             if (transitionExamples[key].length < 3) {
-                transitionExamples[key].push(curr.start_date_local.substring(0, 10));
+                transitionExamples[key].push(formatActivityDate(curr, sorted[i].date));
             }
         }
     }
 
     const entries = Object.entries(transitionCounts).sort((a, b) => b[1] - a[1]);
     if (entries.length === 0) {
-        if (detailsEl) detailsEl.innerHTML = '<p style="color:#888;">No multi-sport transitions found (activities within 2h of each other).</p>';
+        clearUiChart('transitions-chart');
+        if (detailsEl) {
+            const empty = document.createElement('p');
+            empty.style.color = '#888';
+            empty.textContent = 'No multi-sport transitions found (activities within 2h of each other).';
+            detailsEl.replaceChildren(empty);
+        }
         return;
     }
 
@@ -460,115 +600,234 @@ function renderTransitions(activities) {
     // Details table
     if (detailsEl) {
         const triathlon = (transitionCounts['Swim→Bike'] || 0) + (transitionCounts['Bike→Run'] || 0);
-        const rows = entries.slice(0, 8).map(([key, count]) =>
-            `<tr><td>${key}</td><td>${count}</td><td style="color:#888;font-size:0.85em;">${(transitionExamples[key] || []).join(', ')}</td></tr>`
-        ).join('');
-
-        detailsEl.innerHTML = `
-            ${triathlon > 0 ? `<p style="margin-bottom:0.75rem;"><strong>Triathlon-style transitions:</strong> ${triathlon} (Swim→Bike + Bike→Run)</p>` : ''}
-            <table class="compact-table">
-                <thead><tr><th>Transition</th><th>Count</th><th>Examples</th></tr></thead>
-                <tbody>${rows}</tbody>
-            </table>
-        `;
+        const children = [];
+        if (triathlon > 0) {
+            const summary = document.createElement('p');
+            summary.style.marginBottom = '0.75rem';
+            const strong = document.createElement('strong');
+            strong.textContent = 'Triathlon-style transitions:';
+            summary.append(strong, document.createTextNode(` ${triathlon} (Swim→Bike + Bike→Run)`));
+            children.push(summary);
+        }
+        const table = document.createElement('table');
+        table.className = 'compact-table';
+        const thead = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+        for (const label of ['Transition', 'Count', 'Examples']) {
+            const th = document.createElement('th');
+            th.textContent = label;
+            headerRow.append(th);
+        }
+        thead.append(headerRow);
+        const tbody = document.createElement('tbody');
+        for (const [key, count] of entries.slice(0, 8)) {
+            const row = document.createElement('tr');
+            const transition = document.createElement('td');
+            transition.textContent = key;
+            const countCell = document.createElement('td');
+            countCell.textContent = String(count);
+            const examples = document.createElement('td');
+            examples.style.color = '#888';
+            examples.style.fontSize = '0.85em';
+            examples.textContent = (transitionExamples[key] || []).join(', ');
+            row.append(transition, countCell, examples);
+            tbody.append(row);
+        }
+        table.append(thead, tbody);
+        detailsEl.replaceChildren(...children, table);
     }
 }
 
 function renderRecordStats(activities) {
     const container = document.getElementById('record-stats');
-    if (!container || activities.length === 0) return;
+    if (!container) return;
 
-    const longestActivity = [...activities].sort((a, b) => b.distance - a.distance)[0];
+    const distanceCandidates = activities
+        .map(activity => ({ activity, value: readNonnegativeFiniteNumber(activity?.distance) }))
+        .filter(candidate => candidate.value !== null);
+    const longestRecord = distanceCandidates.reduce(
+        (best, candidate) => best === null || candidate.value > best.value ? candidate : best,
+        null
+    );
 
     const getSpeed = activity => {
-        const avgSpeed = Number(activity.average_speed) || 0;
-        if (avgSpeed > 0) return avgSpeed;
-        if (activity.moving_time > 0) return (activity.distance || 0) / activity.moving_time;
-        return 0;
+        const avgSpeed = readNonnegativeFiniteNumber(activity?.average_speed);
+        if (avgSpeed !== null && avgSpeed > 0) return avgSpeed;
+        const distance = readNonnegativeFiniteNumber(activity?.distance);
+        const movingTime = readNonnegativeFiniteNumber(activity?.moving_time);
+        if (distance !== null && distance > 0 && movingTime !== null && movingTime > 0) {
+            const speed = distance / movingTime;
+            return Number.isFinite(speed) && speed > 0 ? speed : null;
+        }
+        return null;
     };
 
-    const fastestCandidates = activities.filter(a => (a.distance || 0) > 1000 && getSpeed(a) > 0);
-    const fallbackCandidates = activities.filter(a => getSpeed(a) > 0);
-    const fastestActivity = fastestCandidates.length
-        ? fastestCandidates.sort((a, b) => getSpeed(b) - getSpeed(a))[0]
-        : fallbackCandidates.length
-            ? fallbackCandidates.sort((a, b) => getSpeed(b) - getSpeed(a))[0]
-            : activities[0];
+    const speedCandidates = activities
+        .map(activity => ({
+            activity,
+            speed: getSpeed(activity),
+            distance: readNonnegativeFiniteNumber(activity?.distance)
+        }))
+        .filter(candidate => candidate.speed !== null);
+    const preferredSpeedCandidates = speedCandidates.filter(candidate => (
+        candidate.distance !== null && candidate.distance > 1000
+    ));
+    const fastestRecord = (preferredSpeedCandidates.length > 0
+        ? preferredSpeedCandidates
+        : speedCandidates
+    ).reduce(
+        (best, candidate) => best === null || candidate.speed > best.speed ? candidate : best,
+        null
+    );
+    const fastestPaceMinutes = fastestRecord === null ? null : (1000 / fastestRecord.speed) / 60;
+    const fastestPace = fastestPaceMinutes !== null && Number.isFinite(fastestPaceMinutes)
+        ? utils.paceDecimalToTime(fastestPaceMinutes)
+        : UNAVAILABLE_VALUE;
 
-    const fastestSpeed = getSpeed(fastestActivity);
-    const paceMin = fastestSpeed > 0 ? (1000 / fastestSpeed) / 60 : 0;
-    const paceStr = paceMin > 0 ? utils.paceDecimalToTime(paceMin) : '-';
+    const elevationCandidates = activities
+        .map(activity => ({
+            activity,
+            value: readNonnegativeFiniteNumber(activity?.total_elevation_gain)
+        }))
+        .filter(candidate => candidate.value !== null);
+    const elevationRecord = elevationCandidates.reduce(
+        (best, candidate) => best === null || candidate.value > best.value ? candidate : best,
+        null
+    );
 
-    const mostElev = [...activities].sort((a, b) => b.total_elevation_gain - a.total_elevation_gain)[0];
-
-    const oldestActivity = [...activities].sort((a, b) => new Date(a.start_date_local) - new Date(b.start_date_local))[0];
-    const newestActivity = [...activities].sort((a, b) => new Date(b.start_date_local) - new Date(a.start_date_local))[0];
-    const timeDiffMs = new Date(newestActivity.start_date_local) - new Date(oldestActivity.start_date_local);
-    const timeDiffDays = Math.floor(timeDiffMs / (1000 * 60 * 60 * 24));
+    const datedActivities = activities
+        .map(activity => ({ activity, date: readActivityDate(activity) }))
+        .filter(entry => entry.date !== null);
+    const oldestRecord = datedActivities.reduce(
+        (best, entry) => best === null || entry.date < best.date ? entry : best,
+        null
+    );
+    const newestRecord = datedActivities.reduce(
+        (best, entry) => best === null || entry.date > best.date ? entry : best,
+        null
+    );
+    const timeDiffDays = oldestRecord && newestRecord
+        ? Math.floor((newestRecord.date.getTime() - oldestRecord.date.getTime()) / (1000 * 60 * 60 * 24))
+        : null;
 
     const hourCounts = Array(24).fill(0);
-    activities.forEach(activity => {
-        let hour = new Date(activity.start_date_local).getHours();
+    datedActivities.forEach(({ date }) => {
+        let hour = date.getHours();
         hour = (hour - 2 + 24) % 24;
         hourCounts[hour]++;
     });
-    const favHour = hourCounts.indexOf(Math.max(...hourCounts));
+    const favHour = datedActivities.length > 0
+        ? hourCounts.indexOf(Math.max(...hourCounts))
+        : null;
 
     const dayCounts = Array(7).fill(0);
-    activities.forEach(activity => {
-        const date = new Date(activity.start_date_local);
+    datedActivities.forEach(({ date }) => {
         let dayIdx = date.getDay();
         dayIdx = (dayIdx + 6) % 7;
         dayCounts[dayIdx]++;
     });
-    const favDayIdx = dayCounts.indexOf(Math.max(...dayCounts));
+    const favDayIdx = datedActivities.length > 0
+        ? dayCounts.indexOf(Math.max(...dayCounts))
+        : null;
     const dayLabels = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    const favDay = dayLabels[favDayIdx];
+    const favDay = favDayIdx === null ? UNAVAILABLE_VALUE : dayLabels[favDayIdx];
 
-    const avgDist = activities.length ? (activities.reduce((s, a) => s + (a.distance || 0), 0) / activities.length / 1000).toFixed(2) : 0;
+    const distanceSummary = summarizeMetric(activities, 'distance');
+    const avgDist = distanceSummary.count > 0
+        ? `${(distanceSummary.total / distanceSummary.count / 1000).toFixed(2)} km`
+        : UNAVAILABLE_VALUE;
 
-    const avgPaceMin = activities.length
-        ? (activities.reduce((s, a) => s + (getSpeed(a) > 0 ? (1000 / getSpeed(a)) / 60 : 0), 0) / activities.length)
-        : 0;
-    const avgPaceStr = avgPaceMin > 0 ? utils.paceDecimalToTime(avgPaceMin) : '-';
+    let pairedPaceMinutes = 0;
+    let pairedCount = 0;
+    for (const activity of activities) {
+        const distance = readNonnegativeFiniteNumber(activity?.distance);
+        const movingTime = readNonnegativeFiniteNumber(activity?.moving_time);
+        if (distance === null || distance <= 0 || movingTime === null) continue;
+        const paceMinutes = (movingTime / (distance / 1000)) / 60;
+        if (!Number.isFinite(paceMinutes) || paceMinutes < 0) continue;
+        const nextPaceTotal = pairedPaceMinutes + paceMinutes;
+        if (!Number.isFinite(nextPaceTotal)) continue;
+        pairedPaceMinutes = nextPaceTotal;
+        pairedCount++;
+    }
+    const calculatedAveragePace = pairedCount > 0
+        ? pairedPaceMinutes / pairedCount
+        : null;
+    const avgPaceMinutes = calculatedAveragePace !== null && Number.isFinite(calculatedAveragePace)
+        ? calculatedAveragePace
+        : null;
+    const avgPace = avgPaceMinutes === null
+        ? UNAVAILABLE_VALUE
+        : (avgPaceMinutes === 0 ? '0:00 /km' : `${utils.paceDecimalToTime(avgPaceMinutes)} /km`);
 
-    const soloCount = activities.filter(a => Number(a.athlete_count) === 1).length;
-    const groupCount = activities.length - soloCount;
-    const soloPct = activities.length ? ((soloCount / activities.length) * 100).toFixed(1) : 0;
-    const groupPct = activities.length ? ((groupCount / activities.length) * 100).toFixed(1) : 0;
+    const participationCounts = activities
+        .map(activity => readAthleteCount(activity?.athlete_count))
+        .filter(value => value !== null);
+    const soloCount = participationCounts.filter(value => value === 1).length;
+    const groupCount = participationCounts.filter(value => value > 1).length;
+    const soloValue = participationCounts.length > 0
+        ? `${soloCount} (${((soloCount / participationCounts.length) * 100).toFixed(1)}%)`
+        : UNAVAILABLE_VALUE;
+    const groupValue = participationCounts.length > 0
+        ? `${groupCount} (${((groupCount / participationCounts.length) * 100).toFixed(1)}%)`
+        : UNAVAILABLE_VALUE;
 
-    container.innerHTML = `
-            <ul style="list-style: none; padding-left: 0; line-height: 1.8;">
-                <li><strong>Longest Activity:</strong> ${(longestActivity.distance / 1000).toFixed(2)} km (<a href="html/activity-router.html?id=${longestActivity.id}" target="_blank">View</a>)</li>
-                <li><strong>Fastest Activity (Pace):</strong> ${paceStr} /km over ${(fastestActivity.distance / 1000).toFixed(1)}k (<a href="html/activity-router.html?id=${fastestActivity.id}" target="_blank">View</a>)</li>
-                <li><strong>Most Elevation:</strong> ${Math.round(mostElev.total_elevation_gain)} m (<a href="html/activity-router.html?id=${mostElev.id}" target="_blank">View</a>)</li>
-                <li><strong>Time Span:</strong> ${timeDiffDays} days (${oldestActivity.start_date_local.substring(0, 10)} to ${newestActivity.start_date_local.substring(0, 10)})</li>
-                <li><strong>Favourite Hour:</strong> ${favHour}:00</li>
-                <li><strong>Favourite Day:</strong> ${favDay}</li>
-                <li><strong>Average Distance:</strong> ${avgDist} km</li>
-                <li><strong>Average Pace:</strong> ${avgPaceStr} /km</li>
-                <li><strong>Solo Activities:</strong> ${soloCount} (${soloPct}%)</li>
-                <li><strong>Group Activities:</strong> ${groupCount} (${groupPct}%)</li>
-            </ul>
-        `;
+    const list = document.createElement('ul');
+    list.style.listStyle = 'none';
+    list.style.paddingLeft = '0';
+    list.style.lineHeight = '1.8';
+    const appendItem = (label, value, activityId = null) => {
+        const item = document.createElement('li');
+        const strong = document.createElement('strong');
+        strong.textContent = label;
+        item.append(strong, document.createTextNode(` ${value}`));
+        if (activityId !== null) {
+            item.append(document.createTextNode(' ('), createActivityLink(activityId), document.createTextNode(')'));
+        }
+        list.append(item);
+    };
+    appendItem(
+        'Longest Activity:',
+        longestRecord ? `${(longestRecord.value / 1000).toFixed(2)} km` : UNAVAILABLE_VALUE,
+        longestRecord?.activity?.id ?? null
+    );
+    const fastestDistance = fastestRecord?.distance;
+    const fastestDistanceText = fastestDistance !== null && fastestDistance !== undefined
+        ? ` over ${(fastestDistance / 1000).toFixed(1)}k`
+        : '';
+    appendItem(
+        'Fastest Activity (Pace):',
+        fastestRecord ? `${fastestPace} /km${fastestDistanceText}` : UNAVAILABLE_VALUE,
+        fastestRecord?.activity?.id ?? null
+    );
+    appendItem(
+        'Most Elevation:',
+        elevationRecord ? `${Math.round(elevationRecord.value)} m` : UNAVAILABLE_VALUE,
+        elevationRecord?.activity?.id ?? null
+    );
+    const timeSpan = oldestRecord && newestRecord
+        ? `${timeDiffDays} days (${formatActivityDate(oldestRecord.activity, oldestRecord.date)} to ${formatActivityDate(newestRecord.activity, newestRecord.date)})`
+        : UNAVAILABLE_VALUE;
+    appendItem('Time Span:', timeSpan);
+    appendItem('Favourite Hour:', favHour === null ? UNAVAILABLE_VALUE : `${favHour}:00`);
+    appendItem('Favourite Day:', favDay);
+    appendItem('Average Distance:', avgDist);
+    appendItem('Average Pace:', avgPace);
+    appendItem('Solo Activities:', soloValue);
+    appendItem('Group Activities:', groupValue);
+    container.replaceChildren(list);
 }
 
 function renderStartTimeHistogram(activities, dataType = 'count') {
     const values = Array(24).fill(0);
     activities.forEach(activity => {
-        let hour = new Date(activity.start_date_local).getHours();
+        const date = readActivityDate(activity);
+        if (!date) return;
+        const metric = readTrendsMetric(activity, dataType);
+        if (metric === null) return;
+        let hour = date.getHours();
         hour = (hour - 2 + 24) % 24;
-        switch (dataType) {
-            case 'count':
-                values[hour]++;
-                break;
-            case 'time':
-                values[hour] += activity.moving_time / 3600;
-                break;
-            case 'distance':
-                values[hour] += activity.distance / 1000;
-                break;
-        }
+        values[hour] = addFiniteAggregate(values[hour], metric);
     });
     const labels = values.map((_, i) => `${i}:00`);
     const labelMap = {
@@ -596,8 +855,14 @@ function renderStartTimeHistogram(activities, dataType = 'count') {
 
 function renderDurationHistogram(activities) {
     // Convert moving_time to minutes
-    const durations = activities.map(a => a.moving_time / 60).filter(d => d > 0);
-    if (durations.length === 0) return;
+    const durations = activities
+        .map(activity => readNonnegativeFiniteNumber(activity?.moving_time))
+        .filter(duration => duration !== null)
+        .map(duration => duration / 60);
+    if (durations.length === 0) {
+        clearUiChart('duration-histogram');
+        return;
+    }
 
     const maxDur = Math.max(...durations);
 
@@ -614,7 +879,14 @@ function renderDurationHistogram(activities) {
         unit = 'min';
     }
 
-    const numBuckets = Math.ceil(maxDur / bucketSize);
+    const desiredBucketCount = Math.max(1, Math.ceil(maxDur / bucketSize));
+    if (desiredBucketCount > MAX_DURATION_HISTOGRAM_BUCKETS) {
+        bucketSize = maxDur / MAX_DURATION_HISTOGRAM_BUCKETS;
+    }
+    const numBuckets = Math.min(
+        MAX_DURATION_HISTOGRAM_BUCKETS,
+        Math.max(1, Math.ceil(maxDur / bucketSize))
+    );
     const counts = new Array(numBuckets).fill(0);
     durations.forEach(d => {
         const idx = Math.min(Math.floor(d / bucketSize), numBuckets - 1);
@@ -657,32 +929,56 @@ function renderDurationHistogram(activities) {
 
 function renderYearlyComparison(runs, dataType = 'count') {
     const byYear = runs.reduce((acc, run) => {
-        const year = run.start_date_local.substring(0, 4);
-        if (!acc[year]) acc[year] = { distance: 0, count: 0, elevation: 0, movingTime: 0 };
-        acc[year].distance += run.distance / 1000;
+        const date = readActivityDate(run);
+        if (!date) return acc;
+        const year = date.getFullYear();
+        if (!acc[year]) {
+            acc[year] = {
+                distance: 0,
+                distanceCount: 0,
+                count: 0,
+                elevation: 0,
+                elevationCount: 0,
+                movingTime: 0,
+                movingTimeCount: 0
+            };
+        }
         acc[year].count++;
-        acc[year].elevation += run.total_elevation_gain;
-        acc[year].movingTime += run.moving_time / 3600;
+        const distance = readNonnegativeFiniteNumber(run?.distance);
+        const elevation = readNonnegativeFiniteNumber(run?.total_elevation_gain);
+        const movingTime = readNonnegativeFiniteNumber(run?.moving_time);
+        if (distance !== null) {
+            acc[year].distance = addFiniteAggregate(acc[year].distance, distance / 1000);
+            acc[year].distanceCount++;
+        }
+        if (elevation !== null) {
+            acc[year].elevation = addFiniteAggregate(acc[year].elevation, elevation);
+            acc[year].elevationCount++;
+        }
+        if (movingTime !== null) {
+            acc[year].movingTime = addFiniteAggregate(acc[year].movingTime, movingTime / 3600);
+            acc[year].movingTimeCount++;
+        }
         return acc;
     }, {});
 
     const years = Object.keys(byYear).sort();
     // Get max for each measure
-    const distDataRaw = years.map(y => byYear[y].distance);
+    const distDataRaw = years.map(y => byYear[y].distanceCount > 0 ? byYear[y].distance : null);
     const countDataRaw = years.map(y => byYear[y].count);
-    const elevDataRaw = years.map(y => byYear[y].elevation);
-    const timeDataRaw = years.map(y => byYear[y].movingTime);
+    const elevDataRaw = years.map(y => byYear[y].elevationCount > 0 ? byYear[y].elevation : null);
+    const timeDataRaw = years.map(y => byYear[y].movingTimeCount > 0 ? byYear[y].movingTime : null);
 
-    const maxDist = Math.max(...distDataRaw) || 1;
-    const maxCount = Math.max(...countDataRaw) || 1;
-    const maxElev = Math.max(...elevDataRaw) || 1;
-    const maxTime = Math.max(...timeDataRaw) || 1;
+    const maxDist = Math.max(1, ...distDataRaw.filter(Number.isFinite));
+    const maxCount = Math.max(1, ...countDataRaw);
+    const maxElev = Math.max(1, ...elevDataRaw.filter(Number.isFinite));
+    const maxTime = Math.max(1, ...timeDataRaw.filter(Number.isFinite));
 
     // Scale to [0, 1]
-    const distData = distDataRaw.map(v => v / maxDist);
+    const distData = distDataRaw.map(v => v === null ? null : v / maxDist);
     const countData = countDataRaw.map(v => v / maxCount);
-    const elevData = elevDataRaw.map(v => v / maxElev);
-    const timeData = timeDataRaw.map(v => v / maxTime);
+    const elevData = elevDataRaw.map(v => v === null ? null : v / maxElev);
+    const timeData = timeDataRaw.map(v => v === null ? null : v / maxTime);
 
     const datasets = [
         {
@@ -738,6 +1034,7 @@ function renderYearlyComparison(runs, dataType = 'count') {
                             const yearIdx = context.dataIndex;
                             let label = dataset.label.replace(' (scaled)', '');
                             let value = dataset.realData ? dataset.realData[yearIdx] : context.parsed.y;
+                            if (value === null) return `${label}: ${UNAVAILABLE_VALUE}`;
                             // Format value depending on dataset
                             if (label === 'Total Distance') {
                                 return `${label}: ${value.toLocaleString(undefined, { maximumFractionDigits: 1 })} km`;
@@ -774,22 +1071,15 @@ function renderWeeklyMixChart(runs, dataType = 'count') {
     const dayData = Array(7).fill(0);
 
     runs.forEach(run => {
-        const date = new Date(run.start_date_local);
+        const date = readActivityDate(run);
+        if (!date) return;
+        const metric = readTrendsMetric(run, dataType);
+        if (metric === null) return;
         // getDay(): 0=Sunday, 1=Monday, ..., 6=Saturday
         let dayIdx = date.getDay();
         // Shift so Monday=0, Sunday=6
         dayIdx = (dayIdx + 6) % 7;
-        switch (dataType) {
-            case 'count':
-                dayData[dayIdx]++;
-                break;
-            case 'time':
-                dayData[dayIdx] += run.moving_time / 3600; // hours
-                break;
-            case 'distance':
-                dayData[dayIdx] += run.distance / 1000; // km
-                break;
-        }
+        dayData[dayIdx] = addFiniteAggregate(dayData[dayIdx], metric);
     });
 
     const labelMap = {
@@ -829,21 +1119,13 @@ function renderMonthlyMixChart(runs, dataType = 'count') {
     const monthData = Array(12).fill(0);
 
     runs.forEach(run => {
-        const date = new Date(run.start_date_local);
-        if (isNaN(date)) return;
+        const date = readActivityDate(run);
+        if (!date) return;
+        const metric = readTrendsMetric(run, dataType);
+        if (metric === null) return;
 
         const monthIdx = date.getMonth(); // 0–11
-        switch (dataType) {
-            case 'count':
-                monthData[monthIdx]++;
-                break;
-            case 'time':
-                monthData[monthIdx] += run.moving_time / 3600; // hours
-                break;
-            case 'distance':
-                monthData[monthIdx] += run.distance / 1000; // km
-                break;
-        }
+        monthData[monthIdx] = addFiniteAggregate(monthData[monthIdx], metric);
     });
 
     const labelMap = {
@@ -889,20 +1171,13 @@ function renderHourMatrix(runs, dataType = 'count') {
     const values = Array.from({ length: 7 }, () => Array(24).fill(0));
 
     runs.forEach(run => {
-        const date = new Date(run.start_date_local);
+        const date = readActivityDate(run);
+        if (!date) return;
+        const metric = readTrendsMetric(run, dataType);
+        if (metric === null) return;
         const dayIdx = (date.getDay() + 6) % 7; // Monday=0
         const hour = (date.getHours() - 2 + 24) % 24;
-        switch (dataType) {
-            case 'count':
-                values[dayIdx][hour]++;
-                break;
-            case 'time':
-                values[dayIdx][hour] += run.moving_time / 3600;
-                break;
-            case 'distance':
-                values[dayIdx][hour] += run.distance / 1000;
-                break;
-        }
+        values[dayIdx][hour] = addFiniteAggregate(values[dayIdx][hour], metric);
     });
 
     const data = [];
@@ -989,8 +1264,10 @@ function renderYearMonthMatrix(runs, dataType = 'count') {
     const stats = {}; // { [year]: { [month]: value } }
 
     runs.forEach(run => {
-        const date = new Date(run.start_date_local);
-        if (isNaN(date)) return;
+        const date = readActivityDate(run);
+        if (!date) return;
+        const metric = readTrendsMetric(run, dataType);
+        if (metric === null) return;
 
         const year = date.getFullYear();
         const month = date.getMonth(); // 0–11
@@ -998,17 +1275,7 @@ function renderYearMonthMatrix(runs, dataType = 'count') {
         if (!stats[year]) stats[year] = {};
         if (!stats[year][month]) stats[year][month] = 0;
 
-        switch (dataType) {
-            case 'count':
-                stats[year][month]++;
-                break;
-            case 'time':
-                stats[year][month] += run.moving_time / 3600;
-                break;
-            case 'distance':
-                stats[year][month] += run.distance / 1000;
-                break;
-        }
+        stats[year][month] = addFiniteAggregate(stats[year][month], metric);
     });
 
     const years = Object.keys(stats).map(Number).sort((a, b) => a - b);
@@ -1118,17 +1385,27 @@ function renderMonthWeekdayMatrix(runs, dataType = 'count') {
     );
 
     runs.forEach(run => {
-        const date = new Date(run.start_date_local);
-        if (isNaN(date)) return;
+        const date = readActivityDate(run);
+        if (!date) return;
 
         const month = date.getMonth();           // 0–11
         const dayIdx = (date.getDay() + 6) % 7;  // Monday = 0
-        const distKm = run.distance / 1000;
-        const timeH = run.moving_time / 3600;
+        const distance = readNonnegativeFiniteNumber(run?.distance);
+        const movingTime = readNonnegativeFiniteNumber(run?.moving_time);
 
         stats[month][dayIdx].count++;
-        stats[month][dayIdx].distance += distKm;
-        stats[month][dayIdx].time += timeH;
+        if (distance !== null) {
+            stats[month][dayIdx].distance = addFiniteAggregate(
+                stats[month][dayIdx].distance,
+                distance / 1000
+            );
+        }
+        if (movingTime !== null) {
+            stats[month][dayIdx].time = addFiniteAggregate(
+                stats[month][dayIdx].time,
+                movingTime / 3600
+            );
+        }
     });
 
     const data = [];
@@ -1259,23 +1536,15 @@ function renderMonthDayMatrix(runs, dataType = 'count') {
     );
 
     runs.forEach(run => {
-        const date = new Date(run.start_date_local);
-        if (isNaN(date)) return;
+        const date = readActivityDate(run);
+        if (!date) return;
+        const metric = readTrendsMetric(run, dataType);
+        if (metric === null) return;
 
         const month = date.getMonth();      // 0–11
         const day = date.getDate() - 1;     // 0–30
 
-        switch (dataType) {
-            case 'count':
-                stats[day][month]++;
-                break;
-            case 'time':
-                stats[day][month] += run.moving_time / 3600;
-                break;
-            case 'distance':
-                stats[day][month] += run.distance / 1000;
-                break;
-        }
+        stats[day][month] = addFiniteAggregate(stats[day][month], metric);
     });
 
     const data = [];
@@ -1364,11 +1633,9 @@ function renderMonthDayMatrix(runs, dataType = 'count') {
 
 function renderMonthHourMatrix(runs, dataType = 'count') {
     if (!runs || runs.length === 0) {
-        console.warn('⚠️ No runs data for month-hour matrix');
+        clearUiChart('month-hour-matrix');
         return;
     }
-
-    console.log(`📊 Rendering month-hour matrix with ${runs.length} activities (${dataType})...`);
 
     const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
         'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -1381,8 +1648,8 @@ function renderMonthHourMatrix(runs, dataType = 'count') {
 
     // Aggregate
     runs.forEach(run => {
-        const date = new Date(run.start_date_local);
-        if (isNaN(date)) return;
+        const date = readActivityDate(run);
+        if (!date) return;
 
         const month = date.getMonth(); // 0–11
         let hour = date.getHours();    // 0–23
@@ -1390,12 +1657,22 @@ function renderMonthHourMatrix(runs, dataType = 'count') {
         // Subtract 2 hours and wrap around 0–23
         hour = (hour - 2 + 24) % 24;
 
-        const km = (run.distance || 0) / 1000;
-        const timeH = run.moving_time / 3600;
+        const distance = readNonnegativeFiniteNumber(run?.distance);
+        const movingTime = readNonnegativeFiniteNumber(run?.moving_time);
 
         stats[hour][month].count++;
-        stats[hour][month].distance += km;
-        stats[hour][month].time += timeH;
+        if (distance !== null) {
+            stats[hour][month].distance = addFiniteAggregate(
+                stats[hour][month].distance,
+                distance / 1000
+            );
+        }
+        if (movingTime !== null) {
+            stats[hour][month].time = addFiniteAggregate(
+                stats[hour][month].time,
+                movingTime / 3600
+            );
+        }
     });
 
     // Flatten into dataset compatible with matrix chart
@@ -1429,8 +1706,6 @@ function renderMonthHourMatrix(runs, dataType = 'count') {
             });
         }
     }
-
-    console.log(`  - Data points: ${data.length}, Max value: ${maxVal}`);
 
     function getColor(v) {
         if (v === 0) return 'rgba(255,255,255,0)';
@@ -1507,12 +1782,10 @@ function renderMonthHourMatrix(runs, dataType = 'count') {
                 layout: { padding: 10 }
             }
         });
-        console.log(`✅ Month-hour matrix rendered successfully`);
-    } catch (error) {
-        console.error('❌ Error rendering month-hour matrix:', error);
+    } catch {
         const container = document.getElementById('month-hour-matrix')?.parentElement;
         if (container) {
-            container.innerHTML = `<p style="color: red; padding: 20px;">Error rendering chart: ${error.message}</p>`;
+            container.replaceChildren(createChartError());
         }
     }
 }
@@ -1524,25 +1797,17 @@ function renderYearWeekdayMatrix(runs, dataType = 'count') {
     const stats = {}; // { [year]: { [weekday]: value } }
 
     runs.forEach(run => {
-        const date = new Date(run.start_date_local);
-        if (isNaN(date)) return;
+        const date = readActivityDate(run);
+        if (!date) return;
+        const metric = readTrendsMetric(run, dataType);
+        if (metric === null) return;
         const year = date.getFullYear();
         const weekday = (date.getDay() + 6) % 7; // Monday = 0
 
         if (!stats[year]) stats[year] = {};
         if (!stats[year][weekday]) stats[year][weekday] = 0;
 
-        switch (dataType) {
-            case 'count':
-                stats[year][weekday]++;
-                break;
-            case 'time':
-                stats[year][weekday] += run.moving_time / 3600;
-                break;
-            case 'distance':
-                stats[year][weekday] += run.distance / 1000;
-                break;
-        }
+        stats[year][weekday] = addFiniteAggregate(stats[year][weekday], metric);
     });
 
     const years = Object.keys(stats).map(Number).sort((a, b) => a - b);
@@ -1631,25 +1896,17 @@ function renderYearHourMatrix(runs, dataType = 'count') {
     const stats = {}; // { [year]: { [hour]: value } }
 
     runs.forEach(run => {
-        const date = new Date(run.start_date_local);
-        if (isNaN(date)) return;
+        const date = readActivityDate(run);
+        if (!date) return;
+        const metric = readTrendsMetric(run, dataType);
+        if (metric === null) return;
         const year = date.getFullYear();
         let hour = (date.getHours() - 2 + 24) % 24;
 
         if (!stats[year]) stats[year] = {};
         if (!stats[year][hour]) stats[year][hour] = 0;
 
-        switch (dataType) {
-            case 'count':
-                stats[year][hour]++;
-                break;
-            case 'time':
-                stats[year][hour] += run.moving_time / 3600;
-                break;
-            case 'distance':
-                stats[year][hour] += run.distance / 1000;
-                break;
-        }
+        stats[year][hour] = addFiniteAggregate(stats[year][hour], metric);
     });
 
     const years = Object.keys(stats).map(Number).sort((a, b) => a - b);
@@ -1739,12 +1996,14 @@ function renderYearHourMatrix(runs, dataType = 'count') {
 
 function renderInteractiveMatrix(runs, dataType = 'count') {
     const ctx = document.getElementById("interactiveMatrix");
+    const datedRuns = runs
+        .map(run => ({ run, date: readActivityDate(run) }))
+        .filter(entry => entry.date !== null);
 
     const weekdayLabels = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
     const monthLabels = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-    function getValue(run, key) {
-        const date = new Date(run.start_date_local);
+    function getValue(date, key) {
         switch (key) {
             case "year": return date.getFullYear();
             case "month": return date.getMonth(); // 0-11
@@ -1770,26 +2029,20 @@ function renderInteractiveMatrix(runs, dataType = 'count') {
         const yKey = document.getElementById("matrix-y-axis").value;
 
         const matrix = {};
-        runs.forEach(run => {
-            const xVal = getValue(run, xKey);
-            const yVal = getValue(run, yKey);
+        const contributors = [];
+        datedRuns.forEach(({ run, date }) => {
+            const metric = readTrendsMetric(run, dataType);
+            if (metric === null) return;
+            const xVal = getValue(date, xKey);
+            const yVal = getValue(date, yKey);
             matrix[yVal] ??= {};
             matrix[yVal][xVal] ??= 0;
-            switch (dataType) {
-                case "count":
-                    matrix[yVal][xVal] += 1;
-                    break;
-                case "time":
-                    matrix[yVal][xVal] += run.moving_time / 3600; // to hours
-                    break;
-                case "distance":
-                    matrix[yVal][xVal] += run.distance / 1000; // to km
-                    break;
-            }
+            matrix[yVal][xVal] = addFiniteAggregate(matrix[yVal][xVal], metric);
+            contributors.push({ xVal, yVal });
         });
 
-        const xLabels = [...new Set(runs.map(r => getValue(r, xKey)))].sort((a, b) => a - b);
-        const yLabels = [...new Set(runs.map(r => getValue(r, yKey)))].sort((a, b) => a - b);
+        const xLabels = [...new Set(contributors.map(entry => entry.xVal))].sort((a, b) => a - b);
+        const yLabels = [...new Set(contributors.map(entry => entry.yVal))].sort((a, b) => a - b);
 
         const points = [];
         let maxVal = 0;
@@ -1866,77 +2119,139 @@ export function renderAthleteProfile(athlete) {
     const contentDiv = container.querySelector('.profile-content');
     if (!contentDiv) return;
 
-    contentDiv.innerHTML = `
-        <img src="${athlete.profile_medium}" alt="Athlete profile picture">
-        <div class="profile-details">
-            <span class="name">${athlete.firstname} ${athlete.lastname}</span>
-            <span class="location">${athlete.city || ''}, ${athlete.country || ''}</span>
-            <span class="stats">Followers: ${athlete.follower_count} | Friends: ${athlete.friend_count}</span>
-        </div>
-    `;
+    const children = [];
+    if (athlete.profile_medium === '/icon-sport.svg') {
+        const image = document.createElement('img');
+        image.src = '/icon-sport.svg';
+        image.alt = 'Athlete profile picture';
+        children.push(image);
+    }
+    const details = document.createElement('div');
+    details.className = 'profile-details';
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = `${athlete.firstname} ${athlete.lastname}`;
+    const location = document.createElement('span');
+    location.className = 'location';
+    location.textContent = `${athlete.city || ''}, ${athlete.country || ''}`;
+    const stats = document.createElement('span');
+    stats.className = 'stats';
+    stats.textContent = `Followers: ${athlete.follower_count} | Friends: ${athlete.friend_count}`;
+    details.append(name, location, stats);
+    contentDiv.replaceChildren(...children, details);
 }
 
-export function renderTrainingZones(zones) {
+export function renderTrainingZones(zones, {
+    localHeartRateProfile = false,
+    analysisProfileStatus = null
+} = {}) {
     const container = document.getElementById('training-zones-card');
     if (!container) return;
     const contentDiv = container.querySelector('.zones-content');
     if (!contentDiv) return;
 
-    let html = '';
+    const groups = [];
 
     // Renderizar Zonas de Frecuencia Cardíaca (Versión Robusta)
-    if (zones.heart_rate && zones.heart_rate.zones && zones.heart_rate.custom_zones) {
+    if (zones?.heart_rate && zones.heart_rate.zones && zones.heart_rate.custom_zones) {
         const hrZones = zones.heart_rate.zones;
 
         // La API a veces devuelve la primera zona con min y max 0, la filtramos.
         // También nos aseguramos de que haya zonas válidas.
-        const validZones = hrZones.filter(z => typeof z.min !== 'undefined' && typeof z.max !== 'undefined' && z.max > 0);
+        const validZones = hrZones.filter((zone, index) => {
+            if (!Number.isFinite(zone?.min)) return false;
+            if (localHeartRateProfile && zone?.max === -1) {
+                return index === hrZones.length - 1;
+            }
+            return Number.isFinite(zone?.max)
+                && zone.max > 0
+                && zone.max >= zone.min;
+        });
 
         if (validZones.length > 0) {
+            const visualZones = validZones.map((zone, index) => {
+                if (!localHeartRateProfile || zone.max !== -1) {
+                    return { ...zone, visualMax: zone.max };
+                }
+                const priorMinimum = validZones[index - 1]?.min;
+                const inferredWidth = Number.isFinite(priorMinimum)
+                    ? Math.max(1, zone.min - priorMinimum)
+                    : 1;
+                return { ...zone, visualMax: zone.min + inferredWidth };
+            });
             // Calculamos el ancho total de las zonas para la proporcionalidad
-            const totalRange = validZones[validZones.length - 1].max - validZones[0].min;
+            const totalRange = visualZones[visualZones.length - 1].visualMax
+                - visualZones[0].min;
+            if (Number.isFinite(totalRange) && totalRange > 0) {
+                // Generamos dinámicamente cada segmento de la barra
+                const zoneBar = document.createElement('div');
+                zoneBar.className = 'zone-bar';
+                visualZones.forEach((zone, index) => {
+                    const zoneWidth = ((zone.visualMax - zone.min) / totalRange) * 100;
+                    if (!Number.isFinite(zoneWidth) || zoneWidth < 0) return;
+                    const zoneNumber = index + 1;
+                    const openEnded = localHeartRateProfile && zone.max === -1;
+                    const legacyLastZone = !localHeartRateProfile
+                        && index === validZones.length - 1;
+                    const zoneText = openEnded || legacyLastZone
+                        ? `${zone.min}+`
+                        : zone.max;
 
-            // Generamos dinámicamente cada segmento de la barra
-            const zonesHtml = validZones.map((zone, index) => {
-                const zoneWidth = ((zone.max - zone.min) / totalRange) * 100;
-                const zoneNumber = index + 1;
-                // Si es la última zona, el texto es "min+"
-                const zoneText = (index === validZones.length - 1) ? `${zone.min}+` : zone.max;
-
-                return `<div class="zone-segment hr-z${zoneNumber}" style="flex-basis: ${zoneWidth}%;" title="Z${zoneNumber}: ${zone.min}-${zone.max}">${zoneText}</div>`;
-            }).join('');
-
-            html += `
-                <div class="zone-group">
-                    <h4>Heart Rate Zones (bpm)</h4>
-                    <div class="zone-bar">
-                        ${zonesHtml}
-                    </div>
-                </div>`;
+                    const segment = document.createElement('div');
+                    segment.className = `zone-segment hr-z${zoneNumber}`;
+                    segment.style.flexBasis = `${zoneWidth}%`;
+                    segment.title = localHeartRateProfile
+                        ? openEnded
+                            ? `Z${zoneNumber}: ≥${zone.min}`
+                            : `Z${zoneNumber}: ${zone.min}-${zone.max - 1}`
+                        : `Z${zoneNumber}: ${zone.min}-${zone.max}`;
+                    segment.textContent = String(zoneText);
+                    zoneBar.append(segment);
+                });
+                const group = document.createElement('div');
+                group.className = 'zone-group';
+                const heading = document.createElement('h4');
+                heading.textContent = 'Heart Rate Zones (bpm)';
+                group.append(heading, zoneBar);
+                groups.push(group);
+            }
         }
     }
 
     // Renderizar Zonas de Potencia (sin cambios, ya era robusto)
-    if (zones.power && zones.power.zones && zones.power.zones.length > 0) {
+    if (zones?.power && zones.power.zones && zones.power.zones.length > 0) {
         // Buscamos el FTP, que es el inicio de la Zona 4 (o la última zona si hay menos)
         const ftpZone = zones.power.zones.find(z => z.name === 'Z4') || zones.power.zones[zones.power.zones.length - 1];
         if (ftpZone) {
-            html += `
-                <div class="zone-group">
-                    <h4>Functional Threshold Power (FTP)</h4>
-                    <p style="font-size: 1.5rem; font-weight: bold; color: var(--text-dark); margin: 0;">${ftpZone.min} W</p>
-                </div>`;
+            const group = document.createElement('div');
+            group.className = 'zone-group';
+            const heading = document.createElement('h4');
+            heading.textContent = 'Functional Threshold Power (FTP)';
+            const value = document.createElement('p');
+            value.style.fontSize = '1.5rem';
+            value.style.fontWeight = 'bold';
+            value.style.color = 'var(--text-dark)';
+            value.style.margin = '0';
+            value.textContent = `${ftpZone.min} W`;
+            group.append(heading, value);
+            groups.push(group);
         }
     }
 
-    contentDiv.innerHTML = html || '<p>No custom training zones configured in your Strava profile.</p>';
+    if (groups.length === 0) {
+        const empty = document.createElement('p');
+        empty.textContent = localHeartRateProfile && analysisProfileStatus === 'unconfigured'
+            ? 'Configure your local heart rate profile to see personalized zones.'
+            : 'No custom training zones configured in your Strava profile.';
+        groups.push(empty);
+    }
+    contentDiv.replaceChildren(...groups);
 }
 
 // let uiCharts = {}; // Almacén de gráficos para la pestaña "Athlete" para no interferir con los del dashboard principal
 function createUiChart(canvasId, config) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) {
-        console.error(`Canvas with id ${canvasId} not found.`);
         return;
     }
     if (uiCharts[canvasId]) {
@@ -1944,10 +2259,8 @@ function createUiChart(canvasId, config) {
     }
     try {
         uiCharts[canvasId] = new Chart(canvas, config);
-        console.log(`✅ Chart rendered: ${canvasId}`);
-    } catch (error) {
-        console.error(`❌ Error rendering chart ${canvasId}:`, error);
-        canvas.parentElement.innerHTML = `<p style="color: red; padding: 20px;">Error rendering chart: ${error.message}</p>`;
+    } catch {
+        canvas.parentElement.replaceChildren(createChartError());
     }
 }
 
@@ -1965,10 +2278,14 @@ function populateAthleteSportOptions(sportSelect, selectedSports = []) {
         .map(([sport]) => sport);
 
     sportSelect.size = Math.min(8, Math.max(4, topSports.length));
-    sportSelect.innerHTML = topSports.map(sport => {
+    const options = topSports.map(sport => {
         const count = sportCounts[sport];
-        return `<option value="${sport}">${sport} (${count})</option>`;
-    }).join('');
+        const option = document.createElement('option');
+        option.value = sport;
+        option.textContent = `${sport} (${count})`;
+        return option;
+    });
+    sportSelect.replaceChildren(...options);
 
     Array.from(sportSelect.options).forEach(opt => {
         opt.selected = selectedSports.length === 0 || selectedSports.includes(opt.value);
@@ -2099,10 +2416,16 @@ function addAthleteFilters() {
 }
 
 function filterActivities(allActivities, dateFilterFrom, dateFilterTo, sportFilter = 'all') {
-    let filtered = allActivities;
+    let filtered = Array.isArray(allActivities) ? allActivities : [];
 
     if (dateFilterFrom || dateFilterTo) {
-        filtered = utils.filterActivitiesByDate(filtered, dateFilterFrom, dateFilterTo);
+        filtered = filtered.filter(activity => {
+            const dateKey = readActivityDateKey(activity);
+            if (!dateKey) return false;
+            if (dateFilterFrom && dateKey < dateFilterFrom) return false;
+            if (dateFilterTo && dateKey > dateFilterTo) return false;
+            return true;
+        });
     }
 
     const selectedSports = Array.isArray(sportFilter)
@@ -2111,7 +2434,11 @@ function filterActivities(allActivities, dateFilterFrom, dateFilterTo, sportFilt
 
     if (selectedSports.length > 0) {
         const selectedSet = new Set(selectedSports);
-        filtered = filtered.filter(a => selectedSet.has((a.sport_type || a.type || 'Unknown').trim()));
+        filtered = filtered.filter(activity => {
+            const rawSport = activity?.sport_type || activity?.type || 'Unknown';
+            const sport = typeof rawSport === 'string' ? rawSport.trim() : 'Unknown';
+            return selectedSet.has(sport);
+        });
     }
 
     return filtered;

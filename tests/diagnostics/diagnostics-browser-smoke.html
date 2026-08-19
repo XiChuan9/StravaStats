@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Diagnostics browser smoke</title>
+</head>
+<body>
+    <output id="result">RUNNING</output>
+    <script type="module">
+        import {
+            createDiagnosticsExport,
+            estimateOriginStorage,
+            installGlobalDiagnosticsListeners,
+            readRecentDiagnosticErrors,
+            recordDiagnosticError
+        } from '../../js/diagnostics/index.js';
+        import {
+            beginImportPerformanceSelection,
+            configureImportPerformance,
+            finishImportPerformanceSelection,
+            readImportPerformanceRecords
+        } from '../../js/diagnostics/import-performance.js';
+
+        const result = document.getElementById('result');
+        const initialEffects = {
+            serviceWorkers: navigator.serviceWorker
+                ? (await navigator.serviceWorker.getRegistrations()).length : 0,
+            caches: typeof caches === 'object' ? (await caches.keys()).length : 0,
+            databases: typeof indexedDB?.databases === 'function'
+                ? (await indexedDB.databases()).length : null
+        };
+        try {
+            sessionStorage.clear();
+            const now = () => '2026-08-07T00:00:00.000Z';
+            let monotonic = 0;
+            configureImportPerformance({
+                storage: sessionStorage,
+                now: () => monotonic++
+            });
+            beginImportPerformanceSelection(1);
+            finishImportPerformanceSelection({
+                outcome: 'completed',
+                terminalCounts: {
+                    completed: 1,
+                    reviewRequired: 0,
+                    skippedExactDuplicate: 0,
+                    failed: 0,
+                    cancelled: 0,
+                    notStarted: 0
+                }
+            });
+            recordDiagnosticError({
+                page: 'diagnostics',
+                category: 'page',
+                code: 'DIAGNOSTICS_START_FAILED'
+            }, { storage: sessionStorage, now });
+            let prevented = false;
+            const target = new EventTarget();
+            installGlobalDiagnosticsListeners({
+                target,
+                page: 'diagnostics',
+                storage: sessionStorage,
+                now
+            });
+            const event = new Event('unhandledrejection', { cancelable: true });
+            target.dispatchEvent(event);
+            prevented = event.defaultPrevented;
+            const estimate = await estimateOriginStorage({ storageManager: navigator.storage });
+            const unsupportedEstimate = await estimateOriginStorage({ storageManager: {} });
+            const unavailableEstimate = await estimateOriginStorage({
+                storageManager: { estimate: async () => { throw new Error('synthetic'); } }
+            });
+            const errors = readRecentDiagnosticErrors({ storage: sessionStorage });
+            const importPerformance = readImportPerformanceRecords();
+            const exported = createDiagnosticsExport({
+                createdAt: now(),
+                storageEstimate: estimate,
+                recentErrors: errors.records,
+                importPerformance
+            });
+            const parsed = JSON.parse(exported.json);
+            if (
+                prevented
+                || errors.records.length !== 2
+                || parsed.version !== 1
+                || parsed.importPerformance.length !== 1
+                || exported.mimeType !== 'application/vnd.stravastats.diagnostics+json;version=1'
+                || exported.byteLength > 256 * 1024
+                || !['available', 'unsupported', 'unavailable'].includes(estimate.status)
+                || unsupportedEstimate.status !== 'unsupported'
+                || unavailableEstimate.status !== 'unavailable'
+            ) throw new Error('assertion failed');
+            const browserEffects = {
+                serviceWorkersBefore: initialEffects.serviceWorkers,
+                serviceWorkersAfter: navigator.serviceWorker
+                    ? (await navigator.serviceWorker.getRegistrations()).length : 0,
+                cachesBefore: initialEffects.caches,
+                cachesAfter: typeof caches === 'object' ? (await caches.keys()).length : 0,
+                databasesBefore: initialEffects.databases,
+                databasesAfter: typeof indexedDB?.databases === 'function'
+                    ? (await indexedDB.databases()).length : null,
+                providerOrAuthRequests: performance.getEntriesByType('resource')
+                    .filter(entry => {
+                        const url = new URL(entry.name);
+                        return url.pathname.startsWith('/api/')
+                            || (url.origin !== location.origin
+                                && /strava|oauth/i.test(url.href));
+                    })
+                    .length
+            };
+            browserEffects.databaseDelta = browserEffects.databasesBefore === null
+                ? null : browserEffects.databasesAfter - browserEffects.databasesBefore;
+            const evidence = Object.freeze({
+                status: 'passed',
+                runtime: navigator.userAgent,
+                hardwareConcurrency: navigator.hardwareConcurrency ?? null,
+                storageEstimateStatus: estimate.status,
+                unsupportedStorageEstimateStatus: unsupportedEstimate.status,
+                unavailableStorageEstimateStatus: unavailableEstimate.status,
+                errorRecords: errors.records.length,
+                importPerformanceRecords: importPerformance.length,
+                mimeType: exported.mimeType,
+                byteLength: exported.byteLength,
+                browserDefaultPrevented: prevented,
+                externalResources: performance.getEntriesByType('resource')
+                    .filter(entry => new URL(entry.name).origin !== location.origin)
+                    .length,
+                browserEffects
+            });
+            globalThis.__PR22_DIAGNOSTICS_EVIDENCE__ = evidence;
+            result.textContent = JSON.stringify(evidence);
+        } catch {
+            globalThis.__PR22_DIAGNOSTICS_EVIDENCE__ = Object.freeze({ status: 'failed' });
+            result.textContent = 'FAIL';
+        }
+    </script>
+</body>
+</html>

@@ -1,5 +1,6 @@
 // js/ui.js
 import * as utils from '../shared/utils/index.js';
+import { serializeCsvCell } from '../shared/csv-security.js';
 
 // --- DOM REFERENCES  ---
 const loadingOverlay = document.getElementById('loading-overlay');
@@ -49,10 +50,9 @@ export function hideLoading() {
     }
 }
 
-export function handleError(message, error) {
-    console.error(message, error);
+export function handleError(message, _error) {
     hideLoading();
-    alert(`Error: ${message}. Check console for details.`);
+    alert(`Error: ${message}. Open Diagnostics for a safe status record.`);
 }
 
 export function setupDashboard(activities) {
@@ -102,8 +102,10 @@ export function setupExportButtons(activities) {
         if (!activities || activities.length === 0) return alert('No data to export.');
         const headers = Object.keys(activities[0]);
         const csvRows = [
-            headers.join(','),
-            ...activities.map(act => headers.map(h => `"${(act[h] ?? '').toString().replace(/"/g, '""')}"`).join(','))
+            headers.map(header => serializeCsvCell(header)).join(','),
+            ...activities.map(act => (
+                headers.map(header => serializeCsvCell(act[header], true)).join(',')
+            ))
         ];
         const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);

@@ -2,7 +2,6 @@
 // Individual gear detail page logic lives in gear-analysis.js
 
 import { formatDistance, formatPace, formatTime, formatDate } from './utils.js';
-import { getCachedGears } from './api.js';
 
 // ===================================================================
 // SHARED UTILITIES (exported for use by gear-analysis.js etc.)
@@ -44,10 +43,57 @@ let gearGanttChartInstance = null;
 // INTERNAL HELPERS
 // ===================================================================
 
-function getGears() {
-    const cached = getCachedGears();
-    if (cached) return cached;
-    return JSON.parse(localStorage.getItem('strava_gears') || '[]');
+const EMPTY_GEAR_RENDER_SNAPSHOT = Object.freeze([]);
+
+function createGearRenderSnapshot(gears) {
+    try {
+        if (
+            !Array.isArray(gears)
+            || Object.getPrototypeOf(gears) !== Array.prototype
+        ) {
+            return EMPTY_GEAR_RENDER_SNAPSHOT;
+        }
+
+        const keys = Reflect.ownKeys(gears);
+        const lengthDescriptor = Object.getOwnPropertyDescriptor(gears, 'length');
+        if (
+            !lengthDescriptor
+            || !Object.hasOwn(lengthDescriptor, 'value')
+            || !Number.isSafeInteger(lengthDescriptor.value)
+            || lengthDescriptor.value < 0
+            || lengthDescriptor.enumerable !== false
+            || lengthDescriptor.configurable !== false
+            || keys.length !== lengthDescriptor.value + 1
+            || keys.some(key => typeof key !== 'string')
+        ) {
+            return EMPTY_GEAR_RENDER_SNAPSHOT;
+        }
+
+        const keySet = new Set(keys);
+        if (!keySet.has('length')) return EMPTY_GEAR_RENDER_SNAPSHOT;
+
+        const snapshot = [];
+        for (let index = 0; index < lengthDescriptor.value; index += 1) {
+            const key = String(index);
+            if (!keySet.has(key)) return EMPTY_GEAR_RENDER_SNAPSHOT;
+            const descriptor = Object.getOwnPropertyDescriptor(gears, key);
+            if (
+                !descriptor?.enumerable
+                || !Object.hasOwn(descriptor, 'value')
+            ) {
+                return EMPTY_GEAR_RENDER_SNAPSHOT;
+            }
+            Object.defineProperty(snapshot, key, {
+                value: descriptor.value,
+                enumerable: true,
+                configurable: true,
+                writable: true
+            });
+        }
+        return Object.freeze(snapshot);
+    } catch {
+        return EMPTY_GEAR_RENDER_SNAPSHOT;
+    }
 }
 
 function bikeFrameTypeLabel(frameType) {
@@ -163,7 +209,8 @@ function showElements(elements) {
 // MAIN RENDER FUNCTION
 // ===================================================================
 
-export function renderGearTab(allActivities) {
+export function renderGearTab(allActivities, sessionGears = []) {
+    const gearSnapshot = createGearRenderSnapshot(sessionGears);
     const runs = allActivities.filter(a => a.type && a.gear_id && a.gear_id.trim() !== '');
 
     const elements = {
@@ -190,18 +237,18 @@ export function renderGearTab(allActivities) {
     document.getElementById('gear-filters')?.remove();
     document.getElementById('gear-summary-bar')?.remove();
 
-    addGearFilters(elements.section, runs);
+    addGearFilters(elements.section, runs, gearSnapshot);
     showElements(elements);
-    renderGearSection(runs, 'all', false);
-    renderGearChart(runs, 'all');
-    renderGearGanttChart(runs, 'all');
+    renderGearSection(runs, gearSnapshot, 'all', false);
+    renderGearChart(runs, gearSnapshot, 'all');
+    renderGearGanttChart(runs, 'all', gearSnapshot);
 }
 
 // ===================================================================
 // GEAR FILTERS
 // ===================================================================
 
-function addGearFilters(container, runs) {
+function addGearFilters(container, runs, gearSnapshot) {
     const filterDiv = document.createElement('div');
     filterDiv.id = 'gear-filters';
     filterDiv.innerHTML = `
@@ -225,30 +272,30 @@ function addGearFilters(container, runs) {
         filterDiv.querySelectorAll('.gear-filter-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         currentFilter = btn.dataset.filter;
-        updateGearDisplay(runs, currentFilter, retiredCheck.checked);
+        updateGearDisplay(runs, gearSnapshot, currentFilter, retiredCheck.checked);
     });
 
     retiredCheck.addEventListener('change', () => {
-        updateGearDisplay(runs, currentFilter, retiredCheck.checked);
+        updateGearDisplay(runs, gearSnapshot, currentFilter, retiredCheck.checked);
     });
 }
 
-function updateGearDisplay(runs, filter, showRetired) {
-    renderGearSection(runs, filter, showRetired);
-    renderGearChart(runs, filter);
-    renderGearGanttChart(runs, filter);
+function updateGearDisplay(runs, gearSnapshot, filter, showRetired) {
+    renderGearSection(runs, gearSnapshot, filter, showRetired);
+    renderGearChart(runs, gearSnapshot, filter);
+    renderGearGanttChart(runs, filter, gearSnapshot);
 }
 
 // ===================================================================
 // GEAR SECTION
 // ===================================================================
 
-async function renderGearSection(runs, filter = 'all', showRetired = false) {
+async function renderGearSection(runs, gearSnapshot, filter = 'all', showRetired = false) {
     const listContainer = document.getElementById('gear-info-list');
     if (!listContainer) return;
 
     const gearMetrics = calculateGearMetrics(runs);
-    const allGears = getGears();
+    const allGears = gearSnapshot;
 
     if (allGears.length === 0) {
         listContainer.innerHTML = '<p class="empty-state">No gear loaded yet.</p>';
@@ -342,17 +389,20 @@ function renderGearCards(combinedGearData) {
     const isEditMode = localStorage.getItem('gearEditMode') === 'true';
     const sortedData = sortGearData(combinedGearData);
 
-    listContainer.innerHTML = `
-        <div class="gear-header">
-            <h3>🎽 Your Gear</h3>
-            <button id="toggle-gear-edit" class="edit-toggle-btn">
-                ${isEditMode ? '✅ Done' : '✏️ Edit'}
-            </button>
-        </div>
-        <div class="gear-grid">
-            ${sortedData.map(data => createGearCard(data, isEditMode)).join('')}
-        </div>
-    `;
+    const header = document.createElement('div');
+    header.className = 'gear-header';
+    const title = document.createElement('h3');
+    title.textContent = '🎽 Your Gear';
+    const toggle = document.createElement('button');
+    toggle.id = 'toggle-gear-edit';
+    toggle.className = 'edit-toggle-btn';
+    toggle.textContent = isEditMode ? '✅ Done' : '✏️ Edit';
+    header.append(title, toggle);
+
+    const grid = document.createElement('div');
+    grid.className = 'gear-grid';
+    grid.append(...sortedData.map(data => createGearCard(data, isEditMode)));
+    listContainer.replaceChildren(header, grid);
 
     attachEventListeners(isEditMode, sortedData);
 }
@@ -375,7 +425,7 @@ function createGearCard(data, isEditMode) {
     const remainingKm = Math.max(0, durationKm - totalKm);
 
     // Estimated replacement date
-    let replacementEst = '';
+    let replacementEst = null;
     if (!needsReplacement && metrics.firstUse && metrics.lastUse && metrics.totalDistance > 0) {
         const weeks = Math.max(1, (metrics.lastUse - metrics.firstUse) / (1000 * 60 * 60 * 24 * 7));
         const weeklyKm = (metrics.totalDistance / 1000) / weeks;
@@ -383,7 +433,9 @@ function createGearCard(data, isEditMode) {
             const weeksLeft = Math.round(remainingKm / weeklyKm);
             const estDate = new Date();
             estDate.setDate(estDate.getDate() + weeksLeft * 7);
-            replacementEst = `<div class="gear-replacement-est">🗓 Est. end: ${formatDate(estDate)} (~${weeksLeft}w)</div>`;
+            replacementEst = document.createElement('div');
+            replacementEst.className = 'gear-replacement-est';
+            replacementEst.textContent = `🗓 Est. end: ${formatDate(estDate)} (~${weeksLeft}w)`;
         }
     }
 
@@ -394,35 +446,80 @@ function createGearCard(data, isEditMode) {
     const statusBadges = createStatusBadges(gear, needsReplacement);
     const durabilityBar = createDurabilityBar(durabilityPercent, totalKm, durationKm);
     const stats = createStatsSection(metrics, gear, euroPerKm);
-    const editSection = isEditMode ? createEditSection(gear.id, price, durationKm) : '';
+    const editSection = isEditMode ? createEditSection(gear.id, price, durationKm) : null;
 
     const accentColor = gear.type === 'bike' ? '#3b82f6' : '#f59e0b';
     const iconBg = gear.type === 'bike' ? 'rgba(59,130,246,0.1)' : 'rgba(245,158,11,0.1)';
 
-    return `
-        <div class="gear-card ${gear.retired ? 'retired' : ''} ${needsReplacement && !gear.retired ? 'needs-replacement' : ''}"
-             onclick="window.open('html/gear.html?id=${gear.id}', '_blank')" style="cursor:pointer; --accent: ${accentColor};">
-            <div class="gear-card__accent"></div>
-            ${statusBadges}
-            <div class="gear-card-header">
-                <div class="gear-icon" style="background:${iconBg}; color:${accentColor};">${gear.type === 'bike' ? '🚴' : '👟'}</div>
-                <div class="gear-title">
-                    <h4>${gear.name || [gear.brand_name, gear.model_name].filter(Boolean).join(' ') || 'Unnamed'}</h4>
-                    <span class="gear-type-chip" style="background:${iconBg}; color:${accentColor};">${gearLabel}</span>
-                    ${gear.brand_name ? `<p class="gear-brand">${gear.brand_name}${gear.model_name ? ` · ${gear.model_name}` : ''}</p>` : ''}
-                </div>
-            </div>
-            <div class="gear-distance-display">
-                <span class="distance-value">${totalKm.toFixed(0)}</span>
-                <span class="distance-unit">km</span>
-            </div>
-            ${durabilityBar}
-            ${replacementEst}
-            ${stats}
-            ${needsReplacement && !gear.retired ? '<div class="replacement-alert">⚠️ Replacement Needed!</div>' : ''}
-            ${editSection}
-        </div>
-    `;
+    const card = document.createElement('div');
+    card.className = [
+        'gear-card',
+        gear.retired ? 'retired' : '',
+        needsReplacement && !gear.retired ? 'needs-replacement' : ''
+    ].filter(Boolean).join(' ');
+    card.style.cursor = 'pointer';
+    card.style.setProperty('--accent', accentColor);
+    card.addEventListener('click', () => {
+        const params = new URLSearchParams();
+        params.set('id', String(gear.id));
+        const url = new URL(window.location.href);
+        url.pathname = '/html/gear.html';
+        url.search = params.toString();
+        url.hash = '';
+        const opened = window.open(url.href, '_blank', 'noopener,noreferrer');
+        if (opened) opened.opener = null;
+    });
+
+    const accent = document.createElement('div');
+    accent.className = 'gear-card__accent';
+    const cardHeader = document.createElement('div');
+    cardHeader.className = 'gear-card-header';
+    const icon = document.createElement('div');
+    icon.className = 'gear-icon';
+    icon.style.background = iconBg;
+    icon.style.color = accentColor;
+    icon.textContent = gear.type === 'bike' ? '🚴' : '👟';
+    const gearTitle = document.createElement('div');
+    gearTitle.className = 'gear-title';
+    const heading = document.createElement('h4');
+    heading.textContent = gear.name || [gear.brand_name, gear.model_name].filter(Boolean).join(' ') || 'Unnamed';
+    const typeChip = document.createElement('span');
+    typeChip.className = 'gear-type-chip';
+    typeChip.style.background = iconBg;
+    typeChip.style.color = accentColor;
+    typeChip.textContent = gearLabel;
+    gearTitle.append(heading, typeChip);
+    if (gear.brand_name) {
+        const brandLine = document.createElement('p');
+        brandLine.className = 'gear-brand';
+        brandLine.textContent = gear.brand_name + (gear.model_name ? ` · ${gear.model_name}` : '');
+        gearTitle.append(brandLine);
+    }
+    cardHeader.append(icon, gearTitle);
+
+    const distanceDisplay = document.createElement('div');
+    distanceDisplay.className = 'gear-distance-display';
+    const distanceValue = document.createElement('span');
+    distanceValue.className = 'distance-value';
+    distanceValue.textContent = totalKm.toFixed(0);
+    const distanceUnit = document.createElement('span');
+    distanceUnit.className = 'distance-unit';
+    distanceUnit.textContent = 'km';
+    distanceDisplay.append(distanceValue, distanceUnit);
+
+    card.append(accent);
+    if (statusBadges) card.append(statusBadges);
+    card.append(cardHeader, distanceDisplay, durabilityBar);
+    if (replacementEst) card.append(replacementEst);
+    card.append(stats);
+    if (needsReplacement && !gear.retired) {
+        const alert = document.createElement('div');
+        alert.className = 'replacement-alert';
+        alert.textContent = '⚠️ Replacement Needed!';
+        card.append(alert);
+    }
+    if (editSection) card.append(editSection);
+    return card;
 }
 
 // ===================================================================
@@ -430,94 +527,103 @@ function createGearCard(data, isEditMode) {
 // ===================================================================
 
 function createStatusBadges(gear, needsReplacement) {
-    let badges = '';
-    if (gear.retired) badges += '<span class="status-badge retired">RETIRED</span>';
-    if (gear.primary) badges += '<span class="status-badge primary">PRIMARY</span>';
-    if (needsReplacement && !gear.retired) badges += '<span class="status-badge alert">REPLACE</span>';
-    return badges ? `<div class="status-badges">${badges}</div>` : '';
+    const badges = document.createElement('div');
+    badges.className = 'status-badges';
+    const appendBadge = (className, text) => {
+        const badge = document.createElement('span');
+        badge.className = `status-badge ${className}`;
+        badge.textContent = text;
+        badges.append(badge);
+    };
+    if (gear.retired) appendBadge('retired', 'RETIRED');
+    if (gear.primary) appendBadge('primary', 'PRIMARY');
+    if (needsReplacement && !gear.retired) appendBadge('alert', 'REPLACE');
+    return badges.children.length ? badges : null;
 }
 
 function createDurabilityBar(percent, totalKm, maxKm) {
     const color = percent > 90 ? '#ef4444' : percent > 75 ? '#f59e0b' : '#10b981';
-    return `
-        <div class="durability-section">
-            <div class="durability-bar">
-                <div class="durability-fill" style="width: ${percent}%; background: ${color};"></div>
-            </div>
-            <small class="durability-text">${percent.toFixed(0)}% of ${maxKm} km lifespan</small>
-        </div>
-    `;
+    const section = document.createElement('div');
+    section.className = 'durability-section';
+    const bar = document.createElement('div');
+    bar.className = 'durability-bar';
+    const fill = document.createElement('div');
+    fill.className = 'durability-fill';
+    fill.style.width = `${percent}%`;
+    fill.style.background = color;
+    bar.append(fill);
+    const text = document.createElement('small');
+    text.className = 'durability-text';
+    text.textContent = `${percent.toFixed(0)}% of ${maxKm} km lifespan`;
+    section.append(bar, text);
+    return section;
 }
 
 function createStatsSection(metrics, gear, euroPerKm) {
-    return `
-        <div class="gear-stats">
-            <div class="stat-row">
-                <div class="stat-item">
-                    <span class="stat-icon-mini">🏃</span>
-                    <div class="stat-content">
-                        <span class="stat-value">${metrics.numUses || 0}</span>
-                        <span class="stat-label">Uses</span>
-                    </div>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-icon-mini">💰</span>
-                    <div class="stat-content">
-                        <span class="stat-value">${euroPerKm}</span>
-                        <span class="stat-label">€/km</span>
-                    </div>
-                </div>
-            </div>
-            <div class="stat-row">
-                <div class="stat-item">
-                    <span class="stat-icon-mini">📏</span>
-                    <div class="stat-content">
-                        <span class="stat-value">${formatDistance(metrics.avgDistancePerUse || 0, 1)}</span>
-                        <span class="stat-label">Avg Dist</span>
-                    </div>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-icon-mini">⛰️</span>
-                    <div class="stat-content">
-                        <span class="stat-value">${metrics.avgElevationGainPerUse ? metrics.avgElevationGainPerUse.toFixed(0) + 'm' : '-'}</span>
-                        <span class="stat-label">Avg Elev</span>
-                    </div>
-                </div>
-            </div>
-            <div class="stat-row">
-                <div class="stat-item">
-                    <span class="stat-icon-mini">📅</span>
-                    <div class="stat-content">
-                        <span class="stat-value">${metrics.firstUse ? formatDate(metrics.firstUse) : 'N/A'}</span>
-                        <span class="stat-label">First Use</span>
-                    </div>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-icon-mini">🕐</span>
-                    <div class="stat-content">
-                        <span class="stat-value">${metrics.lastUse ? formatDate(metrics.lastUse) : 'N/A'}</span>
-                        <span class="stat-label">Last Use</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
+    const section = document.createElement('div');
+    section.className = 'gear-stats';
+    const values = [
+        ['🏃', metrics.numUses || 0, 'Uses'],
+        ['💰', euroPerKm, '€/km'],
+        ['📏', formatDistance(metrics.avgDistancePerUse || 0, 1), 'Avg Dist'],
+        ['⛰️', metrics.avgElevationGainPerUse ? metrics.avgElevationGainPerUse.toFixed(0) + 'm' : '-', 'Avg Elev'],
+        ['📅', metrics.firstUse ? formatDate(metrics.firstUse) : 'N/A', 'First Use'],
+        ['🕐', metrics.lastUse ? formatDate(metrics.lastUse) : 'N/A', 'Last Use']
+    ];
+    for (let index = 0; index < values.length; index += 2) {
+        const row = document.createElement('div');
+        row.className = 'stat-row';
+        for (const [iconText, valueText, labelText] of values.slice(index, index + 2)) {
+            const item = document.createElement('div');
+            item.className = 'stat-item';
+            const icon = document.createElement('span');
+            icon.className = 'stat-icon-mini';
+            icon.textContent = iconText;
+            const content = document.createElement('div');
+            content.className = 'stat-content';
+            const value = document.createElement('span');
+            value.className = 'stat-value';
+            value.textContent = valueText;
+            const label = document.createElement('span');
+            label.className = 'stat-label';
+            label.textContent = labelText;
+            content.append(value, label);
+            item.append(icon, content);
+            row.append(item);
+        }
+        section.append(row);
+    }
+    return section;
 }
 
 function createEditSection(gearId, price, durationKm) {
-    return `
-        <div class="gear-edit-section" onclick="event.stopPropagation()">
-            <div class="edit-input-group">
-                <label>Price (€)</label>
-                <input type="number" id="price-${gearId}" value="${price}" min="0" step="0.01">
-            </div>
-            <div class="edit-input-group">
-                <label>Lifespan (km)</label>
-                <input type="number" id="duration-${gearId}" value="${durationKm}" min="1">
-            </div>
-            <button class="save-gear-btn" data-gearid="${gearId}">💾 Save</button>
-        </div>
-    `;
+    const section = document.createElement('div');
+    section.className = 'gear-edit-section';
+    section.addEventListener('click', event => event.stopPropagation());
+    const makeInput = (labelText, id, value, min, step = null) => {
+        const group = document.createElement('div');
+        group.className = 'edit-input-group';
+        const label = document.createElement('label');
+        label.textContent = labelText;
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.id = id;
+        input.value = value;
+        input.min = min;
+        if (step !== null) input.step = step;
+        group.append(label, input);
+        return group;
+    };
+    section.append(
+        makeInput('Price (€)', `price-${gearId}`, price, '0', '0.01'),
+        makeInput('Lifespan (km)', `duration-${gearId}`, durationKm, '1')
+    );
+    const save = document.createElement('button');
+    save.className = 'save-gear-btn';
+    save.dataset.gearid = String(gearId);
+    save.textContent = '💾 Save';
+    section.append(save);
+    return section;
 }
 
 // ===================================================================
@@ -569,14 +675,14 @@ function handleSaveGear(btn, combinedGearData) {
 // CHART: Cumulative Distance Over Time
 // ===================================================================
 
-async function renderGearChart(runs, filter = 'all') {
+async function renderGearChart(runs, gearSnapshot, filter = 'all') {
     const canvas = document.getElementById('gearChart');
     const container = document.getElementById('gear-chart-container');
     if (!canvas) return;
 
     let filteredRuns = runs;
     if (filter !== 'all') {
-        const allGears = getGears();
+        const allGears = gearSnapshot;
         const validGearIds = new Set(
             allGears
                 .map(g => ({ ...g, type: ('frame_type' in g || 'weight' in g) ? 'bike' : 'shoe' }))
@@ -614,7 +720,7 @@ async function renderGearChart(runs, filter = 'all') {
     }
 
     const uniqueGearIds = Array.from(new Set(filteredRuns.map(r => r.gear_id).filter(Boolean)));
-    const allGears = getGears();
+    const allGears = gearSnapshot;
     const gearIdToName = new Map(allGears.map(g => [g.id, g.name || [g.brand_name, g.model_name].filter(Boolean).join(' ')]));
 
     const hexToRgba = (hex, alpha) => {
@@ -669,13 +775,13 @@ async function renderGearChart(runs, filter = 'all') {
 // CHART: Gear Gantt (Monthly Distance per Gear)
 // ===================================================================
 
-export async function renderGearGanttChart(runs, filter = 'all') {
+export async function renderGearGanttChart(runs, filter = 'all', sessionGears = []) {
     const ctx = document.getElementById('gear-gantt-chart');
     if (!ctx) return;
 
     if (gearGanttChartInstance) { gearGanttChartInstance.destroy(); gearGanttChartInstance = null; }
 
-    const allGears = getGears();
+    const allGears = createGearRenderSnapshot(sessionGears);
     const processedGears = allGears.map(g => ({
         ...g,
         type: ('frame_type' in g || 'weight' in g) ? 'bike' : 'shoe'

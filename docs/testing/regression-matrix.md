@@ -1,16 +1,25 @@
-# StravaStats v2 回归矩阵
+# StravaStats Public Local Import Core 回归矩阵
 
 | 字段 | 内容 |
 | --- | --- |
-| Status | Proposed |
+| Status | Active |
 | Owner | XiChuan9 |
 | Created | 2026-07-28 |
-| Last updated | 2026-07-28 |
+| Last updated | 2026-08-19 |
 | Related gates | [Release Gates](../engineering/release-gates.md) |
+| Current scope | [Public Local Import Core Scope Freeze](../tasks/public-local-import-core-freeze.md) |
 
 ## 1. 使用规则
 
-本矩阵记录必须长期保持的行为场景。当前尚未建立自动测试，因此所有条目初始为 `Planned` 或 `Not implemented`，不能标记为 Pass。
+本矩阵记录必须长期保持的行为场景。`Automated` 只表示目标行为已经由
+默认 `npm test` 的 Node/static runner 完整覆盖，不代表某次执行已通过。
+源码字符串检查、fake-indexeddb、Import/Repository 测试和本地 server
+测试都不能代替真实浏览器渲染或交互验收。
+
+同时要求自动化和真实浏览器的行，在浏览器证据尚未完成或尚未链接时
+必须标记为 `Partial`。浏览器结果必须记录运行日期、浏览器版本、隔离
+profile、synthetic fixtures、实际步骤、console/network 结果和证据位置；
+不得仅凭本矩阵或自动测试状态推断为已通过。
 
 状态：
 
@@ -18,6 +27,7 @@
 Not implemented
 Planned
 Automated
+Partial
 Manual pass
 Failed
 Blocked
@@ -36,8 +46,8 @@ Not applicable
 | REG-004 | Legacy Strava | Bike summary | Bike | 汇总图表和活动表可用 | E2E + visual | Planned |
 | REG-005 | Legacy Strava | Swim summary | Swim | Pool/open-water 逻辑可用 | E2E + visual | Planned |
 | REG-006 | Legacy Strava | Full streams | Activity Detail | 详情、streams、导出可用 | E2E | Planned |
-| REG-007 | Legacy Strava | Run + streams | Run Plus | 现有取数和分析结果不变 | E2E + manual | Planned |
-| REG-008 | Legacy Strava | History | NSM | 设置、过滤和时间线不变 | E2E + manual | Planned |
+| REG-007 | Public root | Navigation/assets | Public shell | 不显示已退役私有扩展入口，不加载其脚本或样式 | Node/static + [browser evidence](public-local-import-core-browser-acceptance.md) | Manual pass |
+| REG-008 | Retired extension routes | Navigation | Public shell | 旧扩展路由不渲染私有内容，且不产生运行时错误 | Node server/static + [browser evidence](public-local-import-core-browser-acceptance.md) | Manual pass |
 | REG-009 | Legacy Strava | Summary/polyline | Map | 路线和筛选可用 | E2E + visual | Planned |
 | REG-010 | Legacy Strava | Gear | Gear |装备映射和累计里程可用 | E2E | Planned |
 
@@ -112,7 +122,28 @@ Not applicable
 
 ## 8. 浏览器与视觉矩阵
 
-正式 Release 至少验证：
+### Public scope-freeze invariants
+
+| ID | Scenario | Expected result | Target test | Status |
+| --- | --- | --- | --- | --- |
+| REG-120 | 普通 `/run` 路由 | Run 汇总、图表和活动表仍正常渲染 | Node/static + [browser evidence](public-local-import-core-browser-acceptance.md) | Manual pass |
+| REG-121 | Source Manager 导入 synthetic FIT | 导入经 Repository 后出现在 Activities | Node Import/Repository + [browser evidence](public-local-import-core-browser-acceptance.md) | Manual pass |
+| REG-122 | Source Manager 导入 synthetic TCX | 导入经 Repository 后出现在 Activities | Node Import/Repository + [browser evidence](public-local-import-core-browser-acceptance.md) | Manual pass |
+| REG-123 | 重复导入同一 synthetic 文件 | Exact Identity 保持一条活动 | Node Import/Repository + [browser evidence](public-local-import-core-browser-acceptance.md) | Manual pass |
+| REG-124 | Public scope freeze 数据库 diff | IndexedDB version、schema 和 migration 不变 | Static + storage | Automated |
+| REG-125 | 历史用户自有扩展设置 | 公开运行时不读取、迁移或删除原有 LocalStorage keys | Node/static + [browser evidence](public-local-import-core-browser-acceptance.md) | Manual pass |
+| REG-126 | Legacy / Canonical 数据 | 不因公开范围冻结而删除、覆盖或迁移 | Node storage + [browser evidence](public-local-import-core-browser-acceptance.md) | Manual pass |
+| REG-127 | Service Worker / Cache | cache generation 不变，验收前后计数无破坏性减少 | Static + [browser evidence](public-local-import-core-browser-acceptance.md) | Manual pass |
+
+标记为 `Manual pass` 的 Public Local Import Core 行链接到
+[2026-08-19 actual-browser evidence](public-local-import-core-browser-acceptance.md)。
+该记录包含 Activities、Dashboard、Run、Activity Detail、Backup、
+Diagnostics、LocalStorage/IndexedDB/Cache 前后状态、退役路由、console
+和网络来源；它不是发布或部署声明。
+
+### Browser coverage
+
+本范围冻结不是发布声明。独立发布过程若未来获得授权，至少验证：
 
 | Browser | Desktop | Mobile/PWA | Light | Dark |
 | --- | --- | --- | --- | --- |

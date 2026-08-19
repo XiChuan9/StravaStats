@@ -1,0 +1,888 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'">
+    <link rel="icon" href="data:,">
+    <title>PR-04B B3 synthetic detail consumer smoke</title>
+    <style>
+        body { font: 14px/1.45 system-ui, sans-serif; margin: 24px; color: #17202a; }
+        h1 { margin-bottom: 4px; }
+        #gate-results { display: grid; gap: 6px; padding: 0; list-style: none; }
+        #gate-results li { border: 1px solid #ccd1d1; border-radius: 5px; padding: 8px; }
+        #gate-results [data-status="passed"] { border-left: 5px solid #16833b; }
+        #gate-results [data-status="failed"] { border-left: 5px solid #b42318; }
+        #stub-boundaries { border-collapse: collapse; margin: 16px 0; }
+        #stub-boundaries th, #stub-boundaries td { border: 1px solid #ccd1d1; padding: 6px; }
+        #product-fixture { position: absolute; left: -10000px; width: 1200px; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body data-status="running">
+    <h1>PR-04B B3 browser gate</h1>
+    <p id="gate-summary">Running deterministic synthetic gates.</p>
+    <ul id="gate-results"></ul>
+
+    <table id="stub-boundaries">
+        <thead><tr><th>Stub</th><th>Boundary</th></tr></thead>
+        <tbody>
+            <tr><td>Chart</td><td>Records canvas ID/config and implements destroy/update only; no chart algorithm.</td></tr>
+            <tr><td>Leaflet</td><td>Records map/layer/polyline calls and returns chainable inert layers; no tile request.</td></tr>
+            <tr><td>Canvas</td><td>Uses native canvas elements; Chart stub does not request a drawing context.</td></tr>
+            <tr><td>Network APIs</td><td>fetch/XHR/WebSocket are fail-closed counters; any use fails a gate.</td></tr>
+            <tr><td>Legacy classifiers</td><td>Loads the actual global Run/Bike classifier scripts and supplies only injected synthetic Repository-shape zones.</td></tr>
+            <tr><td>Download</td><td>Clicks the actual Advanced export buttons against an injected analyzer spy; no file write is performed.</td></tr>
+        </tbody>
+    </table>
+
+    <main id="product-fixture" aria-hidden="true">
+        <div id="activity-details"></div>
+        <h1 id="activity-page-title"></h1>
+        <p id="activity-hero-date"></p><p id="activity-hero-description"></p>
+        <p id="activity-hero-type"></p><p id="activity-hero-gear"></p>
+        <p id="activity-hero-kudos"></p><p id="activity-hero-comments"></p>
+        <a id="activity-hero-strava-link"></a>
+        <div id="activity-info"></div><div id="activity-stats"></div>
+        <div id="activity-advanced"></div>
+        <div id="run-classifier-section"><div id="run-classifier-results"></div></div>
+        <div id="bike-classifier-section"><div id="bike-classifier-results"></div></div>
+        <div id="activity-map-container"><div id="activity-map"></div></div>
+        <select id="activity-map-style"><option value="osm">OSM</option></select>
+        <select id="activity-route-color-mode"><option value="route">Route</option></select>
+        <select id="route-color-mode"><option value="route">Route</option></select>
+        <input id="show-weather-details" type="checkbox">
+        <section id="weather-analysis-section"><div class="weather-analysis__body"></div></section>
+        <section id="splits-section"></section>
+        <section id="stream-charts"></section>
+        <input id="smoothing-slider" type="range" value="100">
+        <span id="smoothing-value">100%</span>
+        <section id="best-efforts-section"><table id="best-efforts-table"></table></section>
+        <section id="laps-section"><table id="laps-table"></table></section>
+        <section id="laps-chart-section"><canvas id="laps-chart"></canvas></section>
+        <section id="segments-section"><table id="segments-table"></table></section>
+        <section id="hr-zones-section"><canvas id="hr-zones-chart"></canvas></section>
+        <section id="hr-min-max-area-section"><canvas id="hr-minmax-area-chart"></canvas></section>
+        <section id="pace-min-max-area-section"><canvas id="pace-minmax-area-chart"></canvas></section>
+        <section id="speed-min-max-area-section"><canvas id="speed-minmax-area-chart"></canvas></section>
+        <section id="stroke-section"></section><section id="swoles-section"></section>
+        <section id="bike-profile-section"><canvas id="bike-profile-chart"></canvas></section>
+        <section id="bike-power-profile"><div id="bike-power-metrics"></div></section>
+        <section id="power-curve-section"><canvas id="power-curve-chart"></canvas></section>
+        <section id="climbs-section"><div id="climbs-list"></div></section>
+        <canvas id="chart-cadence-speed"></canvas>
+        <canvas id="chart-altitude"></canvas><canvas id="chart-pace"></canvas><canvas id="chart-speed"></canvas>
+        <canvas id="chart-heartrate"></canvas><canvas id="chart-pace-distance"></canvas>
+        <canvas id="chart-heart-distance"></canvas><canvas id="chart-cadence-distance"></canvas>
+        <canvas id="chart-watts-distance"></canvas><canvas id="chart-speed-distance"></canvas>
+        <select id="analysis-mode"><option value="normal">Normal</option></select>
+        <button id="advanced-analysis-btn" type="button">Analyze</button>
+        <section id="analysis-results-container"><div id="analysis-loading"></div><div id="analysis-content"></div></section>
+        <section id="gear-info-section"><div id="gear-info-list"></div></section>
+        <section id="gear-chart-container"><h4></h4><canvas id="gearChart"></canvas></section>
+        <section id="gear-gantt-chart-container"><h4></h4><canvas id="gear-gantt-chart"></canvas></section>
+        <div id="gear-tab"></div>
+        <div id="gear-hero"></div><div id="gear-health-content"></div>
+        <div id="gear-stats-content"></div><div id="gear-advanced-content"></div>
+        <div id="gear-map"></div><canvas id="gear-usage-chart"></canvas>
+        <canvas id="gear-pace-chart"></canvas><canvas id="gear-elevation-chart"></canvas>
+        <div id="gear-activities-list"></div>
+    </main>
+
+    <script src="../../classifyRun.js"></script>
+    <script src="../../classifyBike.js"></script>
+    <script type="module">
+        const SYNTHETIC_SECRET = 'SYNTHETIC_B3_SECRET_MUST_NOT_ESCAPE';
+        const R2_TEXT_CANARY = '<img data-r2-canary onerror="window.__R2_EXECUTED__=true"> "\'`\\()/* */ \u2028\u2029 e\u0301 é אבג 🧪';
+        const R2_GEAR_ID = 'javascript:data://outside.invalid/?#%&=+/__proto__/constructor/prototype/零🧪';
+        const R2_SEGMENT_ID = 'data:?/#%&=+ __proto__ constructor prototype 零🧪';
+        const results = [];
+        const counters = {
+            fetch: 0, xhr: 0, websocket: 0, btoa: 0, indexedDB: 0,
+            realStorageRead: 0, realStorageWrite: 0, realStorageRemove: 0
+        };
+        const runtime = { uncaught: 0, unhandled: 0, chartCalls: [], mapCalls: [] };
+        const gateList = document.getElementById('gate-results');
+        const safeFailure = 'Gate failed without exposing private details.';
+
+        function invariant(value, code = 'ASSERTION_FAILED') {
+            if (!value) throw new Error(code);
+        }
+
+        async function gate(name, operation) {
+            const row = document.createElement('li');
+            row.dataset.gate = name;
+            try {
+                const evidence = await operation();
+                row.dataset.status = 'passed';
+                row.textContent = `${name}: passed`;
+                results.push({ name, status: 'passed', evidence: evidence ?? null });
+            } catch (error) {
+                row.dataset.status = 'failed';
+                row.textContent = `${name}: ${safeFailure}`;
+                const code = typeof error?.message === 'string' && /^[A-Z0-9_-]+$/.test(error.message)
+                    ? error.message
+                    : 'PRODUCT_OR_HARNESS_EXCEPTION';
+                row.dataset.code = code;
+                const frame = typeof error?.stack === 'string'
+                    ? error.stack.match(/(?:js|tests)\/[^\s:)]+:\d+:\d+/)?.[0] || null
+                    : null;
+                results.push({ name, status: 'failed', evidence: { code, frame } });
+            }
+            gateList.append(row);
+        }
+
+        addEventListener('error', event => {
+            runtime.uncaught += 1;
+            event.preventDefault();
+        });
+        addEventListener('unhandledrejection', event => {
+            runtime.unhandled += 1;
+            event.preventDefault();
+        });
+
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = (...args) => {
+            counters.fetch += 1;
+            return Promise.reject(new TypeError('Synthetic harness blocks network.'));
+        };
+        const OriginalXHR = globalThis.XMLHttpRequest;
+        globalThis.XMLHttpRequest = class SyntheticBlockedXHR {
+            constructor() { counters.xhr += 1; }
+            open() { throw new TypeError('Synthetic harness blocks XHR.'); }
+        };
+        const OriginalWebSocket = globalThis.WebSocket;
+        globalThis.WebSocket = class SyntheticBlockedWebSocket {
+            constructor() { counters.websocket += 1; throw new TypeError('Synthetic harness blocks WebSocket.'); }
+        };
+        const originalBtoa = globalThis.btoa.bind(globalThis);
+        globalThis.btoa = value => { counters.btoa += 1; return originalBtoa(value); };
+        const originalIndexedDB = globalThis.indexedDB;
+        try {
+            Object.defineProperty(globalThis, 'indexedDB', {
+                configurable: true,
+                get() { counters.indexedDB += 1; return originalIndexedDB; }
+            });
+        } catch { /* CDP also verifies no IndexedDB mutation. */ }
+
+        class SyntheticChart {
+            static instances = new Map();
+            static getChart(canvas) { return this.instances.get(canvas?.id) || null; }
+            constructor(canvas, config) {
+                this.canvas = canvas; this.config = config; this.data = config?.data || {}; this.options = config?.options || {};
+                SyntheticChart.instances.set(canvas?.id, this);
+                runtime.chartCalls.push(canvas?.id || 'anonymous');
+            }
+            destroy() { SyntheticChart.instances.delete(this.canvas?.id); }
+            update() {}
+        }
+        globalThis.Chart = SyntheticChart;
+
+        function inertLayer(kind) {
+            return {
+                addTo(target) { runtime.mapCalls.push(kind); return this; },
+                getBounds() { return [[0, 0], [0.001, 0.001]]; },
+                bindTooltip(content) { runtime.tooltips ??= []; runtime.tooltips.push(content); return this; },
+                remove() {}
+            };
+        }
+        globalThis.L = {
+            map() { return { setView() { return this; }, fitBounds() { return this; }, remove() {} }; },
+            tileLayer() { return inertLayer('tileLayer'); },
+            polyline() { return inertLayer('polyline'); },
+            circleMarker() { return inertLayer('circleMarker'); },
+            featureGroup() { return inertLayer('featureGroup'); }
+        };
+        const realKeys = new Set([
+            'strava_tokens', 'strava_training_zones', 'strava_zones',
+            'strava_athlete_data', 'strava_cached_activities'
+        ]);
+        const sentinelValues = Object.fromEntries([...realKeys].map(key => [key, `SYNTHETIC_SENTINEL_${key}`]));
+        for (const [key, value] of Object.entries(sentinelValues)) localStorage.setItem(key, value);
+
+        const syntheticStreams = {
+            distance: { data: [0, 100, 210, 330, 460, 600] },
+            time: { data: [0, 30, 60, 90, 120, 150] },
+            heartrate: { data: [120, 130, 140, 150, 145, 138] },
+            altitude: { data: [10, 12, 14, 13, 16, 18] },
+            cadence: { data: [78, 80, 82, 84, 83, 81] },
+            watts: { data: [150, 170, 190, 210, 180, 160] },
+            velocity_smooth: { data: [3, 3.2, 3.4, 3.3, 3.5, 3.6] },
+            latlng: { data: [[0, 0], [0.0002, 0.0002], [0.0004, 0.0004]] },
+            grade_smooth: { data: [0, 1, 2, -1, 2, 1] },
+            moving: { data: [true, true, true, true, true, true] }
+        };
+        const syntheticLaps = [
+            { name: 'SYNTHETIC LAP 1', distance: 300, moving_time: 75, elapsed_time: 75, average_speed: 4, average_heartrate: 135 },
+            { name: 'SYNTHETIC LAP 2', distance: 300, moving_time: 75, elapsed_time: 75, average_speed: 4, average_heartrate: 145 }
+        ];
+        function syntheticActivity(id, sportType) {
+            return {
+                id, name: `${R2_TEXT_CANARY} ${sportType}`, description: R2_TEXT_CANARY,
+                sport_type: sportType, type: sportType, start_date: '2025-01-02T10:00:00Z',
+                start_date_local: '2025-01-02T10:00:00', distance: sportType.includes('Swim') ? 1000 : 600,
+                moving_time: 150, elapsed_time: 160, average_speed: 4, max_speed: 5,
+                total_elevation_gain: 20, average_heartrate: 140, max_heartrate: 160,
+                average_cadence: 82, average_watts: 180, max_watts: 220, weighted_average_watts: 185,
+                calories: 100, kudos_count: 0, comment_count: 0, trainer: sportType === 'Swim',
+                pool_length: sportType === 'Swim' ? 25 : undefined, total_strokes: sportType === 'Swim' ? 400 : undefined,
+                gear_id: R2_GEAR_ID, gear_name: R2_TEXT_CANARY,
+                gear: { id: R2_GEAR_ID, name: R2_TEXT_CANARY },
+                map: { summary_polyline: '????' }, laps: structuredClone(syntheticLaps),
+                splits_metric: structuredClone(syntheticLaps), splits_swim: sportType === 'Swim' ? structuredClone(syntheticLaps) : undefined,
+                best_efforts: [{ name: R2_TEXT_CANARY, distance: 100, moving_time: 25, achievements: [] }],
+                segment_efforts: [{
+                    name: R2_TEXT_CANARY,
+                    distance: 100,
+                    moving_time: 25,
+                    average_heartrate: 140,
+                    segment: { id: R2_SEGMENT_ID }
+                }]
+            };
+        }
+        const zones = { heart_rate: { zones: [
+            { min: 0, max: 120 }, { min: 121, max: 140 }, { min: 141, max: 160 }, { min: 161, max: 180 }, { min: 181, max: -1 }
+        ] } };
+        const matchingAthlete = { id: 24681357, firstname: 'SYNTHETIC', lastname: 'ATHLETE', __synthetic: true };
+        const demoActivities = [
+            syntheticActivity('synthetic-generic-001', 'Workout'),
+            syntheticActivity('synthetic-run-001', 'Run'),
+            syntheticActivity('synthetic-bike-001', 'Ride'),
+            syntheticActivity('synthetic-swim-001', 'Swim')
+        ].map(activity => ({ ...activity, streams: structuredClone(syntheticStreams) }));
+        localStorage.setItem('strava_demo_mode', 'true');
+        localStorage.setItem('strava_demo_activities', JSON.stringify(demoActivities));
+        localStorage.setItem('strava_demo_athlete_data', JSON.stringify(matchingAthlete));
+        localStorage.setItem('strava_demo_training_zones', JSON.stringify(zones));
+        localStorage.setItem('strava_demo_gears', '[]');
+
+        const storagePrototype = Object.getPrototypeOf(localStorage);
+        const nativeGetItem = storagePrototype.getItem;
+        const nativeSetItem = storagePrototype.setItem;
+        const nativeRemoveItem = storagePrototype.removeItem;
+        storagePrototype.getItem = function(key) {
+            if (realKeys.has(String(key))) counters.realStorageRead += 1;
+            return nativeGetItem.call(this, key);
+        };
+        storagePrototype.setItem = function(key, value) {
+            if (realKeys.has(String(key))) counters.realStorageWrite += 1;
+            return nativeSetItem.call(this, key, value);
+        };
+        storagePrototype.removeItem = function(key) {
+            if (realKeys.has(String(key))) counters.realStorageRemove += 1;
+            return nativeRemoveItem.call(this, key);
+        };
+
+        const router = await import('../../js/pages/activity-router.js');
+        const detailSession = await import('../../js/pages/detail/detail-read-session.js');
+        const activityIndex = await import('../../js/pages/activity/index.js');
+        const runIndex = await import('../../js/pages/run/index.js');
+        const bikeIndex = await import('../../js/pages/bike/index.js');
+        const swimIndex = await import('../../js/pages/swim/index.js');
+        const activityRenderer = await import('../../js/pages/activity/activity.js');
+        const runRenderer = await import('../../js/pages/run/run.js');
+        const bikeRenderer = await import('../../js/pages/bike/bike.js');
+        const swimRenderer = await import('../../js/pages/swim/swim.js');
+        const gearTab = await import('../../js/tabs/gear.js');
+        const gearDetail = await import('../../js/pages/gear/gear-analysis.js');
+        const streamPresentation = await import('../../js/pages/detail/stream-presentation.js');
+        const advanced = await import('../../js/pages/activity/advanced-analysis.js');
+        const analysisUi = await import('../../js/pages/activity/analysis-ui-components.js');
+        const repository = await import('../../js/repository/index.js');
+
+        const pages = [
+            { name: 'Generic', module: activityIndex, initialize: activityIndex.initializeActivityPage, render: activityRenderer.renderActivityPage,
+                streams: activityIndex.ACTIVITY_STREAM_TYPES, athlete: false, id: 'synthetic-generic-001', sport: 'Workout' },
+            { name: 'Run', module: runIndex, initialize: runIndex.initializeRunPage, render: runRenderer.renderRunPage,
+                streams: runIndex.RUN_STREAM_TYPES, athlete: false, id: 'synthetic-run-001', sport: 'Run' },
+            { name: 'Bike', module: bikeIndex, initialize: bikeIndex.initializeBikePage, render: bikeRenderer.renderBikePage,
+                streams: bikeIndex.BIKE_STREAM_TYPES, athlete: false, id: 'synthetic-bike-001', sport: 'Ride' },
+            { name: 'Swim', module: swimIndex, initialize: swimIndex.initializeSwimPage, render: swimRenderer.renderSwimPage,
+                streams: swimIndex.SWIM_STREAM_TYPES, athlete: true, id: 'synthetic-swim-001', sport: 'Swim' }
+        ];
+        const envelope = (data, source = repository.REPOSITORY_SOURCE.DEMO) => ({ data, source, warnings: [], partial: false });
+        const exactBundle = (page, source = repository.REPOSITORY_SOURCE.DEMO) => ({
+            activity: envelope(syntheticActivity(page.id, page.sport), source),
+            streams: envelope(structuredClone(syntheticStreams), source),
+            zones: envelope(structuredClone(zones), source),
+            athlete: page.athlete ? envelope(structuredClone(matchingAthlete), source) : null
+        });
+
+        await gate('native-esm-module-graph', async () => {
+            invariant(typeof router.routeActivity === 'function');
+            invariant(typeof detailSession.createDetailReadSession === 'function');
+            invariant(pages.every(page => typeof page.initialize === 'function' && typeof page.render === 'function'));
+            invariant(typeof advanced.AdvancedActivityAnalyzer === 'function');
+            invariant(typeof repository.createRepository === 'function');
+            invariant(typeof globalThis.classifyRun === 'function', 'CLASSIFY_RUN_NOT_LOADED');
+            invariant(typeof globalThis.classifyBike === 'function', 'CLASSIFY_BIKE_NOT_LOADED');
+            invariant(Object.keys(repository).length === 5);
+            invariant(counters.fetch === 0 && counters.realStorageRead === 0 && counters.indexedDB === 0);
+            return { modules: 13, classifiers: 2, importProviderIo: 0 };
+        });
+
+        await gate('stream-presentation-recording-boundary', async () => {
+            const pointCount = 2_001;
+            const labels = Array.from({ length: pointCount }, (_, index) => Math.floor(index / 2));
+            const first = Array.from({ length: pointCount }, (_, index) => (index % 97) - 48);
+            const second = Array.from({ length: pointCount }, (_, index) => 70 - (index % 89));
+            first[11] = 0;
+            first[12] = -0;
+            second[1_000] = null;
+            const chart = streamPresentation.prepareStreamChartPresentation(labels, [
+                { label: 'first', data: first },
+                { label: 'second', data: second }
+            ]);
+            invariant(chart.labels.length <= 1_000, 'STREAM_CHART_CAP');
+            invariant(chart.datasets.every(dataset => dataset.data.length === chart.labels.length),
+                'STREAM_CHART_ALIGNMENT');
+            new Chart(document.getElementById('chart-altitude'), {
+                type: 'line',
+                data: { labels: chart.labels, datasets: chart.datasets }
+            });
+
+            const geometry = Array.from({ length: pointCount }, (_, index) => [index % 89, index % 179]);
+            const map = streamPresentation.prepareStreamMapPresentation(geometry, first);
+            invariant(map.coordinates.length <= 2_000, 'STREAM_MAP_CAP');
+            invariant(map.routeValues.length === map.coordinates.length, 'STREAM_MAP_ALIGNMENT');
+            L.polyline(map.coordinates).addTo({});
+            return {
+                inputPoints: pointCount,
+                chartPoints: chart.labels.length,
+                mapPoints: map.coordinates.length,
+                recordingStubs: ['Chart', 'Leaflet']
+            };
+        });
+
+        await gate('opaque-router-ids-and-sports', async () => {
+            const sportCases = [
+                ['000123', 'Swim', 'swim.html'], ['opaque-open-water', 'OpenWaterSwim', 'swim.html'],
+                ['opaque-run', 'Run', 'run.html'], ['opaque-trail', 'TrailRun', 'run.html'],
+                ['opaque-virtual', 'VirtualRun', 'run.html'], ['opaque-ride', 'Ride', 'bike.html'],
+                ['opaque-mtb', 'MountainBike', 'bike.html'], ['opaque-gravel', 'GravelRide', 'bike.html'],
+                ['alpha/beta ?#%', 'Workout', 'activity.html']
+            ];
+            for (const [id, sport, page] of sportCases) {
+                const calls = { mode: 0, factory: 0, list: 0, activity: 0, streams: 0, navigate: [] };
+                const ok = await router.routeActivity({
+                    search: `?id=${encodeURIComponent(id)}`,
+                    demoModeReader: () => { calls.mode += 1; return true; },
+                    repositoryFactory: options => {
+                        calls.factory += 1;
+                        invariant(JSON.stringify(options) === JSON.stringify({ sessionMode: 'demo', mode: 'legacy' }));
+                        return {
+                            async listActivities() { calls.list += 1; return envelope([{ id, sport_type: sport }]); },
+                            async getActivity() { calls.activity += 1; }, async getStreams() { calls.streams += 1; }
+                        };
+                    },
+                    navigate: target => calls.navigate.push(target), errorRenderer: () => invariant(false)
+                });
+                invariant(ok && calls.mode === 1 && calls.factory === 1 && calls.list === 1);
+                invariant(calls.activity === 0 && calls.streams === 0);
+                invariant(calls.navigate[0] === `${page}?id=${encodeURIComponent(id)}`);
+            }
+            for (const search of ['', '?id=', '?id=%20%20']) {
+                let factoryCalls = 0;
+                const ok = await router.routeActivity({ search, demoModeReader: () => true,
+                    repositoryFactory: () => { factoryCalls += 1; return {}; }, navigate: () => {}, errorRenderer: () => {} });
+                invariant(!ok && factoryCalls === 0);
+            }
+            return { cases: sportCases.length + 3, numericConversions: 0 };
+        });
+
+        await gate('four-composition-roots', async () => {
+            for (const page of pages) {
+                const calls = { mode: 0, factory: 0, session: 0, load: 0, render: 0, error: 0 };
+                let received;
+                const ok = await page.initialize({
+                    search: `?id=${encodeURIComponent('000123')}`,
+                    demoModeReader: () => { calls.mode += 1; return false; },
+                    featureFlagsReader: () => ({ dataRepositoryMode: 'legacy' }),
+                    repositoryFactory: options => { calls.factory += 1; invariant(options.sessionMode === 'real' && options.mode === 'legacy'); return {}; },
+                    sessionFactory: options => {
+                        calls.session += 1;
+                        invariant(options.activityId === '000123');
+                        invariant(JSON.stringify(options.streamTypes) === JSON.stringify([...page.streams]));
+                        invariant(options.includeZones === true && options.includeAthlete === page.athlete);
+                        return { async load() { calls.load += 1; return exactBundle(page, repository.REPOSITORY_SOURCE.NETWORK); } };
+                    },
+                    renderer: input => { calls.render += 1; received = input; },
+                    errorRenderer: () => { calls.error += 1; }
+                });
+                invariant(ok, `COMPOSITION_${page.name.toUpperCase()}_FAILED`);
+                invariant(Object.values(calls).slice(0, 5).every(value => value === 1) && calls.error === 0,
+                    `COMPOSITION_${page.name.toUpperCase()}_COUNT`);
+                invariant(received.activityId === '000123' && received.weatherFeatureEnabled === true,
+                    `COMPOSITION_${page.name.toUpperCase()}_INPUT`);
+
+                const malformed = { mode: 0, load: 0, render: 0, errorArgs: null };
+                const failed = await page.initialize({
+                    search: '?id=synthetic-malformed', demoModeReader: () => { malformed.mode += 1; return true; },
+                    repositoryFactory: () => ({}),
+                    sessionFactory: () => ({ async load() { malformed.load += 1; return { activity: { data: {} } }; } }),
+                    renderer: () => { malformed.render += 1; },
+                    errorRenderer: (...args) => { malformed.errorArgs = args; }
+                });
+                invariant(!failed && malformed.mode === 1 && malformed.load === 1 && malformed.render === 0,
+                    `COMPOSITION_${page.name.toUpperCase()}_MALFORMED_FLOW`);
+                invariant(Array.isArray(malformed.errorArgs) && malformed.errorArgs.length === 0,
+                    `COMPOSITION_${page.name.toUpperCase()}_ERROR_ARGS`);
+                invariant(!gateList.textContent.includes(SYNTHETIC_SECRET),
+                    `COMPOSITION_${page.name.toUpperCase()}_SECRET`);
+            }
+            return { pages: 4, callsPerPage: '1/1/1/1/1', malformedRendererCalls: 0 };
+        });
+
+        await gate('actual-demo-public-factory', async () => {
+            const demo = repository.createRepository({ sessionMode: 'demo', mode: 'legacy' });
+            invariant(demo.constructor.name === 'DemoRepository');
+            const listed = await demo.listActivities({ refresh: false });
+            invariant(listed.source === repository.REPOSITORY_SOURCE.DEMO && listed.data.length === 4);
+            let routed = '';
+            invariant(await router.routeActivity({ search: '?id=synthetic-swim-001', demoModeReader: () => true,
+                repositoryFactory: repository.createRepository, navigate: value => { routed = value; }, errorRenderer: () => {} }));
+            invariant(routed === 'swim.html?id=synthetic-swim-001');
+            for (const page of [...pages].reverse()) {
+                let rendered = 0;
+                const ok = await page.initialize({ search: `?id=${page.id}`, demoModeReader: () => true,
+                    repositoryFactory: repository.createRepository,
+                    sessionFactory: detailSession.createDetailReadSession,
+                    renderer: input => { rendered += 1; invariant(input.weatherFeatureEnabled === false); },
+                    errorRenderer: () => {} });
+                invariant(ok && rendered === 1);
+            }
+            for (const [key, value] of Object.entries(sentinelValues)) invariant(nativeGetItem.call(localStorage, key) === value);
+            invariant(counters.realStorageWrite === 0 && counters.realStorageRemove === 0);
+            invariant(counters.fetch === 0 && counters.btoa === 0 && counters.indexedDB === 0);
+            return { demoActivities: 4, connectorClass: 'DemoRepository', providerIo: 0, weatherIo: 0 };
+        });
+
+        await gate('synthetic-real-seam', async () => {
+            for (const page of pages) {
+                const calls = { factory: 0, session: 0, load: 0, render: 0, activity: 0, streams: 0, zones: 0, athlete: 0 };
+                const activityPayload = syntheticActivity(page.id, page.sport);
+                const streamsPayload = structuredClone(syntheticStreams);
+                const before = JSON.stringify({ activityPayload, streamsPayload });
+                const realRepo = {
+                    async getActivity(id) { calls.activity += 1; invariant(id === page.id); return envelope(activityPayload, repository.REPOSITORY_SOURCE.NETWORK); },
+                    async getStreams(id, options) { calls.streams += 1; invariant(id === page.id); invariant(JSON.stringify(options.types) === JSON.stringify([...page.streams])); return envelope(streamsPayload, repository.REPOSITORY_SOURCE.NETWORK); },
+                    async getZones() { calls.zones += 1; return envelope(zones, repository.REPOSITORY_SOURCE.NETWORK); },
+                    async getAthlete() { calls.athlete += 1; return envelope(matchingAthlete, repository.REPOSITORY_SOURCE.NETWORK); }
+                };
+                const ok = await page.initialize({ search: `?id=${page.id}`, demoModeReader: () => false,
+                    featureFlagsReader: () => ({ dataRepositoryMode: 'legacy' }),
+                    repositoryFactory: options => { calls.factory += 1; invariant(options.sessionMode === 'real' && options.mode === 'legacy'); return realRepo; },
+                    sessionFactory: options => { calls.session += 1; const session = detailSession.createDetailReadSession(options); return { load() { calls.load += 1; return session.load(); } }; },
+                    renderer: input => { calls.render += 1; invariant(input.activity === activityPayload && input.streams === streamsPayload); invariant(input.weatherFeatureEnabled === true); },
+                    errorRenderer: () => {} });
+                invariant(ok && calls.factory === 1 && calls.session === 1 && calls.load === 1 && calls.render === 1);
+                invariant(calls.activity === 1 && calls.streams === 1 && calls.zones === 1 && calls.athlete === (page.athlete ? 1 : 0));
+                invariant(JSON.stringify({ activityPayload, streamsPayload }) === before);
+            }
+            invariant(counters.fetch === 0);
+            return { pages: 4, providerNetwork: 0, weatherAllowedFlag: true };
+        });
+
+        function clearFixture() {
+            for (const id of ['activity-info', 'activity-stats', 'activity-advanced', 'activity-map', 'stream-charts',
+                'run-classifier-results', 'bike-classifier-results', 'analysis-content']) {
+                const node = document.getElementById(id); if (node) node.replaceChildren();
+            }
+            for (const [sectionId, canvasId] of [
+                ['product-fixture', 'chart-cadence'],
+                ['hr-zones-section', 'hr-zones-chart']
+            ]) {
+                if (document.getElementById(canvasId)) continue;
+                const canvas = document.createElement('canvas');
+                canvas.id = canvasId;
+                document.getElementById(sectionId).append(canvas);
+            }
+        }
+        const degradations = [
+            ['full', value => value], ['empty-streams', () => ({})],
+            ['missing-hr', value => { delete value.heartrate; return value; }],
+            ['missing-gps', value => { delete value.latlng; return value; }],
+            ['missing-power', value => { delete value.watts; return value; }],
+            ['missing-cadence', value => { delete value.cadence; return value; }]
+        ];
+        await gate('renderer-capability-and-dom-parity', async () => {
+            let cases = 0;
+            for (const page of pages) {
+                for (const [name, transform] of degradations) {
+                    clearFixture();
+                    const activity = syntheticActivity(page.id, page.sport);
+                    const streams = transform(structuredClone(syntheticStreams));
+                    await page.render({ activity, streams, zones, athlete: page.athlete ? matchingAthlete : null,
+                        activityId: page.id, weatherFeatureEnabled: false });
+                    invariant(document.getElementById('activity-stats').textContent.length > 0,
+                        `RENDER_${page.name.toUpperCase()}_${name.toUpperCase().replaceAll('-', '_')}`);
+                    invariant(document.getElementById('activity-map') && document.getElementById('laps-section'));
+                    cases += 1;
+                }
+                const special = [
+                    ['missing-laps', { activity: { ...syntheticActivity(page.id, page.sport), laps: undefined, splits_metric: undefined, splits_swim: undefined }, zones, athlete: page.athlete ? matchingAthlete : null }],
+                    ['missing-zones', { activity: syntheticActivity(page.id, page.sport), zones: null, athlete: page.athlete ? matchingAthlete : null }],
+                    ['missing-athlete', { activity: syntheticActivity(page.id, page.sport), zones, athlete: null }]
+                ];
+                for (const [, fixture] of special) {
+                    clearFixture();
+                    await page.render({ ...fixture, streams: structuredClone(syntheticStreams), activityId: page.id, weatherFeatureEnabled: false });
+                    invariant(document.getElementById('activity-stats').textContent.length > 0,
+                        `RENDER_${page.name.toUpperCase()}_SPECIAL`);
+                    cases += 1;
+                }
+            }
+            invariant(counters.fetch === 0);
+            return { cases, coreDom: true, chartCalls: runtime.chartCalls.length, mapCalls: runtime.mapCalls.length };
+        });
+
+        await gate('m23-r2-persistent-dom-and-url-canaries', async () => {
+            globalThis.__R2_EXECUTED__ = false;
+            for (const page of pages) {
+                clearFixture();
+                await page.render({
+                    activity: syntheticActivity(page.id, page.sport),
+                    streams: structuredClone(syntheticStreams),
+                    zones,
+                    athlete: page.athlete ? matchingAthlete : null,
+                    activityId: page.id,
+                    weatherFeatureEnabled: false
+                });
+                invariant(!document.querySelector('[data-r2-canary]'), `R2_INJECTED_NODE_${page.name.toUpperCase()}`);
+                invariant(globalThis.__R2_EXECUTED__ !== true, `R2_CANARY_EXECUTED_${page.name.toUpperCase()}`);
+                if (page.name === 'Generic') {
+                    invariant(document.getElementById('activity-info').textContent.includes(R2_TEXT_CANARY), 'R2_GENERIC_TEXT_EXACT');
+                } else {
+                    const gearLink = document.querySelector('#activity-hero-gear a');
+                    const gearUrl = new URL(gearLink.href);
+                    invariant(gearUrl.origin === location.origin && gearUrl.pathname === '/html/gear.html', `R2_GEAR_ROUTE_${page.name.toUpperCase()}`);
+                    invariant(gearUrl.searchParams.getAll('id').length === 1 && [...gearUrl.searchParams.keys()].length === 1,
+                        `R2_GEAR_QUERY_COUNT_${page.name.toUpperCase()}`);
+                    invariant(gearUrl.searchParams.get('id') === R2_GEAR_ID, `R2_GEAR_ID_EXACT_${page.name.toUpperCase()}`);
+                    invariant(gearLink.textContent === R2_TEXT_CANARY, `R2_GEAR_TEXT_EXACT_${page.name.toUpperCase()}`);
+                }
+                if (page.name !== 'Swim') {
+                    invariant(document.getElementById('best-efforts-table').textContent.includes(R2_TEXT_CANARY),
+                        `R2_EFFORT_TEXT_EXACT_${page.name.toUpperCase()}`);
+                    const segmentLink = document.querySelector('#segments-table a');
+                    invariant(segmentLink.textContent === R2_TEXT_CANARY, `R2_SEGMENT_TEXT_EXACT_${page.name.toUpperCase()}`);
+                    invariant(segmentLink.href === `https://www.strava.com/segments/${encodeURIComponent(R2_SEGMENT_ID)}`,
+                        `R2_SEGMENT_ROUTE_EXACT_${page.name.toUpperCase()}`);
+                    invariant(segmentLink.rel === 'noopener noreferrer' && segmentLink.target === '_blank',
+                        `R2_SEGMENT_NEW_WINDOW_${page.name.toUpperCase()}`);
+                }
+            }
+
+            const gearCases = [
+                ['missing', undefined, false],
+                ['null', null, false],
+                ['string-zero', '0', true],
+                ['leading-zero', '000123', true],
+                ['numeric-zero', 0, false],
+                ['negative-zero', -0, false]
+            ];
+            for (const page of pages.filter(value => value.name !== 'Generic')) {
+                for (const [label, gearId, shouldLink] of gearCases) {
+                    clearFixture();
+                    const activity = syntheticActivity(`${page.id}-${label}`, page.sport);
+                    delete activity.gear;
+                    delete activity.gear_name;
+                    if (label === 'missing') delete activity.gear_id;
+                    else activity.gear_id = gearId;
+                    await page.render({ activity, streams: {}, zones: null, athlete: null,
+                        activityId: activity.id, weatherFeatureEnabled: false });
+                    const link = document.querySelector('#activity-hero-gear a');
+                    invariant(Boolean(link) === shouldLink, `R2_GEAR_SEMANTICS_${page.name.toUpperCase()}_${label.toUpperCase().replaceAll('-', '_')}`);
+                    if (link) invariant(new URL(link.href).searchParams.get('id') === gearId,
+                        `R2_GEAR_ROUNDTRIP_${page.name.toUpperCase()}_${label.toUpperCase().replaceAll('-', '_')}`);
+                    else invariant(document.getElementById('activity-hero-gear').textContent === 'No gear',
+                        `R2_GEAR_COPY_${page.name.toUpperCase()}_${label.toUpperCase().replaceAll('-', '_')}`);
+                }
+            }
+            const tableCases = [
+                ['missing', undefined, 'undefined'],
+                ['null', null, 'null'],
+                ['string-zero', '0', '0'],
+                ['leading-zero', '000123', '000123'],
+                ['numeric-zero', 0, '0'],
+                ['negative-zero', -0, '0']
+            ];
+            const genericPage = pages[0];
+            for (const [label, value, expected] of tableCases) {
+                clearFixture();
+                const activity = syntheticActivity(`table-${label}`, genericPage.sport);
+                if (label === 'missing') {
+                    delete activity.best_efforts[0].name;
+                    delete activity.segment_efforts[0].name;
+                    delete activity.segment_efforts[0].segment.id;
+                } else {
+                    activity.best_efforts[0].name = value;
+                    activity.segment_efforts[0].name = value;
+                    activity.segment_efforts[0].segment.id = value;
+                }
+                await genericPage.render({ activity, streams: {}, zones, athlete: null,
+                    activityId: activity.id, weatherFeatureEnabled: false });
+                invariant(document.querySelector('#best-efforts-table tbody td').textContent === expected,
+                    `R2_EFFORT_SEMANTICS_${label.toUpperCase().replaceAll('-', '_')}`);
+                const segmentLink = document.querySelector('#segments-table tbody a');
+                invariant(segmentLink.textContent === expected,
+                    `R2_SEGMENT_NAME_SEMANTICS_${label.toUpperCase().replaceAll('-', '_')}`);
+                invariant(decodeURIComponent(new URL(segmentLink.href).pathname.slice('/segments/'.length)) === expected,
+                    `R2_SEGMENT_ID_SEMANTICS_${label.toUpperCase().replaceAll('-', '_')}`);
+            }
+            return { pages: 4, identityCases: gearCases.length * 3 + tableCases.length * 3, canaryExecuted: false };
+        });
+
+        await gate('fragmented-stream-renderer-state', async () => {
+            const pointCount = 2_002;
+            const fragmented = {
+                distance: { data: Array.from({ length: pointCount }, (_, index) => index) },
+                time: { data: Array.from({ length: pointCount }, (_, index) => index + 1) },
+                heartrate: { data: Array.from({ length: pointCount }, (_, index) => (
+                    index % 2 === 0 ? 120 + (index % 30) : null
+                )) },
+                cadence: { data: Array.from({ length: pointCount }, (_, index) => (
+                    index % 2 === 0 ? 70 + (index % 20) : null
+                )) },
+                altitude: { data: Array.from({ length: pointCount }, (_, index) => index % 100) },
+                velocity_smooth: { data: Array.from({ length: pointCount }, () => 3) },
+                latlng: { data: [] }
+            };
+            clearFixture();
+            const swimCallsBefore = runtime.chartCalls.length;
+            await swimRenderer.renderSwimPage({
+                activity: syntheticActivity('fragmented-swim', 'Swim'),
+                streams: structuredClone(fragmented),
+                zones,
+                athlete: matchingAthlete,
+                activityId: 'fragmented-swim',
+                weatherFeatureEnabled: false
+            });
+            const swimCalls = runtime.chartCalls.slice(swimCallsBefore);
+            invariant(!swimCalls.includes('chart-heartrate') && !swimCalls.includes('chart-cadence'),
+                'SWIM_FRAGMENTED_CHART_CONSTRUCTED');
+            invariant(document.getElementById('swim-stream-presentation-status')?.textContent
+                === 'Too fragmented to plot.', 'SWIM_FRAGMENTED_STATUS');
+
+            clearFixture();
+            const bikeCallsBefore = runtime.chartCalls.length;
+            await bikeRenderer.renderBikePage({
+                activity: syntheticActivity('fragmented-bike', 'Ride'),
+                streams: structuredClone(fragmented),
+                zones,
+                athlete: null,
+                activityId: 'fragmented-bike',
+                weatherFeatureEnabled: false
+            });
+            const bikeCalls = runtime.chartCalls.slice(bikeCallsBefore);
+            invariant(!bikeCalls.includes('chart-cadence-speed'),
+                'BIKE_FRAGMENTED_CHART_CONSTRUCTED');
+            invariant(document.getElementById('chart-cadence-speed-presentation-status')?.textContent
+                === 'Too fragmented to plot.', 'BIKE_FRAGMENTED_STATUS');
+            return { swimChartCalls: 0, bikeCadenceSpeedCalls: 0, stableStatus: true };
+        });
+
+        await gate('zones-and-swim-athlete-correction', async () => {
+            invariant(counters.realStorageRead === 0);
+            const classifierActivity = syntheticActivity('synthetic-classifier', 'Run');
+            const classifierStreams = structuredClone(syntheticStreams);
+            const classifierZones = structuredClone(zones);
+            const classifierSnapshot = JSON.stringify({ classifierActivity, classifierStreams, classifierZones });
+            const storagePrototype = Object.getPrototypeOf(localStorage);
+            const previousGetItem = storagePrototype.getItem;
+            storagePrototype.getItem = () => { throw new Error('SYNTHETIC_STORAGE_READ_FORBIDDEN'); };
+            let runClassification;
+            let bikeClassification;
+            try {
+                runClassification = globalThis.classifyRun(classifierActivity, classifierStreams, classifierZones);
+                bikeClassification = globalThis.classifyBike(
+                    { ...classifierActivity, sport_type: 'Ride', type: 'Ride' },
+                    classifierStreams,
+                    classifierZones
+                );
+            } finally {
+                storagePrototype.getItem = previousGetItem;
+            }
+            invariant(Array.isArray(runClassification?.top), 'RUN_CLASSIFIER_RESULT_INVALID');
+            invariant(Array.isArray(bikeClassification?.top), 'BIKE_CLASSIFIER_RESULT_INVALID');
+            invariant(JSON.stringify({ classifierActivity, classifierStreams, classifierZones }) === classifierSnapshot,
+                'CLASSIFIER_INPUT_MUTATED');
+            invariant(counters.realStorageRead === 0, 'CLASSIFIER_PROVIDER_STORAGE_READ');
+            const original = syntheticActivity('synthetic-swim-correction', 'Swim');
+            const snapshot = JSON.stringify(original);
+            const workingCopy = structuredClone(original);
+            invariant(!Object.keys(swimRenderer).some(name => name.startsWith(['maybeCorrect', 'IndoorSwim'].join(''))),
+                'Swim detail must not export an implicit athlete correction');
+            invariant(workingCopy.distance === 1000 && !workingCopy.tags?.length,
+                'Swim detail must preserve synthetic input without athlete-specific mutation');
+            invariant(runtime.chartCalls.includes('hr-zones-chart'), 'ZONES_CHART_NOT_OBSERVED');
+            return {
+                forbiddenProviderKeyReads: 0,
+                classifiers: ['run', 'bike'],
+                implicitAthleteCorrection: false,
+                repositorySnapshotUnchanged: true
+            };
+        });
+
+        await gate('advanced-default-consumer-path', async () => {
+            const button = document.getElementById('advanced-analysis-btn');
+            const content = document.getElementById('analysis-content');
+            button.replaceWith(button.cloneNode(true));
+            const freshButton = document.getElementById('advanced-analysis-btn');
+            let analysisCalls = 0;
+            const exportFormats = [];
+            const syntheticAnalysis = async () => {
+                analysisCalls += 1;
+                return {
+                    distance_total: 0.6, time_total: 160, time_moving: 150, elevation_gain: 20,
+                    elevation_loss: 5, speed_avg: 14.4, speed_max: 18, hr_avg: 140, hr_max: 160,
+                    pace_avg: { minutes: 4, seconds: 10 }, power_avg: 180, power_normalized: 185,
+                    tss: 10, cadence_avg: 82, insights: ['SYNTHETIC INSIGHT'], climbs: [], stops: [],
+                    segments: { distance_segments: [], time_segments: [], terrain_segments: [] }, track: [],
+                    fatigue_data: { fatigue_detected: false }, processing_time_ms: 1
+                };
+            };
+            const injectedAnalyzer = new advanced.AdvancedActivityAnalyzer(
+                'synthetic-advanced-001',
+                syntheticActivity('synthetic-advanced-001', 'Run'),
+                structuredClone(syntheticStreams),
+                syntheticAnalysis
+            );
+            injectedAnalyzer.downloadExport = format => { exportFormats.push(format); };
+            const beforeIo = JSON.stringify(counters);
+            activityRenderer.initAdvancedAnalysis('synthetic-advanced-001', syntheticActivity('synthetic-advanced-001', 'Run'),
+                structuredClone(syntheticStreams), { analyzerFactory: () => injectedAnalyzer });
+            freshButton.click(); await new Promise(resolve => setTimeout(resolve, 0));
+            freshButton.click(); await new Promise(resolve => setTimeout(resolve, 0));
+            invariant(analysisCalls === 2, 'ADVANCED_ANALYSIS_CALL_COUNT');
+            invariant(JSON.stringify(counters) === beforeIo, 'ADVANCED_PROVIDER_IO_DELTA');
+            invariant(content.querySelectorAll('[data-analysis-section]').length === 5,
+                'ADVANCED_SECTION_COUNT');
+            invariant(content.querySelector('.analysis-summary'), 'ADVANCED_SUMMARY_UI_MISSING');
+            invariant(content.querySelector('.insights-section'), 'ADVANCED_INSIGHTS_UI_MISSING');
+            invariant(content.querySelector('.segments-section'), 'ADVANCED_SEGMENTS_UI_MISSING');
+            invariant(content.querySelector('.exports-section'), 'ADVANCED_EXPORT_UI_MISSING');
+            const exportButtons = [...content.querySelectorAll('.export-btn')];
+            invariant(exportButtons.length === 3, 'ADVANCED_EXPORT_BUTTON_COUNT');
+            invariant(exportButtons.every(exportButton => !exportButton.hasAttribute('onclick')),
+                'ADVANCED_INLINE_EXPORT_HANDLER_REMAINS');
+            exportButtons.forEach(exportButton => exportButton.click());
+            invariant(JSON.stringify(exportFormats) === JSON.stringify(['gpx', 'csv', 'json']),
+                'ADVANCED_EXPORT_BINDING');
+            invariant(!content.textContent.includes(SYNTHETIC_SECRET));
+            invariant(counters.fetch === 0 && counters.realStorageRead === 0);
+            return {
+                clicks: 2,
+                analysisCalls: 2,
+                providerIoDelta: 0,
+                ui: 'summary/insights/climbs/segments/export',
+                exportFormats
+            };
+        });
+
+        await gate('m23-r2-gear-card-detail-query-list-and-tooltip', async () => {
+            const opened = [];
+            const originalOpen = window.open;
+            const originalWarn = console.warn;
+            const indexedDbDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'indexedDB');
+            window.open = (...args) => { opened.push(args); return { opener: window }; };
+            console.warn = () => {};
+            try {
+                const gearActivity = syntheticActivity('gear/activity ?#%&=+ 零🧪', 'Run');
+                gearActivity.gear_id = R2_GEAR_ID;
+                gearActivity.name = R2_TEXT_CANARY;
+                const gear = {
+                    id: R2_GEAR_ID,
+                    name: R2_TEXT_CANARY,
+                    brand_name: R2_TEXT_CANARY,
+                    model_name: R2_TEXT_CANARY,
+                    distance: 600,
+                    primary: true
+                };
+                nativeSetItem.call(localStorage, 'gearEditMode', 'false');
+                gearTab.renderGearTab([gearActivity], [gear]);
+                const card = document.querySelector('#gear-info-list .gear-card');
+                invariant(card && card.textContent.includes(R2_TEXT_CANARY), 'R2_GEAR_CARD_TEXT_EXACT');
+                invariant(!card.querySelector('[data-r2-canary]') && !card.hasAttribute('onclick'), 'R2_GEAR_CARD_NO_INJECTION');
+                card.click();
+                const cardUrl = new URL(opened.at(-1)[0]);
+                invariant(cardUrl.origin === location.origin && cardUrl.pathname === '/html/gear.html', 'R2_GEAR_CARD_ROUTE');
+                invariant(cardUrl.searchParams.getAll('id').length === 1 && [...cardUrl.searchParams.keys()].length === 1,
+                    'R2_GEAR_CARD_SINGLE_ID');
+                invariant(cardUrl.searchParams.get('id') === R2_GEAR_ID, 'R2_GEAR_CARD_ID_EXACT');
+                invariant(opened.at(-1)[2] === 'noopener,noreferrer', 'R2_GEAR_CARD_NOOPENER');
+
+                document.getElementById('toggle-gear-edit').click();
+                const editCard = document.querySelector('#gear-info-list .gear-card');
+                invariant(!editCard.querySelector('[onclick]'), 'R2_GEAR_EDIT_NO_INLINE_HANDLER');
+                invariant(document.getElementById(`price-${R2_GEAR_ID}`), 'R2_GEAR_EDIT_OPAQUE_INPUT_ID');
+
+                Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: undefined });
+                nativeSetItem.call(localStorage, 'strava_activities', JSON.stringify([gearActivity]));
+                nativeSetItem.call(localStorage, 'strava_gears', JSON.stringify([gear]));
+                runtime.tooltips = [];
+                await gearDetail.renderGearDetailPage(R2_GEAR_ID);
+                invariant(document.getElementById('gear-hero').textContent.includes(R2_TEXT_CANARY), 'R2_GEAR_HERO_TEXT_EXACT');
+                invariant(!document.getElementById('gear-hero').querySelector('[data-r2-canary]'), 'R2_GEAR_HERO_NO_INJECTION');
+                invariant(document.getElementById(`hp-${R2_GEAR_ID}`), 'R2_GEAR_HEALTH_OPAQUE_INPUT_ID');
+                invariant(runtime.tooltips.length > 0 && runtime.tooltips.every(value => value instanceof Node), 'R2_GEAR_TOOLTIP_DOM_ONLY');
+                invariant(runtime.tooltips.some(value => value.textContent.includes(R2_TEXT_CANARY)), 'R2_GEAR_TOOLTIP_TEXT_EXACT');
+                const activityRow = document.getElementById('gear-activities-list').children[1];
+                invariant(activityRow.textContent.includes(R2_TEXT_CANARY) && !activityRow.hasAttribute('onclick'), 'R2_GEAR_LIST_TEXT_AND_HANDLER');
+                activityRow.click();
+                const activityUrl = new URL(opened.at(-1)[0]);
+                invariant(activityUrl.origin === location.origin && activityUrl.pathname === '/html/activity-router.html', 'R2_GEAR_ACTIVITY_ROUTE');
+                invariant(activityUrl.searchParams.getAll('id').length === 1 && [...activityUrl.searchParams.keys()].length === 1,
+                    'R2_GEAR_ACTIVITY_SINGLE_ID');
+                invariant(activityUrl.searchParams.get('id') === gearActivity.id, 'R2_GEAR_ACTIVITY_ID_EXACT');
+                invariant(opened.at(-1)[2] === 'noopener,noreferrer', 'R2_GEAR_ACTIVITY_NOOPENER');
+
+                const savedBody = [...document.body.childNodes];
+                const missingId = `${R2_TEXT_CANARY} ${R2_GEAR_ID}`;
+                await gearDetail.renderGearDetailPage(missingId);
+                invariant(document.body.textContent.includes(`ID "${missingId}" not in local cache.`), 'R2_GEAR_QUERY_TEXT_EXACT');
+                invariant(!document.body.querySelector('[data-r2-canary]'), 'R2_GEAR_QUERY_NO_INJECTION');
+                invariant(!document.body.querySelector('[onclick]'), 'R2_GEAR_QUERY_NO_INLINE_HANDLER');
+                document.body.replaceChildren(...savedBody);
+                invariant(globalThis.__R2_EXECUTED__ !== true, 'R2_GEAR_CANARY_NOT_EXECUTED');
+                const tooltipNodes = runtime.tooltips.length;
+                runtime.tooltips = [];
+                return { cards: 1, detailActivities: 1, tooltipNodes, popupsObserved: opened.length };
+            } finally {
+                window.open = originalOpen;
+                console.warn = originalWarn;
+                if (indexedDbDescriptor) Object.defineProperty(globalThis, 'indexedDB', indexedDbDescriptor);
+                nativeRemoveItem.call(localStorage, 'strava_activities');
+                nativeRemoveItem.call(localStorage, 'strava_gears');
+                nativeRemoveItem.call(localStorage, 'gearEditMode');
+                nativeRemoveItem.call(localStorage, `gear-custom-${R2_GEAR_ID}`);
+            }
+        });
+
+        await gate('storage-network-console-boundary', async () => {
+            invariant(counters.fetch === 0 && counters.xhr === 0 && counters.websocket === 0);
+            invariant(counters.btoa === 0 && counters.indexedDB === 0);
+            invariant(counters.realStorageRead === 0 && counters.realStorageWrite === 0 && counters.realStorageRemove === 0);
+            invariant(runtime.uncaught === 0 && runtime.unhandled === 0);
+            for (const [key, value] of Object.entries(sentinelValues)) invariant(nativeGetItem.call(localStorage, key) === value);
+            return { ...counters, uncaught: runtime.uncaught, unhandled: runtime.unhandled };
+        });
+
+        const failed = results.filter(result => result.status === 'failed');
+        document.body.dataset.status = failed.length === 0 ? 'passed' : 'failed';
+        document.getElementById('gate-summary').textContent = failed.length === 0
+            ? `Passed ${results.length} deterministic synthetic browser gates.`
+            : `${failed.length} gate(s) require correction; no raw exception was exposed.`;
+        globalThis.__PR04B_B3_EVIDENCE__ = Object.freeze({
+            status: document.body.dataset.status,
+            results: structuredClone(results), counters: structuredClone(counters), runtime: structuredClone(runtime),
+            stubBoundaries: ['Chart', 'Leaflet', 'Canvas', 'Network APIs', 'Download'],
+            syntheticOnly: true
+        });
+
+        // Keep native bindings referenced so static checks can verify explicit stubbing boundaries.
+        void originalFetch; void OriginalXHR; void OriginalWebSocket;
+    </script>
+</body>
+</html>

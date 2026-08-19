@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="referrer" content="no-referrer">
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'nonce-r11-local-runtime'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-src 'none'">
+    <title>R11 local runtime browser smoke</title>
+    <link rel="stylesheet" href="/styles/vendor/cal-heatmap-4.2.2.css" integrity="sha384-CqhcQLOCMzvuMykgRLOtzD9FJW+nHHcILVVDD6EjiRjc3Ecn71ZKehgvlHUnK5q+" crossorigin="anonymous">
+    <link rel="stylesheet" href="/styles/vendor/leaflet-1.9.4.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous">
+    <script src="/js/vendor/d3-7.9.0.min.js" integrity="sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i" crossorigin="anonymous"></script>
+    <script src="/js/vendor/cal-heatmap-4.2.2.min.js" integrity="sha384-u6mWlT25qeWOoRQiqXuzYVkUZPu34+SHGP5MJB5FTBu1q4C1HGfjDC6UZZvtN1lt" crossorigin="anonymous"></script>
+    <script src="/js/vendor/chart-4.5.0.umd.min.js" integrity="sha384-XcdcwHqIPULERb2yDEM4R0XaQKU3YnDsrTmjACBZyfdVVqjh6xQ4/DCMd7XLcA6Y" crossorigin="anonymous"></script>
+    <script src="/js/vendor/chartjs-adapter-date-fns-3.0.0.bundle.min.js" integrity="sha384-cVMg8E3QFwTvGCDuK+ET4PD341jF3W8nO1auiXfuZNQkzbUUiBGLsIQUE+b1mxws" crossorigin="anonymous"></script>
+    <script src="/js/vendor/chartjs-chart-matrix-3.0.0.min.js" integrity="sha384-rJ/i5dnMG9QpsJqCMvR1ItW0deXppx40qBosSeiEI3hb9B8msI7j0D22p2rp010u" crossorigin="anonymous"></script>
+    <script src="/js/vendor/leaflet-1.9.4.min.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
+    <script src="/js/vendor/leaflet-heat-0.2.0.min.js" integrity="sha384-mFKkGiGvT5vo1fEyGCD3hshDdKmW3wzXW/x+fWriYJArD0R3gawT6lMvLboM22c0" crossorigin="anonymous"></script>
+    <script src="/js/vendor/html2canvas-1.4.1.min.js" integrity="sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H" crossorigin="anonymous"></script>
+    <script src="/js/vendor/jspdf-2.5.1.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
+</head>
+<body data-status="running">
+    <h1>R11 local runtime browser smoke</h1>
+    <pre id="result">{"status":"running"}</pre>
+    <script nonce="r11-local-runtime">
+        const checks = Object.freeze({
+            d3: typeof globalThis.d3?.select === 'function',
+            calHeatmap: typeof globalThis.CalHeatmap === 'function',
+            chart: typeof globalThis.Chart === 'function',
+            dateAdapter: typeof globalThis.Chart?._adapters?._date === 'function',
+            matrix: (() => {
+                try {
+                    return typeof globalThis.Chart?.registry?.getController('matrix') === 'function';
+                } catch {
+                    return false;
+                }
+            })(),
+            leaflet: typeof globalThis.L?.map === 'function',
+            leafletHeat: typeof globalThis.L?.heatLayer === 'function',
+            html2canvas: typeof globalThis.html2canvas === 'function',
+            jspdf: typeof globalThis.jspdf?.jsPDF === 'function'
+        });
+        const passed = Object.values(checks).every(Boolean);
+        const result = Object.freeze({ status: passed ? 'passed' : 'failed', checks });
+        document.body.dataset.status = result.status;
+        document.getElementById('result').textContent = JSON.stringify(result);
+    </script>
+</body>
+</html>

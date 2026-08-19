@@ -2,113 +2,74 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| Status | Proposed |
+| Status | Accepted |
 | Date | 2026-07-28 |
+| Accepted date | 2026-07-30 |
 | Decision owners | XiChuan9 |
-| Target decision PR | PR-02 Canonical Contracts |
-| Related documents | [PRD](../../product/stravastats-v2-prd.md)、[Architecture Overview](../overview.md) |
+| Decision scope | PR-02 已实现并验证的 CanonicalActivity v1 逻辑合同 |
+| Related documents | [PR-02 Task Brief](../../tasks/pr-02-canonical-contracts.md)、[PRD](../../product/stravastats-v2-prd.md)、[Architecture Overview](../overview.md)、[ADR-0002](./0002-stream-model.md)、[ADR-0006](./0006-source-provenance.md) |
+
+> Accepted decision does not mean downstream implementation is complete.
 
 ## Context
 
-当前页面、缓存和分析大量使用 Strava SummaryActivity、DetailedActivity 和 StreamSet 的字段命名。继续让 FIT、TCX、GPX、Strava Archive、Demo 和未来厂商 Connector 直接生成 Strava DTO，会把系统永久绑定在 Strava 的字段、ID、缺失值和运动类型语义上。
+Legacy 页面、缓存和分析大量使用 Strava DTO。让其他来源继续生成 Strava
+DTO 会把 V2 永久绑定到 provider 字段、ID、缺失值和运动类型语义。PR-02
+因此实现了来源中立、可校验、可版本化的最小活动合同，但没有迁移现有消费者。
 
-V2 需要一个来源中立、可校验、可版本化的领域模型，同时通过临时 Legacy Projection 复用现有 UI。
+## Accepted decision
 
-## Decision
+PR-02 接受以下已实现并通过测试的 `CanonicalActivity` v1 逻辑合同：
 
-1. 建立 `CanonicalActivity` 作为活动摘要和核心领域身份；
-2. 活动 ID 是应用生成的 opaque string，调用方不得解析或假设数值；
-3. 内部单位统一为：
-   -距离：米；
-   -时长：秒；
-   -功率：瓦；
-   -心率：bpm；
-   -海拔：米；
-   -温度：摄氏度；
-4.绝对时间使用 UTC，另外保存 timezone 或 local offset；
-5.缺失值保持 `null` 或 absent，不得转换为 `0`；
-6.来源关系保存在 `ActivitySource`，不把 provider 作为页面业务分支；
-7.页面根据 `capabilities` 判断 GPS、心率、功率、踏频和 laps 是否可用；
-8. Streams、laps、events、devices、overrides 和 analysis 与 Activity Summary 分开；
-9.用户修改通过 `UserOverride` 保存，不覆盖原始来源记录；
-10.使用 `schemaVersion` 标识 Canonical Contract 版本；
-11.迁移期由 Legacy Projection 将 Canonical 数据映射为现有页面字段。
+- `schemaVersion` 只接受整数 `1`；
+- `id` 是不可解析、不可假定为数字的 non-empty opaque string；
+- `sportCategory` 固定为 `run`、`ride`、`swim`、`walk`、`hike`、
+  `workout`、`winter`、`team`、`racket`、`other`；
+- `sportVariant` 是 `null` 或来源中立的 normalized slug；
+- `startTimeUtc` 是固定毫秒精度、显式 `Z` 结尾且不存在日期溢出的 UTC instant；
+- `timeZone` 必须是 `{ ianaName, utcOffsetMinutes }` 对象；两项均可为
+  `null`，offset 范围为 -840 至 840 分钟；
+- absent、`null` 与真实 `0` 保持不同语义，不做 coercion 或默认填充；
+- `capabilities` 的五个字段全部必填且为严格 boolean；
+- summary 字段可以 absent 或 `null`，如存在则必须满足有限数值及关系约束；
+- `extensions` 可以 absent、`null` 或 plain JSON-safe object；
+- validator 是 dependency-free 原生 ESM，只返回稳定
+  `{ ok, errors, warnings }`，不修改输入、不执行 accessor，并对反射失败
+  fail closed；
+- provider-specific 字段不进入活动顶层；来源关系由独立的
+  `ActivitySource` 表达。
 
-## Initial contract shape
-
-```js
-{
-  id: 'opaque-string',
-  schemaVersion: 1,
-  sportCategory: 'run',
-  sportVariant: null,
-  startTimeUtc: '2026-07-28T06:00:00.000Z',
-  timezone: 'Asia/Shanghai',
-  distanceMeters: 10000,
-  movingTimeSeconds: 3000,
-  elapsedTimeSeconds: 3150,
-  elevationGainMeters: 80,
-  averageHeartRateBpm: null,
-  averagePowerWatts: null,
-  capabilities: {
-    hasGps: true,
-    hasHeartRate: false,
-    hasPower: false,
-    hasCadence: false,
-    hasLaps: true
-  }
-}
-```
-
-该示例表达语义，不替代 PR-02 中的 runtime schema。
+内部逻辑单位为米、秒、瓦、bpm 和摄氏度。Unknown field 保留在输入中并产生
+稳定 warning。
 
 ## Consequences
 
-### Positive
+- 新数据源无需伪装成 Strava，消费者可依赖稳定的领域语义；
+- 缺失能力、缺失 summary 和真实零值可被一致区分；
+- schema version 与纯 validator 为后续迁移提供 fail-closed 边界；
+- Legacy DTO 与 CanonicalActivity 的并存和 projection 会增加过渡成本。
 
-- 新数据源不需要伪装成 Strava；
-- 页面与来源解耦；
-- 缺失能力可以一致降级；
-- 可按 schema 版本迁移和验证；
-- Legacy Projection 降低一次性重写风险。
+## Deferred downstream work
 
-### Negative
+以下内容未由本 ADR 或 PR-02 实现：
 
-- 需要维护 Canonical/Legacy 映射；
-- 运动类型和时间语义必须正式冻结；
-- Shadow 阶段需要额外存储和 Parity 测试；
-- 旧代码中对 numeric Strava ID 的假设需要逐步移除。
+- Canonical → Legacy Projection、页面/UI consumer migration 和 parity 验收；
+- `UserOverride` 的模型、持久化与 UI；
+- Repository、Storage、IndexedDB v2、migration、shadow write 和 rollback；
+- FIT/TCX/GPX/Archive Decoder、provider mapping 的完整实现；
+- schema evolution migration 与真实数据验证。
 
-## Alternatives considered
+这些能力必须由各自后续 PR 单独授权、实现、测试和验收。
 
-### 继续使用 Strava DTO 作为标准模型
+## Validation evidence
 
-拒绝。实现短期最快，但会让所有数据源受 Strava 字段限制。
-
-### 每个数据源直接生成页面 View Model
-
-拒绝。会重复解析、单位转换和缺失值规则，也无法建立统一存储和分析。
-
-### 一次性把全部页面改为全新模型
-
-拒绝。范围过大，无法区分模型、页面和分析回归。
-
-## Open questions
-
-PR-02 必须冻结：
-
-- 完整 sport taxonomy；
-- 时间精度和 timezone 表达；
-- 扩展字段命名规则；
-- runtime schema validator 选型；
-- 向后兼容和 schema evolution 规则。
-
-在这些问题确认前，本 ADR 保持 `Proposed`。
-
-## Validation
-
-- Runtime schema 能拒绝非法单位、非法时间和 numeric-only ID 假设；
-- 缺失 HR/Power/GPS 的活动可以通过校验；
-- Canonical → Legacy Projection 产生与当前页面兼容的字段；
-- 不同来源的等价活动可以映射到同一 Contract；
-- 测试确认缺失值不会变成 `0`。
+- `validateCanonicalActivity(value)` 已实现上述 v1 合同；
+- Node 合同测试覆盖 opaque ID、十类 sport、nullable variant、fixed-ms UTC、
+  `timeZone` 对象、严格 capabilities、summary 关系、extensions 和
+  absent/null/0；
+- descriptor-safe、throwing getter、revoked/reflection Proxy、
+  frozen input、non-mutation、JSON round-trip 和稳定错误排序已通过；
+- PR-02 自动门禁证据记录在
+  [Task Brief](../../tasks/pr-02-canonical-contracts.md)；浏览器 ESM dynamic
+  import 因获批 Browser 执行面不可用而保持 Not run，不影响本 ADR 只接受已经由
+  Node 合同测试证明的逻辑决定。
